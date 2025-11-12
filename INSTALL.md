@@ -1,65 +1,47 @@
-# Installation Guide for End Users
+# Installation Guide for Delta CLI
 
-This guide shows how **end users** can install Delta CLI on their systems.
+This guide shows how to install Delta CLI on different platforms using various methods.
 
-## Quick Installation
+## 📦 Quick Installation by Platform
 
-### macOS / Linux
+### 🪟 Windows
 
-```bash
-# Download and run the installation script
-curl -fsSL https://raw.githubusercontent.com/oderoi/delta-cli/main/install.sh | bash
-```
-
-Or manually:
-
-```bash
-# Download
-curl -L -o install.sh https://raw.githubusercontent.com/oderoi/delta-cli/main/install.sh
-
-# Make executable
-chmod +x install.sh
-
-# Run
-./install.sh
-```
-
-### Windows
-
-```powershell
-# Download and run
-Invoke-WebRequest -Uri https://raw.githubusercontent.com/oderoi/delta-cli/main/install.ps1 -OutFile install.ps1
-.\install.ps1
-```
-
----
-
-## Package Manager Installation (Recommended)
-
-### Windows - Winget
-
+#### Option 1: Winget (Recommended)
 ```powershell
 winget install DeltaCLI.DeltaCLI
 ```
 
-### macOS - Homebrew
+#### Option 2: Manual Installation Script
+```powershell
+# Download and run
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/nile-agi/delta/main/install.ps1 -OutFile install.ps1
+.\install.ps1
+```
 
+#### Option 3: Download Pre-built Binary
+1. Go to [GitHub Releases](https://github.com/nile-agi/delta/releases)
+2. Download `delta-cli-windows-x64.zip`
+3. Extract and add to PATH
+
+---
+
+### 🍎 macOS
+
+#### Option 1: Homebrew (Recommended)
 ```bash
-# Using tap (before official inclusion)
-brew install oderoi/delta-cli/delta-cli
+# Install from tap
+brew install nile-agi/delta/delta-cli
 
-# Or after official inclusion
+# Or if added to homebrew-core
 brew install delta-cli
 ```
 
-### macOS - MacPorts
-
+#### Option 2: MacPorts
 ```bash
 sudo port install delta-cli
 ```
 
-### macOS / Linux - Nix
-
+#### Option 3: Nix
 ```bash
 # Using nix-env
 nix-env -iA nixpkgs.delta-cli
@@ -68,15 +50,63 @@ nix-env -iA nixpkgs.delta-cli
 nix profile install nixpkgs#delta-cli
 ```
 
-### Linux - Homebrew
-
+#### Option 4: Installation Script
 ```bash
-# Using tap (before official inclusion)
-brew install oderoi/delta-cli/delta-cli
+# Download and run
+curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/install.sh | bash
 
-# Or after official inclusion
+# Or manually
+curl -L -o install.sh https://raw.githubusercontent.com/nile-agi/delta/main/install.sh
+chmod +x install.sh
+./install.sh
+```
+
+---
+
+### 🐧 Linux
+
+#### Option 1: Homebrew (Recommended)
+```bash
+# Install from tap
+brew install nile-agi/delta/delta-cli
+
+# Or if added to homebrew-core
 brew install delta-cli
 ```
+
+#### Option 2: Nix
+```bash
+# Using nix-env
+nix-env -iA nixpkgs.delta-cli
+
+# Or using Nix Flakes
+nix profile install nixpkgs#delta-cli
+```
+
+#### Option 3: Installation Script
+```bash
+# Download and run
+curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/install.sh | bash
+
+# Or manually
+curl -L -o install.sh https://raw.githubusercontent.com/nile-agi/delta/main/install.sh
+chmod +x install.sh
+./install.sh
+```
+
+---
+
+## 📋 Installation Methods Comparison
+
+| Method | Windows | macOS | Linux | Auto-Updates | Notes |
+|--------|---------|-------|-------|--------------|-------|
+| **Winget** | ✅ | ❌ | ❌ | ✅ | Easiest on Windows |
+| **Homebrew** | ❌ | ✅ | ✅ | ✅ | Most popular on macOS/Linux |
+| **MacPorts** | ❌ | ✅ | ❌ | ✅ | Alternative on macOS |
+| **Nix** | ❌ | ✅ | ✅ | ✅ | Reproducible builds |
+| **Install Script** | ✅ | ✅ | ✅ | ❌ | Quick one-time install |
+| **Manual** | ✅ | ✅ | ✅ | ❌ | Full control |
+| **Build from Source** | ✅ | ✅ | ✅ | ❌ | Latest features |
 
 ---
 
@@ -84,7 +114,7 @@ brew install delta-cli
 
 ### Step 1: Download Pre-built Binary
 
-1. Go to [GitHub Releases](https://github.com/oderoi/delta-cli/releases)
+1. Go to [GitHub Releases](https://github.com/nile-agi/delta/releases)
 2. Download the package for your platform:
    - **macOS ARM64**: `delta-cli-macos-arm64.tar.gz`
    - **macOS Intel**: `delta-cli-macos-x86_64.tar.gz`
@@ -142,30 +172,52 @@ If you prefer to build from source:
 ### macOS
 
 ```bash
-git clone https://github.com/oderoi/delta-cli.git
-cd delta-cli
+# Clone repository with submodules
+git clone --recurse-submodules https://github.com/nile-agi/delta.git
+cd delta
+
+# Build for your architecture (arm64 for Apple Silicon, x86_64 for Intel)
 ./packaging/build-scripts/build-macos.sh Release arm64
+
+# Install
 sudo cp build_macos_arm64/delta /usr/local/bin/delta
 sudo cp build_macos_arm64/delta-server /usr/local/bin/delta-server
+sudo chmod +x /usr/local/bin/delta /usr/local/bin/delta-server
 ```
 
 ### Linux
 
 ```bash
-git clone https://github.com/oderoi/delta-cli.git
-cd delta-cli
+# Clone repository with submodules
+git clone --recurse-submodules https://github.com/nile-agi/delta.git
+cd delta
+
+# Build for your architecture
 ./packaging/build-scripts/build-linux.sh Release x86_64
+
+# Install
 sudo cp build_linux_x86_64/delta /usr/local/bin/delta
 sudo cp build_linux_x86_64/delta-server /usr/local/bin/delta-server
+sudo chmod +x /usr/local/bin/delta /usr/local/bin/delta-server
 ```
 
 ### Windows
 
 ```powershell
-git clone https://github.com/oderoi/delta-cli.git
-cd delta-cli
+# Clone repository with submodules
+git clone --recurse-submodules https://github.com/nile-agi/delta.git
+cd delta
+
+# Build
 .\packaging\build-scripts\build-windows.ps1 Release x64
-# Copy build_windows\Release\delta.exe to a directory in PATH
+
+# Copy to a directory in PATH (e.g., C:\Program Files\Delta CLI\)
+New-Item -ItemType Directory -Path "C:\Program Files\Delta CLI" -Force
+Copy-Item build_windows\Release\delta.exe "C:\Program Files\Delta CLI\delta.exe"
+Copy-Item build_windows\Release\delta-server.exe "C:\Program Files\Delta CLI\delta-server.exe"
+
+# Add to PATH (requires admin)
+[Environment]::SetEnvironmentVariable("Path", "$env:Path;C:\Program Files\Delta CLI", "Machine")
 ```
 
 ---
@@ -210,7 +262,7 @@ sudo ./install.sh
 1. Check internet connection
 2. Verify GitHub releases are accessible
 3. Try manual installation instead
-4. Check [GitHub Issues](https://github.com/oderoi/delta-cli/issues)
+4. Check [GitHub Issues](https://github.com/nile-agi/delta/issues)
 
 ---
 

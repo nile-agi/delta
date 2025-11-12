@@ -6,7 +6,7 @@ set -e
 
 VERSION="${1:-latest}"
 INSTALL_DIR="${2:-/usr/local/bin}"
-REPO_URL="https://github.com/oderoi/delta-cli"
+REPO_URL="https://github.com/nile-agi/delta"
 
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║           Delta CLI Installation Script                      ║"
