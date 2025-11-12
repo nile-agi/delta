@@ -14,6 +14,8 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
+#include <unistd.h>
+#include <limits.h>
 
 using namespace delta;
 
