@@ -7,7 +7,7 @@ PortGroup           github 1.0
 name                delta-cli
 version             1.0.0
 revision            0
-github.setup        oderoi delta-cli v${version}
+github.setup        nile-agi delta v${version}
 
 categories          ai llm machine-learning
 platforms           darwin
@@ -27,6 +27,11 @@ depends_build       port:cmake \
                     port:pkgconfig
 
 depends_lib         port:curl
+
+# Ensure submodules are updated before building
+pre-build {
+    system -W ${worksrcpath} "git submodule update --init --recursive"
+}
 
 build.cmd           ${worksrcpath}/packaging/build-scripts/build-macos.sh Release arm64
 

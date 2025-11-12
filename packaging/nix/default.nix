@@ -14,11 +14,11 @@ stdenv.mkDerivation rec {
   version = "1.0.0";
 
   src = fetchFromGitHub {
-    owner = "oderoi";
-    repo = "delta-cli";
+    owner = "nile-agi";
+    repo = "delta";
     rev = "v${version}";
     sha256 = "PLACEHOLDER_SHA256";
-    fetchSubmodules = true;
+    fetchSubmodules = true;  # Always fetch latest llama.cpp submodule
   };
 
   nativeBuildInputs = [
@@ -83,7 +83,7 @@ stdenv.mkDerivation rec {
       to interact with AI models without requiring internet connectivity
       or cloud services.
     '';
-    homepage = "https://github.com/oderoi/delta-cli";
+    homepage = "https://github.com/nile-agi/delta";
     license = licenses.mit;
     maintainers = [ ];
     platforms = platforms.unix;

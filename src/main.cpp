@@ -122,7 +122,7 @@ EXAMPLES:
     delta --update
     delta --server
 
-For more information, visit: https://github.com/oderoi/delta-cli
+For more information, visit: https://github.com/nile-agi/delta
 )" << std::endl;
 }
 

@@ -3,12 +3,12 @@ PackageIdentifier: DeltaCLI.DeltaCLI
 PackageVersion: 1.0.0
 PackageName: Delta CLI
 Publisher: Delta CLI
-PublisherUrl: https://github.com/oderoi/delta-cli
-PublisherSupportUrl: https://github.com/oderoi/delta-cli/issues
+PublisherUrl: https://github.com/nile-agi/delta
+PublisherSupportUrl: https://github.com/nile-agi/delta/issues
 License: MIT
-LicenseUrl: https://github.com/oderoi/delta-cli/blob/main/LICENSE
+LicenseUrl: https://github.com/nile-agi/delta/blob/main/LICENSE
 Copyright: Copyright (c) 2024 Delta CLI Contributors
-CopyrightUrl: https://github.com/oderoi/delta-cli
+CopyrightUrl: https://github.com/nile-agi/delta
 ShortDescription: Offline AI Assistant powered by llama.cpp
 Description: |
   Delta CLI is an open-source, offline-first AI assistant that runs large 
@@ -23,6 +23,7 @@ Description: |
   - Beautiful Terminal UI: Retro-green interface with custom styling
   - Easy Model Management: One-command downloads from Hugging Face
   - Zero-Setup: Auto-downloads default model on first run
+  - Always Up-to-Date: Automatically uses the latest llama.cpp version
 Tags:
   - ai
   - llm
@@ -38,7 +39,7 @@ Commands:
 Installers:
   - Architecture: x64
     InstallerType: zip
-    InstallerUrl: https://github.com/oderoi/delta-cli/releases/download/v1.0.0/delta-cli-windows-x64.zip
+    InstallerUrl: https://github.com/nile-agi/delta/releases/download/v1.0.0/delta-cli-windows-x64.zip
     InstallerSha256: PLACEHOLDER_SHA256
     InstallModes:
       - silent

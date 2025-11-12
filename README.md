@@ -19,7 +19,7 @@
 **Run powerful AI models locally, completely offline, on any device.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Open Source](https://img.shields.io/badge/open--source-Yes-green.svg)](https://github.com/oderoi/delta-cli)
+[![Open Source](https://img.shields.io/badge/open--source-Yes-green.svg)](https://github.com/nile-agi/delta)
 [![Built on llama.cpp](https://img.shields.io/badge/built%20on-llama.cpp-orange.svg)](https://github.com/ggerganov/llama.cpp)
 
 </div>
