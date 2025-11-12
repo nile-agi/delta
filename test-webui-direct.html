@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test - Delta Web UI</title>
+</head>
+<body>
+    <h1>Testing Direct File Access</h1>
+    <p>If you can see this, the server is serving files.</p>
+    <p>Check browser console (F12) for JavaScript errors.</p>
+    <script>
+        console.log("Test script loaded");
+        fetch('/_app/immutable/entry/start.16e88ad4.js')
+            .then(r => r.ok ? console.log("✅ start.js accessible") : console.error("❌ start.js not accessible"))
+            .catch(e => console.error("❌ Error:", e));
+    </script>
+</body>
+</html>

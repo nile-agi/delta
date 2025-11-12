@@ -1,0 +1,45 @@
+# -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4
+# Delta CLI Portfile
+
+PortSystem          1.0
+PortGroup           github 1.0
+
+name                delta-cli
+version             1.0.0
+revision            0
+github.setup        oderoi delta-cli v${version}
+
+categories          ai llm machine-learning
+platforms           darwin
+license             MIT
+maintainers         openmaintainer
+
+description         Offline AI Assistant powered by llama.cpp
+long_description    \
+    Delta CLI is an open-source, offline-first AI assistant that runs \
+    large language models (LLMs) directly on your device. Built on top \
+    of llama.cpp, Delta CLI provides a simple command-line interface \
+    to interact with AI models without requiring internet connectivity \
+    or cloud services.
+
+depends_build       port:cmake \
+                    port:curl \
+                    port:pkgconfig
+
+depends_lib         port:curl
+
+build.cmd           ${worksrcpath}/packaging/build-scripts/build-macos.sh Release arm64
+
+destroot {
+    xinstall -m 755 ${worksrcpath}/build_macos_arm64/delta ${destroot}${prefix}/bin/delta
+    xinstall -m 755 ${worksrcpath}/build_macos_arm64/delta-server ${destroot}${prefix}/bin/delta-server
+    
+    if {[file exists ${worksrcpath}/vendor/llama.cpp/tools/server/public]} {
+        xinstall -d ${destroot}${prefix}/share/delta-cli
+        copy ${worksrcpath}/vendor/llama.cpp/tools/server/public ${destroot}${prefix}/share/delta-cli/webui
+    }
+}
+
+livecheck.url       ${github.livecheck.url}
+livecheck.regex     v([0-9.]+)
+

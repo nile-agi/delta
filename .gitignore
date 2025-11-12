@@ -1,0 +1,51 @@
+# Build artifacts
+build*/
+*.o
+*.a
+*.d
+*.so
+*.dylib
+*.dll
+*.exe
+*.bin
+*.metallib
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+*.cmake
+!CMakeLists.txt
+
+# IDE / OS
+.DS_Store
+.vs/
+.vscode/
+.idea/
+*.swp
+*.tmp
+
+# Logs
+*.log
+
+# Executables
+delta
+delta-server
+
+# Release builds
+release/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Node modules
+node_modules/
+
+# Test artifacts
+*.gcda
+*.gcno
+*.gcov
+

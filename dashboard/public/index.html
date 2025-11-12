@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delta CLI - Install Tracking Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <h1>DELTA CLI</h1>
+                <div class="prompt">Δ> Install Analytics</div>
+            </div>
+            <div class="refresh">
+                <button onclick="loadData()" id="refresh-btn">Refresh Data</button>
+                <span id="last-updated"></span>
+            </div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">📦</div>
+                <div class="stat-value" id="total-installs">0</div>
+                <div class="stat-label">Total Installs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">⚡</div>
+                <div class="stat-value" id="active-24h">0</div>
+                <div class="stat-label">Active (24h)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">📊</div>
+                <div class="stat-value" id="active-7d">0</div>
+                <div class="stat-label">Active (7d)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🖥️</div>
+                <div class="stat-value" id="platform-count">0</div>
+                <div class="stat-label">Platforms</div>
+            </div>
+        </div>
+
+        <div class="charts-row">
+            <div class="chart-container">
+                <h2>Platform Distribution</h2>
+                <canvas id="platform-chart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h2>Platform Breakdown</h2>
+                <canvas id="platform-pie"></canvas>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <h2>Recent Installs</h2>
+            <table id="installs-table">
+                <thead>
+                    <tr>
+                        <th>Platform</th>
+                        <th>First Seen</th>
+                        <th>Last Seen</th>
+                    </tr>
+                </thead>
+                <tbody id="installs-tbody">
+                    <tr>
+                        <td colspan="3" class="loading">Loading data...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+
