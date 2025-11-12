@@ -52,3 +52,6 @@ node_modules/
 # Homebrew tap (separate repository)
 homebrew-delta-cli/
 
+# Nested repos that shouldn't be submodules
+vendor/ios-cmake/.git
+
