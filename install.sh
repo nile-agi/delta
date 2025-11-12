@@ -5,8 +5,19 @@
 set -e
 
 VERSION="${1:-latest}"
-INSTALL_DIR="${2:-/usr/local/bin}"
 REPO_URL="https://github.com/nile-agi/delta"
+
+# Determine best install directory
+if [ -n "$2" ]; then
+    INSTALL_DIR="$2"
+elif [ "$(uname -s)" = "Darwin" ] && [ -d "/opt/homebrew/bin" ]; then
+    # On macOS with Homebrew, use /opt/homebrew/bin (comes before /usr/local/bin in PATH)
+    INSTALL_DIR="/opt/homebrew/bin"
+elif [ -d "/usr/local/bin" ]; then
+    INSTALL_DIR="/usr/local/bin"
+else
+    INSTALL_DIR="${HOME}/.local/bin"
+fi
 
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║           Delta CLI Installation Script                      ║"
@@ -98,6 +109,18 @@ rm -rf "$TEMP_DIR"
 echo ""
 echo "✅ Delta CLI installed successfully!"
 echo ""
+
+# Check for PATH conflicts
+if command -v delta &> /dev/null; then
+    DELTA_PATH=$(which delta)
+    if [ "$DELTA_PATH" != "$INSTALL_DIR/delta" ]; then
+        echo "⚠️  Warning: Another 'delta' command found at: $DELTA_PATH"
+        echo "   Our delta is installed at: $INSTALL_DIR/delta"
+        echo "   To use our delta, run: $INSTALL_DIR/delta"
+        echo "   Or add $INSTALL_DIR to the front of your PATH"
+        echo ""
+    fi
+fi
 echo "📝 Quick Start:"
 echo "   delta --version           # Check version"
 echo "   delta pull qwen2.5:0.5b   # Download a model"
