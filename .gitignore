@@ -49,3 +49,6 @@ node_modules/
 *.gcno
 *.gcov
 
+# Homebrew tap (separate repository)
+homebrew-delta-cli/
+
