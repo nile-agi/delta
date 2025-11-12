@@ -679,6 +679,69 @@ int main(int argc, char** argv) {
             return 1;
         }
 
+        // Get the path to the web UI directory (use original llama.cpp web UI)
+        std::string public_path;
+        std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
+        std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
+        
+        // Check for vendor/llama.cpp/tools/server/public (built web UI)
+        std::vector<std::string> public_candidates = {
+            "vendor/llama.cpp/tools/server/public",
+            "./vendor/llama.cpp/tools/server/public",
+            "../vendor/llama.cpp/tools/server/public",
+            tools::FileOps::join_path(exe_dir, "vendor/llama.cpp/tools/server/public"),
+            tools::FileOps::join_path(exe_dir, "../vendor/llama.cpp/tools/server/public"),
+            tools::FileOps::join_path(exe_grandparent, "vendor/llama.cpp/tools/server/public")
+        };
+        
+        for (const auto& candidate : public_candidates) {
+            if (tools::FileOps::dir_exists(candidate)) {
+                std::string index_file = tools::FileOps::join_path(candidate, "index.html.gz");
+                if (tools::FileOps::file_exists(index_file) || 
+                    tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
+                    public_path = candidate;
+                    break;
+                }
+            }
+        }
+        
+        // Convert relative path to absolute path
+        if (!public_path.empty() && public_path[0] != '/') {
+            char resolved_path[PATH_MAX];
+            bool resolved = false;
+            
+            if (realpath(public_path.c_str(), resolved_path) != nullptr) {
+                public_path = std::string(resolved_path);
+                resolved = true;
+            }
+            
+            if (!resolved) {
+                char cwd[PATH_MAX];
+                if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+                    std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
+                    if (realpath(full_path.c_str(), resolved_path) != nullptr) {
+                        public_path = std::string(resolved_path);
+                        resolved = true;
+                    }
+                }
+            }
+            
+            if (!resolved) {
+                std::string exe_based_path = tools::FileOps::join_path(exe_dir, public_path);
+                if (realpath(exe_based_path.c_str(), resolved_path) != nullptr) {
+                    public_path = std::string(resolved_path);
+                    resolved = true;
+                }
+            }
+            
+            if (!resolved) {
+                std::string project_path = tools::FileOps::join_path(exe_grandparent, public_path);
+                if (realpath(project_path.c_str(), resolved_path) != nullptr) {
+                    public_path = std::string(resolved_path);
+                }
+            }
+        }
+
         // Build command
         std::stringstream cmd;
         cmd << server_bin
@@ -690,6 +753,11 @@ int main(int argc, char** argv) {
         if (enable_reranking) cmd << " --reranking";
         if (!draft_model.empty()) cmd << " --md \"" << draft_model << "\"";
         if (!grammar_file.empty()) cmd << " --grammar-file \"" << grammar_file << "\"";
+        
+        // Add --path flag to use original llama.cpp web UI if found
+        if (!public_path.empty()) {
+            cmd << " --path \"" << public_path << "\"";
+        }
 
         // Run server in background and silence stdout/stderr
         cmd << " >/dev/null 2>&1 &";

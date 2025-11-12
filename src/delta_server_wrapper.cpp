@@ -1,6 +1,6 @@
 /**
  * Delta CLI Server Wrapper
- * Customizes llama-server with Delta CLI branding
+ * Uses original llama.cpp web UI
  */
 
 #include <iostream>
@@ -8,6 +8,18 @@
 #include <vector>
 #include <cstdlib>
 #include <filesystem>
+#include <limits.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <shlwapi.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <libgen.h>
+#include <unistd.h>
+#else
+#include <unistd.h>
+#include <libgen.h>
+#endif
 
 namespace delta {
 
@@ -78,10 +90,65 @@ public:
         grammar_file_ = file;
     }
 
-    bool setup_custom_ui() {
-        // Use original llama.cpp web UI
-        // This function is kept for compatibility but does nothing
-            return true;
+    std::string find_webui_path() {
+        // Find the original llama.cpp web UI directory
+        std::vector<std::string> candidates;
+        
+        // Get current executable directory
+        std::string exe_path;
+#ifdef _WIN32
+        char exe_buf[MAX_PATH];
+        GetModuleFileNameA(NULL, exe_buf, MAX_PATH);
+        exe_path = exe_buf;
+        size_t last_slash = exe_path.find_last_of("\\/");
+        if (last_slash != std::string::npos) {
+            exe_path = exe_path.substr(0, last_slash);
+        }
+#elif defined(__APPLE__)
+        char exe_buf[PATH_MAX];
+        uint32_t size = sizeof(exe_buf);
+        if (_NSGetExecutablePath(exe_buf, &size) == 0) {
+            char resolved[PATH_MAX];
+            if (realpath(exe_buf, resolved) != nullptr) {
+                exe_path = std::string(dirname(resolved));
+            }
+        }
+#else
+        char exe_buf[PATH_MAX];
+        ssize_t len = readlink("/proc/self/exe", exe_buf, sizeof(exe_buf) - 1);
+        if (len != -1) {
+            exe_buf[len] = '\0';
+            exe_path = std::string(dirname(exe_buf));
+        }
+#endif
+        
+        // Build candidate paths
+        if (!exe_path.empty()) {
+            candidates.push_back(exe_path + "/../vendor/llama.cpp/tools/server/public");
+            candidates.push_back(exe_path + "/../../vendor/llama.cpp/tools/server/public");
+        }
+        candidates.push_back("vendor/llama.cpp/tools/server/public");
+        candidates.push_back("./vendor/llama.cpp/tools/server/public");
+        candidates.push_back("../vendor/llama.cpp/tools/server/public");
+        
+        // Check each candidate
+        for (const auto& candidate : candidates) {
+            std::filesystem::path path(candidate);
+            if (std::filesystem::exists(path) && std::filesystem::is_directory(path)) {
+                std::filesystem::path index_file = path / "index.html.gz";
+                std::filesystem::path index_file2 = path / "index.html";
+                if (std::filesystem::exists(index_file) || std::filesystem::exists(index_file2)) {
+                    // Convert to absolute path
+                    try {
+                        return std::filesystem::canonical(path).string();
+                    } catch (...) {
+                        return candidate;
+                    }
+                }
+            }
+        }
+        
+        return "";  // Not found, server will use embedded UI
     }
 
     int start_server() {
@@ -98,8 +165,8 @@ public:
             return 1;
         }
 
-        // Setup custom UI
-        setup_custom_ui();
+        // Find and use original llama.cpp web UI
+        std::string webui_path = find_webui_path();
 
         // Construct llama-server command
         std::string cmd = llama_server_path_;
@@ -107,6 +174,11 @@ public:
         cmd += " --port " + std::to_string(port_);
         cmd += " --parallel " + std::to_string(max_parallel_);
         cmd += " -c " + std::to_string(max_context_);
+
+        // Add --path flag to use original llama.cpp web UI if found
+        if (!webui_path.empty()) {
+            cmd += " --path \"" + webui_path + "\"";
+        }
 
         if (enable_embedding_) {
             cmd += " --embedding";
