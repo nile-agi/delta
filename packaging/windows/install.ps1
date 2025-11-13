@@ -35,22 +35,8 @@ if ($arch -eq "AMD64") {
 Write-Host "📦 Detected platform: $platform" -ForegroundColor Green
 Write-Host ""
 
-# Install dependencies (if not skipped)
-if (-not $SkipDependencies) {
-    Write-Host "📋 Checking dependencies..." -ForegroundColor Cyan
-    
-    # Check for Chocolatey
-    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-        Write-Host "📦 Installing Chocolatey package manager..." -ForegroundColor Yellow
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-        iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-    }
-    
-    # Install required packages
-    Write-Host "📦 Installing required packages..." -ForegroundColor Yellow
-    choco install -y cmake git curl
-}
+# No build dependencies needed - we're installing pre-built binaries
+# PowerShell has built-in support for downloading and extracting
 
 # Download and install Delta CLI
 Write-Host "⬇️  Downloading Delta CLI..." -ForegroundColor Cyan

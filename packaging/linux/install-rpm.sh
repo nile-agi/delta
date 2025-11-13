@@ -39,18 +39,12 @@ else
     exit 1
 fi
 
-# Install dependencies
-echo "📋 Installing dependencies..."
+# Install minimal dependencies (only for downloading)
+echo "📋 Installing minimal dependencies..."
 $PKG_MGR install -y \
     curl \
     wget \
-    cmake \
-    gcc \
-    gcc-c++ \
-    make \
-    git \
-    pkgconfig \
-    libcurl-devel
+    tar
 
 # Download and install Delta CLI
 echo "⬇️  Downloading Delta CLI..."

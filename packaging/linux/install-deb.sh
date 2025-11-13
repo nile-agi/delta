@@ -29,17 +29,13 @@ esac
 echo "📦 Detected platform: $PLATFORM"
 echo ""
 
-# Install dependencies
-echo "📋 Installing dependencies..."
+# Install minimal dependencies (only for downloading)
+echo "📋 Installing minimal dependencies..."
 apt-get update
 apt-get install -y \
     curl \
     wget \
-    cmake \
-    build-essential \
-    git \
-    pkg-config \
-    libcurl4-openssl-dev
+    tar
 
 # Download and install Delta CLI
 echo "⬇️  Downloading Delta CLI..."
