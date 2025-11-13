@@ -487,8 +487,8 @@ bool Commands::handle_use(const std::vector<std::string>& args, InteractiveSessi
     UI::print_info("Current model: " + session.current_model);
     
     // Automatically launch web UI server with the new model
-    // Get model's max context from registry
-    int ctx_size = session.config->n_ctx > 0 ? session.config->n_ctx : 4096;
+    // Get model's max context from registry (use model's max_context as default)
+    int ctx_size = 4096;  // Default fallback
     // Try to get max context from registry
     std::string registry_name = model_name;
     if (session.model_mgr->is_in_registry(registry_name)) {
@@ -509,6 +509,10 @@ bool Commands::handle_use(const std::vector<std::string>& args, InteractiveSessi
                 }
             }
         }
+    }
+    // Fallback to config.n_ctx if model not in registry and config.n_ctx is set
+    if (ctx_size <= 0 && session.config->n_ctx > 0) {
+        ctx_size = session.config->n_ctx;
     }
     if (Commands::launch_server_auto(model_path, 8080, ctx_size)) {
         UI::print_success("Delta Server started in background");
