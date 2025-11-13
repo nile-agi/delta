@@ -164,8 +164,35 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     // Automatically launch web UI server with default model
     std::string model_path = model_mgr.get_model_path(current_model);
     if (!model_path.empty()) {
+        // Get model's max context from registry (use model's max_context as default)
+        int ctx_size = 4096;  // Default fallback
+        // Try to get max context from registry
+        std::string registry_name = current_model;
+        if (model_mgr.is_in_registry(registry_name)) {
+            auto entry = model_mgr.get_registry_entry(registry_name);
+            if (entry.max_context > 0) {
+                ctx_size = entry.max_context;
+            }
+        } else {
+            // Try converting dash to colon format
+            size_t last_dash = registry_name.find_last_of('-');
+            if (last_dash != std::string::npos) {
+                std::string colon_name = registry_name.substr(0, last_dash) + ":" + 
+                                         registry_name.substr(last_dash + 1);
+                if (model_mgr.is_in_registry(colon_name)) {
+                    auto entry = model_mgr.get_registry_entry(colon_name);
+                    if (entry.max_context > 0) {
+                        ctx_size = entry.max_context;
+                    }
+                }
+            }
+        }
+        // Fallback to config.n_ctx if model not in registry and config.n_ctx is set
+        if (ctx_size <= 0 && config.n_ctx > 0) {
+            ctx_size = config.n_ctx;
+        }
         // Try to launch server - if it fails, it's okay (server might not be built)
-        if (Commands::launch_server_auto(model_path, 8080, config.n_ctx)) {
+        if (Commands::launch_server_auto(model_path, 8080, ctx_size)) {
             UI::print_success("Delta Server started in background");
             std::string url = "http://localhost:8080";
             UI::print_info("Open: " + url);
@@ -370,6 +397,7 @@ int main(int argc, char** argv) {
     int server_port = 8080;
     int max_parallel = 4;
     int max_context = 16384;
+    bool max_context_explicit = false;  // Track if --c was explicitly set
     // Server-only flags (parsed for compatibility; unused in CLI mode)
     bool enable_embedding = false;
     bool enable_reranking = false;
@@ -432,6 +460,7 @@ int main(int argc, char** argv) {
         } else if (arg == "--c" && i + 1 < argc) {
             try {
                 max_context = std::stoi(argv[++i]);
+                max_context_explicit = true;
                 if (max_context < 512 || max_context > 32768) {
                     UI::print_error("Max context must be between 512 and 32768");
                     return 1;
@@ -608,6 +637,36 @@ int main(int argc, char** argv) {
         if (model_path.empty()) {
             UI::print_error("Could not resolve model path for: " + model_name);
             return 1;
+        }
+
+        // Get model's max context from registry if not explicitly set
+        if (!max_context_explicit) {
+            // Try to resolve model name to registry name (handle both "qwen3:0.6b" and "qwen3-0.6b")
+            std::string registry_name = model_name;
+            // Check if it's already in registry format
+            if (model_mgr.is_in_registry(registry_name)) {
+                auto entry = model_mgr.get_registry_entry(registry_name);
+                if (entry.max_context > 0) {
+                    max_context = entry.max_context;
+                }
+            } else {
+                // Try converting dash to colon format
+                size_t last_dash = registry_name.find_last_of('-');
+                if (last_dash != std::string::npos) {
+                    std::string colon_name = registry_name.substr(0, last_dash) + ":" + 
+                                             registry_name.substr(last_dash + 1);
+                    if (model_mgr.is_in_registry(colon_name)) {
+                        auto entry = model_mgr.get_registry_entry(colon_name);
+                        if (entry.max_context > 0) {
+                            max_context = entry.max_context;
+                        }
+                    }
+                }
+            }
+            // Fallback to default if still not set
+            if (max_context <= 0) {
+                max_context = 4096;  // Default fallback
+            }
         }
 
         // Find delta-server binary with comprehensive cross-platform search

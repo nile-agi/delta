@@ -111,6 +111,7 @@ struct ModelRegistry {
     long long size_bytes;       // Approximate size
     std::string description;    // Description for UI
     std::string display_name;   // e.g., "Qwen 2.5 0.5B" (for friendly output)
+    int max_context;            // Maximum usable context size for llama-server (-c parameter)
 };
 
 class ModelManager {
