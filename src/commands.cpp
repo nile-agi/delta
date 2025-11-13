@@ -487,7 +487,29 @@ bool Commands::handle_use(const std::vector<std::string>& args, InteractiveSessi
     UI::print_info("Current model: " + session.current_model);
     
     // Automatically launch web UI server with the new model
+    // Get model's max context from registry
     int ctx_size = session.config->n_ctx > 0 ? session.config->n_ctx : 4096;
+    // Try to get max context from registry
+    std::string registry_name = model_name;
+    if (session.model_mgr->is_in_registry(registry_name)) {
+        auto entry = session.model_mgr->get_registry_entry(registry_name);
+        if (entry.max_context > 0) {
+            ctx_size = entry.max_context;
+        }
+    } else {
+        // Try converting dash to colon format
+        size_t last_dash = registry_name.find_last_of('-');
+        if (last_dash != std::string::npos) {
+            std::string colon_name = registry_name.substr(0, last_dash) + ":" + 
+                                     registry_name.substr(last_dash + 1);
+            if (session.model_mgr->is_in_registry(colon_name)) {
+                auto entry = session.model_mgr->get_registry_entry(colon_name);
+                if (entry.max_context > 0) {
+                    ctx_size = entry.max_context;
+                }
+            }
+        }
+    }
     if (Commands::launch_server_auto(model_path, 8080, ctx_size)) {
         UI::print_success("Delta Server started in background");
         std::string url = "http://localhost:8080";
@@ -651,11 +673,13 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
     // Parse: /server [model] [--port N] [--ctx-size N] [-c N]
     std::string model_name = session.current_model;
     int port = 8080;
-    // Default context size is 4096
-    int ctx_size = 4096;
+    int ctx_size = -1;  // -1 means "use model default"
+    bool ctx_size_explicit = false;  // Track if user explicitly set context size
+    
     // Use session config if available and valid (allows override)
     if (session.config && session.config->n_ctx > 0) {
         ctx_size = session.config->n_ctx;
+        ctx_size_explicit = true;
     }
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "--port" && i + 1 < args.size()) {
@@ -664,8 +688,9 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
         } else if ((args[i] == "--ctx-size" || args[i] == "-c") && i + 1 < args.size()) {
             try { 
                 ctx_size = std::stoi(args[i+1]);
-                if (ctx_size < 512 || ctx_size > 32768) {
-                    UI::print_error("Context size must be between 512 and 32768");
+                ctx_size_explicit = true;
+                if (ctx_size < 512 || ctx_size > 131072) {
+                    UI::print_error("Context size must be between 512 and 131072 (128K)");
                     return true;
                 }
             } catch (...) { 
@@ -691,6 +716,36 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
     if (model_path.empty()) {
         UI::print_error("Could not resolve model path for: " + model_name);
         return true;
+    }
+    
+    // Get model's max context from registry if not explicitly set
+    if (!ctx_size_explicit) {
+        // Try to resolve model name to registry name (handle both "qwen3:0.6b" and "qwen3-0.6b")
+        std::string registry_name = model_name;
+        // Check if it's already in registry format
+        if (session.model_mgr->is_in_registry(registry_name)) {
+            auto entry = session.model_mgr->get_registry_entry(registry_name);
+            if (entry.max_context > 0) {
+                ctx_size = entry.max_context;
+            }
+        } else {
+            // Try converting dash to colon format
+            size_t last_dash = registry_name.find_last_of('-');
+            if (last_dash != std::string::npos) {
+                std::string colon_name = registry_name.substr(0, last_dash) + ":" + 
+                                         registry_name.substr(last_dash + 1);
+                if (session.model_mgr->is_in_registry(colon_name)) {
+                    auto entry = session.model_mgr->get_registry_entry(colon_name);
+                    if (entry.max_context > 0) {
+                        ctx_size = entry.max_context;
+                    }
+                }
+            }
+        }
+        // Fallback to default if still not set
+        if (ctx_size <= 0) {
+            ctx_size = 4096;  // Default fallback
+        }
     }
 
     // Locate delta-server with comprehensive cross-platform search
