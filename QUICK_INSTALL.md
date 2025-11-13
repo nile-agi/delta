@@ -4,14 +4,12 @@ Install Delta CLI with a single command on any platform!
 
 ## 🍎 macOS
 
+**Correct command (repository is `homebrew-delta-cli`):**
 ```bash
-brew tap nile-agi/delta && brew install delta
+brew tap nile-agi/delta-cli && brew install delta
 ```
 
-**Or use the simple installer:**
-```bash
-curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/install-simple.sh | bash
-```
+**Note:** Homebrew taps are git repositories, so `brew tap` will clone the tap repository. This is normal and required. The formula itself downloads pre-built binaries (no building).
 
 ## 🐧 Linux
 
@@ -35,8 +33,8 @@ Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https:
 ## ✅ What Gets Installed
 
 All installers automatically:
-- ✅ Install all dependencies
-- ✅ Download and install Delta CLI
+- ✅ Install minimal dependencies (only for downloading)
+- ✅ Download pre-built binaries (no git, no building)
 - ✅ Configure PATH automatically
 - ✅ Handle conflicts with other `delta` commands
 - ✅ Make `delta` available system-wide
@@ -55,4 +53,3 @@ No configuration needed - it just works!
 ## 📚 More Options
 
 See [INSTALL_SIMPLE.md](packaging/INSTALL_SIMPLE.md) for detailed installation options and troubleshooting.
-
