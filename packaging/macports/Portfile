@@ -29,6 +29,7 @@ depends_build       port:cmake \
 depends_lib         port:curl
 
 # Ensure submodules are updated before building
+# This is automatic - users don't need to know about git
 pre-build {
     system -W ${worksrcpath} "git submodule update --init --recursive"
 }

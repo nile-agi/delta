@@ -5,14 +5,17 @@ Delta CLI can now be installed with a single command on all platforms!
 ## 🍎 macOS (Homebrew)
 
 ```bash
-brew tap nile-agi/delta && brew install delta
+brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
 ```
 
 **That's it!** The formula will:
+- ✅ Automatically clone the repository (git happens in background)
 - ✅ Install all dependencies automatically
-- ✅ Build and install Delta CLI
+- ✅ Build and install Delta CLI automatically
 - ✅ Configure PATH automatically
 - ✅ Create alias to override conflicting commands
+
+**Note:** Installation takes a few minutes to build, but everything is automatic. Users don't need to know about git - it all happens behind the scenes.
 
 After installation, just use:
 ```bash

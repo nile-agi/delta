@@ -17,8 +17,9 @@ stdenv.mkDerivation rec {
     owner = "nile-agi";
     repo = "delta";
     rev = "v${version}";
-    sha256 = "PLACEHOLDER_SHA256";
+    sha256 = "PLACEHOLDER_SHA256";  # Update with actual SHA256 when release is available
     fetchSubmodules = true;  # Always fetch latest llama.cpp submodule
+    # Note: This automatically handles git and submodules - users don't need to know about it
   };
 
   nativeBuildInputs = [

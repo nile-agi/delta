@@ -34,229 +34,97 @@ Delta CLI is an **open-source, offline-first AI assistant** that runs large lang
 
 - 🔒 **100% Offline**: Works completely offline after initial model download
 - ⚡ **High Performance**: Full GPU acceleration (CUDA, Metal, Vulkan, ROCm)
-- 🌐 **Cross-Platform**: Runs on desktop, mobile, and edge devices
+- 🌐 **Cross-Platform**: Runs on Windows, macOS, and Linux
 - 🎨 **Beautiful Terminal UI**: Retro-green interface with custom styling
 - 📦 **Easy Model Management**: One-command downloads from Hugging Face
 - 🚀 **Zero-Setup**: Auto-downloads default model on first run
 - 🔧 **llama.cpp Integration**: Access to all llama.cpp features and optimizations
+- 🌐 **Web UI**: Built-in web interface using original llama.cpp web UI
 
-## What Problem Does Delta Solve?
+### What Problem Does Delta Solve?
 
-### Privacy & Security
-- **No data leaves your device**: All processing happens locally
-- **No API keys required**: No need to sign up for cloud services
-- **Complete control**: Your conversations and data stay private
+**Privacy & Security:**
+- No data leaves your device - all processing happens locally
+- No API keys required - no need to sign up for cloud services
+- Complete control - your conversations and data stay private
 
-### Cost & Accessibility
-- **No subscription fees**: Run AI models without recurring costs
-- **No usage limits**: Use as much as you want, whenever you want
-- **Works offline**: Perfect for areas with poor internet connectivity
+**Cost & Accessibility:**
+- No subscription fees - run AI models without recurring costs
+- No usage limits - use as much as you want, whenever you want
+- Works offline - perfect for areas with poor internet connectivity
 
-### Flexibility & Control
-- **Choose your model**: Use any compatible GGUF model
-- **Customize settings**: Full control over temperature, context size, and more
-- **No vendor lock-in**: Open source and self-hosted
+**Flexibility & Control:**
+- Choose your model - use any compatible GGUF model
+- Customize settings - full control over temperature, context size, and more
+- No vendor lock-in - open source and self-hosted
 
 ### Use Cases
+
 - **Development**: Code assistance, documentation, debugging
 - **Writing**: Content creation, editing, brainstorming
 - **Learning**: Educational Q&A, explanations, tutorials
 - **Research**: Data analysis, summarization, research assistance
 - **Privacy-sensitive tasks**: When you can't send data to cloud services
 
-## Who is Delta CLI For?
-
-### Developers
-- Want to integrate AI into their workflow without API dependencies
-- Need offline AI capabilities for development environments
-- Prefer command-line tools and automation
-
-### Privacy-Conscious Users
-- Concerned about data privacy and security
-- Want to keep conversations and data local
-- Work with sensitive information
-
-### Cost-Conscious Users
-- Want to avoid subscription fees
-- Need unlimited usage without per-request costs
-- Prefer one-time setup over ongoing expenses
-
-### Offline Users
-- Work in areas with limited or no internet
-- Need reliable AI assistance without connectivity
-- Want to reduce dependency on cloud services
-
-### Hobbyists & Enthusiasts
-- Interested in running AI models locally
-- Want to experiment with different models
-- Enjoy tinkering with open-source tools
-
-## Advantages of Delta CLI
-
-### 1. **Privacy First**
-- All processing happens on your device
-- No data sent to external servers
-- Complete control over your information
-
-### 2. **Cost Effective**
-- No subscription fees
-- No per-request charges
-- One-time setup, unlimited usage
-
-### 3. **High Performance**
-- GPU acceleration support (CUDA, Metal, Vulkan, ROCm)
-- Optimized inference via llama.cpp
-- Efficient memory usage with quantization
-
-### 4. **Easy to Use**
-- Simple command-line interface
-- Auto-downloads default model
-- Intuitive interactive mode
-
-### 5. **Flexible & Customizable**
-- Support for multiple models
-- Adjustable parameters (temperature, context, etc.)
-- Extensible architecture
-
-### 6. **Cross-Platform**
-- Works on major operating systems
-- Mobile device support
-- Edge device compatibility
-
-### 7. **Open Source**
-- MIT License - free to use and modify
-- Built on llama.cpp (also open source)
-- Community-driven development
-
-### 8. **No Vendor Lock-In**
-- Use any compatible model
-- No dependency on specific services
-- Portable and self-contained
-
-## Supported Platforms
-
-Delta CLI runs on **5 major platforms**:
-
-### Desktop Platforms
-- ✅ **macOS** (Intel & Apple Silicon)
-  - Native Metal acceleration
-  - Homebrew installation support
-  - Full feature support
-
-- ✅ **Linux** (x86_64, ARM, ARM64)
-  - Multiple distribution support
-  - CUDA/Vulkan GPU acceleration
-  - Package manager integration
-
-- ✅ **Windows** (x64)
-  - Visual Studio support
-  - CUDA acceleration
-  - PowerShell installation
-
-### Mobile Platforms
-- ✅ **Android** (ARM64, ARM)
-  - Termux support
-  - Android NDK builds
-  - Native compilation
-
-- ✅ **iOS** (ARM64)
-  - Xcode integration
-  - Device and simulator support
-  - Framework packaging
-
-### Edge Devices
-- ✅ Raspberry Pi (3, 4, 5)
-- ✅ NVIDIA Jetson
-- ✅ Other ARM-based devices
+---
 
 ## Installation
 
 ### Quick Installation (One Command)
 
-Each platform has a dedicated installation script that handles everything automatically:
+Each platform has a dedicated installation method that handles everything automatically:
 
-#### macOS
+#### 🍎 macOS
+
+**Homebrew (Recommended):**
 ```bash
-./install-macos.sh
+brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
 ```
 
 **What it does:**
-- Checks/installs Xcode Command Line Tools
-- Checks/installs Homebrew
-- Installs dependencies (cmake, git, curl)
-- Builds Delta CLI with Metal acceleration
-- Installs to `/usr/local/bin/delta`
-- Configures PATH automatically
+- ✅ Automatically clones repository (git happens in background)
+- ✅ Automatically installs dependencies
+- ✅ Automatically builds from source (~40 seconds)
+- ✅ Automatically configures PATH
+- ✅ Users don't need to know about git
 
-#### Linux
+**Alternative - Installation Script:**
 ```bash
-./install-linux.sh
+curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/install.sh | bash
 ```
 
-**What it does:**
-- Detects your package manager (apt, yum, dnf, pacman, apk, zypper)
-- Updates package lists
-- Installs build dependencies
-- Builds Delta CLI (with optional CUDA/Vulkan support)
-- Installs to `/usr/local/bin/delta`
-- Configures PATH automatically
+#### 🐧 Linux
 
-**Supported distributions:**
-- Ubuntu/Debian (apt)
-- Fedora/RHEL/CentOS (yum/dnf)
-- Arch Linux (pacman)
-- Alpine Linux (apk)
-- openSUSE (zypper)
+**Debian/Ubuntu:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/packaging/linux/install-deb.sh | sudo bash
+```
 
-#### Windows
+**RHEL/CentOS/Fedora:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/packaging/linux/install-rpm.sh | sudo bash
+```
+
+**Homebrew (Linux):**
+```bash
+# Install Homebrew for Linux first (if not installed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install Delta CLI
+brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
+```
+
+#### 🪟 Windows
+
+**Winget (Recommended):**
 ```powershell
-# Run PowerShell as Administrator
-.\install-windows.ps1
+winget install DeltaCLI.DeltaCLI
 ```
 
-**What it does:**
-- Checks for Visual Studio or Build Tools
-- Checks/installs Chocolatey (optional)
-- Installs dependencies (CMake, Git)
-- Sets up build environment
-- Builds Delta CLI
-- Installs to `C:\Program Files\Delta CLI`
-- Adds to system PATH
-
-**Requirements:**
-- Windows 10 or later
-- PowerShell 5.1+
-- Visual Studio 2019/2022 with C++ workload OR Build Tools
-
-#### Android (Termux)
-```bash
-# In Termux
-./install-android.sh
+**PowerShell Installation Script:**
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/packaging/windows/install.ps1" -OutFile install.ps1; .\install.ps1
 ```
-
-**What it does:**
-- Detects Termux or Android NDK environment
-- Installs build dependencies via Termux package manager
-- Builds Delta CLI natively (Termux) or cross-compiles (NDK)
-- Installs to `$PREFIX/local/bin/delta`
-- Configures PATH in `~/.bashrc`
-
-**Note:** Building and running AI models on mobile devices may be slow. Consider using smaller models.
-
-#### iOS
-```bash
-# Requires macOS with Xcode
-./install-ios.sh
-```
-
-**What it does:**
-- Checks for Xcode
-- Downloads/updates iOS CMake toolchain
-- Checks for CMake and Git
-- Builds Delta CLI for iOS
-- Provides integration instructions
-
-**Important:** iOS requires code signing and app packaging. The binary must be integrated into an Xcode project.
 
 ### Verification
 
@@ -272,18 +140,17 @@ Delta CLI v1.0.0
 Professional offline AI assistant
 ```
 
-### Troubleshooting Installation
+### Installation Methods Comparison
 
-**Command not found:**
-- **macOS/Linux**: Restart terminal or run `export PATH="/usr/local/bin:$PATH"`
-- **Windows**: Restart PowerShell or run `$env:Path += ";C:\Program Files\Delta CLI"`
-- **Android**: Run `source ~/.bashrc` in Termux
+| Method | Windows | macOS | Linux | Speed | Git Required | Building Required |
+|---|---|---|---|---|---|---|
+| **Winget** | ✅ | ❌ | ❌ | ⚡ Fast | ❌ No | ❌ No |
+| **Homebrew** | ❌ | ✅ | ✅ | 🐢 Slow (builds) | ✅ Yes (automatic) | ✅ Yes (automatic) |
+| **Install Script** | ✅ | ✅ | ✅ | ⚡ Fast | ❌ No | ❌ No |
 
-**Build errors:**
-- Ensure all dependencies are installed (scripts handle this automatically)
-- Check CMake version (3.14+ required)
-- Verify C++ compiler is installed
-- Check disk space (build requires several GB)
+**All methods are automatic - users don't need git knowledge!**
+
+---
 
 ## Quick Start
 
@@ -296,7 +163,7 @@ delta
 
 **What happens:**
 1. Shows banner and welcome message
-2. Auto-downloads default model (`qwen3:0.6b`, ~400MB) if not installed
+2. Auto-downloads default model (`qwen2.5:0.5b`, ~400MB) if not installed
 3. Loads model automatically
 4. Starts interactive mode
 5. You're ready to chat!
@@ -318,9 +185,9 @@ Once in interactive mode, simply type your questions:
 delta --list-models --available
 
 # Download a model
-delta pull qwen3:0.6b      # 400 MB - default, fast
-delta pull llama3.1:8b     # 4.7 GB - powerful, versatile
-delta pull mistral:7b      # 4.3 GB - great for coding
+delta pull qwen2.5:0.5b      # 400 MB - default, fast
+delta pull llama3.1:8b       # 4.7 GB - powerful, versatile
+delta pull mistral:7b         # 4.3 GB - great for coding
 ```
 
 ### 4. Use Specific Model
@@ -330,74 +197,29 @@ delta pull mistral:7b      # 4.3 GB - great for coding
 delta --model llama3.1:8b "Your question here"
 
 # With GPU acceleration
-delta --model qwen3:0.6b --gpu-layers -1 "Your question"
+delta --model qwen2.5:0.5b --gpu-layers -1 "Your question"
 ```
 
-## Updating Delta CLI
-
-### Method 1: Re-run Installation Script
-
-The easiest way to update is to re-run the installation script for your platform:
-
-**macOS:**
-```bash
-./install-macos.sh
-```
-
-**Linux:**
-```bash
-./install-linux.sh
-```
-
-**Windows:**
-```powershell
-.\install-windows.ps1
-```
-
-**Android:**
-```bash
-./install-android.sh
-```
-
-**iOS:**
-```bash
-./install-ios.sh
-```
-
-The scripts will rebuild and reinstall Delta CLI with the latest changes. **Your models and settings are preserved during updates.**
-
-### Method 2: From Source (Git)
-
-If you installed from source:
+### 5. Start Web Server
 
 ```bash
-# Navigate to delta-cli directory
-cd ~/delta-cli
+# Start web UI server
+delta server
 
-# Pull latest changes
-git pull
+# Or with specific model
+delta server -m qwen2.5:0.5b
 
-# Rebuild
-./installers/build_macos.sh  # or build_linux.sh, etc.
-
-# Reinstall
-cd build_macos  # or build_linux, etc.
-sudo cmake --install .
+# Or with custom port
+delta server --port 8081
 ```
 
-### Check for Updates
+Then open **http://localhost:8080** in your browser to use the web interface.
 
-```bash
-# Check your current version
-delta --version
+---
 
-# Check latest release (GitHub)
-curl -s https://api.github.com/repos/oderoi/delta-cli/releases/latest | grep '"tag_name"'
-```
+## Usage
 
-## Usage Examples
-
-### Basic Usage
+### Basic Commands
 
 ```bash
 # Interactive mode
@@ -408,26 +230,44 @@ delta "What is the capital of France?"
 
 # With specific model
 delta --model llama3.1:8b "Explain neural networks"
-```
-
-### Advanced Usage
-
-```bash
-# With GPU acceleration
-delta --gpu-layers -1 "Your prompt"
-
-# Custom settings
-delta --model mistral:7b \
-      --temperature 0.7 \
-      --tokens 1024 \
-      --ctx-size 4096 \
-      "Write a detailed article"
 
 # List local models
 delta --list-models
 
+# Download a model
+delta pull qwen2.5:0.5b
+
 # Remove a model
-delta remove qwen3:0.6b
+delta remove qwen2.5:0.5b
+
+# Start web server
+delta server
+```
+
+### Command-Line Options
+
+```bash
+delta [OPTIONS] [PROMPT]
+
+OPTIONS:
+    -h, --help              Show help message
+    -v, --version           Show version information
+    -m, --model <MODEL>     Specify model (short name or full filename)
+    -l, --list-models       List locally cached models
+        --available         With -l, show available models to download
+    -t, --tokens <N>        Max tokens to generate (default: 512)
+    -T, --temperature <F>  Sampling temperature (default: 0.8)
+    -c, --ctx-size <N>      Context size (default: 2048)
+    -g, --gpu-layers <N>    Number of GPU layers (default: 0, use -1 for all)
+    --multimodal            Enable multimodal mode (images + text)
+    --interactive           Start interactive chat mode
+    --server                Start Delta Server (OpenAI-compatible API)
+        --port <N>          Server port (default: 8080)
+        --np <N>            Max parallel requests (default: 4)
+        --c <N>             Max context size (default: 16384)
+    --check-updates         Check for new versions
+    --update                Update to latest version
+    --no-color              Disable colored output
 ```
 
 ### Interactive Commands
@@ -435,15 +275,219 @@ delta remove qwen3:0.6b
 In interactive mode, use slash commands:
 
 ```bash
-/download <model>     # Download a model
-/use <model>         # Switch to another model
-/list                # List local models
-/tokens <N>          # Set max tokens
-/temperature <F>     # Set temperature
-/gpu-layers <N>     # Set GPU layers
-/server              # Start web dashboard
-/help                # Show all commands
+/download <model>        # Download a model
+/remove <model>          # Remove a model (alias: /delete)
+/list                    # List local models
+/available               # List available models
+/use <model>             # Switch to another model
+/tokens <N>              # Set max tokens (default: 512)
+/temperature <F>         # Set temperature (default: 0.8)
+/gpu-layers <N>          # Set GPU layers (default: 0, -1 for all)
+/multimodal              # Toggle multimodal mode
+/server                  # Start web dashboard
+/updates                 # Check for updates
+/version                 # Show version info
+/no-color                # Toggle colored output
+/help                    # Show all commands
 ```
+
+### Session Management
+
+```bash
+/new-session <name>      # Create a new named session
+/switch-session <name>  # Switch to another session
+/list-sessions          # List all available sessions
+/delete-session <name>  # Delete a session
+/history                # Show conversation history
+/delete-history <all|id|day|week|year> [date]  # Delete history entries
+/clear-screen           # Clear the terminal screen
+```
+
+**Note:** Delta ALWAYS uses a 'default' session for all interactions. All conversations are automatically saved to this session.
+
+### Examples
+
+```bash
+# Download a model
+delta pull qwen2.5:0.5b
+delta pull llama3.1:8b
+
+# Remove a model
+delta remove qwen2.5:0.5b
+
+# List models
+delta --list-models
+delta --list-models --available
+
+# Use a model with short names
+delta --model qwen2.5-0.5b "Explain quantum computing"
+delta --model llama3.1-8b --gpu-layers -1 "Write a poem"
+delta --model mistral-7b --interactive
+
+# Start server
+delta server
+delta --server -m llama3.2:1b --port 8080
+
+# Check for updates
+delta --check-updates
+delta --update
+```
+
+---
+
+## Troubleshooting
+
+### Command Not Found
+
+**macOS/Linux:**
+```bash
+# Reload shell configuration
+source ~/.zshrc  # or ~/.bash_profile
+# Or restart terminal
+
+# Or use full path
+/opt/homebrew/bin/delta --version  # macOS
+/usr/local/bin/delta --version     # Linux
+```
+
+**Windows:**
+- Restart PowerShell/Command Prompt
+- Or use full path: `C:\Program Files\Delta CLI\delta.exe`
+
+### PATH Conflicts
+
+If you have another `delta` command (like llvm's delta or git-delta):
+
+**macOS:**
+- An alias is created: `alias delta='/opt/homebrew/bin/delta'`
+- Run `source ~/.zshrc` to activate
+
+**Linux/Windows:**
+- Installation directory is added to PATH first
+
+### Server Won't Start
+
+1. Check if a model is installed:
+   ```bash
+   delta --list-models
+   ```
+
+2. Check if port 8080 is available:
+   ```bash
+   lsof -i :8080  # macOS/Linux
+   netstat -ano | findstr :8080  # Windows
+   ```
+
+3. Kill any existing server:
+   ```bash
+   pkill -f llama-server  # macOS/Linux
+   taskkill /F /IM llama-server.exe  # Windows
+   ```
+
+### Model Not Found
+
+Download a model first:
+```bash
+delta pull qwen2.5:0.5b
+```
+
+### Build Errors (if building from source)
+
+- Ensure all dependencies are installed
+- Check CMake version (3.14+ required)
+- Verify C++ compiler is installed
+- Check disk space (build requires several GB)
+
+---
+
+## Uninstallation
+
+### macOS (Homebrew)
+
+```bash
+brew uninstall delta-cli
+brew untap nile-agi/delta-cli
+```
+
+### Linux
+
+**If installed via script:**
+```bash
+# Remove binaries
+sudo rm -f /usr/local/bin/delta /usr/local/bin/delta-server
+
+# Remove web UI
+sudo rm -rf /usr/local/share/delta-cli
+
+# Remove PATH configuration
+sudo rm -f /etc/profile.d/delta-cli.sh
+```
+
+### Windows
+
+**If installed via PowerShell script:**
+```powershell
+# Remove installation directory
+Remove-Item -Recurse -Force "C:\Program Files\Delta CLI"
+
+# Remove from PATH (requires Administrator)
+$currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+$newPath = $currentPath -replace ";C:\\Program Files\\Delta CLI", ""
+[Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
+
+# Remove desktop shortcut
+Remove-Item "$env:USERPROFILE\Desktop\Delta CLI.lnk" -ErrorAction SilentlyContinue
+```
+
+### Complete Cleanup
+
+**macOS:**
+```bash
+rm -f /opt/homebrew/bin/delta /opt/homebrew/bin/delta-server
+rm -f /usr/local/bin/delta /usr/local/bin/delta-server
+rm -rf /opt/homebrew/share/delta-cli /usr/local/share/delta-cli
+rm -rf ~/.delta ~/.config/delta-cli
+# Edit ~/.zshrc to remove Delta CLI related lines
+```
+
+**Linux:**
+```bash
+sudo rm -f /usr/local/bin/delta /usr/local/bin/delta-server
+sudo rm -rf /usr/local/share/delta-cli
+sudo rm -f /etc/profile.d/delta-cli.sh
+rm -rf ~/.delta ~/.config/delta-cli
+```
+
+**Windows:**
+```powershell
+Remove-Item -Recurse -Force "C:\Program Files\Delta CLI"
+Remove-Item -Recurse -Force "$env:USERPROFILE\.delta" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$env:APPDATA\delta-cli" -ErrorAction SilentlyContinue
+# Remove from PATH via System Properties > Environment Variables
+```
+
+---
+
+## Supported Platforms
+
+Delta CLI runs on **3 major platforms**:
+
+- ✅ **macOS** (Intel & Apple Silicon)
+  - Native Metal acceleration
+  - Homebrew installation support
+  - Full feature support
+
+- ✅ **Linux** (x86_64, ARM, ARM64)
+  - Multiple distribution support
+  - CUDA/Vulkan GPU acceleration
+  - Package manager integration
+
+- ✅ **Windows** (x64)
+  - Visual Studio support
+  - CUDA acceleration
+  - PowerShell installation
+
+---
 
 ## Open Source & Built on llama.cpp
 
@@ -479,21 +523,7 @@ Delta CLI is built on top of [llama.cpp](https://github.com/ggerganov/llama.cpp)
 - ✅ Chat templates
 - ✅ Grammar constraints
 
-## Project Structure
-
-```
-delta-cli/
-├── src/              # Source code
-│   ├── main.cpp      # Main entry point
-│   ├── inference.cpp # Model inference
-│   ├── models.cpp    # Model management
-│   └── ...
-├── vendor/
-│   └── llama.cpp/    # llama.cpp integration
-├── installers/       # Platform-specific build scripts
-├── install-*.sh      # Platform-specific installation scripts
-└── README.md         # This file
-```
+---
 
 ## Contributing
 
@@ -506,17 +536,23 @@ Contributions are welcome! Delta CLI is open source and community-driven.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
+---
+
 ## Support & Resources
 
-- **Issues**: [GitHub Issues](https://github.com/oderoi/delta-cli/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/oderoi/delta-cli/discussions)
-- **Documentation**: See project files for detailed guides
+- **Issues**: [GitHub Issues](https://github.com/nile-agi/delta/issues)
+- **Repository**: [https://github.com/nile-agi/delta](https://github.com/nile-agi/delta)
+- **Documentation**: This README and project files
+
+---
 
 ## Acknowledgments
 
 - [llama.cpp](https://github.com/ggerganov/llama.cpp) - Efficient LLM inference engine
 - [Hugging Face](https://huggingface.co) - Model hosting and distribution
 - All contributors and users of Delta CLI
+
+---
 
 ## License
 
@@ -530,6 +566,6 @@ Delta CLI is released under the MIT License. See [LICENSE](LICENSE) for details.
 
 *Run AI anywhere, anytime, offline.*
 
-[⭐ Star us on GitHub](https://github.com/oderoi/delta-cli) | [📖 Documentation](#) | [🐛 Report Issues](https://github.com/oderoi/delta-cli/issues)
+[⭐ Star us on GitHub](https://github.com/nile-agi/delta) | [🐛 Report Issues](https://github.com/nile-agi/delta/issues)
 
 </div>
