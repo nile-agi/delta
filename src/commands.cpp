@@ -30,7 +30,7 @@ std::map<std::string, CommandHandler> Commands::command_map_;
 bool Commands::initialized_ = false;
 
 // Launch server automatically (public method)
-bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size) {
+bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size, const std::string& model_alias) {
     // Find llama-server binary in vendor/llama.cpp
     std::vector<std::string> server_candidates;
     std::string exe_dir = tools::FileOps::get_executable_dir();
@@ -196,12 +196,17 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     
     // If not found, server will use default web UI (no --path flag)
     
-    // Build command: llama-server -m "model_path" --port 8080 -c 4096 [--path public_dir]
+    // Build command: llama-server -m "model_path" --port 8080 -c 4096 [--path public_dir] [--alias model_alias]
     std::stringstream cmd;
     cmd << server_bin
         << " -m \"" << model_path << "\""
         << " --port " << port
         << " -c " << ctx_size;
+    
+    // Add --alias flag to use short_name instead of filename in web UI
+    if (!model_alias.empty()) {
+        cmd << " --alias \"" << model_alias << "\"";
+    }
     
     // Add --path flag to use llama.cpp web UI if found
     if (!public_path.empty()) {
@@ -514,7 +519,31 @@ bool Commands::handle_use(const std::vector<std::string>& args, InteractiveSessi
     if (ctx_size <= 0 && session.config->n_ctx > 0) {
         ctx_size = session.config->n_ctx;
     }
-    if (Commands::launch_server_auto(model_path, 8080, ctx_size)) {
+    
+    // Get short_name for model alias in web UI
+    std::string model_alias;
+    std::string registry_name_for_alias = model_name;
+    if (session.model_mgr->is_in_registry(registry_name_for_alias)) {
+        auto entry = session.model_mgr->get_registry_entry(registry_name_for_alias);
+        if (!entry.short_name.empty()) {
+            model_alias = entry.short_name;
+        }
+    } else {
+        // Try converting dash to colon format
+        size_t last_dash = registry_name_for_alias.find_last_of('-');
+        if (last_dash != std::string::npos) {
+            std::string colon_name = registry_name_for_alias.substr(0, last_dash) + ":" + 
+                                     registry_name_for_alias.substr(last_dash + 1);
+            if (session.model_mgr->is_in_registry(colon_name)) {
+                auto entry = session.model_mgr->get_registry_entry(colon_name);
+                if (!entry.short_name.empty()) {
+                    model_alias = entry.short_name;
+                }
+            }
+        }
+    }
+    
+    if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
         UI::print_success("Delta Server started in background");
         std::string url = "http://localhost:8080";
         UI::print_info("Open: " + url);
@@ -916,6 +945,29 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
     
     // If not found, server will use default web UI (no --path flag)
 
+    // Get short_name for model alias in web UI
+    std::string model_alias;
+    std::string registry_name_for_alias = model_name;
+    if (session.model_mgr->is_in_registry(registry_name_for_alias)) {
+        auto entry = session.model_mgr->get_registry_entry(registry_name_for_alias);
+        if (!entry.short_name.empty()) {
+            model_alias = entry.short_name;
+        }
+    } else {
+        // Try converting dash to colon format
+        size_t last_dash = registry_name_for_alias.find_last_of('-');
+        if (last_dash != std::string::npos) {
+            std::string colon_name = registry_name_for_alias.substr(0, last_dash) + ":" + 
+                                     registry_name_for_alias.substr(last_dash + 1);
+            if (session.model_mgr->is_in_registry(colon_name)) {
+                auto entry = session.model_mgr->get_registry_entry(colon_name);
+                if (!entry.short_name.empty()) {
+                    model_alias = entry.short_name;
+                }
+            }
+        }
+    }
+    
     // Build command
     std::stringstream cmd;
     cmd << server_bin
@@ -923,6 +975,11 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
         << " --port " << port
         << " --parallel 4"  // default parallel
         << " -c " << ctx_size;
+    
+    // Add --alias flag to use short_name instead of filename in web UI
+    if (!model_alias.empty()) {
+        cmd << " --alias \"" << model_alias << "\"";
+    }
     
     // Add --path flag to use llama.cpp web UI if found
     if (!public_path_server.empty()) {

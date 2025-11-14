@@ -44,7 +44,7 @@ public:
     static bool process_command(const std::string& input, InteractiveSession& session);
     
     // Launch server automatically (for auto-start on delta launch)
-    static bool launch_server_auto(const std::string& model_path, int port = 8080, int ctx_size = 4096);
+    static bool launch_server_auto(const std::string& model_path, int port = 8080, int ctx_size = 4096, const std::string& model_alias = "");
     
     // Command handlers
     static bool handle_download(const std::vector<std::string>& args, InteractiveSession& session);
