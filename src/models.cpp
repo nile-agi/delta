@@ -306,8 +306,8 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen3-vl:4b-instruct"] = {
         "qwen3-vl:4b",
         "qwen3-vl-4b-instruct",
-        "NexaAI/Qwen3-VL-4B-Instruct-GGUF",
-        "Qwen3-VL-4B-Instruct-Q4_K_M.gguf",
+        "KathAhegao/Qwen3-VL-4B-Instruct-Q4_K_M-GGUF",
+        "qwen3-vl-4b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         4000LL * 1024 * 1024,     // ~4.0 GB (approx)
         "Qwen3-VL 4B Instruct vision-language model",
@@ -318,8 +318,8 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen3-vl:8b-instruct"] = {
         "qwen3-vl:8b",
         "qwen3-vl-8b-instruct",
-        "NexaAI/Qwen3-VL-8B-Instruct-GGUF",
-        "Qwen3-VL-8B-Instruct-Q4_K_M.gguf",
+        "mazrba/Huihui-Qwen3-VL-8B-Instruct-abliterated-Q4_K_M-GGUF",
+        "huihui-qwen3-vl-8b-instruct-abliterated-q4_k_m-imat.gguf",
         "Q4_K_M",
         8000LL * 1024 * 1024,     // ~8.0 GB (approx)
         "Qwen3-VL 8B Instruct vision-language model",
@@ -331,8 +331,8 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen2.5-coder:0.5b"] = {
         "qwen2.5-coder:0.5b",
         "qwen2.5-coder-0.5b",
-        "unsloth/Qwen2.5-Coder-0.5B-Instruct-128K-GGUF",
-        "Qwen2.5-Coder-0.5B-Instruct-128K-Q4_K_M.gguf",
+        "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
+        "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         352LL * 1024 * 1024,      // ~352 MB
         "Tiny code generation model",
@@ -343,8 +343,8 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen2.5-coder:1.5b"] = {
         "qwen2.5-coder:1.5b",
         "qwen2.5-coder-1.5b",
-        "QuantFactory/Qwen2.5-Coder-1.5B-GGUF",
-        "Qwen2.5-Coder-1.5B-Q4_K_M.gguf",
+        "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
+        "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         1024LL * 1024 * 1024,     // ~1 GB
         "Small code-focused model",
@@ -356,7 +356,7 @@ void ModelManager::init_model_registry() {
         "qwen2.5-coder:3b",
         "qwen2.5-coder-3b",
         "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
-        "Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf",
+        "qwen2.5-coder-3b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         1946LL * 1024 * 1024,     // ~1.9 GB
         "Balanced coding assistant",
@@ -368,7 +368,7 @@ void ModelManager::init_model_registry() {
         "qwen2.5-coder:7b",
         "qwen2.5-coder-7b",
         "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
-        "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
+        "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         4608LL * 1024 * 1024,     // ~4.5 GB
         "Advanced code generation model",
@@ -416,7 +416,7 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen2.5:7b"] = {
         "qwen2.5:7b",
         "qwen2.5-7b",
-        "Qwen/Qwen2.5-7B-Instruct-GGUF",
+        "paultimothymooney/Qwen2.5-7B-Instruct-Q4_K_M-GGUF",
         "qwen2.5-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         4608LL * 1024 * 1024,      // ~4.5 GB
@@ -426,23 +426,23 @@ void ModelManager::init_model_registry() {
     };
     
     // ===== ORIGINAL QWEN SERIES (32K) =====
-    model_registry_["qwen:0.5b"] = {
-        "qwen:0.5b",
+    model_registry_["qwen2:0.5b"] = {
+        "qwen2:0.5b",
         "qwen-0.5b",
         "Qwen/Qwen2-0.5B-Instruct-GGUF",
-        "Qwen2-0.5B-Instruct-Q4_K_M.gguf",
+        "qwen2-0_5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         352LL * 1024 * 1024,      // ~352 MB
         "Original compact Qwen model",
-        "Qwen 0.5B",
+        "Qwen 2 0.5B",
         32768                      // 32K native context
     };
     
     model_registry_["qwen:1.8b"] = {
         "qwen:1.8b",
         "qwen-1.8b",
-        "RichardErkhov/Qwen_-_Qwen-1_8B-gguf",
-        "Qwen-1_8B-Q4_K_M.gguf",
+        "mradermacher/Qwen-1_8B-GGUF",
+        "Qwen-1_8B.Q4_K_M.gguf",
         "Q4_K_M",
         1126LL * 1024 * 1024,     // ~1.1 GB
         "Early Qwen series model",
@@ -450,27 +450,27 @@ void ModelManager::init_model_registry() {
         32768                      // 32K native context
     };
     
-    model_registry_["qwen:4b"] = {
-        "qwen:4b",
-        "qwen-4b",
+    model_registry_["qwen3:4b"] = {
+        "qwen3:4b",
+        "qwen3-4b",
         "Qwen/Qwen3-4B-GGUF",
         "Qwen3-4B-Q4_K_M.gguf",
         "Q4_K_M",
         2458LL * 1024 * 1024,     // ~2.4 GB
         "Mid-size original Qwen",
-        "Qwen 4B",
+        "Qwen 3 4B",
         32768                      // 32K native context
     };
     
-    model_registry_["qwen:7b"] = {
-        "qwen:7b",
-        "qwen-7b",
-        "Qwen/Qwen2-7B-Instruct-GGUF",
-        "Qwen2-7B-Instruct-Q4_K_M.gguf",
+    model_registry_["qwen2:7b"] = {
+        "qwen2:7b",
+        "qwen2-7b",
+        "NikolayKozloff/Qwen2-7B-Instruct-Q4_K_M-GGUF",
+        "qwen2-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         4368LL * 1024 * 1024,     // ~4.3 GB
         "Full-size original Qwen model",
-        "Qwen 7B",
+        "Qwen 2 7B",
         32768                      // 32K native context
     };
     
@@ -479,7 +479,7 @@ void ModelManager::init_model_registry() {
         "qwen2:0.5b",
         "qwen2-0.5b",
         "Qwen/Qwen2-0.5B-Instruct-GGUF",
-        "Qwen2-0.5B-Instruct-Q4_K_M.gguf",
+        "qwen2-0_5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         352LL * 1024 * 1024,      // ~352 MB
         "Improved compact model",
@@ -491,7 +491,7 @@ void ModelManager::init_model_registry() {
         "qwen2:1.5b",
         "qwen2-1.5b",
         "Qwen/Qwen2-1.5B-Instruct-GGUF",
-        "Qwen2-1.5B-Instruct-Q4_K_M.gguf",
+        "qwen2-1_5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         1024LL * 1024 * 1024,     // ~1 GB
         "Enhanced small model",
@@ -503,7 +503,7 @@ void ModelManager::init_model_registry() {
         "qwen2:7b",
         "qwen2-7b",
         "Qwen/Qwen2-7B-Instruct-GGUF",
-        "Qwen2-7B-Instruct-Q4_K_M.gguf",
+        "qwen2-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         4608LL * 1024 * 1024,     // ~4.5 GB
         "Advanced Qwen 2 series",
@@ -515,8 +515,8 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen2.5vl:1.5b"] = {
         "qwen2.5vl:1.5b",
         "qwen2.5vl-1.5b",
-        "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
-        "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+        "Triangle104/Qwen2.5-1.5B-Instruct-Q4_K_M-GGUF",
+        "qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         1024LL * 1024 * 1024,     // ~1 GB
         "Vision-language model",
@@ -527,8 +527,8 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen2.5vl:7b"] = {
         "qwen2.5vl:7b",
         "qwen2.5vl-7b",
-        "unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
-        "Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
+        "rexionmars/Qwen2.5-VL-7B-Instruct-Q4_K_M-GGUF",
+        "qwen2.5-vl-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         4608LL * 1024 * 1024,     // ~4.5 GB
         "Advanced vision-language model",
@@ -540,8 +540,8 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen2-math:1.5b"] = {
         "qwen2-math:1.5b",
         "qwen2-math-1.5b",
-        "QuantFactory/Qwen2-Math-1.5B-GGUF",
-        "Qwen2-Math-1.5B-Q4_K_M.gguf",
+        "itlwas/Qwen2-Math-1.5B-Instruct-Q4_K_M-GGUF",
+        "qwen2-math-1.5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         1024LL * 1024 * 1024,     // ~1 GB
         "Math-specialized model",
@@ -552,8 +552,8 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen2-math:7b"] = {
         "qwen2-math:7b",
         "qwen2-math-7b",
-        "QuantFactory/Qwen2-Math-7B-GGUF",
-        "Qwen2-Math-7B-Q4_K_M.gguf",
+        "gdhnes/Qwen2-Math-7B-Instruct-Q4_K_M-GGUF",
+        "qwen2-math-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         4608LL * 1024 * 1024,     // ~4.5 GB
         "Advanced math reasoning model",
@@ -565,8 +565,8 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen3-embedding:0.6b"] = {
         "qwen3-embedding:0.6b",
         "qwen3-embedding-0.6b",
-        "Qwen/Qwen3-Embedding-0.6B-GGUF",
-        "Qwen3-Embedding-0.6B-Q4_K_M.gguf",
+        "WariHima/Qwen3-Embedding-0.6B-Q4_K_M-GGUF",
+        "qwen3-embedding-0.6b-q4_k_m.gguf",
         "Q4_K_M",
         400LL * 1024 * 1024,      // ~400 MB
         "Compact embedding model",
@@ -577,8 +577,8 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen3-embedding:4b"] = {
         "qwen3-embedding:4b",
         "qwen3-embedding-4b",
-        "Qwen/Qwen3-Embedding-4B-GGUF",
-        "Qwen3-Embedding-4B-Q4_K_M.gguf",
+        "enacimie/Qwen3-Embedding-4B-Q4_K_M-GGUF",
+        "qwen3-embedding-4b-q4_k_m.gguf",
         "Q4_K_M",
         2458LL * 1024 * 1024,     // ~2.4 GB
         "Balanced embedding model",
@@ -589,8 +589,8 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen3-embedding:8b"] = {
         "qwen3-embedding:8b",
         "qwen3-embedding-8b",
-        "Mungert/Qwen3-Embedding-8B-GGUF",
-        "Qwen3-Embedding-8B-Q4_K_M.gguf",
+        "endyjasmi/Qwen3-Embedding-8B-Q4_K_M-GGUF",
+        "qwen3-embedding-8b-q4_k_m.gguf",
         "Q4_K_M",
         4915LL * 1024 * 1024,     // ~4.8 GB
         "Powerful embedding model",
@@ -602,8 +602,8 @@ void ModelManager::init_model_registry() {
     model_registry_["gemma:2b"] = {
         "gemma:2b",
         "gemma-2b",
-        "google/gemma-2b-GGUF",
-        "gemma-2b-Q4_K_M.gguf",
+        "llm-exp/gemma-2b-Q4_K_M-GGUF",
+        "gemma-2b.Q4_K_M.gguf",
         "Q4_K_M",
         1536LL * 1024 * 1024,     // ~1.5 GB
         "Google's lightweight model",
@@ -614,8 +614,8 @@ void ModelManager::init_model_registry() {
     model_registry_["gemma:7b"] = {
         "gemma:7b",
         "gemma-7b",
-        "google/gemma-7b-GGUF",
-        "gemma-7b-Q4_K_M.gguf",
+        "goromlagche/gemma-7b-Q4_K_M-GGUF",
+        "gemma-7b-q4_k_m.gguf",
         "Q4_K_M",
         4368LL * 1024 * 1024,     // ~4.3 GB
         "Google's efficient model",
@@ -651,8 +651,8 @@ void ModelManager::init_model_registry() {
     model_registry_["gemma3:4b"] = {
         "gemma3:4b",
         "gemma3-4b",
-        "google/gemma-3-4b-it-qat-q4_0-gguf",
-        "gemma-3-4b-it-qat-q4_0.gguf",
+        "unsloth/gemma-3-4b-it-GGUF",
+        "gemma-3-4b-it-Q4_K_M.gguf",
         "Q4_0",
         2458LL * 1024 * 1024,     // ~2.4 GB
         "Balanced Gemma 3",
@@ -663,8 +663,8 @@ void ModelManager::init_model_registry() {
     model_registry_["gemma3:12b"] = {
         "gemma3:12b",
         "gemma3-12b",
-        "google/gemma-3-12b-it-qat-q4_0-gguf",
-        "gemma-3-12b-it-qat-q4_0.gguf",
+        "unsloth/gemma-3-12b-it-qat-GGUF",
+        "emma-3-12b-it-qat-Q4_K_M.gguf",
         "Q4_0",
         7372LL * 1024 * 1024,     // ~7.2 GB
         "Powerful Gemma 3",
@@ -738,7 +738,7 @@ void ModelManager::init_model_registry() {
         "llama3:8b",
         "llama3-8b",
         "QuantFactory/Meta-Llama-3-8B-Instruct-GGUF",
-        "Meta-Llama-3-8B-Instruct-Q4_K_M.gguf",
+        "Meta-Llama-3-8B-Instruct.Q4_K_M.gguf",
         "Q4_K_M",
         4661LL * 1024 * 1024,     // ~4.7 GB
         "Meta's open-source model",
@@ -789,7 +789,7 @@ void ModelManager::init_model_registry() {
         "llava",
         "llava",
         "second-state/Llava-v1.5-7B-GGUF",
-        "Llava-v1.5-7B-Q4_K_M.gguf",
+        "llava-v1.5-7b-Q4_K_M.gguf",
         "Q4_K_M",
         4368LL * 1024 * 1024,     // ~4.3 GB
         "Multimodal vision-language model",
@@ -802,7 +802,7 @@ void ModelManager::init_model_registry() {
         "llama2:7b",
         "llama2-7b",
         "TheBloke/Llama-2-7B-GGUF",
-        "Llama-2-7B-Q4_K_M.gguf",
+        "llama-2-7b.Q4_K_M.gguf",
         "Q4_K_M",
         4080LL * 1024 * 1024,     // ~4 GB
         "Original Llama series",
@@ -814,7 +814,7 @@ void ModelManager::init_model_registry() {
         "llama2:13b",
         "llama2-13b",
         "TheBloke/Llama-2-13B-GGUF",
-        "Llama-2-13B-Q4_K_M.gguf",
+        "llama-2-13b.Q4_K_M.gguf",
         "Q4_K_M",
         7370LL * 1024 * 1024,     // ~7.2 GB
         "Larger original Llama",
@@ -827,7 +827,7 @@ void ModelManager::init_model_registry() {
         "tinyllama",
         "tinyllama",
         "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
-        "TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf",
+        "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
         "Q4_K_M",
         669LL * 1024 * 1024,      // ~669 MB
         "Ultra-small efficient model",
@@ -839,8 +839,8 @@ void ModelManager::init_model_registry() {
     model_registry_["bge-m3"] = {
         "bge-m3",
         "bge-m3",
-        "bbvch-ai/bge-m3-GGUF",
-        "bge-m3-Q4_K_M.gguf",
+        "groonga/bge-m3-Q4_K_M-GGUF",
+        "bge-m3-q4_k_m.gguf",
         "Q4_K_M",
         512LL * 1024 * 1024,      // ~512 MB
         "Embedding model for retrieval",
@@ -852,8 +852,8 @@ void ModelManager::init_model_registry() {
     model_registry_["smollm2:135m"] = {
         "smollm2:135m",
         "smollm2-135m",
-        "QuantFactory/SmolLM2-135M-GGUF",
-        "SmolLM2-135M-Q4_K_M.gguf",
+        "Segilmez06/SmolLM2-135M-Instruct-Q4_K_M-GGUF",
+        "smollm2-135m-instruct-q4_k_m.gguf",
         "Q4_K_M",
         82LL * 1024 * 1024,       // ~82 MB
         "Tiny SmolLM variant",
@@ -864,8 +864,8 @@ void ModelManager::init_model_registry() {
     model_registry_["smollm2:360m"] = {
         "smollm2:360m",
         "smollm2-360m",
-        "HuggingFaceTB/SmolLM2-360M-Instruct-GGUF",
-        "SmolLM2-360M-Instruct-Q4_K_M.gguf",
+        "AIronMind/SmolLM2-360M-Instruct-FT-Q4_K_M-GGUF",
+        "smollm2-360m-instruct-ft-q4_k_m.gguf",
         "Q4_K_M",
         220LL * 1024 * 1024,      // ~220 MB
         "Small SmolLM variant",
@@ -877,7 +877,7 @@ void ModelManager::init_model_registry() {
         "smollm2:1.7b",
         "smollm2-1.7b",
         "HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF",
-        "SmolLM2-1.7B-Instruct-Q4_K_M.gguf",
+        "smollm2-1.7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         1126LL * 1024 * 1024,     // ~1.1 GB
         "Balanced SmolLM",
@@ -890,7 +890,7 @@ void ModelManager::init_model_registry() {
         "smollm:135m",
         "smollm-135m",
         "QuantFactory/SmolLM-135M-GGUF",
-        "SmolLM-135M-Q4_K_M.gguf",
+        "SmolLM-135M.Q4_K_M.gguf",
         "Q4_K_M",
         82LL * 1024 * 1024,       // ~82 MB
         "Original tiny SmolLM",
@@ -901,8 +901,8 @@ void ModelManager::init_model_registry() {
     model_registry_["smollm:360m"] = {
         "smollm:360m",
         "smollm-360m",
-        "QuantFactory/SmolLM-360M-GGUF",
-        "SmolLM-360M-Q4_K_M.gguf",
+        "QuantFactory/SmolLM2-360M-GGUF",
+        "SmolLM2-360M.Q4_K_M.gguf",
         "Q4_K_M",
         220LL * 1024 * 1024,      // ~220 MB
         "Original small SmolLM",
@@ -913,8 +913,8 @@ void ModelManager::init_model_registry() {
     model_registry_["smollm:1.7b"] = {
         "smollm:1.7b",
         "smollm-1.7b",
-        "QuantFactory/SmolLM-1.7B-GGUF",
-        "SmolLM-1.7B-Q4_K_M.gguf",
+        "itlwas/SmolLM-1.7B-Instruct-Q4_K_M-GGUF",
+        "smollm-1.7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         1126LL * 1024 * 1024,     // ~1.1 GB
         "Original balanced SmolLM",
@@ -927,7 +927,7 @@ void ModelManager::init_model_registry() {
         "falcon3:1b",
         "falcon3-1b",
         "tiiuae/Falcon3-1B-Instruct-GGUF",
-        "Falcon3-1B-Instruct-Q4_K_M.gguf",
+        "Falcon3-1B-Instruct-q4_k_m.gguf",
         "Q4_K_M",
         729LL * 1024 * 1024,      // ~729 MB
         "Efficient small Falcon",
@@ -939,7 +939,7 @@ void ModelManager::init_model_registry() {
         "falcon3:3b",
         "falcon3-3b",
         "tiiuae/Falcon3-3B-Instruct-GGUF",
-        "Falcon3-3B-Instruct-Q4_K_M.gguf",
+        "Falcon3-3B-Instruct-q4_k_m.gguf",
         "Q4_K_M",
         2048LL * 1024 * 1024,     // ~2 GB
         "Balanced Falcon model",
@@ -950,7 +950,7 @@ void ModelManager::init_model_registry() {
     model_registry_["falcon3:7b"] = {
         "falcon3:7b",
         "falcon3-7b",
-        "tiiuae/Falcon3-7B-Instruct-GGUF",
+        "bartowski/Falcon3-7B-Instruct-GGUF",
         "Falcon3-7B-Instruct-Q4_K_M.gguf",
         "Q4_K_M",
         4608LL * 1024 * 1024,     // ~4.5 GB
@@ -960,11 +960,11 @@ void ModelManager::init_model_registry() {
     };
     
     // ===== PHI SERIES (4K / 128K) =====
-    model_registry_["phi"] = {
-        "phi",
-        "phi",
+    model_registry_["phi3-mini"] = {
+        "phi3-mini",
+        "phi3-mini",
         "microsoft/Phi-3-mini-4k-instruct-gguf",
-        "Phi-3-mini-4k-instruct-Q4_K_M.gguf",
+        "Phi-3-mini-4k-instruct-q4.gguf",
         "Q4_K_M",
         2355LL * 1024 * 1024,     // ~2.3 GB
         "Microsoft's reasoning model",
@@ -976,7 +976,7 @@ void ModelManager::init_model_registry() {
         "phi2",
         "phi2",
         "TheBloke/phi-2-GGUF",
-        "phi-2-Q4_K_M.gguf",
+        "phi-2.Q4_K_M.gguf",
         "Q4_K_M",
         1638LL * 1024 * 1024,     // ~1.6 GB
         "Improved reasoning model",
@@ -1000,8 +1000,8 @@ void ModelManager::init_model_registry() {
     model_registry_["granite4:350m"] = {
         "granite4:350m",
         "granite4-350m",
-        "ibm/Granite-4-350M-Instruct-GGUF",
-        "granite-4-350m-instruct-Q4_K_M.gguf",
+        "unsloth/granite-4.0-350m-GGUF",
+        "granite-4.0-350m-Q4_K_M.gguf",
         "Q4_K_M",
         220LL * 1024 * 1024,      // ~220 MB
         "Ultra-compact Granite 4 model",
@@ -1012,8 +1012,8 @@ void ModelManager::init_model_registry() {
     model_registry_["granite4:350m-h"] = {
         "granite4:350m-h",
         "granite4-350m-h",
-        "ibm/Granite-4-350M-Instruct-GGUF",
-        "granite-4-350m-instruct-hf-Q4_K_M.gguf",
+        "unsloth/granite-4.0-h-350m-GGUF",
+        "granite-4.0-h-350m-Q4_K_M.gguf",
         "Q4_K_M",
         220LL * 1024 * 1024,      // ~220 MB
         "Ultra-compact Granite 4 model (HF format)",
@@ -1024,8 +1024,8 @@ void ModelManager::init_model_registry() {
     model_registry_["granite4:1b"] = {
         "granite4:1b",
         "granite4-1b",
-        "ibm/Granite-4-1B-Instruct-GGUF",
-        "granite-4-1b-instruct-Q4_K_M.gguf",
+        "unsloth/granite-4.0-1b-GGUF",
+        "granite-4.0-1b-Q4_K_M.gguf",
         "Q4_K_M",
         729LL * 1024 * 1024,      // ~729 MB
         "Compact Granite 4 model",
@@ -1036,8 +1036,8 @@ void ModelManager::init_model_registry() {
     model_registry_["granite4:1b-h"] = {
         "granite4:1b-h",
         "granite4-1b-h",
-        "ibm/Granite-4-1B-Instruct-GGUF",
-        "granite-4-1b-instruct-hf-Q4_K_M.gguf",
+        "unsloth/granite-4.0-h-1b-GGUF",
+        "granite-4.0-h-1b-Q4_K_M.gguf",
         "Q4_K_M",
         729LL * 1024 * 1024,      // ~729 MB
         "Compact Granite 4 model (HF format)",
@@ -1045,23 +1045,23 @@ void ModelManager::init_model_registry() {
         131072                      // 128K native context
     };
     
-    model_registry_["granite4:3b"] = {
-        "granite4:3b",
-        "granite4-3b",
-        "ibm/Granite-4-3B-Instruct-GGUF",
-        "granite-4-3b-instruct-Q4_K_M.gguf",
-        "Q4_K_M",
-        1946LL * 1024 * 1024,     // ~1.9 GB
-        "Balanced Granite 4 model",
-        "Granite 4 3B",
-        131072                      // 128K native context
-    };
+    // model_registry_["granite4:3b"] = {
+    //     "granite4:3b",
+    //     "granite4-3b",
+    //     "ibm/Granite-4-3B-Instruct-GGUF",
+    //     "granite-4-3b-instruct-Q4_K_M.gguf",
+    //     "Q4_K_M",
+    //     1946LL * 1024 * 1024,     // ~1.9 GB
+    //     "Balanced Granite 4 model",
+    //     "Granite 4 3B",
+    //     131072                      // 128K native context
+    // };
     
     model_registry_["granite4:micro"] = {
         "granite4:micro",
         "granite4-micro",
-        "ibm/Granite-4-Micro-Instruct-GGUF",
-        "granite-4-micro-instruct-Q4_K_M.gguf",
+        "ibm-granite/granite-4.0-micro-GGUF",
+        "granite-4.0-micro-Q4_K_M.gguf",
         "Q4_K_M",
         100LL * 1024 * 1024,      // ~100 MB (estimated)
         "Tiny Granite 4 model",
@@ -1069,23 +1069,23 @@ void ModelManager::init_model_registry() {
         131072                      // 128K native context
     };
     
-    model_registry_["granite4:3b-h"] = {
-        "granite4:3b-h",
-        "granite4-3b-h",
-        "ibm/Granite-4-3B-Instruct-GGUF",
-        "granite-4-3b-instruct-hf-Q4_K_M.gguf",
-        "Q4_K_M",
-        1946LL * 1024 * 1024,     // ~1.9 GB
-        "Balanced Granite 4 model (HF format)",
-        "Granite 4 3B-H",
-        131072                      // 128K native context
-    };
+    // model_registry_["granite4:3b-h"] = {
+    //     "granite4:3b-h",
+    //     "granite4-3b-h",
+    //     "granite-4-3b-instruct-hf-Q4_K_M.gguf",
+    //     "granite-4-3b-instruct-hf-Q4_K_M.gguf",
+    //     "Q4_K_M",
+    //     1946LL * 1024 * 1024,     // ~1.9 GB
+    //     "Balanced Granite 4 model (HF format)",
+    //     "Granite 4 3B-H",
+    //     131072                      // 128K native context
+    // };
     
     model_registry_["granite4:micro-h"] = {
         "granite4:micro-h",
         "granite4-micro-h",
-        "ibm/Granite-4-Micro-Instruct-GGUF",
-        "granite-4-micro-instruct-hf-Q4_K_M.gguf",
+        "ibm-granite/granite-4.0-micro-GGUF",
+        "granite-4.0-micro-Q4_K_M.gguf",
         "Q4_K_M",
         100LL * 1024 * 1024,      // ~100 MB (estimated)
         "Tiny Granite 4 model (HF format)",
@@ -1093,23 +1093,23 @@ void ModelManager::init_model_registry() {
         131072                      // 128K native context
     };
     
-    model_registry_["granite4:7b-a1b-h"] = {
-        "granite4:7b-a1b-h",
-        "granite4-7b-a1b-h",
-        "ibm/Granite-4-7B-A1B-Instruct-GGUF",
-        "granite-4-7b-a1b-instruct-hf-Q4_K_M.gguf",
-        "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.5 GB
-        "Powerful Granite 4 7B A1B model (HF format)",
-        "Granite 4 7B-A1B-H",
-        131072                      // 128K native context
-    };
+    // model_registry_["granite4:7b-a1b-h"] = {
+    //     "granite4:7b-a1b-h",
+    //     "granite4-7b-a1b-h",
+    //     "ibm/Granite-4-7B-A1B-Instruct-GGUF",
+    //     "granite-4-7b-a1b-instruct-hf-Q4_K_M.gguf",
+    //     "Q4_K_M",
+    //     4608LL * 1024 * 1024,     // ~4.5 GB
+    //     "Powerful Granite 4 7B A1B model (HF format)",
+    //     "Granite 4 7B-A1B-H",
+    //     131072                      // 128K native context
+    // };
     
     model_registry_["granite4:tiny-h"] = {
         "granite4:tiny-h",
         "granite4-tiny-h",
-        "ibm/Granite-4-Tiny-Instruct-GGUF",
-        "granite-4-tiny-instruct-hf-Q4_K_M.gguf",
+        "unsloth/granite-4.0-h-tiny-GGUF",
+        "granite-4.0-h-tiny-Q4_K_M.gguf",
         "Q4_K_M",
         50LL * 1024 * 1024,       // ~50 MB (estimated)
         "Ultra-tiny Granite 4 model (HF format)",
@@ -1117,23 +1117,23 @@ void ModelManager::init_model_registry() {
         131072                      // 128K native context
     };
     
-    model_registry_["granite4:32b-a9b-h"] = {
-        "granite4:32b-a9b-h",
-        "granite4-32b-a9b-h",
-        "ibm/Granite-4-32B-A9B-Instruct-GGUF",
-        "granite-4-32b-a9b-instruct-hf-Q4_K_M.gguf",
-        "Q4_K_M",
-        18432LL * 1024 * 1024,    // ~18 GB
-        "Large Granite 4 32B A9B model (HF format)",
-        "Granite 4 32B-A9B-H",
-        131072                      // 128K native context
-    };
+    // model_registry_["granite4:32b-a9b-h"] = {
+    //     "granite4:32b-a9b-h",
+    //     "granite4-32b-a9b-h",
+    //     "ibm/Granite-4-32B-A9B-Instruct-GGUF",
+    //     "granite-4-32b-a9b-instruct-hf-Q4_K_M.gguf",
+    //     "Q4_K_M",
+    //     18432LL * 1024 * 1024,    // ~18 GB
+    //     "Large Granite 4 32B A9B model (HF format)",
+    //     "Granite 4 32B-A9B-H",
+    //     131072                      // 128K native context
+    // };
     
     model_registry_["granite4:small-h"] = {
         "granite4:small-h",
         "granite4-small-h",
-        "ibm/Granite-4-Small-Instruct-GGUF",
-        "granite-4-small-instruct-hf-Q4_K_M.gguf",
+        "ibm-granite/granite-4.0-h-small-GGUF",
+        "granite-4.0-h-small-Q4_K_M.gguf",
         "Q4_K_M",
         512LL * 1024 * 1024,      // ~512 MB (estimated)
         "Small Granite 4 model (HF format)",
