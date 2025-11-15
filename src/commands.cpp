@@ -30,7 +30,7 @@ std::map<std::string, CommandHandler> Commands::command_map_;
 bool Commands::initialized_ = false;
 
 // Launch server automatically (public method)
-bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size) {
+bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size, const std::string& model_alias) {
     // Find llama-server binary in vendor/llama.cpp
     std::vector<std::string> server_candidates;
     std::string exe_dir = tools::FileOps::get_executable_dir();
@@ -108,27 +108,45 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
     std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
     
-    // Check for vendor/llama.cpp/tools/server/public (built web UI) or webui (source)
+    // Check for public/ directory first (built web UI from assets/), then assets/ as fallback
     std::vector<std::string> public_candidates = {
-        "vendor/llama.cpp/tools/server/public",
-        "./vendor/llama.cpp/tools/server/public",
-        "../vendor/llama.cpp/tools/server/public",
-        tools::FileOps::join_path(exe_dir, "vendor/llama.cpp/tools/server/public"),
-        tools::FileOps::join_path(exe_dir, "../vendor/llama.cpp/tools/server/public"),
-        tools::FileOps::join_path(exe_grandparent, "vendor/llama.cpp/tools/server/public"),
-        "vendor/llama.cpp/tools/server/webui",
-        "./vendor/llama.cpp/tools/server/webui",
-        "../vendor/llama.cpp/tools/server/webui",
-        tools::FileOps::join_path(exe_dir, "vendor/llama.cpp/tools/server/webui"),
-        tools::FileOps::join_path(exe_dir, "../vendor/llama.cpp/tools/server/webui"),
-        tools::FileOps::join_path(exe_grandparent, "vendor/llama.cpp/tools/server/webui")
+        "public",
+        "./public",
+        "../public",
+        tools::FileOps::join_path(exe_dir, "public"),
+        tools::FileOps::join_path(exe_dir, "../public"),
+        tools::FileOps::join_path(exe_grandparent, "public"),
+        "assets",
+        "./assets",
+        "../assets",
+        tools::FileOps::join_path(exe_dir, "assets"),
+        tools::FileOps::join_path(exe_dir, "../assets"),
+        tools::FileOps::join_path(exe_grandparent, "assets")
     };
     
     for (const auto& candidate : public_candidates) {
         if (tools::FileOps::dir_exists(candidate)) {
+            // Check for index.html.gz first (preferred), then index.html
+            std::string index_file_gz = tools::FileOps::join_path(candidate, "index.html.gz");
             std::string index_file = tools::FileOps::join_path(candidate, "index.html");
-            if (tools::FileOps::file_exists(index_file)) {
+            if (tools::FileOps::file_exists(index_file_gz) || tools::FileOps::file_exists(index_file)) {
                 public_path = candidate;
+                // Convert to absolute path for reliability
+                if (!public_path.empty() && public_path[0] != '/') {
+                    char resolved[PATH_MAX];
+                    if (realpath(public_path.c_str(), resolved) != nullptr) {
+                        public_path = std::string(resolved);
+                    } else {
+                        // Try relative to current working directory
+                        char cwd[PATH_MAX];
+                        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+                            std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
+                            if (realpath(full_path.c_str(), resolved) != nullptr) {
+                                public_path = std::string(resolved);
+                            }
+                        }
+                    }
+                }
                 break;
             }
         }
@@ -196,14 +214,19 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     
     // If not found, server will use default web UI (no --path flag)
     
-    // Build command: llama-server -m "model_path" --port 8080 -c 4096 [--path public_dir]
+    // Build command: llama-server -m "model_path" --port 8080 -c 4096 [--path public_dir] [--alias model_alias]
     std::stringstream cmd;
     cmd << server_bin
         << " -m \"" << model_path << "\""
         << " --port " << port
         << " -c " << ctx_size;
     
-    // Add --path flag to use llama.cpp web UI if found
+    // Add --alias flag to use short_name instead of filename in web UI
+    if (!model_alias.empty()) {
+        cmd << " --alias \"" << model_alias << "\"";
+    }
+    
+    // Add --path flag to use Delta web UI if found
     if (!public_path.empty()) {
         cmd << " --path \"" << public_path << "\"";
     }
@@ -514,7 +537,31 @@ bool Commands::handle_use(const std::vector<std::string>& args, InteractiveSessi
     if (ctx_size <= 0 && session.config->n_ctx > 0) {
         ctx_size = session.config->n_ctx;
     }
-    if (Commands::launch_server_auto(model_path, 8080, ctx_size)) {
+    
+    // Get short_name for model alias in web UI
+    std::string model_alias;
+    std::string registry_name_for_alias = model_name;
+    if (session.model_mgr->is_in_registry(registry_name_for_alias)) {
+        auto entry = session.model_mgr->get_registry_entry(registry_name_for_alias);
+        if (!entry.short_name.empty()) {
+            model_alias = entry.short_name;
+        }
+    } else {
+        // Try converting dash to colon format
+        size_t last_dash = registry_name_for_alias.find_last_of('-');
+        if (last_dash != std::string::npos) {
+            std::string colon_name = registry_name_for_alias.substr(0, last_dash) + ":" + 
+                                     registry_name_for_alias.substr(last_dash + 1);
+            if (session.model_mgr->is_in_registry(colon_name)) {
+                auto entry = session.model_mgr->get_registry_entry(colon_name);
+                if (!entry.short_name.empty()) {
+                    model_alias = entry.short_name;
+                }
+            }
+        }
+    }
+    
+    if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
         UI::print_success("Delta Server started in background");
         std::string url = "http://localhost:8080";
         UI::print_info("Open: " + url);
@@ -828,27 +875,45 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
     std::string exe_parent_server = tools::FileOps::join_path(exe_dir_server, "..");
     std::string exe_grandparent_server = tools::FileOps::join_path(exe_parent_server, "..");
     
-    // Check for vendor/llama.cpp/tools/server/public (built web UI) or webui (source)
+    // Check for public/ directory first (built web UI from assets/), then assets/ as fallback
     std::vector<std::string> public_candidates_server = {
-        "vendor/llama.cpp/tools/server/public",
-        "./vendor/llama.cpp/tools/server/public",
-        "../vendor/llama.cpp/tools/server/public",
-        tools::FileOps::join_path(exe_dir_server, "vendor/llama.cpp/tools/server/public"),
-        tools::FileOps::join_path(exe_dir_server, "../vendor/llama.cpp/tools/server/public"),
-        tools::FileOps::join_path(exe_grandparent_server, "vendor/llama.cpp/tools/server/public"),
-        "vendor/llama.cpp/tools/server/webui",
-        "./vendor/llama.cpp/tools/server/webui",
-        "../vendor/llama.cpp/tools/server/webui",
-        tools::FileOps::join_path(exe_dir_server, "vendor/llama.cpp/tools/server/webui"),
-        tools::FileOps::join_path(exe_dir_server, "../vendor/llama.cpp/tools/server/webui"),
-        tools::FileOps::join_path(exe_grandparent_server, "vendor/llama.cpp/tools/server/webui")
+        "public",
+        "./public",
+        "../public",
+        tools::FileOps::join_path(exe_dir_server, "public"),
+        tools::FileOps::join_path(exe_dir_server, "../public"),
+        tools::FileOps::join_path(exe_grandparent_server, "public"),
+        "assets",
+        "./assets",
+        "../assets",
+        tools::FileOps::join_path(exe_dir_server, "assets"),
+        tools::FileOps::join_path(exe_dir_server, "../assets"),
+        tools::FileOps::join_path(exe_grandparent_server, "assets")
     };
     
     for (const auto& candidate : public_candidates_server) {
         if (tools::FileOps::dir_exists(candidate)) {
+            // Check for index.html.gz first (preferred), then index.html
+            std::string index_file_gz = tools::FileOps::join_path(candidate, "index.html.gz");
             std::string index_file = tools::FileOps::join_path(candidate, "index.html");
-            if (tools::FileOps::file_exists(index_file)) {
+            if (tools::FileOps::file_exists(index_file_gz) || tools::FileOps::file_exists(index_file)) {
                 public_path_server = candidate;
+                // Convert to absolute path for reliability
+                if (!public_path_server.empty() && public_path_server[0] != '/') {
+                    char resolved[PATH_MAX];
+                    if (realpath(public_path_server.c_str(), resolved) != nullptr) {
+                        public_path_server = std::string(resolved);
+                    } else {
+                        // Try relative to current working directory
+                        char cwd[PATH_MAX];
+                        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+                            std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path_server);
+                            if (realpath(full_path.c_str(), resolved) != nullptr) {
+                                public_path_server = std::string(resolved);
+                            }
+                        }
+                    }
+                }
                 break;
             }
         }
@@ -916,6 +981,29 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
     
     // If not found, server will use default web UI (no --path flag)
 
+    // Get short_name for model alias in web UI
+    std::string model_alias;
+    std::string registry_name_for_alias = model_name;
+    if (session.model_mgr->is_in_registry(registry_name_for_alias)) {
+        auto entry = session.model_mgr->get_registry_entry(registry_name_for_alias);
+        if (!entry.short_name.empty()) {
+            model_alias = entry.short_name;
+        }
+    } else {
+        // Try converting dash to colon format
+        size_t last_dash = registry_name_for_alias.find_last_of('-');
+        if (last_dash != std::string::npos) {
+            std::string colon_name = registry_name_for_alias.substr(0, last_dash) + ":" + 
+                                     registry_name_for_alias.substr(last_dash + 1);
+            if (session.model_mgr->is_in_registry(colon_name)) {
+                auto entry = session.model_mgr->get_registry_entry(colon_name);
+                if (!entry.short_name.empty()) {
+                    model_alias = entry.short_name;
+                }
+            }
+        }
+    }
+    
     // Build command
     std::stringstream cmd;
     cmd << server_bin
@@ -924,7 +1012,12 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
         << " --parallel 4"  // default parallel
         << " -c " << ctx_size;
     
-    // Add --path flag to use llama.cpp web UI if found
+    // Add --alias flag to use short_name instead of filename in web UI
+    if (!model_alias.empty()) {
+        cmd << " --alias \"" << model_alias << "\"";
+    }
+    
+    // Add --path flag to use Delta web UI if found
     if (!public_path_server.empty()) {
         cmd << " --path \"" << public_path_server << "\"";
     }

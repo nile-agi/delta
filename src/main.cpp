@@ -191,8 +191,32 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
         if (ctx_size <= 0 && config.n_ctx > 0) {
             ctx_size = config.n_ctx;
         }
+        
+        // Get short_name for model alias in web UI
+        std::string model_alias;
+        std::string registry_name_for_alias = current_model;
+        if (model_mgr.is_in_registry(registry_name_for_alias)) {
+            auto entry = model_mgr.get_registry_entry(registry_name_for_alias);
+            if (!entry.short_name.empty()) {
+                model_alias = entry.short_name;
+            }
+        } else {
+            // Try converting dash to colon format
+            size_t last_dash = registry_name_for_alias.find_last_of('-');
+            if (last_dash != std::string::npos) {
+                std::string colon_name = registry_name_for_alias.substr(0, last_dash) + ":" + 
+                                         registry_name_for_alias.substr(last_dash + 1);
+                if (model_mgr.is_in_registry(colon_name)) {
+                    auto entry = model_mgr.get_registry_entry(colon_name);
+                    if (!entry.short_name.empty()) {
+                        model_alias = entry.short_name;
+                    }
+                }
+            }
+        }
+        
         // Try to launch server - if it fails, it's okay (server might not be built)
-        if (Commands::launch_server_auto(model_path, 8080, ctx_size)) {
+        if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
             UI::print_success("Delta Server started in background");
             std::string url = "http://localhost:8080";
             UI::print_info("Open: " + url);
@@ -803,6 +827,29 @@ int main(int argc, char** argv) {
             }
         }
 
+        // Get short_name for model alias in web UI
+        std::string model_alias;
+        std::string registry_name_for_alias = model_name;
+        if (model_mgr.is_in_registry(registry_name_for_alias)) {
+            auto entry = model_mgr.get_registry_entry(registry_name_for_alias);
+            if (!entry.short_name.empty()) {
+                model_alias = entry.short_name;
+            }
+        } else {
+            // Try converting dash to colon format
+            size_t last_dash = registry_name_for_alias.find_last_of('-');
+            if (last_dash != std::string::npos) {
+                std::string colon_name = registry_name_for_alias.substr(0, last_dash) + ":" + 
+                                         registry_name_for_alias.substr(last_dash + 1);
+                if (model_mgr.is_in_registry(colon_name)) {
+                    auto entry = model_mgr.get_registry_entry(colon_name);
+                    if (!entry.short_name.empty()) {
+                        model_alias = entry.short_name;
+                    }
+                }
+            }
+        }
+        
         // Build command
         std::stringstream cmd;
         cmd << server_bin
@@ -814,6 +861,11 @@ int main(int argc, char** argv) {
         if (enable_reranking) cmd << " --reranking";
         if (!draft_model.empty()) cmd << " --md \"" << draft_model << "\"";
         if (!grammar_file.empty()) cmd << " --grammar-file \"" << grammar_file << "\"";
+        
+        // Add --alias flag to use short_name instead of filename in web UI
+        if (!model_alias.empty()) {
+            cmd << " --alias \"" << model_alias << "\"";
+        }
         
         // Add --path flag to use original llama.cpp web UI if found
         if (!public_path.empty()) {

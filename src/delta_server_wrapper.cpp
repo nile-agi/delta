@@ -122,28 +122,50 @@ public:
         }
 #endif
         
-        // Build candidate paths
+        // Build candidate paths - check public/ first (built web UI from assets/), then assets/
         if (!exe_path.empty()) {
-            candidates.push_back(exe_path + "/../vendor/llama.cpp/tools/server/public");
-            candidates.push_back(exe_path + "/../../vendor/llama.cpp/tools/server/public");
+            candidates.push_back(exe_path + "/../public");
+            candidates.push_back(exe_path + "/../../public");
+            candidates.push_back(exe_path + "/../assets");
+            candidates.push_back(exe_path + "/../../assets");
         }
-        candidates.push_back("vendor/llama.cpp/tools/server/public");
-        candidates.push_back("./vendor/llama.cpp/tools/server/public");
-        candidates.push_back("../vendor/llama.cpp/tools/server/public");
+        candidates.push_back("public");
+        candidates.push_back("./public");
+        candidates.push_back("../public");
+        candidates.push_back("assets");
+        candidates.push_back("./assets");
+        candidates.push_back("../assets");
         
         // Check each candidate
         for (const auto& candidate : candidates) {
             std::filesystem::path path(candidate);
-            if (std::filesystem::exists(path) && std::filesystem::is_directory(path)) {
-                std::filesystem::path index_file = path / "index.html.gz";
-                std::filesystem::path index_file2 = path / "index.html";
+            
+            // Try to resolve to absolute path first
+            std::filesystem::path abs_path;
+            try {
+                if (path.is_absolute()) {
+                    abs_path = path;
+                } else {
+                    // Try to resolve relative to current working directory
+                    abs_path = std::filesystem::absolute(path);
+                }
+                
+                // Normalize the path (resolve .. and .)
+                abs_path = std::filesystem::canonical(abs_path);
+            } catch (...) {
+                // If canonical fails, try absolute
+                try {
+                    abs_path = std::filesystem::absolute(path);
+                } catch (...) {
+                    continue; // Skip this candidate
+                }
+            }
+            
+            if (std::filesystem::exists(abs_path) && std::filesystem::is_directory(abs_path)) {
+                std::filesystem::path index_file = abs_path / "index.html.gz";
+                std::filesystem::path index_file2 = abs_path / "index.html";
                 if (std::filesystem::exists(index_file) || std::filesystem::exists(index_file2)) {
-                    // Convert to absolute path
-                    try {
-                        return std::filesystem::canonical(path).string();
-                    } catch (...) {
-                        return candidate;
-                    }
+                    return abs_path.string();
                 }
             }
         }
@@ -165,8 +187,15 @@ public:
             return 1;
         }
 
-        // Find and use original llama.cpp web UI
+        // Find and use Delta web UI
         std::string webui_path = find_webui_path();
+        
+        // Debug: Print web UI path if found
+        if (!webui_path.empty()) {
+            std::cout << "🌐 Web UI path: " << webui_path << std::endl;
+        } else {
+            std::cout << "⚠️  Web UI path not found, using embedded UI" << std::endl;
+        }
 
         // Construct llama-server command
         std::string cmd = llama_server_path_;
@@ -175,7 +204,7 @@ public:
         cmd += " --parallel " + std::to_string(max_parallel_);
         cmd += " -c " + std::to_string(max_context_);
 
-        // Add --path flag to use original llama.cpp web UI if found
+        // Add --path flag to use Delta web UI if found
         if (!webui_path.empty()) {
             cmd += " --path \"" + webui_path + "\"";
         }
