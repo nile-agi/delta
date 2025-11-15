@@ -50,9 +50,23 @@ function deltaBuildPlugin() {
 						const faviconBase64 = Buffer.from(faviconContent).toString('base64');
 						const faviconDataUrl = `data:image/svg+xml;base64,${faviconBase64}`;
 
+						// Replace existing favicon links
+						content = content.replace(/<link[^>]*rel=["']icon["'][^>]*>/gi, '');
 						content = content.replace(/href="[^"]*favicon\.svg"/g, `href="${faviconDataUrl}"`);
 
-						console.log('✓ Inlined favicon.svg as base64 data URL');
+						// Add favicon link to head if it doesn't exist
+						const faviconLink = `    <link rel="icon" type="image/svg+xml" href="${faviconDataUrl}">\n    <link rel="shortcut icon" type="image/svg+xml" href="${faviconDataUrl}">\n`;
+						
+						// Insert favicon links after charset meta tag or at the start of head
+						if (content.includes('<head>')) {
+							if (content.includes('<meta charset')) {
+								content = content.replace(/(<meta charset[^>]*>)/, `$1\n${faviconLink}`);
+							} else {
+								content = content.replace(/(<head>)/, `$1\n${faviconLink}`);
+							}
+						}
+
+						console.log('✓ Inlined favicon.svg as base64 data URL in headers');
 					}
 
 					content = content.replace(/\r/g, '');
