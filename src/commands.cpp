@@ -143,6 +143,22 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
             std::string index_file = tools::FileOps::join_path(candidate, "index.html");
             if (tools::FileOps::file_exists(index_file_gz) || tools::FileOps::file_exists(index_file)) {
                 public_path = candidate;
+                // Convert to absolute path for reliability
+                if (!public_path.empty() && public_path[0] != '/') {
+                    char resolved[PATH_MAX];
+                    if (realpath(public_path.c_str(), resolved) != nullptr) {
+                        public_path = std::string(resolved);
+                    } else {
+                        // Try relative to current working directory
+                        char cwd[PATH_MAX];
+                        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+                            std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
+                            if (realpath(full_path.c_str(), resolved) != nullptr) {
+                                public_path = std::string(resolved);
+                            }
+                        }
+                    }
+                }
                 break;
             }
         }
@@ -906,6 +922,22 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
             std::string index_file = tools::FileOps::join_path(candidate, "index.html");
             if (tools::FileOps::file_exists(index_file_gz) || tools::FileOps::file_exists(index_file)) {
                 public_path_server = candidate;
+                // Convert to absolute path for reliability
+                if (!public_path_server.empty() && public_path_server[0] != '/') {
+                    char resolved[PATH_MAX];
+                    if (realpath(public_path_server.c_str(), resolved) != nullptr) {
+                        public_path_server = std::string(resolved);
+                    } else {
+                        // Try relative to current working directory
+                        char cwd[PATH_MAX];
+                        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+                            std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path_server);
+                            if (realpath(full_path.c_str(), resolved) != nullptr) {
+                                public_path_server = std::string(resolved);
+                            }
+                        }
+                    }
+                }
                 break;
             }
         }

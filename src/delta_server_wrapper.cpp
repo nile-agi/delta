@@ -139,16 +139,33 @@ public:
         // Check each candidate
         for (const auto& candidate : candidates) {
             std::filesystem::path path(candidate);
-            if (std::filesystem::exists(path) && std::filesystem::is_directory(path)) {
-                std::filesystem::path index_file = path / "index.html.gz";
-                std::filesystem::path index_file2 = path / "index.html";
+            
+            // Try to resolve to absolute path first
+            std::filesystem::path abs_path;
+            try {
+                if (path.is_absolute()) {
+                    abs_path = path;
+                } else {
+                    // Try to resolve relative to current working directory
+                    abs_path = std::filesystem::absolute(path);
+                }
+                
+                // Normalize the path (resolve .. and .)
+                abs_path = std::filesystem::canonical(abs_path);
+            } catch (...) {
+                // If canonical fails, try absolute
+                try {
+                    abs_path = std::filesystem::absolute(path);
+                } catch (...) {
+                    continue; // Skip this candidate
+                }
+            }
+            
+            if (std::filesystem::exists(abs_path) && std::filesystem::is_directory(abs_path)) {
+                std::filesystem::path index_file = abs_path / "index.html.gz";
+                std::filesystem::path index_file2 = abs_path / "index.html";
                 if (std::filesystem::exists(index_file) || std::filesystem::exists(index_file2)) {
-                    // Convert to absolute path
-                    try {
-                        return std::filesystem::canonical(path).string();
-                    } catch (...) {
-                        return candidate;
-                    }
+                    return abs_path.string();
                 }
             }
         }
