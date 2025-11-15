@@ -2,15 +2,15 @@ import { config } from '$lib/stores/settings.svelte';
 import { selectedModelName } from '$lib/stores/models.svelte';
 import { slotsService } from './slots';
 /**
- * ChatService - Low-level API communication layer for llama.cpp server interactions
+ * ChatService - Low-level API communication layer for Delta server interactions
  *
- * This service handles direct communication with the llama.cpp server's chat completion API.
+ * This service handles direct communication with the Delta server's chat completion API.
  * It provides the network layer abstraction for AI model interactions while remaining
  * stateless and focused purely on API communication.
  *
  * **Architecture & Relationship with ChatStore:**
  * - **ChatService** (this class): Stateless API communication layer
- *   - Handles HTTP requests/responses with llama.cpp server
+ *   - Handles HTTP requests/responses with Delta server
  *   - Manages streaming and non-streaming response parsing
  *   - Provides request abortion capabilities
  *   - Converts database messages to API format
@@ -33,7 +33,7 @@ export class ChatService {
 	private abortControllers: Map<string, AbortController> = new Map();
 
 	/**
-	 * Sends a chat completion request to the llama.cpp server.
+	 * Sends a chat completion request to the Delta server.
 	 * Supports both streaming and non-streaming responses with comprehensive parameter configuration.
 	 * Automatically converts database messages with attachments to the appropriate API format.
 	 *

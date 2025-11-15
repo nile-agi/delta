@@ -254,16 +254,16 @@
 
 					<div class="mt-2 space-y-3 text-xs text-muted-foreground">
 						<div class="space-y-2">
-							<p class="mb-4 font-medium">Start the llama-server:</p>
+							<p class="mb-4 font-medium">Start the Delta server:</p>
 
 							<div class="rounded bg-muted/50 px-2 py-1 font-mono text-xs">
-								<p>llama-server -hf ggml-org/gemma-3-4b-it-GGUF</p>
+								<p>delta server</p>
 							</div>
 
 							<p>or</p>
 
 							<div class="rounded bg-muted/50 px-2 py-1 font-mono text-xs">
-								<p class="mt-1">llama-server -m locally-stored-model.gguf</p>
+								<p class="mt-1">delta server -m locally-stored-model.gguf</p>
 							</div>
 						</div>
 						<ul class="list-disc space-y-1 pl-4">

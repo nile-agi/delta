@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Development script for llama.cpp webui
+# Development script for Delta webui
 # 
 # This script starts the webui development servers (Storybook and Vite).
-# Note: You need to start llama-server separately.
+# Note: You need to start delta-server separately.
 #
 # Usage:
 #   bash scripts/dev.sh
@@ -47,7 +47,7 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 echo "🚀 Starting development servers..."
-echo "📝 Note: Make sure to start llama-server separately if needed"
+echo "📝 Note: Make sure to start delta-server separately if needed"
 cd tools/server/webui
 storybook dev -p 6006 --ci & vite dev --host 0.0.0.0 &
 

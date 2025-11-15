@@ -335,7 +335,7 @@
 	>
 		<div class="w-full max-w-2xl px-4">
 			<div class="mb-8 text-center" in:fade={{ duration: 300 }}>
-				<h1 class="mb-2 text-3xl font-semibold tracking-tight">llama.cpp</h1>
+				<h1 class="mb-2 text-3xl font-semibold tracking-tight">Delta</h1>
 
 				<p class="text-lg text-muted-foreground">How can I help you today?</p>
 			</div>

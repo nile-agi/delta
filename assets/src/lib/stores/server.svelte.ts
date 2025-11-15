@@ -6,7 +6,7 @@ import { config } from '$lib/stores/settings.svelte';
 /**
  * ServerStore - Server state management and capability detection
  *
- * This store manages communication with the llama.cpp server to retrieve and maintain
+ * This store manages communication with the Delta server to retrieve and maintain
  * server properties, model information, and capability detection. It provides reactive
  * state for server connectivity, model capabilities, and endpoint availability.
  *

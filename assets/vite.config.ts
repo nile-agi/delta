@@ -27,9 +27,9 @@ const MAX_ASSET_SIZE = 32000;
 /** public/index.html.gz minified flag */
 const ENABLE_JS_MINIFICATION = true;
 
-function llamaCppBuildPlugin() {
+function deltaBuildPlugin() {
 	return {
-		name: 'llamacpp:build',
+		name: 'delta:build',
 		apply: 'build' as const,
 		closeBundle() {
 			// Ensure the SvelteKit adapter has finished writing to ../public
@@ -107,7 +107,7 @@ export default defineConfig({
 			}
 		}
 	},
-	plugins: [tailwindcss(), sveltekit(), devtoolsJson(), llamaCppBuildPlugin()],
+	plugins: [tailwindcss(), sveltekit(), devtoolsJson(), deltaBuildPlugin()],
 	test: {
 		projects: [
 			{

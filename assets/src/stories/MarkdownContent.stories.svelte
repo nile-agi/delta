@@ -59,7 +59,7 @@
 Here are some example URLs that should open in new tabs:
 
 - [Hugging Face Homepage](https://huggingface.co)
-- [GitHub Repository](https://github.com/ggml-org/llama.cpp)
+- [GitHub Repository](https://github.com/nile-agi/delta)
 - [OpenAI Website](https://openai.com)
 - [Google Search](https://www.google.com)
 
@@ -97,7 +97,7 @@ All links should have \`target="_blank"\` and \`rel="noopener noreferrer"\` attr
 		expect(hugginFaceLink?.textContent).toBe('Hugging Face Homepage');
 
 		const githubLink = Array.from(links).find(
-			(link) => link.getAttribute('href') === 'https://github.com/ggml-org/llama.cpp'
+			(link) => link.getAttribute('href') === 'https://github.com/nile-agi/delta'
 		);
 		expect(githubLink).toBeTruthy();
 		expect(githubLink?.textContent).toBe('GitHub Repository');

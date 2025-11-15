@@ -1,12 +1,12 @@
 import Dexie, { type EntityTable } from 'dexie';
 import { filterByLeafNodeId, findDescendantMessages } from '$lib/utils/branching';
 
-class LlamacppDatabase extends Dexie {
+class DeltaDatabase extends Dexie {
 	conversations!: EntityTable<DatabaseConversation, string>;
 	messages!: EntityTable<DatabaseMessage, string>;
 
 	constructor() {
-		super('LlamacppWebui');
+		super('DeltaWebui');
 
 		this.version(1).stores({
 			conversations: 'id, lastModified, currNode, name',
@@ -15,7 +15,7 @@ class LlamacppDatabase extends Dexie {
 	}
 }
 
-const db = new LlamacppDatabase();
+const db = new DeltaDatabase();
 
 /**
  * DatabaseStore - Persistent data layer for conversation and message management

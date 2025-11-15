@@ -1,6 +1,6 @@
-# llama.cpp Web UI
+# Delta Web UI
 
-A modern, feature-rich web interface for llama.cpp built with SvelteKit. This UI provides an intuitive chat interface with advanced file handling, conversation management, and comprehensive model interaction capabilities.
+A modern, feature-rich web interface for Delta built with SvelteKit. This UI provides an intuitive chat interface with advanced file handling, conversation management, and comprehensive model interaction capabilities.
 
 ## Features
 
@@ -37,7 +37,7 @@ Create a production build:
 npm run build
 ```
 
-The build outputs static files to `../public` directory for deployment with llama.cpp server.
+The build outputs static files to `../public` directory for deployment with Delta server.
 
 ## Testing
 
@@ -62,5 +62,5 @@ npm run test
 - **Framework**: SvelteKit with Svelte 5 runes
 - **Components**: ShadCN UI + bits-ui design system
 - **Database**: IndexedDB with Dexie for local storage
-- **Build**: Static adapter for deployment with llama.cpp server
+- **Build**: Static adapter for deployment with Delta server
 - **Testing**: Playwright (E2E) + Vitest (unit) + Storybook (components)
