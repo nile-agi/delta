@@ -187,8 +187,15 @@ public:
             return 1;
         }
 
-        // Find and use original llama.cpp web UI
+        // Find and use Delta web UI
         std::string webui_path = find_webui_path();
+        
+        // Debug: Print web UI path if found
+        if (!webui_path.empty()) {
+            std::cout << "🌐 Web UI path: " << webui_path << std::endl;
+        } else {
+            std::cout << "⚠️  Web UI path not found, using embedded UI" << std::endl;
+        }
 
         // Construct llama-server command
         std::string cmd = llama_server_path_;
@@ -197,7 +204,7 @@ public:
         cmd += " --parallel " + std::to_string(max_parallel_);
         cmd += " -c " + std::to_string(max_context_);
 
-        // Add --path flag to use original llama.cpp web UI if found
+        // Add --path flag to use Delta web UI if found
         if (!webui_path.empty()) {
             cmd += " --path \"" + webui_path + "\"";
         }
