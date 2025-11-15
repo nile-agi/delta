@@ -108,8 +108,14 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
     std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
     
-    // Check for vendor/llama.cpp/tools/server/public (built web UI) or webui (source)
+    // Check for assets/ directory first (custom web UI), then llama.cpp web UI as fallback
     std::vector<std::string> public_candidates = {
+        "assets",
+        "./assets",
+        "../assets",
+        tools::FileOps::join_path(exe_dir, "assets"),
+        tools::FileOps::join_path(exe_dir, "../assets"),
+        tools::FileOps::join_path(exe_grandparent, "assets"),
         "vendor/llama.cpp/tools/server/public",
         "./vendor/llama.cpp/tools/server/public",
         "../vendor/llama.cpp/tools/server/public",
@@ -857,8 +863,14 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
     std::string exe_parent_server = tools::FileOps::join_path(exe_dir_server, "..");
     std::string exe_grandparent_server = tools::FileOps::join_path(exe_parent_server, "..");
     
-    // Check for vendor/llama.cpp/tools/server/public (built web UI) or webui (source)
+    // Check for assets/ directory first (custom web UI), then llama.cpp web UI as fallback
     std::vector<std::string> public_candidates_server = {
+        "assets",
+        "./assets",
+        "../assets",
+        tools::FileOps::join_path(exe_dir_server, "assets"),
+        tools::FileOps::join_path(exe_dir_server, "../assets"),
+        tools::FileOps::join_path(exe_grandparent_server, "assets"),
         "vendor/llama.cpp/tools/server/public",
         "./vendor/llama.cpp/tools/server/public",
         "../vendor/llama.cpp/tools/server/public",

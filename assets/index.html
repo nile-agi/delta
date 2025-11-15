@@ -477,6 +477,39 @@
             document.getElementById('timestamp').textContent = timeString;
         }
 
+        // Convert model filename to short_name format
+        function getShortName(modelId) {
+            // If it doesn't look like a filename, return as-is (already short_name or alias)
+            if (!modelId.includes('.gguf') && !modelId.includes('/') && !modelId.includes('\\')) {
+                return modelId;
+            }
+            
+            // Extract filename from path if needed
+            let filename = modelId;
+            if (filename.includes('/')) {
+                filename = filename.split('/').pop();
+            } else if (filename.includes('\\')) {
+                filename = filename.split('\\').pop();
+            }
+            
+            // Remove .gguf extension
+            if (filename.endsWith('.gguf')) {
+                filename = filename.slice(0, -5);
+            }
+            
+            // Remove quantization suffixes (e.g., -Q4_K_M, -q4_k_m, etc.)
+            // Common patterns: -Q4_K_M, -Q4K_M, -q4_k_m, -Q8_0, -F16, etc.
+            filename = filename.replace(/[-_]?[QqFf]\d+[_\w]*$/i, '');
+            
+            // Convert to lowercase and replace spaces/underscores with dashes
+            let shortName = filename.toLowerCase()
+                .replace(/[_\s]+/g, '-')
+                .replace(/--+/g, '-')
+                .replace(/^-|-$/g, '');
+            
+            return shortName;
+        }
+
         async function loadModelInfo() {
             try {
                 const response = await fetch('/v1/models');
@@ -484,7 +517,9 @@
                 
                 if (data.data && data.data.length > 0) {
                     currentModel = data.data[0].id;
-                    document.getElementById('current-model').textContent = currentModel;
+                    // Display short_name instead of filename
+                    const shortName = getShortName(currentModel);
+                    document.getElementById('current-model').textContent = shortName;
                     document.getElementById('model-specs').textContent = 'ctx: 4,096';
                 }
             } catch (error) {
