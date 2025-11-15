@@ -122,11 +122,16 @@ public:
         }
 #endif
         
-        // Build candidate paths
+        // Build candidate paths - check public/ first (built web UI), then vendor paths
         if (!exe_path.empty()) {
+            candidates.push_back(exe_path + "/../public");
+            candidates.push_back(exe_path + "/../../public");
             candidates.push_back(exe_path + "/../vendor/llama.cpp/tools/server/public");
             candidates.push_back(exe_path + "/../../vendor/llama.cpp/tools/server/public");
         }
+        candidates.push_back("public");
+        candidates.push_back("./public");
+        candidates.push_back("../public");
         candidates.push_back("vendor/llama.cpp/tools/server/public");
         candidates.push_back("./vendor/llama.cpp/tools/server/public");
         candidates.push_back("../vendor/llama.cpp/tools/server/public");

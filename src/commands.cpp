@@ -108,8 +108,14 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
     std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
     
-    // Check for assets/ directory first (custom web UI), then llama.cpp web UI as fallback
+    // Check for public/ directory first (built web UI), then assets/, then llama.cpp web UI as fallback
     std::vector<std::string> public_candidates = {
+        "public",
+        "./public",
+        "../public",
+        tools::FileOps::join_path(exe_dir, "public"),
+        tools::FileOps::join_path(exe_dir, "../public"),
+        tools::FileOps::join_path(exe_grandparent, "public"),
         "assets",
         "./assets",
         "../assets",
@@ -132,8 +138,10 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     
     for (const auto& candidate : public_candidates) {
         if (tools::FileOps::dir_exists(candidate)) {
+            // Check for index.html.gz first (preferred), then index.html
+            std::string index_file_gz = tools::FileOps::join_path(candidate, "index.html.gz");
             std::string index_file = tools::FileOps::join_path(candidate, "index.html");
-            if (tools::FileOps::file_exists(index_file)) {
+            if (tools::FileOps::file_exists(index_file_gz) || tools::FileOps::file_exists(index_file)) {
                 public_path = candidate;
                 break;
             }
@@ -863,8 +871,14 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
     std::string exe_parent_server = tools::FileOps::join_path(exe_dir_server, "..");
     std::string exe_grandparent_server = tools::FileOps::join_path(exe_parent_server, "..");
     
-    // Check for assets/ directory first (custom web UI), then llama.cpp web UI as fallback
+    // Check for public/ directory first (built web UI), then assets/, then llama.cpp web UI as fallback
     std::vector<std::string> public_candidates_server = {
+        "public",
+        "./public",
+        "../public",
+        tools::FileOps::join_path(exe_dir_server, "public"),
+        tools::FileOps::join_path(exe_dir_server, "../public"),
+        tools::FileOps::join_path(exe_grandparent_server, "public"),
         "assets",
         "./assets",
         "../assets",
@@ -887,8 +901,10 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
     
     for (const auto& candidate : public_candidates_server) {
         if (tools::FileOps::dir_exists(candidate)) {
+            // Check for index.html.gz first (preferred), then index.html
+            std::string index_file_gz = tools::FileOps::join_path(candidate, "index.html.gz");
             std::string index_file = tools::FileOps::join_path(candidate, "index.html");
-            if (tools::FileOps::file_exists(index_file)) {
+            if (tools::FileOps::file_exists(index_file_gz) || tools::FileOps::file_exists(index_file)) {
                 public_path_server = candidate;
                 break;
             }

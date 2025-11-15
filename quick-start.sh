@@ -40,7 +40,7 @@ cd "$(dirname "$0")"
 
 # Check if delta is installed, otherwise use build directory
 if command -v delta >/dev/null 2>&1; then
-    delta server
+delta server
 elif [ -f "build_macos/delta" ]; then
     ./build_macos/delta server
 else
