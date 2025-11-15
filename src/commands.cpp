@@ -108,7 +108,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
     std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
     
-    // Check for public/ directory first (built web UI), then assets/, then llama.cpp web UI as fallback
+    // Check for public/ directory first (built web UI from assets/), then assets/ as fallback
     std::vector<std::string> public_candidates = {
         "public",
         "./public",
@@ -121,19 +121,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
         "../assets",
         tools::FileOps::join_path(exe_dir, "assets"),
         tools::FileOps::join_path(exe_dir, "../assets"),
-        tools::FileOps::join_path(exe_grandparent, "assets"),
-        "vendor/llama.cpp/tools/server/public",
-        "./vendor/llama.cpp/tools/server/public",
-        "../vendor/llama.cpp/tools/server/public",
-        tools::FileOps::join_path(exe_dir, "vendor/llama.cpp/tools/server/public"),
-        tools::FileOps::join_path(exe_dir, "../vendor/llama.cpp/tools/server/public"),
-        tools::FileOps::join_path(exe_grandparent, "vendor/llama.cpp/tools/server/public"),
-        "vendor/llama.cpp/tools/server/webui",
-        "./vendor/llama.cpp/tools/server/webui",
-        "../vendor/llama.cpp/tools/server/webui",
-        tools::FileOps::join_path(exe_dir, "vendor/llama.cpp/tools/server/webui"),
-        tools::FileOps::join_path(exe_dir, "../vendor/llama.cpp/tools/server/webui"),
-        tools::FileOps::join_path(exe_grandparent, "vendor/llama.cpp/tools/server/webui")
+        tools::FileOps::join_path(exe_grandparent, "assets")
     };
     
     for (const auto& candidate : public_candidates) {
@@ -238,7 +226,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
         cmd << " --alias \"" << model_alias << "\"";
     }
     
-    // Add --path flag to use llama.cpp web UI if found
+    // Add --path flag to use Delta web UI if found
     if (!public_path.empty()) {
         cmd << " --path \"" << public_path << "\"";
     }
@@ -887,7 +875,7 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
     std::string exe_parent_server = tools::FileOps::join_path(exe_dir_server, "..");
     std::string exe_grandparent_server = tools::FileOps::join_path(exe_parent_server, "..");
     
-    // Check for public/ directory first (built web UI), then assets/, then llama.cpp web UI as fallback
+    // Check for public/ directory first (built web UI from assets/), then assets/ as fallback
     std::vector<std::string> public_candidates_server = {
         "public",
         "./public",
@@ -900,19 +888,7 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
         "../assets",
         tools::FileOps::join_path(exe_dir_server, "assets"),
         tools::FileOps::join_path(exe_dir_server, "../assets"),
-        tools::FileOps::join_path(exe_grandparent_server, "assets"),
-        "vendor/llama.cpp/tools/server/public",
-        "./vendor/llama.cpp/tools/server/public",
-        "../vendor/llama.cpp/tools/server/public",
-        tools::FileOps::join_path(exe_dir_server, "vendor/llama.cpp/tools/server/public"),
-        tools::FileOps::join_path(exe_dir_server, "../vendor/llama.cpp/tools/server/public"),
-        tools::FileOps::join_path(exe_grandparent_server, "vendor/llama.cpp/tools/server/public"),
-        "vendor/llama.cpp/tools/server/webui",
-        "./vendor/llama.cpp/tools/server/webui",
-        "../vendor/llama.cpp/tools/server/webui",
-        tools::FileOps::join_path(exe_dir_server, "vendor/llama.cpp/tools/server/webui"),
-        tools::FileOps::join_path(exe_dir_server, "../vendor/llama.cpp/tools/server/webui"),
-        tools::FileOps::join_path(exe_grandparent_server, "vendor/llama.cpp/tools/server/webui")
+        tools::FileOps::join_path(exe_grandparent_server, "assets")
     };
     
     for (const auto& candidate : public_candidates_server) {
@@ -1041,7 +1017,7 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
         cmd << " --alias \"" << model_alias << "\"";
     }
     
-    // Add --path flag to use llama.cpp web UI if found
+    // Add --path flag to use Delta web UI if found
     if (!public_path_server.empty()) {
         cmd << " --path \"" << public_path_server << "\"";
     }
