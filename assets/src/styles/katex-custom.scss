@@ -9,5 +9,5 @@ $font-folder: 'katex-fonts';
 
 // Import KaTeX SCSS with overridden variables
 // Note: @import is deprecated but required because KaTeX uses @import internally
-// The deprecation warnings are from KaTeX's code and cannot be avoided
+// Deprecation warnings are suppressed in vite.config.ts via silenceDeprecations
 @import 'katex/src/styles/katex.scss';

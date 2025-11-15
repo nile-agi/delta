@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "bash scripts/dev.sh",
 		"build": "vite build && ./scripts/post-build.sh",
+		"build:quiet": "vite build 2>&1 | grep -v 'Deprecation Warning' | grep -v 'fork.*is not exported' | grep -v 'node_modules/@sveltejs/kit' || true && ./scripts/post-build.sh",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
