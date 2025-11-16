@@ -1009,42 +1009,43 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
     // If not found, server will use default web UI (no --path flag)
 
     // Get name (with colon) for model alias in web UI
+    // Priority: 1) Lookup by filename from model_path (most reliable), 2) Lookup by model_name
     std::string model_alias;
-    std::string registry_name_for_alias = model_name;
-    if (session.model_mgr->is_in_registry(registry_name_for_alias)) {
-        auto entry = session.model_mgr->get_registry_entry(registry_name_for_alias);
-        if (!entry.name.empty()) {
-            model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
-        }
+    
+    // First, try to get name from filename (most reliable since model_path is always correct)
+    std::string filename = model_path;
+    size_t last_slash = filename.find_last_of("/\\");
+    if (last_slash != std::string::npos) {
+        filename = filename.substr(last_slash + 1);
+    }
+    std::string found_name = session.model_mgr->get_name_from_filename(filename);
+    if (!found_name.empty()) {
+        model_alias = found_name;  // Use name (e.g., "qwen3:0.6b") from filename lookup
     } else {
-        // Try converting dash to colon format
-        size_t last_dash = registry_name_for_alias.find_last_of('-');
-        if (last_dash != std::string::npos) {
-            std::string colon_name = registry_name_for_alias.substr(0, last_dash) + ":" + 
-                                     registry_name_for_alias.substr(last_dash + 1);
-            if (session.model_mgr->is_in_registry(colon_name)) {
-                auto entry = session.model_mgr->get_registry_entry(colon_name);
-                if (!entry.name.empty()) {
-                    model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
+        // Fallback: try to lookup by model_name (might be short_name or registry name)
+        std::string registry_name_for_alias = model_name;
+        if (session.model_mgr->is_in_registry(registry_name_for_alias)) {
+            auto entry = session.model_mgr->get_registry_entry(registry_name_for_alias);
+            if (!entry.name.empty()) {
+                model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
+            }
+        } else {
+            // Try converting dash to colon format (e.g., "qwen3-0.6b" -> "qwen3:0.6b")
+            size_t last_dash = registry_name_for_alias.find_last_of('-');
+            if (last_dash != std::string::npos) {
+                std::string colon_name = registry_name_for_alias.substr(0, last_dash) + ":" + 
+                                         registry_name_for_alias.substr(last_dash + 1);
+                if (session.model_mgr->is_in_registry(colon_name)) {
+                    auto entry = session.model_mgr->get_registry_entry(colon_name);
+                    if (!entry.name.empty()) {
+                        model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
+                    }
                 }
             }
         }
-    }
-    
-    // If still not found, try to get name from filename
-    if (model_alias.empty()) {
-        // Extract filename from model_path
-        std::string filename = model_path;
-        size_t last_slash = filename.find_last_of("/\\");
-        if (last_slash != std::string::npos) {
-            filename = filename.substr(last_slash + 1);
-        }
-        // Try to get name from filename, fallback to short_name if not found
-        std::string found_name = session.model_mgr->get_name_from_filename(filename);
-        if (!found_name.empty()) {
-            model_alias = found_name;
-        } else {
-            // Last resort: use short_name from filename
+        
+        // Last resort: use short_name from filename
+        if (model_alias.empty()) {
             model_alias = session.model_mgr->get_short_name_from_filename(filename);
         }
     }
