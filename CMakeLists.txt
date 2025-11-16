@@ -211,8 +211,36 @@ install(TARGETS delta delta-server
 # Install models directory structure
 install(DIRECTORY DESTINATION share/delta-cli/models)
 
-# Web UI is now provided by gpt-ui-main (external project)
-# No web UI installation needed - gpt-ui-main/build or gpt-ui-main/public is used directly
+# Install web UI from public/ directory (built from assets/)
+# Check if public/ directory exists and contains web UI files
+if(EXISTS "${CMAKE_SOURCE_DIR}/public")
+    if(EXISTS "${CMAKE_SOURCE_DIR}/public/index.html" OR EXISTS "${CMAKE_SOURCE_DIR}/public/index.html.gz")
+        install(DIRECTORY ${CMAKE_SOURCE_DIR}/public/
+            DESTINATION share/delta-cli/webui
+            FILES_MATCHING
+            PATTERN "*.html"
+            PATTERN "*.html.gz"
+            PATTERN "*.js"
+            PATTERN "*.css"
+            PATTERN "*.svg"
+            PATTERN "*.png"
+            PATTERN "*.jpg"
+            PATTERN "*.jpeg"
+            PATTERN "*.gif"
+            PATTERN "*.woff"
+            PATTERN "*.woff2"
+            PATTERN "*.ttf"
+            PATTERN "*.eot"
+            PATTERN "*.json"
+            PATTERN "*.map"
+        )
+        message(STATUS "Web UI will be installed from public/")
+    else()
+        message(STATUS "Web UI not found in public/ - server will use embedded UI or find files at runtime")
+    endif()
+else()
+    message(STATUS "public/ directory not found - web UI will not be installed")
+endif()
 
 # Print configuration summary
 message(STATUS "")

@@ -13,6 +13,7 @@ class DeltaCli < Formula
   depends_on "cmake" => :build
   depends_on "curl" => :build
   depends_on "pkg-config" => :build
+  depends_on "node" => :build
 
   on_macos do
     depends_on :macos
@@ -25,6 +26,20 @@ class DeltaCli < Formula
   def install
     # Ensure submodules are initialized and updated
     system "git", "submodule", "update", "--init", "--recursive"
+    
+    # Build web UI from assets/ directory
+    if Dir.exist?("assets")
+      ohai "Building web UI from assets/..."
+      cd "assets" do
+        # Check if node_modules exists, if not install dependencies
+        unless Dir.exist?("node_modules")
+          system "npm", "install"
+        end
+        # Build the web UI (outputs to ../public)
+        system "npm", "run", "build"
+      end
+      cd ".."
+    end
     
     # Create build directory
     mkdir "build" do
@@ -44,9 +59,12 @@ class DeltaCli < Formula
     bin.install "build/delta"
     bin.install "build/delta-server"
 
-    # Install web UI
-    if Dir.exist?("vendor/llama.cpp/tools/server/public")
-      share.install "vendor/llama.cpp/tools/server/public" => "delta-cli/webui"
+    # Install web UI from public/ directory (built from assets/)
+    if Dir.exist?("public") && (File.exist?("public/index.html") || File.exist?("public/index.html.gz"))
+      share.install "public" => "delta-cli/webui"
+      ohai "Web UI installed from public/"
+    else
+      opoo "Web UI not found in public/. Server will use embedded UI or find files at runtime."
     end
   end
 

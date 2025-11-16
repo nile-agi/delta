@@ -49,7 +49,7 @@ INSTALL_PREFIX=${INSTALL_PREFIX:-/usr/local}
 BUILD_DIR="build_macos"
 
 # Step 1: Check for Xcode Command Line Tools
-info "Step 1/6: Checking Xcode Command Line Tools..."
+info "Step 1/7: Checking Xcode Command Line Tools..."
 if ! command -v clang++ >/dev/null 2>&1; then
     warning "Xcode Command Line Tools not found. Installing..."
     xcode-select --install || error_exit "Failed to install Xcode Command Line Tools. Please install manually: xcode-select --install"
@@ -59,7 +59,7 @@ fi
 success "Xcode Command Line Tools found"
 
 # Step 2: Check/Install Homebrew
-info "Step 2/6: Checking Homebrew..."
+info "Step 2/7: Checking Homebrew..."
     if ! command -v brew >/dev/null 2>&1; then
     warning "Homebrew not found. Installing..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || error_exit "Failed to install Homebrew"
@@ -76,7 +76,7 @@ else
 fi
 
 # Step 3: Install dependencies
-info "Step 3/6: Installing dependencies..."
+info "Step 3/7: Installing dependencies..."
 DEPENDENCIES="cmake git curl"
 MISSING_DEPS=""
 
@@ -99,14 +99,14 @@ CMAKE_VERSION=$(cmake --version | head -n1 | cut -d' ' -f3)
 info "CMake version: $CMAKE_VERSION"
 
 # Step 4: Check for vendored llama.cpp
-info "Step 4/6: Verifying project structure..."
+info "Step 4/7: Verifying project structure..."
 if [ ! -f "vendor/llama.cpp/CMakeLists.txt" ]; then
     error_exit "llama.cpp not found in vendor/llama.cpp/. Please ensure you're in the delta-cli directory."
 fi
 success "Project structure verified"
 
 # Step 5: Build
-info "Step 5/6: Building Delta CLI..."
+info "Step 5/7: Building Delta CLI..."
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
@@ -154,8 +154,33 @@ success "Build completed successfully"
 
 cd ..
 
+# Step 5.5: Build web UI from assets/ if needed
+info "Step 5.5/7: Building web UI from assets/..."
+if [ -d "assets" ]; then
+    if [ ! -f "public/index.html.gz" ] && [ ! -f "public/index.html" ]; then
+        info "Web UI not built, building now..."
+        cd assets
+        if [ ! -d "node_modules" ]; then
+            if ! command -v npm >/dev/null 2>&1; then
+                warning "npm not found. Installing Node.js via Homebrew..."
+                brew install node || error_exit "Failed to install Node.js"
+            fi
+            info "Installing web UI dependencies..."
+            npm install || error_exit "Failed to install web UI dependencies"
+        fi
+        info "Building web UI..."
+        npm run build || error_exit "Failed to build web UI"
+        cd ..
+        success "Web UI built successfully"
+    else
+        success "Web UI already built"
+    fi
+else
+    warning "assets/ directory not found. Web UI will not be available."
+fi
+
 # Step 6: Install system-wide
-info "Step 6/6: Installing system-wide..."
+info "Step 6/7: Installing system-wide..."
 if [ "$EUID" -ne 0 ]; then
     warning "System-wide installation requires sudo privileges"
     info "Installing to $INSTALL_PREFIX..."
@@ -164,9 +189,19 @@ else
     cmake --install "$BUILD_DIR" --prefix "$INSTALL_PREFIX" || error_exit "Installation failed"
 fi
 
-# Note: Delta CLI uses the original llama.cpp web UI from vendor/llama.cpp/tools/server/webui
-success "Delta CLI will use the original llama.cpp web UI"
+# Install web UI if built
+if [ -d "public" ] && ([ -f "public/index.html" ] || [ -f "public/index.html.gz" ]); then
+    info "Installing web UI..."
+    sudo mkdir -p "$INSTALL_PREFIX/share/delta-cli/webui" || mkdir -p "$INSTALL_PREFIX/share/delta-cli/webui"
+    sudo cp -r public/* "$INSTALL_PREFIX/share/delta-cli/webui/" 2>/dev/null || \
+    cp -r public/* "$INSTALL_PREFIX/share/delta-cli/webui/" 2>/dev/null
+    success "Web UI installed to $INSTALL_PREFIX/share/delta-cli/webui"
+else
+    warning "Web UI not found. Server will use embedded UI or find files at runtime."
+fi
 
+# Step 7: Final verification
+info "Step 7/7: Final verification..."
 # Verify installation
 if [ -f "$INSTALL_PREFIX/bin/delta" ]; then
     success "Delta CLI installed to $INSTALL_PREFIX/bin/delta"
