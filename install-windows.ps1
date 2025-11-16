@@ -202,40 +202,38 @@ if (-not (Test-Path "delta.exe")) {
 Write-Success "Build completed successfully"
 Set-Location ..
 
-# Step 6.5: Build web UI from assets/ if needed
-Write-Info "Step 6.5/8: Building web UI from assets/..."
-if (Test-Path "assets") {
-    if (-not ((Test-Path "public\index.html.gz") -or (Test-Path "public\index.html"))) {
-        Write-Info "Web UI not built, building now..."
-        Set-Location assets
-        
-        if (-not (Test-Path "node_modules")) {
-            if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-                Write-Warning "npm not found. Please install Node.js:"
-                Write-Info "  Download from: https://nodejs.org/"
-                Write-Info "  Or use Chocolatey: choco install nodejs"
-                Write-Error "Node.js and npm are required to build the web UI"
-            }
-            Write-Info "Installing web UI dependencies..."
-            npm install
-            if ($LASTEXITCODE -ne 0) {
-                Set-Location ..
-                Write-Error "Failed to install web UI dependencies"
-            }
+# Step 6.5: Use already built web UI from public/ or build from assets/ if needed
+Write-Info "Step 6.5/8: Checking web UI..."
+if ((Test-Path "public") -and ((Test-Path "public\index.html") -or (Test-Path "public\index.html.gz"))) {
+    Write-Success "Using already built web UI from public/"
+} elseif (Test-Path "assets") {
+    Write-Info "Web UI not found in public/, building from assets/..."
+    Set-Location assets
+    
+    if (-not (Test-Path "node_modules")) {
+        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+            Write-Warning "npm not found. Please install Node.js:"
+            Write-Info "  Download from: https://nodejs.org/"
+            Write-Info "  Or use Chocolatey: choco install nodejs"
+            Write-Error "Node.js and npm are required to build the web UI"
         }
-        Write-Info "Building web UI..."
-        npm run build
+        Write-Info "Installing web UI dependencies..."
+        npm install
         if ($LASTEXITCODE -ne 0) {
             Set-Location ..
-            Write-Error "Failed to build web UI"
+            Write-Error "Failed to install web UI dependencies"
         }
-        Set-Location ..
-        Write-Success "Web UI built successfully"
-    } else {
-        Write-Success "Web UI already built"
     }
+    Write-Info "Building web UI..."
+    npm run build
+    if ($LASTEXITCODE -ne 0) {
+        Set-Location ..
+        Write-Error "Failed to build web UI"
+    }
+    Set-Location ..
+    Write-Success "Web UI built successfully"
 } else {
-    Write-Warning "assets/ directory not found. Web UI will not be available."
+    Write-Warning "Neither public/ nor assets/ directory found. Web UI will not be available."
 }
 
 # Step 7: Install system-wide

@@ -217,32 +217,30 @@ success "Build completed successfully"
 
 cd ..
 
-# Step 6.5: Build web UI from assets/ if needed
-info "Step 6.5/8: Building web UI from assets/..."
-if [ -d "assets" ]; then
-    if [ ! -f "public/index.html.gz" ] && [ ! -f "public/index.html" ]; then
-        info "Web UI not built, building now..."
-        cd assets
-        if [ ! -d "node_modules" ]; then
-            if ! command -v npm >/dev/null 2>&1; then
-                warning "npm not found. Please install Node.js:"
-                info "  Ubuntu/Debian: sudo apt-get install nodejs npm"
-                info "  Fedora/RHEL: sudo dnf install nodejs npm"
-                info "  Arch: sudo pacman -S nodejs npm"
-                error_exit "Node.js and npm are required to build the web UI"
-            fi
-            info "Installing web UI dependencies..."
-            npm install || error_exit "Failed to install web UI dependencies"
+# Step 6.5: Use already built web UI from public/ or build from assets/ if needed
+info "Step 6.5/8: Checking web UI..."
+if [ -d "public" ] && ([ -f "public/index.html" ] || [ -f "public/index.html.gz" ]); then
+    success "Using already built web UI from public/"
+elif [ -d "assets" ]; then
+    info "Web UI not found in public/, building from assets/..."
+    cd assets
+    if [ ! -d "node_modules" ]; then
+        if ! command -v npm >/dev/null 2>&1; then
+            warning "npm not found. Please install Node.js:"
+            info "  Ubuntu/Debian: sudo apt-get install nodejs npm"
+            info "  Fedora/RHEL: sudo dnf install nodejs npm"
+            info "  Arch: sudo pacman -S nodejs npm"
+            error_exit "Node.js and npm are required to build the web UI"
         fi
-        info "Building web UI..."
-        npm run build || error_exit "Failed to build web UI"
-        cd ..
-        success "Web UI built successfully"
-    else
-        success "Web UI already built"
+        info "Installing web UI dependencies..."
+        npm install || error_exit "Failed to install web UI dependencies"
     fi
+    info "Building web UI..."
+    npm run build || error_exit "Failed to build web UI"
+    cd ..
+    success "Web UI built successfully"
 else
-    warning "assets/ directory not found. Web UI will not be available."
+    warning "Neither public/ nor assets/ directory found. Web UI will not be available."
 fi
 
 # Step 7: Install system-wide
