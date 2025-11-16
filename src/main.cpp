@@ -215,6 +215,17 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             }
         }
         
+        // If still not found, try to get short_name from filename
+        if (model_alias.empty()) {
+            // Extract filename from model_path
+            std::string filename = model_path;
+            size_t last_slash = filename.find_last_of("/\\");
+            if (last_slash != std::string::npos) {
+                filename = filename.substr(last_slash + 1);
+            }
+            model_alias = model_mgr.get_short_name_from_filename(filename);
+        }
+        
         // Try to launch server - if it fails, it's okay (server might not be built)
         if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
             UI::print_success("Delta Server started in background");
@@ -848,6 +859,17 @@ int main(int argc, char** argv) {
                     }
                 }
             }
+        }
+        
+        // If still not found, try to get short_name from filename
+        if (model_alias.empty()) {
+            // Extract filename from model_path
+            std::string filename = model_path;
+            size_t last_slash = filename.find_last_of("/\\");
+            if (last_slash != std::string::npos) {
+                filename = filename.substr(last_slash + 1);
+            }
+            model_alias = model_mgr.get_short_name_from_filename(filename);
         }
         
         // Build command

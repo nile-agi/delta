@@ -139,6 +139,7 @@ export interface ApiLlamaCppServerProps {
 	};
 	total_slots: number;
 	model_path: string;
+	model_alias?: string;
 	modalities: {
 		vision: boolean;
 		audio: boolean;

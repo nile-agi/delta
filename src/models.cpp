@@ -1214,6 +1214,26 @@ std::string ModelManager::resolve_model_name(const std::string& input_name) {
     return input_name;
 }
 
+std::string ModelManager::get_short_name_from_filename(const std::string& filename) {
+    // Get short_name from filename by looking up in registry
+    // Accepts filename with or without .gguf extension
+    std::string search_filename = filename;
+    if (search_filename.length() >= 5 && 
+        search_filename.substr(search_filename.length() - 5) != ".gguf") {
+        search_filename += ".gguf";
+    }
+    
+    // Search registry for matching filename
+    for (const auto& pair : model_registry_) {
+        if (pair.second.filename == search_filename) {
+            return pair.second.short_name;
+        }
+    }
+    
+    // If not found, return empty string
+    return "";
+}
+
 bool ModelManager::is_model_installed(const std::string& model_name) {
     // Check if a model (by short name or filename) is installed locally
     std::string filename = resolve_model_name(model_name);

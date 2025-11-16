@@ -160,6 +160,9 @@ public:
     // Resolve short name to full GGUF filename
     std::string resolve_model_name(const std::string& input_name);
     
+    // Get short_name from filename by looking up in registry
+    std::string get_short_name_from_filename(const std::string& filename);
+    
     // Check if model is installed locally
     bool is_model_installed(const std::string& model_name);
     

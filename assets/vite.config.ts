@@ -50,11 +50,10 @@ function deltaBuildPlugin() {
 						const faviconBase64 = Buffer.from(faviconContent).toString('base64');
 						const faviconDataUrl = `data:image/svg+xml;base64,${faviconBase64}`;
 
-						// Replace existing favicon links
-						content = content.replace(/<link[^>]*rel=["']icon["'][^>]*>/gi, '');
-						content = content.replace(/href="[^"]*favicon\.svg"/g, `href="${faviconDataUrl}"`);
+						// Remove all existing favicon links (both icon and shortcut icon)
+						content = content.replace(/<link[^>]*rel=["'](icon|shortcut icon)["'][^>]*>/gi, '');
 
-						// Add favicon link to head if it doesn't exist
+						// Add favicon links after charset meta tag
 						const faviconLink = `    <link rel="icon" type="image/svg+xml" href="${faviconDataUrl}">\n    <link rel="shortcut icon" type="image/svg+xml" href="${faviconDataUrl}">\n`;
 						
 						// Insert favicon links after charset meta tag or at the start of head
@@ -66,11 +65,17 @@ function deltaBuildPlugin() {
 							}
 						}
 
+						// Write the updated content back immediately
+						writeFileSync(indexPath, content, 'utf-8');
+
 						console.log('✓ Inlined favicon.svg as base64 data URL in headers');
 					}
 
 					content = content.replace(/\r/g, '');
 					content = GUIDE_FOR_FRONTEND + '\n' + content;
+
+					// Write the final content back to index.html (with favicon and guide)
+					writeFileSync(indexPath, content, 'utf-8');
 
 					const compressed = fflate.gzipSync(Buffer.from(content, 'utf-8'), { level: 9 });
 

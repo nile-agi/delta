@@ -49,7 +49,7 @@
 
 		{#if serverData.default_generation_settings.n_ctx}
 			<Badge variant="secondary" class="text-xs">
-				ctx: {serverData.default_generation_settings.n_ctx.toLocaleString()}
+				context: {serverData.default_generation_settings.n_ctx.toLocaleString()}
 			</Badge>
 		{/if}
 	{/if}

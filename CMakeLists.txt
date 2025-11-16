@@ -201,6 +201,69 @@ if(BUILD_TESTS)
     endif()
 endif()
 
+# Build web UI from assets/ directory if needed
+if(EXISTS "${CMAKE_SOURCE_DIR}/assets/package.json")
+    find_program(NPM_EXECUTABLE npm)
+    if(NPM_EXECUTABLE)
+        # Check if public/index.html exists and is older than assets/package.json
+        set(PUBLIC_INDEX "${CMAKE_SOURCE_DIR}/public/index.html")
+        set(ASSETS_PACKAGE "${CMAKE_SOURCE_DIR}/assets/package.json")
+        
+        set(BUILD_WEBUI FALSE)
+        if(NOT EXISTS "${PUBLIC_INDEX}")
+            set(BUILD_WEBUI TRUE)
+            message(STATUS "Web UI not found - building from assets/")
+        else()
+            # Check if assets/package.json is newer than public/index.html
+            file(TIMESTAMP "${ASSETS_PACKAGE}" PACKAGE_TIME)
+            file(TIMESTAMP "${PUBLIC_INDEX}" INDEX_TIME)
+            if(PACKAGE_TIME GREATER_EQUAL INDEX_TIME)
+                set(BUILD_WEBUI TRUE)
+                message(STATUS "Web UI source files are newer - rebuilding")
+            endif()
+        endif()
+        
+        if(BUILD_WEBUI)
+            # Check if node_modules exists, if not, install dependencies first
+            if(NOT EXISTS "${CMAKE_SOURCE_DIR}/assets/node_modules")
+                message(STATUS "Installing web UI dependencies...")
+                execute_process(
+                    COMMAND ${NPM_EXECUTABLE} install
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/assets"
+                    RESULT_VARIABLE INSTALL_RESULT
+                    OUTPUT_QUIET
+                    ERROR_QUIET
+                )
+                if(NOT INSTALL_RESULT EQUAL 0)
+                    message(WARNING "Failed to install web UI dependencies")
+                    message(WARNING "Please run 'npm install' in the assets/ directory manually")
+                endif()
+            endif()
+            
+            message(STATUS "Building web UI from assets/ directory...")
+            execute_process(
+                COMMAND ${NPM_EXECUTABLE} run build
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/assets"
+                RESULT_VARIABLE BUILD_RESULT
+                OUTPUT_VARIABLE BUILD_OUTPUT
+                ERROR_VARIABLE BUILD_ERROR
+            )
+            if(BUILD_RESULT EQUAL 0)
+                message(STATUS "Web UI built successfully")
+            else()
+                message(WARNING "Web UI build failed: ${BUILD_ERROR}")
+                message(WARNING "Continuing with existing web UI files if available")
+            endif()
+        else()
+            message(STATUS "Web UI is up to date")
+        endif()
+    else()
+        message(STATUS "npm not found - skipping web UI build (using existing files if available)")
+    endif()
+else()
+    message(STATUS "assets/ directory not found - skipping web UI build")
+endif()
+
 # Installation
 install(TARGETS delta delta-server
     RUNTIME DESTINATION bin

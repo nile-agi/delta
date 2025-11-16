@@ -569,6 +569,17 @@ bool Commands::handle_use(const std::vector<std::string>& args, InteractiveSessi
         }
     }
     
+    // If still not found, try to get short_name from filename
+    if (model_alias.empty()) {
+        // Extract filename from model_path
+        std::string filename = model_path;
+        size_t last_slash = filename.find_last_of("/\\");
+        if (last_slash != std::string::npos) {
+            filename = filename.substr(last_slash + 1);
+        }
+        model_alias = session.model_mgr->get_short_name_from_filename(filename);
+    }
+    
     if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
         UI::print_success("Delta Server started in background");
         std::string url = "http://localhost:8080";
@@ -1018,6 +1029,17 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
                 }
             }
         }
+    }
+    
+    // If still not found, try to get short_name from filename
+    if (model_alias.empty()) {
+        // Extract filename from model_path
+        std::string filename = model_path;
+        size_t last_slash = filename.find_last_of("/\\");
+        if (last_slash != std::string::npos) {
+            filename = filename.substr(last_slash + 1);
+        }
+        model_alias = session.model_mgr->get_short_name_from_filename(filename);
     }
     
     // Build command

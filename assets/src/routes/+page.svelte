@@ -21,7 +21,7 @@
 </script>
 
 <svelte:head>
-	<title>Delta - AI Chat Interface</title>
+	<title>Delta - Chat Interface</title>
 </svelte:head>
 
 <ChatScreen showCenteredEmpty={true} />
