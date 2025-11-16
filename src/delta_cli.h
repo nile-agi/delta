@@ -163,6 +163,9 @@ public:
     // Get short_name from filename by looking up in registry
     std::string get_short_name_from_filename(const std::string& filename);
     
+    // Get name (with colon) from filename by looking up in registry
+    std::string get_name_from_filename(const std::string& filename);
+    
     // Check if model is installed locally
     bool is_model_installed(const std::string& model_name);
     

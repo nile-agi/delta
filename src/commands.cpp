@@ -1008,13 +1008,13 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
     
     // If not found, server will use default web UI (no --path flag)
 
-    // Get short_name for model alias in web UI
+    // Get name (with colon) for model alias in web UI
     std::string model_alias;
     std::string registry_name_for_alias = model_name;
     if (session.model_mgr->is_in_registry(registry_name_for_alias)) {
         auto entry = session.model_mgr->get_registry_entry(registry_name_for_alias);
-        if (!entry.short_name.empty()) {
-            model_alias = entry.short_name;
+        if (!entry.name.empty()) {
+            model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
         }
     } else {
         // Try converting dash to colon format
@@ -1024,14 +1024,14 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
                                      registry_name_for_alias.substr(last_dash + 1);
             if (session.model_mgr->is_in_registry(colon_name)) {
                 auto entry = session.model_mgr->get_registry_entry(colon_name);
-                if (!entry.short_name.empty()) {
-                    model_alias = entry.short_name;
+                if (!entry.name.empty()) {
+                    model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
                 }
             }
         }
     }
     
-    // If still not found, try to get short_name from filename
+    // If still not found, try to get name from filename
     if (model_alias.empty()) {
         // Extract filename from model_path
         std::string filename = model_path;
@@ -1039,7 +1039,14 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
         if (last_slash != std::string::npos) {
             filename = filename.substr(last_slash + 1);
         }
-        model_alias = session.model_mgr->get_short_name_from_filename(filename);
+        // Try to get name from filename, fallback to short_name if not found
+        std::string found_name = session.model_mgr->get_name_from_filename(filename);
+        if (!found_name.empty()) {
+            model_alias = found_name;
+        } else {
+            // Last resort: use short_name from filename
+            model_alias = session.model_mgr->get_short_name_from_filename(filename);
+        }
     }
     
     // Build command
@@ -1050,7 +1057,7 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
         << " --parallel 4"  // default parallel
         << " -c " << ctx_size;
     
-    // Add --alias flag to use short_name instead of filename in web UI
+    // Add --alias flag to use name (with colon) instead of filename in web UI
     if (!model_alias.empty()) {
         cmd << " --alias \"" << model_alias << "\"";
     }

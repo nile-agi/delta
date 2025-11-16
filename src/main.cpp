@@ -192,13 +192,13 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             ctx_size = config.n_ctx;
         }
         
-        // Get short_name for model alias in web UI
+        // Get name (with colon) for model alias in web UI
         std::string model_alias;
         std::string registry_name_for_alias = current_model;
         if (model_mgr.is_in_registry(registry_name_for_alias)) {
             auto entry = model_mgr.get_registry_entry(registry_name_for_alias);
-            if (!entry.short_name.empty()) {
-                model_alias = entry.short_name;
+            if (!entry.name.empty()) {
+                model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
             }
         } else {
             // Try converting dash to colon format
@@ -208,14 +208,14 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
                                          registry_name_for_alias.substr(last_dash + 1);
                 if (model_mgr.is_in_registry(colon_name)) {
                     auto entry = model_mgr.get_registry_entry(colon_name);
-                    if (!entry.short_name.empty()) {
-                        model_alias = entry.short_name;
+                    if (!entry.name.empty()) {
+                        model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
                     }
                 }
             }
         }
         
-        // If still not found, try to get short_name from filename
+        // If still not found, try to get name from filename
         if (model_alias.empty()) {
             // Extract filename from model_path
             std::string filename = model_path;
@@ -223,7 +223,14 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             if (last_slash != std::string::npos) {
                 filename = filename.substr(last_slash + 1);
             }
-            model_alias = model_mgr.get_short_name_from_filename(filename);
+            // Try to get name from filename, fallback to short_name if not found
+            std::string found_name = model_mgr.get_name_from_filename(filename);
+            if (!found_name.empty()) {
+                model_alias = found_name;
+            } else {
+                // Last resort: use short_name from filename
+                model_alias = model_mgr.get_short_name_from_filename(filename);
+            }
         }
         
         // Try to launch server - if it fails, it's okay (server might not be built)
@@ -838,13 +845,13 @@ int main(int argc, char** argv) {
             }
         }
 
-        // Get short_name for model alias in web UI
+        // Get name (with colon) for model alias in web UI
         std::string model_alias;
         std::string registry_name_for_alias = model_name;
         if (model_mgr.is_in_registry(registry_name_for_alias)) {
             auto entry = model_mgr.get_registry_entry(registry_name_for_alias);
-            if (!entry.short_name.empty()) {
-                model_alias = entry.short_name;
+            if (!entry.name.empty()) {
+                model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
             }
         } else {
             // Try converting dash to colon format
@@ -854,14 +861,14 @@ int main(int argc, char** argv) {
                                          registry_name_for_alias.substr(last_dash + 1);
                 if (model_mgr.is_in_registry(colon_name)) {
                     auto entry = model_mgr.get_registry_entry(colon_name);
-                    if (!entry.short_name.empty()) {
-                        model_alias = entry.short_name;
+                    if (!entry.name.empty()) {
+                        model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
                     }
                 }
             }
         }
         
-        // If still not found, try to get short_name from filename
+        // If still not found, try to get name from filename
         if (model_alias.empty()) {
             // Extract filename from model_path
             std::string filename = model_path;
@@ -869,7 +876,14 @@ int main(int argc, char** argv) {
             if (last_slash != std::string::npos) {
                 filename = filename.substr(last_slash + 1);
             }
-            model_alias = model_mgr.get_short_name_from_filename(filename);
+            // Try to get name from filename, fallback to short_name if not found
+            std::string found_name = model_mgr.get_name_from_filename(filename);
+            if (!found_name.empty()) {
+                model_alias = found_name;
+            } else {
+                // Last resort: use short_name from filename
+                model_alias = model_mgr.get_short_name_from_filename(filename);
+            }
         }
         
         // Build command
