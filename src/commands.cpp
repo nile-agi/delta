@@ -108,20 +108,28 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
     std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
     
-    // Check for public/ directory first (built web UI from assets/), then assets/ as fallback
+    // Check for Homebrew share directory first, then public/ (built web UI from assets/), then assets/ as fallback
     std::vector<std::string> public_candidates = {
-        "public",
-        "./public",
-        "../public",
+        // Homebrew installed location (priority)
+        "/opt/homebrew/share/delta-cli/webui",
+        "/usr/local/share/delta-cli/webui",
+        tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"),
+        tools::FileOps::join_path(exe_dir, "../../../share/delta-cli/webui"),
+        // Relative to executable
         tools::FileOps::join_path(exe_dir, "public"),
         tools::FileOps::join_path(exe_dir, "../public"),
         tools::FileOps::join_path(exe_grandparent, "public"),
-        "assets",
-        "./assets",
-        "../assets",
+        // Current directory
+        "public",
+        "./public",
+        "../public",
+        // Assets directory (source, not built)
         tools::FileOps::join_path(exe_dir, "assets"),
         tools::FileOps::join_path(exe_dir, "../assets"),
-        tools::FileOps::join_path(exe_grandparent, "assets")
+        tools::FileOps::join_path(exe_grandparent, "assets"),
+        "assets",
+        "./assets",
+        "../assets"
     };
     
     for (const auto& candidate : public_candidates) {
@@ -875,20 +883,28 @@ bool Commands::handle_server(const std::vector<std::string>& args, InteractiveSe
     std::string exe_parent_server = tools::FileOps::join_path(exe_dir_server, "..");
     std::string exe_grandparent_server = tools::FileOps::join_path(exe_parent_server, "..");
     
-    // Check for public/ directory first (built web UI from assets/), then assets/ as fallback
+    // Check for Homebrew share directory first, then public/ (built web UI from assets/), then assets/ as fallback
     std::vector<std::string> public_candidates_server = {
-        "public",
-        "./public",
-        "../public",
+        // Homebrew installed location (priority)
+        "/opt/homebrew/share/delta-cli/webui",
+        "/usr/local/share/delta-cli/webui",
+        tools::FileOps::join_path(exe_dir_server, "../../share/delta-cli/webui"),
+        tools::FileOps::join_path(exe_dir_server, "../../../share/delta-cli/webui"),
+        // Relative to executable
         tools::FileOps::join_path(exe_dir_server, "public"),
         tools::FileOps::join_path(exe_dir_server, "../public"),
         tools::FileOps::join_path(exe_grandparent_server, "public"),
-        "assets",
-        "./assets",
-        "../assets",
+        // Current directory
+        "public",
+        "./public",
+        "../public",
+        // Assets directory (source, not built)
         tools::FileOps::join_path(exe_dir_server, "assets"),
         tools::FileOps::join_path(exe_dir_server, "../assets"),
-        tools::FileOps::join_path(exe_grandparent_server, "assets")
+        tools::FileOps::join_path(exe_grandparent_server, "assets"),
+        "assets",
+        "./assets",
+        "../assets"
     };
     
     for (const auto& candidate : public_candidates_server) {
