@@ -543,25 +543,53 @@
 
         async function loadModelInfo() {
             try {
-                const response = await fetch('/v1/models');
-                const data = await response.json();
-                
-                if (data.data && data.data.length > 0) {
-                    currentModel = data.data[0].id;
-                    const shortName = getShortName(currentModel);
-                    document.getElementById('current-model').textContent = shortName;
+                // First try to get model_alias from /props endpoint (preferred)
+                let modelDisplayName = null;
+                try {
+                    const propsResponse = await fetch('/props');
+                    const propsData = await propsResponse.json();
                     
-                    // Get context size from server props if available
-                    try {
-                        const propsResponse = await fetch('/props');
-                        const propsData = await propsResponse.json();
-                        if (propsData.default_generation_settings && propsData.default_generation_settings.n_ctx) {
-                            contextSize = propsData.default_generation_settings.n_ctx;
-                            document.getElementById('ctx-badge').textContent = `context: ${contextSize.toLocaleString()}`;
-                        }
-                    } catch (e) {
-                        // Use default
+                    // Use model_alias if available (this is the short_name from registry)
+                    if (propsData.model_alias) {
+                        modelDisplayName = propsData.model_alias;
+                    } else if (propsData.model_path) {
+                        // Fallback: extract filename from model_path
+                        const path = propsData.model_path;
+                        const filename = path.split(/[\/\\]/).pop() || path;
+                        modelDisplayName = getShortName(filename);
                     }
+                    
+                    // Get context size from server props
+                    if (propsData.default_generation_settings && propsData.default_generation_settings.n_ctx) {
+                        contextSize = propsData.default_generation_settings.n_ctx;
+                        document.getElementById('ctx-badge').textContent = `context: ${contextSize.toLocaleString()}`;
+                    }
+                } catch (e) {
+                    console.warn('Failed to fetch /props, trying /v1/models:', e);
+                }
+                
+                // Fallback to /v1/models if /props didn't work
+                if (!modelDisplayName) {
+                    const response = await fetch('/v1/models');
+                    const data = await response.json();
+                    
+                    if (data.data && data.data.length > 0) {
+                        currentModel = data.data[0].id;
+                        // The /v1/models endpoint returns model_alias if available, otherwise model_path
+                        // So we can use it directly if it looks like a short name, otherwise parse it
+                        if (currentModel && !currentModel.includes('.gguf') && !currentModel.includes('/') && !currentModel.includes('\\')) {
+                            modelDisplayName = currentModel;
+                        } else {
+                            modelDisplayName = getShortName(currentModel);
+                        }
+                    }
+                }
+                
+                // Update the UI with the model name
+                if (modelDisplayName) {
+                    document.getElementById('current-model').textContent = modelDisplayName;
+                } else {
+                    document.getElementById('current-model').textContent = 'qwen3:0.6b';
                 }
             } catch (error) {
                 console.error('Failed to load model info:', error);
