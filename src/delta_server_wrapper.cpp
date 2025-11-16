@@ -122,13 +122,22 @@ public:
         }
 #endif
         
-        // Build candidate paths - check public/ first (built web UI from assets/), then assets/
+        // Build candidate paths - check Homebrew share directory first, then public/ (built web UI from assets/), then assets/
+        // Homebrew installs web UI to share/delta-cli/webui relative to the prefix
         if (!exe_path.empty()) {
+            // Check Homebrew share directory (for installed packages)
+            candidates.push_back(exe_path + "/../../share/delta-cli/webui");
+            candidates.push_back(exe_path + "/../../../share/delta-cli/webui");
+            // Check relative to executable
             candidates.push_back(exe_path + "/../public");
             candidates.push_back(exe_path + "/../../public");
             candidates.push_back(exe_path + "/../assets");
             candidates.push_back(exe_path + "/../../assets");
         }
+        // Check standard Homebrew locations
+        candidates.push_back("/opt/homebrew/share/delta-cli/webui");
+        candidates.push_back("/usr/local/share/delta-cli/webui");
+        // Check relative paths
         candidates.push_back("public");
         candidates.push_back("./public");
         candidates.push_back("../public");
