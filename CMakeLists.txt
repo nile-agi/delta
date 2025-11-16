@@ -316,7 +316,6 @@ elseif(EXISTS "${CMAKE_SOURCE_DIR}/public/index.html")
     )
 else()
     message(WARNING "  public/index.html not found, web UI will not be installed")
->>>>>>> 702d971 (Add support for building custom web UI from assets directory in CMake)
 endif()
 
 # Print configuration summary
