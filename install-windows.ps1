@@ -49,7 +49,7 @@ $InstallPrefix = "C:\Program Files\Delta CLI"
 $BuildDir = "build_windows"
 
 # Step 1: Check for Visual Studio / Build Tools
-Write-Info "Step 1/7: Checking for Visual Studio / Build Tools..."
+Write-Info "Step 1/8: Checking for Visual Studio / Build Tools..."
 
 $vsPath = $null
 $vsVersions = @("2022", "2019", "2017")
@@ -99,7 +99,7 @@ if (-not $vsPath) {
 Write-Success "Visual Studio found at: $vsPath"
 
 # Step 2: Check/Install Chocolatey (optional but recommended)
-Write-Info "Step 2/7: Checking for package manager..."
+Write-Info "Step 2/8: Checking for package manager..."
 $hasChoco = $false
 if (Get-Command choco -ErrorAction SilentlyContinue) {
     Write-Success "Chocolatey found"
@@ -110,7 +110,7 @@ if (Get-Command choco -ErrorAction SilentlyContinue) {
 }
 
 # Step 3: Install dependencies
-Write-Info "Step 3/7: Installing dependencies..."
+Write-Info "Step 3/8: Installing dependencies..."
 
 $missingDeps = @()
 
@@ -143,14 +143,14 @@ $cmakeVersion = (cmake --version | Select-Object -First 1).ToString()
 Write-Info "CMake version: $cmakeVersion"
 
 # Step 4: Check for vendored llama-cpp
-Write-Info "Step 4/7: Verifying project structure..."
+Write-Info "Step 4/8: Verifying project structure..."
 if (-not (Test-Path "vendor\llama-cpp\CMakeLists.txt")) {
     Write-Error "llama-cpp not found in vendor\llama-cpp\. Please ensure you're in the delta-cli directory."
 }
 Write-Success "Project structure verified"
 
 # Step 5: Setup build environment
-Write-Info "Step 5/7: Setting up build environment..."
+Write-Info "Step 5/8: Setting up build environment..."
 
 # Find vcvarsall.bat
 $vcvarsPath = Join-Path $vsPath "VC\Auxiliary\Build\vcvarsall.bat"
@@ -168,7 +168,7 @@ if ([Environment]::Is64BitOperatingSystem) {
 Write-Info "Building for: $arch"
 
 # Step 6: Build
-Write-Info "Step 6/7: Building Delta CLI..."
+Write-Info "Step 6/8: Building Delta CLI..."
 
 # Create build directory
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
@@ -202,42 +202,44 @@ if (-not (Test-Path "delta.exe")) {
 Write-Success "Build completed successfully"
 Set-Location ..
 
-# Step 6.5: Modify Web UI for Delta branding
-Write-Info "Step 6.5/7: Customizing Web UI for Delta..."
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ModifyScript = Join-Path $ScriptDir "modify-webui.sh"
-
-# Try to use bash (Git Bash, WSL, or Git for Windows)
-$bashPath = $null
-$bashPaths = @(
-    "C:\Program Files\Git\bin\bash.exe",
-    "C:\Program Files (x86)\Git\bin\bash.exe",
-    "bash.exe",
-    "wsl.exe"
-)
-
-foreach ($path in $bashPaths) {
-    if (Get-Command $path -ErrorAction SilentlyContinue) {
-        $bashPath = $path
-        break
-    }
-}
-
-if ($bashPath -and (Test-Path $ModifyScript)) {
-    Write-Info "Running web UI modification script..."
-    & $bashPath $ModifyScript
-    if ($LASTEXITCODE -eq 0) {
-        Write-Success "Web UI customized for Delta"
+# Step 6.5: Build web UI from assets/ if needed
+Write-Info "Step 6.5/8: Building web UI from assets/..."
+if (Test-Path "assets") {
+    if (-not ((Test-Path "public\index.html.gz") -or (Test-Path "public\index.html"))) {
+        Write-Info "Web UI not built, building now..."
+        Set-Location assets
+        
+        if (-not (Test-Path "node_modules")) {
+            if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+                Write-Warning "npm not found. Please install Node.js:"
+                Write-Info "  Download from: https://nodejs.org/"
+                Write-Info "  Or use Chocolatey: choco install nodejs"
+                Write-Error "Node.js and npm are required to build the web UI"
+            }
+            Write-Info "Installing web UI dependencies..."
+            npm install
+            if ($LASTEXITCODE -ne 0) {
+                Set-Location ..
+                Write-Error "Failed to install web UI dependencies"
+            }
+        }
+        Write-Info "Building web UI..."
+        npm run build
+        if ($LASTEXITCODE -ne 0) {
+            Set-Location ..
+            Write-Error "Failed to build web UI"
+        }
+        Set-Location ..
+        Write-Success "Web UI built successfully"
     } else {
-        Write-Warning "Web UI modification failed, continuing anyway"
+        Write-Success "Web UI already built"
     }
 } else {
-    Write-Warning "Bash not found or modify-webui.sh not found, skipping web UI customization"
-    Write-Info "Install Git for Windows or WSL to enable web UI customization"
+    Write-Warning "assets/ directory not found. Web UI will not be available."
 }
 
 # Step 7: Install system-wide
-Write-Info "Step 7/7: Installing system-wide..."
+Write-Info "Step 7/8: Installing system-wide..."
 
 if (-not $isAdmin) {
     Write-Warning "System-wide installation requires Administrator privileges"
@@ -254,6 +256,17 @@ if (-not $isAdmin) {
         Copy-Item "$BuildDir\delta-server.exe" "$InstallPrefix\delta-server.exe" -Force
     }
     
+    # Install web UI if built
+    if ((Test-Path "public") -and ((Test-Path "public\index.html") -or (Test-Path "public\index.html.gz"))) {
+        $webuiDir = Join-Path $InstallPrefix "webui"
+        Write-Info "Installing web UI..."
+        New-Item -ItemType Directory -Force -Path $webuiDir | Out-Null
+        Copy-Item "public\*" $webuiDir -Recurse -Force
+        Write-Success "Web UI installed to $webuiDir"
+    } else {
+        Write-Warning "Web UI not found. Server will use embedded UI or find files at runtime."
+    }
+    
     # Add to PATH (system-wide)
     $currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     if ($currentPath -notlike "*$InstallPrefix*") {
@@ -264,6 +277,8 @@ if (-not $isAdmin) {
     Write-Success "Delta CLI installed to $InstallPrefix"
 }
 
+# Step 8: Final verification
+Write-Info "Step 8/8: Final verification..."
 # Verify installation
 if (Test-Path "$InstallPrefix\delta.exe") {
     Write-Success "Delta CLI installed successfully"

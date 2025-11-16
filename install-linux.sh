@@ -105,11 +105,11 @@ detect_package_manager() {
 }
 
 # Step 1: Detect package manager
-info "Step 1/6: Detecting package manager..."
+info "Step 1/8: Detecting package manager..."
 detect_package_manager
 
 # Step 2: Check for sudo
-info "Step 2/6: Checking permissions..."
+info "Step 2/8: Checking permissions..."
 if [ "$EUID" -ne 0 ]; then
     if ! command -v sudo >/dev/null 2>&1; then
         error_exit "This script requires root privileges or sudo. Please run with sudo or as root."
@@ -122,11 +122,11 @@ else
 fi
 
 # Step 3: Update package lists
-info "Step 3/6: Updating package lists..."
+info "Step 3/8: Updating package lists..."
 $SUDO_CMD $PKG_UPDATE || warning "Package update failed (continuing anyway)"
 
 # Step 4: Install dependencies
-info "Step 4/6: Installing dependencies..."
+info "Step 4/8: Installing dependencies..."
 DEPENDENCIES="$PKG_BUILD_ESSENTIAL $PKG_CMAKE $PKG_GIT $PKG_CURL"
 
 # Check what's missing
@@ -161,14 +161,14 @@ CMAKE_VERSION=$(cmake --version | head -n1 | cut -d' ' -f3)
 info "CMake version: $CMAKE_VERSION"
 
 # Step 5: Check for vendored llama.cpp
-info "Step 5/6: Verifying project structure..."
+info "Step 5/8: Verifying project structure..."
 if [ ! -f "vendor/llama.cpp/CMakeLists.txt" ]; then
     error_exit "llama.cpp not found in vendor/llama.cpp/. Please ensure you're in the delta-cli directory."
 fi
 success "Project structure verified"
 
 # Step 6: Build
-info "Step 6/7: Building Delta CLI..."
+info "Step 6/8: Building Delta CLI..."
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
@@ -217,27 +217,36 @@ success "Build completed successfully"
 
 cd ..
 
-# Step 6.5: Modify Web UI for Delta branding (REQUIRED)
-info "Step 6.5/7: Customizing Web UI for Delta..."
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "$SCRIPT_DIR/modify-webui.sh" ]; then
-    source "$SCRIPT_DIR/modify-webui.sh"
-    modify_webui_for_delta || error_exit "Failed to customize web UI for Delta"
+# Step 6.5: Build web UI from assets/ if needed
+info "Step 6.5/8: Building web UI from assets/..."
+if [ -d "assets" ]; then
+    if [ ! -f "public/index.html.gz" ] && [ ! -f "public/index.html" ]; then
+        info "Web UI not built, building now..."
+        cd assets
+        if [ ! -d "node_modules" ]; then
+            if ! command -v npm >/dev/null 2>&1; then
+                warning "npm not found. Please install Node.js:"
+                info "  Ubuntu/Debian: sudo apt-get install nodejs npm"
+                info "  Fedora/RHEL: sudo dnf install nodejs npm"
+                info "  Arch: sudo pacman -S nodejs npm"
+                error_exit "Node.js and npm are required to build the web UI"
+            fi
+            info "Installing web UI dependencies..."
+            npm install || error_exit "Failed to install web UI dependencies"
+        fi
+        info "Building web UI..."
+        npm run build || error_exit "Failed to build web UI"
+        cd ..
+        success "Web UI built successfully"
+    else
+        success "Web UI already built"
+    fi
 else
-    error_exit "modify-webui.sh not found. Delta web UI customization is required."
+    warning "assets/ directory not found. Web UI will not be available."
 fi
-
-# Verify web UI files exist before installation
-if [ ! -f "vendor/llama.cpp/tools/server/public/index.html" ]; then
-    error_exit "Delta web UI files not found. Installation cannot proceed."
-fi
-if [ ! -f "vendor/llama.cpp/tools/server/public/favicon.svg" ]; then
-    error_exit "Delta favicon not found. Installation cannot proceed."
-fi
-info "✓ Delta web UI files verified"
 
 # Step 7: Install system-wide
-info "Step 7/7: Installing system-wide..."
+info "Step 7/8: Installing system-wide..."
 if [ "$EUID" -ne 0 ]; then
     warning "System-wide installation requires sudo privileges"
     info "Installing to $INSTALL_PREFIX..."
@@ -246,33 +255,19 @@ else
     cmake --install "$BUILD_DIR" --prefix "$INSTALL_PREFIX" || error_exit "Installation failed"
 fi
 
-# Verify web UI was installed
-if [ -d "$INSTALL_PREFIX/share/delta-cli/webui/public" ]; then
-    if [ -f "$INSTALL_PREFIX/share/delta-cli/webui/public/index.html" ]; then
-        # Verify it's Delta-branded (not llama.cpp)
-        if grep -q "Delta" "$INSTALL_PREFIX/share/delta-cli/webui/public/index.html" 2>/dev/null && \
-           ! grep -q "llama.cpp" "$INSTALL_PREFIX/share/delta-cli/webui/public/index.html" 2>/dev/null; then
-            success "Delta web UI installed to $INSTALL_PREFIX/share/delta-cli/webui/public"
-        else
-            warning "Web UI installed but may not be Delta-branded. Re-running modification..."
-            source "$SCRIPT_DIR/modify-webui.sh"
-            modify_webui_for_delta
-            # Re-install web UI
-            sudo cp -r vendor/llama.cpp/tools/server/public/* "$INSTALL_PREFIX/share/delta-cli/webui/public/" 2>/dev/null || \
-            cp -r vendor/llama.cpp/tools/server/public/* "$INSTALL_PREFIX/share/delta-cli/webui/public/" 2>/dev/null
-            success "Delta web UI re-installed"
-        fi
-    else
-        warning "Web UI directory exists but index.html not found"
-    fi
+# Install web UI if built
+if [ -d "public" ] && ([ -f "public/index.html" ] || [ -f "public/index.html.gz" ]); then
+    info "Installing web UI..."
+    sudo mkdir -p "$INSTALL_PREFIX/share/delta-cli/webui" || mkdir -p "$INSTALL_PREFIX/share/delta-cli/webui"
+    sudo cp -r public/* "$INSTALL_PREFIX/share/delta-cli/webui/" 2>/dev/null || \
+    cp -r public/* "$INSTALL_PREFIX/share/delta-cli/webui/" 2>/dev/null
+    success "Web UI installed to $INSTALL_PREFIX/share/delta-cli/webui"
 else
-    warning "Web UI installation directory not found. Manually copying..."
-    sudo mkdir -p "$INSTALL_PREFIX/share/delta-cli/webui/public" || mkdir -p "$INSTALL_PREFIX/share/delta-cli/webui/public"
-    sudo cp -r vendor/llama.cpp/tools/server/public/* "$INSTALL_PREFIX/share/delta-cli/webui/public/" 2>/dev/null || \
-    cp -r vendor/llama.cpp/tools/server/public/* "$INSTALL_PREFIX/share/delta-cli/webui/public/" 2>/dev/null
-    success "Delta web UI manually installed"
+    warning "Web UI not found. Server will use embedded UI or find files at runtime."
 fi
 
+# Step 8: Final verification
+info "Step 8/8: Final verification..."
 # Verify installation
 if [ -f "$INSTALL_PREFIX/bin/delta" ]; then
     success "Delta CLI installed to $INSTALL_PREFIX/bin/delta"
