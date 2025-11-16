@@ -21,7 +21,7 @@
 		<div class="flex gap-4">
 			{#if props.default_generation_settings.n_ctx}
 				<Badge variant="secondary" class="text-xs">
-					ctx: {props.default_generation_settings.n_ctx.toLocaleString()}
+					context: {props.default_generation_settings.n_ctx.toLocaleString()}
 				</Badge>
 			{/if}
 

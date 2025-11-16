@@ -429,7 +429,7 @@
                         </svg>
                         <span id="current-model">Loading model...</span>
                     </div>
-                    <div class="badge secondary" id="ctx-badge">ctx: 4,096</div>
+                    <div class="badge secondary" id="ctx-badge">context: 4,096</div>
                 </div>
             </div>
 
@@ -557,7 +557,7 @@
                         const propsData = await propsResponse.json();
                         if (propsData.default_generation_settings && propsData.default_generation_settings.n_ctx) {
                             contextSize = propsData.default_generation_settings.n_ctx;
-                            document.getElementById('ctx-badge').textContent = `ctx: ${contextSize.toLocaleString()}`;
+                            document.getElementById('ctx-badge').textContent = `context: ${contextSize.toLocaleString()}`;
                         }
                     } catch (e) {
                         // Use default
