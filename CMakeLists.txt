@@ -201,67 +201,73 @@ if(BUILD_TESTS)
     endif()
 endif()
 
-# Build web UI from assets/ directory if needed
-if(EXISTS "${CMAKE_SOURCE_DIR}/assets/package.json")
-    find_program(NPM_EXECUTABLE npm)
-    if(NPM_EXECUTABLE)
-        # Check if public/index.html exists and is older than assets/package.json
-        set(PUBLIC_INDEX "${CMAKE_SOURCE_DIR}/public/index.html")
-        set(ASSETS_PACKAGE "${CMAKE_SOURCE_DIR}/assets/package.json")
+# Build Web UI from assets/ directory
+# This builds the custom Delta web UI (SvelteKit) and outputs to public/
+message(STATUS "")
+message(STATUS "Building Web UI from assets/...")
+
+# Check if npm is available
+find_program(NPM_EXECUTABLE npm)
+if(NPM_EXECUTABLE)
+    message(STATUS "  npm found: ${NPM_EXECUTABLE}")
+    
+    # Check if assets directory exists
+    if(EXISTS "${CMAKE_SOURCE_DIR}/assets/package.json")
+        message(STATUS "  assets/ directory found")
         
-        set(BUILD_WEBUI FALSE)
-        if(NOT EXISTS "${PUBLIC_INDEX}")
-            set(BUILD_WEBUI TRUE)
-            message(STATUS "Web UI not found - building from assets/")
-        else()
-            # Check if assets/package.json is newer than public/index.html
-            file(TIMESTAMP "${ASSETS_PACKAGE}" PACKAGE_TIME)
+        # Check if public/index.html exists and if it's older than assets/package.json
+        set(PUBLIC_INDEX "${CMAKE_SOURCE_DIR}/public/index.html")
+        set(ASSETS_PACKAGE_JSON "${CMAKE_SOURCE_DIR}/assets/package.json")
+        
+        set(SHOULD_BUILD_WEBUI TRUE)
+        if(EXISTS "${PUBLIC_INDEX}")
             file(TIMESTAMP "${PUBLIC_INDEX}" INDEX_TIME)
-            if(PACKAGE_TIME GREATER_EQUAL INDEX_TIME)
-                set(BUILD_WEBUI TRUE)
-                message(STATUS "Web UI source files are newer - rebuilding")
+            file(TIMESTAMP "${ASSETS_PACKAGE_JSON}" PACKAGE_TIME)
+            if(INDEX_TIME GREATER_EQUAL PACKAGE_TIME)
+                message(STATUS "  public/index.html is up to date, skipping build")
+                set(SHOULD_BUILD_WEBUI FALSE)
             endif()
         endif()
         
-        if(BUILD_WEBUI)
-            # Check if node_modules exists, if not, install dependencies first
+        if(SHOULD_BUILD_WEBUI)
+            message(STATUS "  Building web UI (this may take a minute)...")
+            
+            # Run npm install if node_modules doesn't exist
             if(NOT EXISTS "${CMAKE_SOURCE_DIR}/assets/node_modules")
-                message(STATUS "Installing web UI dependencies...")
+                message(STATUS "    Installing npm dependencies...")
                 execute_process(
                     COMMAND ${NPM_EXECUTABLE} install
                     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/assets"
-                    RESULT_VARIABLE INSTALL_RESULT
                     OUTPUT_QUIET
                     ERROR_QUIET
+                    RESULT_VARIABLE NPM_INSTALL_RESULT
                 )
-                if(NOT INSTALL_RESULT EQUAL 0)
-                    message(WARNING "Failed to install web UI dependencies")
-                    message(WARNING "Please run 'npm install' in the assets/ directory manually")
+                if(NOT NPM_INSTALL_RESULT EQUAL 0)
+                    message(WARNING "  npm install failed, web UI may not be available")
                 endif()
             endif()
             
-            message(STATUS "Building web UI from assets/ directory...")
+            # Run npm run build
+            message(STATUS "    Building SvelteKit app...")
             execute_process(
                 COMMAND ${NPM_EXECUTABLE} run build
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/assets"
-                RESULT_VARIABLE BUILD_RESULT
-                OUTPUT_VARIABLE BUILD_OUTPUT
-                ERROR_VARIABLE BUILD_ERROR
+                OUTPUT_QUIET
+                ERROR_QUIET
+                RESULT_VARIABLE NPM_BUILD_RESULT
             )
-            if(BUILD_RESULT EQUAL 0)
-                message(STATUS "Web UI built successfully")
+            if(NPM_BUILD_RESULT EQUAL 0)
+                message(STATUS "  ✓ Web UI built successfully")
             else()
-                message(WARNING "Web UI build failed: ${BUILD_ERROR}")
-                message(WARNING "Continuing with existing web UI files if available")
+                message(WARNING "  npm build failed, web UI may not be available")
             endif()
-        else()
-            message(STATUS "Web UI is up to date")
         endif()
     else()
-        message(STATUS "npm not found - skipping web UI build (using existing files if available)")
+        message(WARNING "  assets/package.json not found, skipping web UI build")
     endif()
 else()
-    message(STATUS "assets/ directory not found - skipping web UI build")
+    message(WARNING "  npm not found, web UI will not be built")
+    message(WARNING "  Install Node.js and npm to build the web UI")
 endif()
 
 # Installation
@@ -274,35 +280,43 @@ install(TARGETS delta delta-server
 # Install models directory structure
 install(DIRECTORY DESTINATION share/delta-cli/models)
 
-# Install web UI from public/ directory (built from assets/)
-# Check if public/ directory exists and contains web UI files
-if(EXISTS "${CMAKE_SOURCE_DIR}/public")
-    if(EXISTS "${CMAKE_SOURCE_DIR}/public/index.html" OR EXISTS "${CMAKE_SOURCE_DIR}/public/index.html.gz")
-        install(DIRECTORY ${CMAKE_SOURCE_DIR}/public/
-            DESTINATION share/delta-cli/webui
-            FILES_MATCHING
-            PATTERN "*.html"
-            PATTERN "*.html.gz"
-            PATTERN "*.js"
-            PATTERN "*.css"
-            PATTERN "*.svg"
-            PATTERN "*.png"
-            PATTERN "*.jpg"
-            PATTERN "*.jpeg"
-            PATTERN "*.gif"
-            PATTERN "*.woff"
-            PATTERN "*.woff2"
-            PATTERN "*.ttf"
-            PATTERN "*.eot"
-            PATTERN "*.json"
-            PATTERN "*.map"
-        )
-        message(STATUS "Web UI will be installed from public/")
-    else()
-        message(STATUS "Web UI not found in public/ - server will use embedded UI or find files at runtime")
-    endif()
+# Install Web UI from public/ directory (built from assets/)
+if(EXISTS "${CMAKE_SOURCE_DIR}/public/index.html.gz")
+    message(STATUS "  Installing web UI from public/...")
+    install(DIRECTORY "${CMAKE_SOURCE_DIR}/public"
+        DESTINATION share/delta-cli/webui
+        FILES_MATCHING
+        PATTERN "*.html"
+        PATTERN "*.html.gz"
+        PATTERN "*.js"
+        PATTERN "*.css"
+        PATTERN "*.svg"
+        PATTERN "*.png"
+        PATTERN "*.jpg"
+        PATTERN "*.ico"
+        PATTERN "*.woff"
+        PATTERN "*.woff2"
+        PATTERN "*.ttf"
+    )
+elseif(EXISTS "${CMAKE_SOURCE_DIR}/public/index.html")
+    message(STATUS "  Installing web UI from public/...")
+    install(DIRECTORY "${CMAKE_SOURCE_DIR}/public"
+        DESTINATION share/delta-cli/webui
+        FILES_MATCHING
+        PATTERN "*.html"
+        PATTERN "*.js"
+        PATTERN "*.css"
+        PATTERN "*.svg"
+        PATTERN "*.png"
+        PATTERN "*.jpg"
+        PATTERN "*.ico"
+        PATTERN "*.woff"
+        PATTERN "*.woff2"
+        PATTERN "*.ttf"
+    )
 else()
-    message(STATUS "public/ directory not found - web UI will not be installed")
+    message(WARNING "  public/index.html not found, web UI will not be installed")
+>>>>>>> 702d971 (Add support for building custom web UI from assets directory in CMake)
 endif()
 
 # Print configuration summary

@@ -41,7 +41,7 @@ Delta CLI is an **open-source, offline-first AI assistant** that runs large lang
 - 📦 **Easy Model Management**: One-command downloads from Hugging Face
 - 🚀 **Zero-Setup**: Auto-downloads default model on first run
 - 🔧 **llama.cpp Integration**: Access to all llama.cpp features and optimizations
-- 🌐 **Web UI**: Built-in web interface using original llama.cpp web UI
+- 🌐 **Web UI**: Built-in web interface with custom Delta branding (built from `assets/` directory)
 
 ### What Problem Does Delta Solve?
 
@@ -85,10 +85,13 @@ brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
 
 **What it does:**
 - ✅ Automatically clones repository (git happens in background)
-- ✅ Automatically installs dependencies
+- ✅ Automatically installs dependencies (including Node.js for web UI)
 - ✅ Automatically builds from source (~40 seconds)
+- ✅ Automatically builds custom web UI from `assets/` directory
 - ✅ Automatically configures PATH
 - ✅ Users don't need to know about git
+
+**Note:** The Homebrew formula automatically installs Node.js as a build dependency to build the custom Delta web UI from the `assets/` directory. The web UI includes the Delta favicon, model name display improvements, and other customizations.
 
 **Alternative - Installation Script:**
 ```bash
@@ -398,7 +401,13 @@ delta pull qwen2.5:0.5b
 - Ensure all dependencies are installed
 - Check CMake version (3.14+ required)
 - Verify C++ compiler is installed
+- **For web UI**: Install Node.js and npm (required to build custom web UI from `assets/`)
+  - macOS: `brew install node`
+  - Linux: `sudo apt install nodejs npm` (Debian/Ubuntu) or `sudo dnf install nodejs npm` (RHEL/Fedora)
+  - Windows: Download from [nodejs.org](https://nodejs.org/)
 - Check disk space (build requires several GB)
+
+**Note:** If Node.js/npm is not available during build, CMake will skip building the web UI and fall back to the original llama.cpp web UI (if available). The custom Delta web UI (with favicon, model name improvements, etc.) requires Node.js to build.
 
 ---
 
