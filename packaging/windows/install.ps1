@@ -44,9 +44,19 @@ $tempDir = New-TemporaryFile | ForEach-Object { Remove-Item $_; New-Item -ItemTy
 $downloadUrl = "https://github.com/nile-agi/delta/releases/latest/download/delta-cli-${platform}.zip"
 
 try {
-    Invoke-WebRequest -Uri $downloadUrl -OutFile "$tempDir\delta-cli.zip"
+    $response = Invoke-WebRequest -Uri $downloadUrl -OutFile "$tempDir\delta-cli.zip" -ErrorAction Stop
 } catch {
-    Write-Host "❌ Failed to download Delta CLI: $_" -ForegroundColor Red
+    Write-Host "❌ Failed to download Delta CLI from: $downloadUrl" -ForegroundColor Red
+    Write-Host "" -ForegroundColor Red
+    Write-Host "⚠️  This usually means:" -ForegroundColor Yellow
+    Write-Host "   1. No release has been created yet on GitHub" -ForegroundColor Yellow
+    Write-Host "   2. The release doesn't include a Windows package" -ForegroundColor Yellow
+    Write-Host "" -ForegroundColor Yellow
+    Write-Host "📝 Alternative installation methods:" -ForegroundColor Cyan
+    Write-Host "   • Build from source: See README.md for build instructions" -ForegroundColor White
+    Write-Host "   • Check GitHub releases: https://github.com/nile-agi/delta/releases" -ForegroundColor White
+    Write-Host "   • Use winget (when available): winget install DeltaCLI.DeltaCLI" -ForegroundColor White
+    Write-Host "" -ForegroundColor White
     exit 1
 }
 

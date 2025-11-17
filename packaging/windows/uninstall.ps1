@@ -22,14 +22,53 @@ if (-not $isAdmin) {
 
 $installDir = "C:\Program Files\Delta CLI"
 
-if (-not (Test-Path $installDir)) {
-    Write-Host "⚠️  Delta CLI not found at: $installDir" -ForegroundColor Yellow
-    Write-Host "   It may have been uninstalled already or installed to a different location" -ForegroundColor Yellow
+# Check what needs to be cleaned up
+$hasInstallDir = Test-Path $installDir
+$currentPath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+$hasPathEntry = $currentPath -like "*$installDir*"
+$shortcutPath = "$env:USERPROFILE\Desktop\Delta CLI.lnk"
+$hasShortcut = Test-Path $shortcutPath
+$userDataPaths = @(
+    "$env:USERPROFILE\.delta",
+    "$env:APPDATA\delta-cli"
+)
+$hasUserData = $false
+foreach ($path in $userDataPaths) {
+    if (Test-Path $path) {
+        $hasUserData = $true
+        break
+    }
+}
+
+# If nothing exists, exit early
+if (-not $hasInstallDir -and -not $hasPathEntry -and -not $hasShortcut -and -not $hasUserData) {
+    Write-Host "✅ Delta CLI is not installed. Nothing to uninstall." -ForegroundColor Green
+    Write-Host "   No installation directory, PATH entries, shortcuts, or user data found." -ForegroundColor Gray
     exit 0
 }
 
+# Show what will be removed
+if (-not $hasInstallDir) {
+    Write-Host "⚠️  Installation directory not found at: $installDir" -ForegroundColor Yellow
+    Write-Host "   (May have been removed already)" -ForegroundColor Gray
+} else {
+    Write-Host "📁 Found installation at: $installDir" -ForegroundColor Cyan
+}
+
+if ($hasPathEntry) {
+    Write-Host "🔗 Found PATH entry" -ForegroundColor Cyan
+}
+if ($hasShortcut) {
+    Write-Host "🔗 Found desktop shortcut" -ForegroundColor Cyan
+}
+if ($hasUserData) {
+    Write-Host "📦 Found user data" -ForegroundColor Cyan
+}
+
+Write-Host ""
+
 if (-not $Force) {
-    Write-Host "⚠️  This will remove Delta CLI from your system" -ForegroundColor Yellow
+    Write-Host "⚠️  This will remove Delta CLI and all related files from your system" -ForegroundColor Yellow
     $response = Read-Host "Continue? (y/n)"
     if ($response -ne "y" -and $response -ne "Y") {
         Write-Host "Cancelled." -ForegroundColor Yellow
