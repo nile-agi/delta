@@ -133,6 +133,15 @@ winget install DeltaCLI.DeltaCLI
 Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/packaging/windows/install.ps1" -OutFile install.ps1; .\install.ps1
 ```
 
+> **Note:** This script requires a GitHub release with a Windows package to exist. If you get a "Not Found" error, it means:
+> - No release has been created yet, or
+> - The release doesn't include a Windows package (`delta-cli-windows-x64.zip`)
+>
+> In that case, you can:
+> - Check available releases: https://github.com/nile-agi/delta/releases
+> - Build from source (see build instructions in the repository)
+> - Wait for an official release to be published
+
 ### Verification
 
 After installation, verify it works:
@@ -424,6 +433,8 @@ sudo rm -f /etc/profile.d/delta-cli.sh
 ```powershell
 winget uninstall DeltaCLI.DeltaCLI
 ```
+
+> **Note:** If you get "No package found matching input criteria", Delta CLI was never installed via winget. You may have installed it via the PowerShell script or manually.
 
 > **Note:** Winget will automatically remove the installation directory (`C:\Program Files\Delta CLI`). However, it may not automatically remove:
 > - PATH environment variable entries
