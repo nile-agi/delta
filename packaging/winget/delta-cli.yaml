@@ -39,12 +39,13 @@ Commands:
 Installers:
   - Architecture: x64
     InstallerType: zip
-    InstallerUrl: https://github.com/nile-agi/delta/releases/latest/download/delta-cli-windows-x64.zip
-    InstallerSha256: PLACEHOLDER_SHA256  # Update with actual SHA256 when release is available
+    InstallerUrl: https://github.com/nile-agi/delta/releases/download/v1.0.0/delta-cli-windows-x64.zip
+    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+    Scope: machine
+    InstallLocation: "C:\\Program Files\\Delta CLI"
     InstallModes:
       - silent
       - interactive
-    # Note: Uses latest release until v1.0.0 is available
 ManifestType: version
 ManifestVersion: 1.4.0
 

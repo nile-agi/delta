@@ -126,6 +126,8 @@ brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
 winget install DeltaCLI.DeltaCLI
 ```
 
+> **Note:** If you get "No package found matching input criteria", the package may not be published to the winget repository yet. In that case, use the PowerShell installation script below, or see [packaging/winget/SUBMIT.md](packaging/winget/SUBMIT.md) for submission instructions.
+
 **PowerShell Installation Script:**
 ```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/packaging/windows/install.ps1" -OutFile install.ps1; .\install.ps1
@@ -418,8 +420,27 @@ sudo rm -f /etc/profile.d/delta-cli.sh
 
 ### Windows
 
+**If installed via Winget:**
+```powershell
+winget uninstall DeltaCLI.DeltaCLI
+```
+
+> **Note:** Winget will automatically remove the installation directory (`C:\Program Files\Delta CLI`). However, it may not automatically remove:
+> - PATH environment variable entries
+> - Desktop shortcuts
+> - User data directories
+>
+> For complete cleanup including PATH removal and user data, you can run the uninstall script after winget uninstall:
+> ```powershell
+> Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/packaging/windows/uninstall.ps1" -OutFile uninstall.ps1; .\uninstall.ps1
+> ```
+
 **If installed via PowerShell script:**
 ```powershell
+# Option 1: Use the uninstall script (Recommended)
+Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/packaging/windows/uninstall.ps1" -OutFile uninstall.ps1; .\uninstall.ps1
+
+# Option 2: Manual removal
 # Remove installation directory
 Remove-Item -Recurse -Force "C:\Program Files\Delta CLI"
 
@@ -453,9 +474,17 @@ rm -rf ~/.delta ~/.config/delta-cli
 
 **Windows:**
 ```powershell
-Remove-Item -Recurse -Force "C:\Program Files\Delta CLI"
+# If installed via winget:
+winget uninstall DeltaCLI.DeltaCLI
+
+# Then run the uninstall script for complete cleanup (PATH, shortcuts, user data):
+Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/packaging/windows/uninstall.ps1" -OutFile uninstall.ps1; .\uninstall.ps1
+
+# Or manually remove everything:
+Remove-Item -Recurse -Force "C:\Program Files\Delta CLI" -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force "$env:USERPROFILE\.delta" -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force "$env:APPDATA\delta-cli" -ErrorAction SilentlyContinue
+Remove-Item "$env:USERPROFILE\Desktop\Delta CLI.lnk" -ErrorAction SilentlyContinue
 # Remove from PATH via System Properties > Environment Variables
 ```
 
