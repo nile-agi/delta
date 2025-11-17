@@ -126,7 +126,11 @@ brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
 winget install DeltaCLI.DeltaCLI
 ```
 
-> **Note:** If you get "No package found matching input criteria", the package may not be published to the winget repository yet. In that case, use the PowerShell installation script below, or see [packaging/winget/SUBMIT.md](packaging/winget/SUBMIT.md) for submission instructions.
+> **Note:** If you get "No package found matching input criteria", the package may not be published to the winget repository yet. 
+> - To submit the package to winget, use the automated script: `.\packaging\winget\submit-to-winget.ps1 -Version 1.0.0 -GitHubUsername YOUR_USERNAME`
+> - Or see [packaging/winget/AUTOMATION.md](packaging/winget/AUTOMATION.md) for automated submission guide
+> - Or see [packaging/winget/SUBMIT.md](packaging/winget/SUBMIT.md) for manual submission instructions
+> - In the meantime, use the PowerShell installation script below
 
 **PowerShell Installation Script:**
 ```powershell
