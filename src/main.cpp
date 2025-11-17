@@ -69,37 +69,8 @@ INTERACTIVE COMMANDS:
     /list                    List local models
     /available               List available models
     /use <model>             Switch to another model
-    /tokens <N>              Set max tokens (default: 512)
-    /temperature <F>          Set temperature (default: 0.8)
-    /gpu-layers <N>          Set GPU layers (default: 0, -1 for all)
-    /multimodal              Toggle multimodal mode
-    /server                  Start server (usage: /server [model] [--port N])
-    /updates                 Check for updates
-    /version                 Show version info
-    /no-color                Toggle colored output
-    /help                    Show interactive commands
-
-EXAMPLES:
-    delta                    # Start interactive chat
-    delta "what is AI?"      # One-shot query
-    delta --help             # Show help
-    delta --server -m llama3.2:1b --port 8080
-    delta --model qwen3:0.6b "what is AI?"
-
-SESSION MANAGEMENT:
-    /new-session <name>      Create a new named session
-    /switch-session <name>   Switch to another session (use 'default' for default)
-    /list-sessions           List all available sessions
-    /delete-session <name>   Delete a session (cannot delete current)
-    /history                 Show conversation history
-    /delete-history <all|id|day|week|year> [date]  Delete history entries
     /clear-screen            Clear the terminal screen
-
-DEFAULT SESSION:
-    Delta ALWAYS uses a 'default' session for all interactions.
-    All conversations are automatically saved to this session.
-    You can temporarily switch to named sessions, but Delta will
-    always revert to the default session on next startup.
+    /help                    Show interactive commands
 
 EXAMPLES:
     # Download a model
@@ -159,7 +130,7 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     
     UI::init();
     UI::print_info("Interactive mode - Type 'exit' or 'quit' to end session");
-    UI::print_info("Type 'clear' to clear history, '/help' for commands");
+    UI::print_info("Type '/help' for available commands");
     
     // Automatically launch web UI server with default model
     std::string model_path = model_mgr.get_model_path(current_model);
@@ -285,10 +256,6 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             // Save history before exiting
             history_mgr.save_current_session();
             break;
-        } else if (input == "clear") {
-            history.clear();
-            UI::print_info("History cleared");
-            continue;
         } else if (input == "help") {
             Commands::show_help();
             continue;
@@ -309,7 +276,7 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
         if (!engine.is_loaded()) {
             // No model loaded - show helpful message
             UI::print_info("Interactive mode - Type 'exit' or 'quit' to end session");
-            UI::print_info("Type 'clear' to clear history, '/help' for commands");
+            UI::print_info("Type '/help' for available commands");
             continue;
         }
         
