@@ -12,6 +12,9 @@ The manifest file exists but needs to be submitted to the [winget-pkgs](https://
 
 - `delta-cli.yaml` - Winget manifest file
 - `update-sha256.ps1` - Helper script to update SHA256 hash in manifest
+- `submit-to-winget.ps1` - **Automated submission script (recommended)**
+- `submit-to-winget.sh` - Cross-platform preparation script
+- `SUBMIT.md` - Detailed manual submission guide
 - `README.md` - This file
 
 ## Quick Start
@@ -48,6 +51,30 @@ winget validate delta-cli.yaml
 ```
 
 ### 4. Submit to Winget Repository
+
+**Option A: Automated Submission (Recommended)**
+
+```powershell
+# Run the automated submission script
+.\packaging\winget\submit-to-winget.ps1 -Version 1.0.0 -GitHubUsername YOUR_USERNAME
+```
+
+This script will:
+- ✅ Update manifest with SHA256 hash
+- ✅ Validate the manifest
+- ✅ Check if GitHub release exists
+- ✅ Clone/fork winget-pkgs repository
+- ✅ Create manifest directory structure
+- ✅ Copy manifest to correct location
+- ✅ Validate in winget-pkgs structure
+- ✅ Prepare git commit
+- ✅ Guide you through creating the PR
+
+**Option B: Manual Submission**
+
+See [SUBMIT.md](SUBMIT.md) for detailed manual steps.
+
+### 4. Submit to Winget Repository (Manual)
 
 1. **Fork the winget-pkgs repository:**
    - Go to https://github.com/microsoft/winget-pkgs
