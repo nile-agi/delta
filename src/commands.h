@@ -50,30 +50,10 @@ public:
     static bool handle_download(const std::vector<std::string>& args, InteractiveSession& session);
     static bool handle_remove(const std::vector<std::string>& args, InteractiveSession& session);
     static bool handle_list(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_updates(const std::vector<std::string>& args, InteractiveSession& session);
     static bool handle_use(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_version(const std::vector<std::string>& args, InteractiveSession& session);
     static bool handle_available(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_tokens(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_temperature(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_gpu_layers(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_multimodal(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_interactive(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_server(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_update(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_no_color(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_help(const std::vector<std::string>& args, InteractiveSession& session);
-    
-    // History and session management commands
     static bool handle_clear_screen(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_history(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_delete_history(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_new_session(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_list_sessions(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_switch_session(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_delete_session(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_active_session(const std::vector<std::string>& args, InteractiveSession& session);
-    static bool handle_export_session(const std::vector<std::string>& args, InteractiveSession& session);
+    static bool handle_help(const std::vector<std::string>& args, InteractiveSession& session);
     
     // Utility functions
     static std::vector<std::string> parse_args(const std::string& input);
