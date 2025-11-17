@@ -277,7 +277,7 @@ OPTIONS:
 
 ### Interactive Commands
 
-In interactive mode, use slash commands:
+Delta keeps interactive mode intentionally simple. During a session you can use:
 
 ```bash
 /download <model>        # Download a model
@@ -285,30 +285,12 @@ In interactive mode, use slash commands:
 /list                    # List local models
 /available               # List available models
 /use <model>             # Switch to another model
-/tokens <N>              # Set max tokens (default: 512)
-/temperature <F>         # Set temperature (default: 0.8)
-/gpu-layers <N>          # Set GPU layers (default: 0, -1 for all)
-/multimodal              # Toggle multimodal mode
-/server                  # Start web dashboard
-/updates                 # Check for updates
-/version                 # Show version info
-/no-color                # Toggle colored output
-/help                    # Show all commands
+/clear-screen            # Clear the terminal screen
+/help                    # Show these commands
+exit, quit               # Exit interactive mode
 ```
 
-### Session Management
-
-```bash
-/new-session <name>      # Create a new named session
-/switch-session <name>  # Switch to another session
-/list-sessions          # List all available sessions
-/delete-session <name>  # Delete a session
-/history                # Show conversation history
-/delete-history <all|id|day|week|year> [date]  # Delete history entries
-/clear-screen           # Clear the terminal screen
-```
-
-**Note:** Delta ALWAYS uses a 'default' session for all interactions. All conversations are automatically saved to this session.
+Any other slash command will respond with: `ℹ Type /help to see available commands`.
 
 ### Examples
 
