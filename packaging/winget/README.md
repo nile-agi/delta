@@ -19,7 +19,7 @@ The manifest file exists but needs to be submitted to the [winget-pkgs](https://
 
 ## Quick Start
 
-### 1. Build and Package Windows Release
+### For Windows Users
 
 ```powershell
 # Build Delta CLI for Windows
@@ -27,9 +27,21 @@ The manifest file exists but needs to be submitted to the [winget-pkgs](https://
 
 # Create release package
 .\packaging\release\package-windows.ps1 1.0.0 x64
+
+# Automated submission
+.\packaging\winget\submit-to-winget.ps1 -Version 1.0.0 -GitHubUsername YOUR_USERNAME
 ```
 
 This will create `release/delta-cli-windows-x64.zip` and display the SHA256 hash.
+
+### For macOS/Linux Users
+
+**See [MACOS_GUIDE.md](MACOS_GUIDE.md) for complete instructions.**
+
+Quick steps:
+1. Get the Windows ZIP file (from CI/CD or Windows build)
+2. Prepare manifest: `./packaging/winget/submit-to-winget.sh 1.0.0`
+3. Follow the instructions shown by the script
 
 ### 2. Update Manifest with SHA256
 
