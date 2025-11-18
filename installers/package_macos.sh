@@ -164,14 +164,36 @@ success "DMG contents prepared"
 
 # Step 5: Create DMG
 info "Step 5/6: Creating DMG image..."
-# Remove existing DMG if it exists
+# Remove existing DMG files if they exist
+info "Cleaning up any existing DMG files..."
 rm -f "$DMG_PATH"
+rm -f "$DMG_PATH.temp.dmg"
+
+# Check for and detach any existing mounts
+info "Checking for existing DMG mounts..."
+MOUNTED_DEVICES=$(hdiutil info | grep -E "image-path.*$(basename "$DMG_PATH.temp.dmg")" | awk '{print $1}' | head -1)
+if [ -n "$MOUNTED_DEVICES" ]; then
+    info "Detaching existing DMG mounts..."
+    for dev in $MOUNTED_DEVICES; do
+        hdiutil detach "$dev" -force 2>/dev/null || true
+    done
+    sleep 2
+fi
+
+# Also try to detach by volume name
+VOLUME_NAME="${APP_NAME} ${VERSION}"
+if hdiutil info | grep -q "$VOLUME_NAME"; then
+    info "Detaching volume: $VOLUME_NAME"
+    hdiutil detach "/Volumes/$VOLUME_NAME" -force 2>/dev/null || true
+    sleep 1
+fi
 
 # Calculate size needed (add 20% overhead)
 SIZE=$(du -sk "$TEMP_DMG_DIR" | cut -f1)
 SIZE=$((SIZE + 1000))  # Add 1MB overhead
 
 # Create DMG
+info "Creating temporary DMG..."
 hdiutil create -srcfolder "$TEMP_DMG_DIR" \
     -volname "${APP_NAME} ${VERSION}" \
     -fs HFS+ \
