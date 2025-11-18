@@ -752,19 +752,27 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        // Get the path to the web UI directory (use original llama.cpp web UI)
+        // Get the path to the web UI directory (use Delta web UI from public/ only)
         std::string public_path;
         std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
         std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
         
-        // Check for vendor/llama.cpp/tools/server/public (built web UI)
+        // Check for Delta web UI in public/ directory (built from assets/)
+        // Priority: Homebrew share directory, then relative to executable, then current directory
         std::vector<std::string> public_candidates = {
-            "vendor/llama.cpp/tools/server/public",
-            "./vendor/llama.cpp/tools/server/public",
-            "../vendor/llama.cpp/tools/server/public",
-            tools::FileOps::join_path(exe_dir, "vendor/llama.cpp/tools/server/public"),
-            tools::FileOps::join_path(exe_dir, "../vendor/llama.cpp/tools/server/public"),
-            tools::FileOps::join_path(exe_grandparent, "vendor/llama.cpp/tools/server/public")
+            // Homebrew installed location (priority)
+            "/opt/homebrew/share/delta-cli/webui",
+            "/usr/local/share/delta-cli/webui",
+            tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"),
+            tools::FileOps::join_path(exe_dir, "../../../share/delta-cli/webui"),
+            // Relative to executable
+            tools::FileOps::join_path(exe_dir, "../public"),
+            tools::FileOps::join_path(exe_dir, "../../public"),
+            tools::FileOps::join_path(exe_grandparent, "public"),
+            // Current directory
+            "public",
+            "./public",
+            "../public"
         };
         
         for (const auto& candidate : public_candidates) {
@@ -903,7 +911,7 @@ int main(int argc, char** argv) {
             cmd << " --alias \"" << model_alias << "\"";
         }
         
-        // Add --path flag to use original llama.cpp web UI if found
+        // Add --path flag to use Delta web UI from public/ if found
         if (!public_path.empty()) {
             cmd << " --path \"" << public_path << "\"";
         }

@@ -111,35 +111,34 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
         return false;
     }
     
-    // Get the path to the web UI directory (use original llama.cpp web UI)
+    // Get the path to the web UI directory (use Delta web UI from public/ only)
     std::string public_path;
     
     // Get executable directory and project root
     std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
     std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
     
-    // Check for Homebrew share directory first, then public/ (built web UI from assets/), then assets/ as fallback
+    // Check for Homebrew share directory first, then public/ (built Delta web UI from assets/)
+    // Only use Delta web UI from public/, never fall back to llama.cpp web UI or assets/ source
     std::vector<std::string> public_candidates = {
         // Homebrew installed location (priority)
         "/opt/homebrew/share/delta-cli/webui",
         "/usr/local/share/delta-cli/webui",
         tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"),
         tools::FileOps::join_path(exe_dir, "../../../share/delta-cli/webui"),
-        // Relative to executable
-        tools::FileOps::join_path(exe_dir, "public"),
+        // Relative to executable (Delta web UI from public/)
         tools::FileOps::join_path(exe_dir, "../public"),
+        tools::FileOps::join_path(exe_dir, "../../public"),
         tools::FileOps::join_path(exe_grandparent, "public"),
+        tools::FileOps::join_path(exe_dir, "../webui"),
+        tools::FileOps::join_path(exe_dir, "../../webui"),
         // Current directory
         "public",
         "./public",
         "../public",
-        // Assets directory (source, not built)
-        tools::FileOps::join_path(exe_dir, "assets"),
-        tools::FileOps::join_path(exe_dir, "../assets"),
-        tools::FileOps::join_path(exe_grandparent, "assets"),
-        "assets",
-        "./assets",
-        "../assets"
+        "webui",
+        "./webui",
+        "../webui"
     };
     
     for (const auto& candidate : public_candidates) {

@@ -5,7 +5,7 @@
 set -e
 
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║        Delta CLI - Simple One-Command Installer            ║"
+echo "║        Delta CLI - Simple One-Command Installer              ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 

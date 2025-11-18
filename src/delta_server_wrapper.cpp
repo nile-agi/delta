@@ -1,6 +1,6 @@
 /**
  * Delta CLI Server Wrapper
- * Uses original llama.cpp web UI
+ * Uses Delta web UI from public/ directory (built from assets/)
  */
 
 #include <iostream>
@@ -93,7 +93,7 @@ public:
     }
 
     std::string find_webui_path() {
-        // Find the original llama.cpp web UI directory
+        // Find the Delta web UI directory (from public/ only, not llama.cpp web UI)
         std::vector<std::string> candidates;
         
         // Get current executable directory
@@ -124,28 +124,29 @@ public:
         }
 #endif
         
-        // Build candidate paths - check Homebrew share directory first, then public/ (built web UI from assets/), then assets/
+        // Build candidate paths - check Homebrew share directory first, then public/ (built Delta web UI from assets/)
+        // Only use Delta web UI from public/, never fall back to llama.cpp web UI or assets/ source
         // Homebrew installs web UI to share/delta-cli/webui relative to the prefix
         if (!exe_path.empty()) {
             // Check Homebrew share directory (for installed packages)
             candidates.push_back(exe_path + "/../../share/delta-cli/webui");
             candidates.push_back(exe_path + "/../../../share/delta-cli/webui");
-            // Check relative to executable
+            // Check relative to executable (Delta web UI from public/)
             candidates.push_back(exe_path + "/../public");
             candidates.push_back(exe_path + "/../../public");
-            candidates.push_back(exe_path + "/../assets");
-            candidates.push_back(exe_path + "/../../assets");
+            candidates.push_back(exe_path + "/../webui");
+            candidates.push_back(exe_path + "/../../webui");
         }
         // Check standard Homebrew locations
         candidates.push_back("/opt/homebrew/share/delta-cli/webui");
         candidates.push_back("/usr/local/share/delta-cli/webui");
-        // Check relative paths
+        // Check relative paths (Delta web UI from public/)
         candidates.push_back("public");
         candidates.push_back("./public");
         candidates.push_back("../public");
-        candidates.push_back("assets");
-        candidates.push_back("./assets");
-        candidates.push_back("../assets");
+        candidates.push_back("webui");
+        candidates.push_back("./webui");
+        candidates.push_back("../webui");
         
         // Check each candidate
         for (const auto& candidate : candidates) {
