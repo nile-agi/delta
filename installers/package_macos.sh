@@ -315,62 +315,84 @@ info "Converting to compressed DMG..."
 # Remove existing final DMG if it exists
 rm -f "$DMG_PATH"
 
-# Verify the temp DMG is not mounted before converting
-info "Verifying DMG is not mounted..."
-if hdiutil info | grep -q "$(basename "$DMG_PATH.temp.dmg")"; then
-    warning "DMG still appears to be mounted, attempting to detach..."
-    # Get the device ID
-    DEVICE_ID=$(hdiutil info | grep -A 5 "$(basename "$DMG_PATH.temp.dmg")" | grep "^/dev/" | awk '{print $1}' | head -1)
-    if [ -n "$DEVICE_ID" ]; then
-        hdiutil detach "$DEVICE_ID" -force 2>/dev/null || true
-        sleep 2
-    fi
+# Force unmount any remaining mounts before conversion
+info "Ensuring DMG is completely unmounted..."
+# Get all device IDs that might be using this DMG
+ALL_DEVICES=$(hdiutil info 2>/dev/null | grep -B 5 "$(basename "$DMG_PATH.temp.dmg")" | grep "^/dev/" | awk '{print $1}' | sort -u)
+if [ -n "$ALL_DEVICES" ]; then
+    info "Found mounted devices, detaching..."
+    for dev in $ALL_DEVICES; do
+        info "Detaching device: $dev"
+        hdiutil detach "$dev" -force 2>/dev/null || true
+    done
+    sleep 3
 fi
 
+# Also try by volume name
+VOLUME_NAME="${APP_NAME} ${VERSION}"
+if [ -d "/Volumes/$VOLUME_NAME" ]; then
+    info "Volume still exists, forcing unmount..."
+    diskutil unmount force "/Volumes/$VOLUME_NAME" 2>/dev/null || true
+    hdiutil detach "/Volumes/$VOLUME_NAME" -force 2>/dev/null || true
+    sleep 2
+fi
+
+# Final check - wait until mount point is gone
+for i in {1..10}; do
+    if [ ! -d "/Volumes/$VOLUME_NAME" ] && ! hdiutil info 2>/dev/null | grep -q "$(basename "$DMG_PATH.temp.dmg")"; then
+        success "DMG confirmed unmounted"
+        break
+    else
+        if [ $i -eq 10 ]; then
+            warning "DMG may still be mounted, but proceeding with conversion..."
+        else
+            info "Waiting for DMG to fully unmount ($i/10)..."
+            sleep 1
+        fi
+    fi
+done
+
 # Try conversion with retry
+CONVERT_SUCCESS=false
 for i in {1..3}; do
     # Check if file exists and is accessible
     if [ ! -f "$DMG_PATH.temp.dmg" ]; then
         error_exit "Temporary DMG file not found: $DMG_PATH.temp.dmg"
     fi
     
-    # Try the conversion
-    if hdiutil convert "$DMG_PATH.temp.dmg" \
+    info "Attempting conversion (attempt $i/3)..."
+    # Try the conversion and capture output
+    CONVERT_OUTPUT=$(hdiutil convert "$DMG_PATH.temp.dmg" \
         -format UDZO \
         -imagekey zlib-level=9 \
-        -o "$DMG_PATH" 2>&1; then
+        -o "$DMG_PATH" 2>&1)
+    CONVERT_EXIT=$?
+    
+    if [ $CONVERT_EXIT -eq 0 ] && [ -f "$DMG_PATH" ]; then
         success "DMG converted successfully"
+        CONVERT_SUCCESS=true
         break
     else
-        if [ $i -eq 3 ]; then
-            # Last attempt - try a different approach: create a new temp DMG
-            warning "Standard conversion failed, trying alternative method..."
-            # Unmount and remount as read-only, then convert
-            if hdiutil info | grep -q "$(basename "$DMG_PATH.temp.dmg")"; then
-                DEVICE_ID=$(hdiutil info | grep -A 5 "$(basename "$DMG_PATH.temp.dmg")" | grep "^/dev/" | awk '{print $1}' | head -1)
-                hdiutil detach "$DEVICE_ID" -force 2>/dev/null || true
-                sleep 3
+        if [ $i -lt 3 ]; then
+            warning "Conversion failed (attempt $i/3)"
+            if [ -n "$CONVERT_OUTPUT" ]; then
+                info "Error details: $CONVERT_OUTPUT"
             fi
-            
-            # Try one more time
-            if ! hdiutil convert "$DMG_PATH.temp.dmg" \
-                -format UDZO \
-                -imagekey zlib-level=9 \
-                -o "$DMG_PATH" 2>&1; then
-                error_exit "Failed to convert DMG after 3 attempts. The DMG may still be mounted. Try manually: hdiutil detach all && rm -f $DMG_PATH.temp.dmg"
+            # Try to detach again
+            if hdiutil info 2>/dev/null | grep -q "$(basename "$DMG_PATH.temp.dmg")"; then
+                ALL_DEVICES=$(hdiutil info 2>/dev/null | grep -B 5 "$(basename "$DMG_PATH.temp.dmg")" | grep "^/dev/" | awk '{print $1}' | sort -u)
+                for dev in $ALL_DEVICES; do
+                    hdiutil detach "$dev" -force 2>/dev/null || true
+                done
             fi
-        else
-            warning "Conversion failed (attempt $i/3), retrying..."
             sleep 3
-            # Try to detach any remaining mounts
-            if [ -n "$MOUNT_DIR" ] && [ -d "$MOUNT_DIR" ]; then
-                hdiutil detach "$MOUNT_DIR" -force 2>/dev/null || true
-                diskutil unmount force "$MOUNT_DIR" 2>/dev/null || true
-            fi
-            sleep 2
         fi
     fi
 done
+
+if [ "$CONVERT_SUCCESS" = false ]; then
+    error_exit "Failed to convert DMG after 3 attempts.\n\nTroubleshooting steps:\n1. Check if DMG is mounted: hdiutil info\n2. Manually detach: hdiutil detach all\n3. Remove temp file and retry: rm -f $DMG_PATH.temp.dmg\n4. Then run the script again"
+fi
 
 # Remove temporary DMG
 rm -f "$DMG_PATH.temp.dmg"
