@@ -79,8 +79,15 @@ Each platform has a dedicated installation method that handles everything automa
 #### 🍎 macOS
 
 **Homebrew (Recommended):**
+
+**Option 1: Install from Source (Requires Xcode Command Line Tools)**
 ```bash
 brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
+```
+
+**⚠️ Important:** This requires Xcode Command Line Tools. If you get an error about missing build tools, install them first:
+```bash
+xcode-select --install
 ```
 
 **What it does:**
@@ -93,10 +100,12 @@ brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
 
 **Note:** The Homebrew formula automatically installs Node.js as a build dependency to build the custom Delta web UI from the `assets/` directory. The web UI includes the Delta favicon, model name display improvements, and other customizations.
 
-**Alternative - Installation Script:**
+**Option 2: Installation Script (No Build Tools Required)**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/install.sh | bash
 ```
+
+This downloads and installs pre-built binaries without requiring Xcode Command Line Tools.
 
 #### 🐧 Linux
 

@@ -4,18 +4,40 @@ Delta CLI can now be installed with a single command on all platforms!
 
 ## 🍎 macOS (Homebrew)
 
+### Option 1: Install from Source (Requires Build Tools)
+
 ```bash
 brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
 ```
 
-**That's it!** The formula will:
-- ✅ Automatically clone the repository (git happens in background)
-- ✅ Install all dependencies automatically
-- ✅ Build and install Delta CLI automatically
-- ✅ Configure PATH automatically
-- ✅ Create alias to override conflicting commands
+**⚠️ Important:** This requires Xcode Command Line Tools. If you get an error about missing build tools:
 
-**Note:** Installation takes a few minutes to build, but everything is automatic. Users don't need to know about git - it all happens behind the scenes.
+```bash
+# Install Xcode Command Line Tools first
+xcode-select --install
+
+# Then try the installation again
+brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
+```
+
+**What it does:**
+- ✅ Automatically clones the repository (git happens in background)
+- ✅ Installs all dependencies automatically
+- ✅ Builds and installs Delta CLI automatically
+- ✅ Configures PATH automatically
+- ✅ Creates alias to override conflicting commands
+
+**Note:** Installation takes a few minutes to build, but everything is automatic.
+
+### Option 2: Install Pre-built Binary (No Build Tools Required)
+
+If you don't have Xcode Command Line Tools installed, you can use the installation script instead:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/install.sh | bash
+```
+
+This downloads and installs pre-built binaries without requiring build tools.
 
 After installation, just use:
 ```bash
@@ -90,6 +112,24 @@ delta --version
 ```
 
 ## 🔧 Troubleshooting
+
+### Build Tools Error on macOS
+
+If you see this error when using `--HEAD`:
+```
+Error: The following flag: --HEAD requires building tools, but none are installed.
+```
+
+**Solution 1: Install Xcode Command Line Tools**
+```bash
+xcode-select --install
+```
+
+**Solution 2: Use Pre-built Binary Instead**
+```bash
+# Skip Homebrew and use the installation script
+curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/install.sh | bash
+```
 
 ### PATH Issues
 
