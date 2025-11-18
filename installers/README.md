@@ -130,9 +130,33 @@ cmake .. -DCMAKE_TOOLCHAIN_FILE=/path/to/toolchain.cmake
 3. Install: `sudo dpkg -i installers/packages/*.deb`
 
 ### macOS (.dmg)
+
+**Quick Start (All-in-One):**
+```bash
+./installers/create_dmg.sh
+```
+This will build the application and create a .dmg installer in one step.
+
+**Step-by-Step:**
 1. Build the project: `./installers/build_macos.sh`
 2. Create DMG: `./installers/package_macos.sh`
-3. Mount DMG and drag to Applications
+3. The DMG will be created in `installers/packages/DeltaCLI-<version>-macOS-<arch>.dmg`
+
+**What's Included:**
+- Delta CLI application bundle (.app)
+- Applications folder symlink for easy installation
+- README with installation instructions
+- Web UI (if built)
+
+**Distribution:**
+- Upload the .dmg file to your release page or hosting service
+- Users can download and double-click to mount
+- They drag "Delta CLI.app" to the Applications folder
+- The app can be run from Terminal or by double-clicking
+
+**Customization:**
+- Set version: `VERSION=1.2.3 ./installers/package_macos.sh`
+- Add custom background: Place `background.png` in `installers/` directory
 
 ### Windows (.exe)
 1. Build the project: `installers\build_windows.bat`

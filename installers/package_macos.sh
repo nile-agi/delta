@@ -1,0 +1,286 @@
+#!/bin/bash
+# Delta CLI - macOS DMG Packaging Script
+# Creates a .dmg installer for easy distribution
+
+set -e  # Exit on error
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Error handling
+error_exit() {
+    echo -e "${RED}❌ Error: $1${NC}" >&2
+    exit 1
+}
+
+success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+info() {
+    echo -e "${BLUE}ℹ $1${NC}"
+}
+
+warning() {
+    echo -e "${YELLOW}⚠ $1${NC}"
+}
+
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║         Delta CLI - macOS DMG Packaging                      ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
+echo ""
+
+# Check if running on macOS
+if [[ "$OSTYPE" != "darwin"* ]]; then
+    error_exit "This script is for macOS only."
+fi
+
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_DIR"
+
+# Configuration
+BUILD_DIR="build_macos_release"
+VERSION=${VERSION:-$(grep "project(delta-cli VERSION" CMakeLists.txt | sed 's/.*VERSION \([0-9.]*\).*/\1/')}
+if [ -z "$VERSION" ]; then
+    VERSION="1.0.0"
+fi
+APP_NAME="Delta CLI"
+DMG_NAME="DeltaCLI-${VERSION}-macOS-$(uname -m)"
+TEMP_DMG_DIR="dmg_temp"
+DMG_PATH="installers/packages/${DMG_NAME}.dmg"
+
+info "Version: $VERSION"
+info "Architecture: $(uname -m)"
+
+# Step 1: Verify build exists
+info "Step 1/6: Verifying build..."
+if [ ! -f "$BUILD_DIR/delta" ]; then
+    error_exit "Build not found. Please run ./installers/build_macos.sh first."
+fi
+success "Build found"
+
+# Step 2: Create temporary directory structure
+info "Step 2/6: Creating package structure..."
+rm -rf "$TEMP_DMG_DIR"
+mkdir -p "$TEMP_DMG_DIR"
+mkdir -p "$(dirname "$DMG_PATH")"
+
+# Step 3: Create .app bundle (optional but recommended for better UX)
+info "Step 3/6: Creating macOS application bundle..."
+APP_BUNDLE="$TEMP_DMG_DIR/${APP_NAME}.app"
+mkdir -p "$APP_BUNDLE/Contents/MacOS"
+mkdir -p "$APP_BUNDLE/Contents/Resources"
+
+# Copy binaries
+cp "$BUILD_DIR/delta" "$APP_BUNDLE/Contents/MacOS/delta"
+if [ -f "$BUILD_DIR/delta-server" ]; then
+    cp "$BUILD_DIR/delta-server" "$APP_BUNDLE/Contents/MacOS/delta-server"
+fi
+
+# Make binaries executable
+chmod +x "$APP_BUNDLE/Contents/MacOS/delta"
+if [ -f "$APP_BUNDLE/Contents/MacOS/delta-server" ]; then
+    chmod +x "$APP_BUNDLE/Contents/MacOS/delta-server"
+fi
+
+# Create Info.plist
+cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>delta</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.delta.cli</string>
+    <key>CFBundleName</key>
+    <string>${APP_NAME}</string>
+    <key>CFBundleVersion</key>
+    <string>${VERSION}</string>
+    <key>CFBundleShortVersionString</key>
+    <string>${VERSION}</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.15</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+# Note: The CFBundleExecutable in Info.plist points to "delta"
+# So the main executable is the delta binary itself
+
+# Copy web UI if available
+if [ -d "public" ] && ([ -f "public/index.html" ] || [ -f "public/index.html.gz" ]); then
+    info "Including web UI..."
+    mkdir -p "$APP_BUNDLE/Contents/Resources/webui"
+    cp -r public/* "$APP_BUNDLE/Contents/Resources/webui/" 2>/dev/null || true
+fi
+
+success "Application bundle created"
+
+# Step 4: Create Applications symlink and README
+info "Step 4/6: Creating DMG contents..."
+# Create a symlink to Applications
+ln -s /Applications "$TEMP_DMG_DIR/Applications"
+
+# Create README
+cat > "$TEMP_DMG_DIR/README.txt" <<EOF
+Delta CLI ${VERSION} - Installation Instructions
+================================================
+
+1. Drag "${APP_NAME}.app" to the Applications folder.
+
+2. To use Delta CLI from Terminal:
+   - Open Terminal
+   - Run: delta --version
+   
+   If the command is not found, add to your PATH:
+   export PATH="/Applications/${APP_NAME}.app/Contents/MacOS:\$PATH"
+   
+   Or create a symlink:
+   sudo ln -s /Applications/${APP_NAME}.app/Contents/MacOS/delta /usr/local/bin/delta
+
+3. Start using Delta CLI:
+   delta pull qwen3:0.6b    # Download a model
+   delta                    # Start chatting
+
+For more information, visit:
+https://github.com/oderoi/delta-cli
+
+EOF
+
+success "DMG contents prepared"
+
+# Step 5: Create DMG
+info "Step 5/6: Creating DMG image..."
+# Remove existing DMG if it exists
+rm -f "$DMG_PATH"
+
+# Calculate size needed (add 20% overhead)
+SIZE=$(du -sk "$TEMP_DMG_DIR" | cut -f1)
+SIZE=$((SIZE + 1000))  # Add 1MB overhead
+
+# Create DMG
+hdiutil create -srcfolder "$TEMP_DMG_DIR" \
+    -volname "${APP_NAME} ${VERSION}" \
+    -fs HFS+ \
+    -fsargs "-c c=64,a=16,e=16" \
+    -format UDRW \
+    -size ${SIZE}k \
+    "$DMG_PATH.temp.dmg" || error_exit "Failed to create DMG"
+
+# Mount the DMG
+MOUNT_DIR=$(hdiutil attach -readwrite -noverify -noautoopen "$DMG_PATH.temp.dmg" | \
+    egrep '^/dev/' | sed 1q | awk '{print $3}')
+
+# Wait for mount
+sleep 2
+
+# Set DMG properties
+if [ -n "$MOUNT_DIR" ]; then
+    # Set background (optional - requires background.png)
+    if [ -f "$SCRIPT_DIR/background.png" ]; then
+        # Create .background directory
+        mkdir -p "$MOUNT_DIR/.background"
+        cp "$SCRIPT_DIR/background.png" "$MOUNT_DIR/.background/background.png"
+        
+        # Use AppleScript to set background and layout
+        osascript <<EOF
+tell application "Finder"
+    tell disk "${APP_NAME} ${VERSION}"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set the bounds of container window to {400, 100, 920, 420}
+        set viewOptions to the icon view options of container window
+        set arrangement of viewOptions to not arranged
+        set icon size of viewOptions to 72
+        set background picture of viewOptions to file ".background:background.png"
+        set position of item "${APP_NAME}.app" of container window to {160, 205}
+        set position of item "Applications" of container window to {360, 205}
+        set position of item "README.txt" of container window to {260, 105}
+        close
+        open
+        update without registering applications
+        delay 2
+    end tell
+end tell
+EOF
+    else
+        # Simple layout without background
+        osascript <<EOF
+tell application "Finder"
+    tell disk "${APP_NAME} ${VERSION}"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set the bounds of container window to {400, 100, 920, 420}
+        set viewOptions to the icon view options of container window
+        set arrangement of viewOptions to not arranged
+        set icon size of viewOptions to 72
+        set position of item "${APP_NAME}.app" of container window to {160, 205}
+        set position of item "Applications" of container window to {360, 205}
+        set position of item "README.txt" of container window to {260, 105}
+        close
+        open
+        update without registering applications
+        delay 2
+    end tell
+end tell
+EOF
+    fi
+    
+    # Unmount
+    hdiutil detach "$MOUNT_DIR"
+fi
+
+# Convert to final compressed DMG
+hdiutil convert "$DMG_PATH.temp.dmg" \
+    -format UDZO \
+    -imagekey zlib-level=9 \
+    -o "$DMG_PATH" || error_exit "Failed to convert DMG"
+
+# Remove temporary DMG
+rm -f "$DMG_PATH.temp.dmg"
+
+success "DMG created: $DMG_PATH"
+
+# Step 6: Cleanup
+info "Step 6/6: Cleaning up..."
+rm -rf "$TEMP_DMG_DIR"
+
+# Get DMG size
+DMG_SIZE=$(du -h "$DMG_PATH" | cut -f1)
+
+echo ""
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║              DMG Packaging Complete!                        ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
+echo ""
+success "DMG installer created successfully!"
+echo ""
+info "File: $DMG_PATH"
+info "Size: $DMG_SIZE"
+echo ""
+info "To distribute:"
+echo "  1. Upload $DMG_PATH to your release page"
+echo "  2. Users can download and double-click to mount"
+echo "  3. They drag ${APP_NAME}.app to Applications folder"
+echo ""
+info "To test the DMG:"
+echo "  open $DMG_PATH"
+echo ""
+
