@@ -267,23 +267,47 @@ EOF
     
     # Unmount - wait for it to complete and retry if needed
     info "Unmounting DMG..."
-    for i in {1..5}; do
+    
+    # First, close any Finder windows that might have the DMG open
+    osascript -e "tell application \"Finder\" to close every window whose name contains \"${APP_NAME}\"" 2>/dev/null || true
+    sleep 1
+    
+    # Try to unmount gracefully first
+    for i in {1..3}; do
         if hdiutil detach "$MOUNT_DIR" -quiet 2>/dev/null; then
             success "DMG unmounted"
             break
         else
-            if [ $i -eq 5 ]; then
+            if [ $i -eq 3 ]; then
                 warning "Could not unmount cleanly, forcing detach..."
                 hdiutil detach "$MOUNT_DIR" -force 2>/dev/null || true
             else
-                info "Waiting for DMG to unmount (attempt $i/5)..."
+                info "Waiting for DMG to unmount (attempt $i/3)..."
                 sleep 2
             fi
         fi
     done
     
-    # Wait a bit more to ensure the filesystem is released
-    sleep 1
+    # Verify it's actually unmounted by checking if the mount point still exists
+    for i in {1..10}; do
+        if [ ! -d "$MOUNT_DIR" ]; then
+            success "DMG confirmed unmounted"
+            break
+        else
+            if [ $i -eq 10 ]; then
+                warning "Mount point still exists, forcing detach again..."
+                hdiutil detach "$MOUNT_DIR" -force 2>/dev/null || true
+                # Try alternative method
+                diskutil unmount force "$MOUNT_DIR" 2>/dev/null || true
+            else
+                info "Waiting for mount point to disappear (attempt $i/10)..."
+                sleep 1
+            fi
+        fi
+    done
+    
+    # Wait a bit more to ensure the filesystem is fully released
+    sleep 2
 fi
 
 # Convert to final compressed DMG
@@ -291,22 +315,59 @@ info "Converting to compressed DMG..."
 # Remove existing final DMG if it exists
 rm -f "$DMG_PATH"
 
+# Verify the temp DMG is not mounted before converting
+info "Verifying DMG is not mounted..."
+if hdiutil info | grep -q "$(basename "$DMG_PATH.temp.dmg")"; then
+    warning "DMG still appears to be mounted, attempting to detach..."
+    # Get the device ID
+    DEVICE_ID=$(hdiutil info | grep -A 5 "$(basename "$DMG_PATH.temp.dmg")" | grep "^/dev/" | awk '{print $1}' | head -1)
+    if [ -n "$DEVICE_ID" ]; then
+        hdiutil detach "$DEVICE_ID" -force 2>/dev/null || true
+        sleep 2
+    fi
+fi
+
 # Try conversion with retry
 for i in {1..3}; do
+    # Check if file exists and is accessible
+    if [ ! -f "$DMG_PATH.temp.dmg" ]; then
+        error_exit "Temporary DMG file not found: $DMG_PATH.temp.dmg"
+    fi
+    
+    # Try the conversion
     if hdiutil convert "$DMG_PATH.temp.dmg" \
         -format UDZO \
         -imagekey zlib-level=9 \
-        -o "$DMG_PATH" 2>/dev/null; then
+        -o "$DMG_PATH" 2>&1; then
+        success "DMG converted successfully"
         break
     else
         if [ $i -eq 3 ]; then
-            error_exit "Failed to convert DMG after 3 attempts. The DMG may still be mounted. Try: hdiutil detach all"
+            # Last attempt - try a different approach: create a new temp DMG
+            warning "Standard conversion failed, trying alternative method..."
+            # Unmount and remount as read-only, then convert
+            if hdiutil info | grep -q "$(basename "$DMG_PATH.temp.dmg")"; then
+                DEVICE_ID=$(hdiutil info | grep -A 5 "$(basename "$DMG_PATH.temp.dmg")" | grep "^/dev/" | awk '{print $1}' | head -1)
+                hdiutil detach "$DEVICE_ID" -force 2>/dev/null || true
+                sleep 3
+            fi
+            
+            # Try one more time
+            if ! hdiutil convert "$DMG_PATH.temp.dmg" \
+                -format UDZO \
+                -imagekey zlib-level=9 \
+                -o "$DMG_PATH" 2>&1; then
+                error_exit "Failed to convert DMG after 3 attempts. The DMG may still be mounted. Try manually: hdiutil detach all && rm -f $DMG_PATH.temp.dmg"
+            fi
         else
             warning "Conversion failed (attempt $i/3), retrying..."
-            sleep 2
+            sleep 3
             # Try to detach any remaining mounts
-            hdiutil detach "$MOUNT_DIR" -force 2>/dev/null || true
-            sleep 1
+            if [ -n "$MOUNT_DIR" ] && [ -d "$MOUNT_DIR" ]; then
+                hdiutil detach "$MOUNT_DIR" -force 2>/dev/null || true
+                diskutil unmount force "$MOUNT_DIR" 2>/dev/null || true
+            fi
+            sleep 2
         fi
     fi
 done
