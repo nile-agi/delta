@@ -263,7 +263,7 @@ void ModelManager::init_model_registry() {
         1546LL * 1024 * 1024,      // ~1.51 GB
         "Ultra-compact multilingual model",
         "Qwen 3 0.6B",
-        40960                     // 40K native context
+        4096                     // 4K native context
     };
     
     model_registry_["qwen3:1.7b"] = {
