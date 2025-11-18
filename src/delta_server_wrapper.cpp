@@ -9,6 +9,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <limits.h>
+#include <algorithm>
+#include <cctype>
 #ifdef _WIN32
 #include <windows.h>
 #include <shlwapi.h>
@@ -212,6 +214,17 @@ public:
         cmd += " --port " + std::to_string(port_);
         cmd += " --parallel " + std::to_string(max_parallel_);
         cmd += " -c " + std::to_string(max_context_);
+        
+        // Add -fa flag for all models
+        cmd += " -fa";
+        
+        // Add --jinja flag for gemma3 models
+        // Check model_path for gemma3 (case-insensitive)
+        std::string model_path_lower = model_path_;
+        std::transform(model_path_lower.begin(), model_path_lower.end(), model_path_lower.begin(), ::tolower);
+        if (model_path_lower.find("gemma3") != std::string::npos) {
+            cmd += " --jinja";
+        }
 
         // Add --path flag to use Delta web UI if found
         if (!webui_path.empty()) {

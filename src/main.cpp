@@ -16,6 +16,8 @@
 #include <chrono>
 #include <unistd.h>
 #include <limits.h>
+#include <algorithm>
+#include <cctype>
 
 using namespace delta;
 
@@ -862,6 +864,24 @@ int main(int argc, char** argv) {
             << " --port " << server_port
             << " --parallel " << max_parallel
             << " -c " << max_context;
+        
+        // Add -fa flag for all models
+        cmd << " -fa";
+        
+        // Add --jinja flag for gemma3 models
+        // Check model_name, model_alias, and model_path for gemma3 (case-insensitive)
+        std::string model_name_lower = model_name;
+        std::string model_alias_lower = model_alias;
+        std::string model_path_lower = model_path;
+        std::transform(model_name_lower.begin(), model_name_lower.end(), model_name_lower.begin(), ::tolower);
+        std::transform(model_alias_lower.begin(), model_alias_lower.end(), model_alias_lower.begin(), ::tolower);
+        std::transform(model_path_lower.begin(), model_path_lower.end(), model_path_lower.begin(), ::tolower);
+        if (model_name_lower.find("gemma3") != std::string::npos || 
+            model_alias_lower.find("gemma3") != std::string::npos || 
+            model_path_lower.find("gemma3") != std::string::npos) {
+            cmd << " --jinja";
+        }
+        
         if (enable_embedding) cmd << " --embedding";
         if (enable_reranking) cmd << " --reranking";
         if (!draft_model.empty()) cmd << " --md \"" << draft_model << "\"";

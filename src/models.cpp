@@ -257,49 +257,85 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen3:0.6b"] = {
         "qwen3:0.6b",
         "qwen3-0.6b",
-        "unsloth/Qwen3-0.6B-GGUF",
-        "Qwen3-0.6B-Q4_K_M.gguf",
-        "Q4_K_M",
-        400LL * 1024 * 1024,      // ~400 MB
+        "ggml-org/Qwen3-0.6B-GGUF",
+        "Qwen3-0.6B-f16.gguf",
+        "F16",
+        1546LL * 1024 * 1024,      // ~1.51 GB
         "Ultra-compact multilingual model",
         "Qwen 3 0.6B",
-        32768                     // 32K native context
+        40960                     // 40K native context
     };
     
     model_registry_["qwen3:1.7b"] = {
         "qwen3:1.7b",
         "qwen3-1.7b",
-        "unsloth/Qwen3-1.7B-GGUF",
-        "Qwen3-1.7B-Q4_K_M.gguf",
-        "Q4_K_M",
-        1126LL * 1024 * 1024,     // ~1.1 GB
+        "ggml-org/Qwen3-1.7B-GGUF",
+        "Qwen3-1.7B-f16.gguf",
+        "F16",
+        1126LL * 1024 * 1024,     // ~1.28 GB
         "Efficient small multilingual model",
         "Qwen 3 1.7B",
-        32768                     // 32K native context
+        40960                     // 40K native context
     };
     
     model_registry_["qwen3:4b"] = {
         "qwen3:4b",
         "qwen3-4b",
-        "unsloth/Qwen3-4B-GGUF",
+        "ggml-org/Qwen3-4B-GGUF",
         "Qwen3-4B-Q4_K_M.gguf",
         "Q4_K_M",
-        2458LL * 1024 * 1024,     // ~2.4 GB
+        2560LL * 1024 * 1024,     // ~2.5 GB
         "Balanced multilingual reasoning model",
         "Qwen 3 4B",
-        32768                     // 32K native context
+        40960                     // 40K native context
     };
     
     model_registry_["qwen3:8b"] = {
         "qwen3:8b",
         "qwen3-8b",
-        "Qwen/Qwen3-8B-GGUF",
+        "ggml-org/Qwen3-8B-GGUF",
         "Qwen3-8B-Q4_K_M.gguf",
         "Q4_K_M",
-        4915LL * 1024 * 1024,     // ~4.8 GB
+        5150LL * 1024 * 1024,     // ~5.03 GB
         "Powerful multilingual instruct model",
         "Qwen 3 8B",
-        32768                     // 32K native context
+        40960                     // 40K native context
+    };
+
+    model_registry_["qwen3:14b"] = {
+        "qwen3:14b",
+        "qwen3-14b",
+        "ggml-org/Qwen3-14B-GGUF",
+        "Qwen3-14B-Q4_K_M.gguf",
+        "Q4_K_M",
+        9216LL * 1024 * 1024,     // ~9 GB
+        "Powerful multilingual instruct model",
+        "Qwen 3 14B",
+        40960                     // 40K native context
+    };
+
+    model_registry_["qwen3think:4b"] = {
+        "qwen3think:4b",
+        "qwen3-think-4b",
+        "ggml-org/Qwen3-4B-Thinking-2507-Q8_0-GGUF",
+        "qwen3-4b-thinking-2507-q8_0.gguf",
+        "Q8_0",
+        4288LL * 1024 * 1024,     // ~4.28 GB
+        "Powerful reasoning model",
+        "Qwen 3 4B Thinking",
+        262144                     // 256K native context
+    };
+
+    model_registry_["qwen3it:4b"] = {
+        "qwen3it:4b",
+        "qwen3-it-4b",
+        "ggml-org/Qwen3-4B-Instruct-2507-Q8_0-GGUF",
+        "qwen3-4b-instruct-2507-q8_0.gguf",
+        "Q8_0",
+        4288LL * 1024 * 1024,     // ~4.28 GB
+        "Powerful reasoning model",
+        "Qwen 3 4B Instruct",
+        262144                     // 256K native context
     };
     
     // ===== QWEN 3 VL (Vision-Language) INSTRUCT from NexaAI =====
@@ -331,37 +367,37 @@ void ModelManager::init_model_registry() {
     model_registry_["qwen2.5-coder:0.5b"] = {
         "qwen2.5-coder:0.5b",
         "qwen2.5-coder-0.5b",
-        "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
-        "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
-        "Q4_K_M",
-        352LL * 1024 * 1024,      // ~352 MB
+        "ggml-org/Qwen2.5-Coder-0.5B-Q8_0-GGUF",
+        "qwen2.5-coder-0.5b-q8_0.gguf",
+        "Q8_0",
+        352LL * 1024 * 1024,      // ~0.53 GB
         "Tiny code generation model",
         "Qwen 2.5 Coder 0.5B",
-        131072                    // 128K with RoPE scaling (explicit in filename)
+        32768                    // 32K with RoPE scaling (explicit in filename)
     };
     
     model_registry_["qwen2.5-coder:1.5b"] = {
         "qwen2.5-coder:1.5b",
         "qwen2.5-coder-1.5b",
-        "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
-        "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
-        "Q4_K_M",
-        1024LL * 1024 * 1024,     // ~1 GB
+        "ggml-org/Qwen2.5-Coder-1.5B-Q8_0-GGUF",
+        "qwen2.5-coder-1.5b-q8_0.gguf",
+        "Q8_0",
+        1689LL * 1024 * 1024,     // ~1.65 GB
         "Small code-focused model",
         "Qwen 2.5 Coder 1.5B",
-        131072                    // 128K with RoPE scaling
+        32768                    // 32K with RoPE scaling
     };
     
     model_registry_["qwen2.5-coder:3b"] = {
         "qwen2.5-coder:3b",
         "qwen2.5-coder-3b",
-        "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
-        "qwen2.5-coder-3b-instruct-q4_k_m.gguf",
-        "Q4_K_M",
-        1946LL * 1024 * 1024,     // ~1.9 GB
+        "ggml-org/Qwen2.5-Coder-3B-Q8_0-GGUF",
+        "qwen2.5-coder-3b-q8_0.gguf",
+        "Q8_0",
+        3296LL * 1024 * 1024,     // ~3.29 GB
         "Balanced coding assistant",
         "Qwen 2.5 Coder 3B",
-        131072                    // 128K with RoPE scaling
+        32768                    // 32K with RoPE scaling
     };
     
     model_registry_["qwen2.5-coder:7b"] = {
@@ -523,6 +559,42 @@ void ModelManager::init_model_registry() {
         "Qwen 2.5 VL 1.5B",
         131072                      // 128K native context
     };
+
+    model_registry_["qwen2.5vl:3b"] = {
+        "qwen2.5vl:3b",
+        "qwen2.5vl-3b",
+        "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF",
+        "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf",
+        "Q4_K_M",
+        1976LL * 1024 * 1024,     // ~1.93 GB
+        "Vision-language model",
+        "Qwen 2.5 VL 3B",
+        131072                      // 128K native context
+    };
+
+    model_registry_["qwen2.5vl:7b"] = {
+        "qwen2.5vl:7b",
+        "qwen2.5vl-7b",
+        "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF",
+        "Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
+        "Q4_K_M",
+        4792LL * 1024 * 1024,     // ~4.68 GB
+        "Vision-language model",
+        "Qwen 2.5 VL 7B",
+        131072                      // 128K native context
+    };
+
+    model_registry_["qwen2vl:2b"] = {
+        "qwen2vl:2b",
+        "qwen2vl-2b",
+        "ggml-org/Qwen2-VL-2B-Instruct-GGUF",
+        "Qwen2-VL-2B-Instruct-Q8_0.gguf",
+        "Q8_0",
+        1656LL * 1024 * 1024,     // ~1.65 GB
+        "Vision-language model",
+        "Qwen 2 VL 2B",
+        32768                      // 32K native context
+    };
     
     model_registry_["qwen2.5vl:7b"] = {
         "qwen2.5vl:7b",
@@ -599,6 +671,30 @@ void ModelManager::init_model_registry() {
     };
     
     // ===== GEMMA SERIES (8K) =====
+    model_registry_["gemma1.1:2b"] = {
+        "gemma1.1:2b",
+        "gemma-1.1-2b",
+        "ggml-org/gemma-1.1-2b-it-Q8_0-GGUF",
+        "gemma-1.1-2b-it.Q8_0.gguf",
+        "Q8_0",
+        2592LL * 1024 * 1024,     // ~2.6 GB
+        "Google's lightweight model",
+        "Gemma 1.1 2B",
+        8192                       // 8K native context
+    };
+
+    model_registry_["gemma1.1:7b"] = {
+        "gemma1.1:7b",
+        "gemma-1.1-7b",
+        "ggml-org/gemma-1.1-7b-it-Q4_K_M-GGUF",
+        "gemma-1.1-7b-it.Q4_K_M.gguf",
+        "Q4_K_M",
+        9024LL * 1024 * 1024,     // ~5.38 GB
+        "Google's lightweight model",
+        "Gemma 1.1 7B",
+        8192                       // 8K native context
+    };
+
     model_registry_["gemma:2b"] = {
         "gemma:2b",
         "gemma-2b",
@@ -627,34 +723,82 @@ void ModelManager::init_model_registry() {
     model_registry_["gemma3:270m"] = {
         "gemma3:270m",
         "gemma3-270m",
-        "unsloth/gemma-3-270m-it-GGUF",
-        "gemma-3-270m-it-Q4_K_M.gguf",
-        "Q4_K_M",
-        164LL * 1024 * 1024,      // ~164 MB
+        "ggml-org/gemma-3-270m-it-GGUF",
+        "gemma-3-270m-it-Q8_0.gguf",
+        "Q8_0",
+        292LL * 1024 * 1024,      // ~292 MB
         "Ultra-small Gemma 3",
         "Gemma 3 270M",
+        32768                    // 32K native context
+    };
+
+    model_registry_["gemma3qat:270m"] = {
+        "gemma3qat:270m",
+        "gemma3-Qat-270m",
+        "ggml-org/gemma-3-270m-it-qat-GGUF",
+        "gemma-3-270m-it-qat-Q4_0.gguf",
+        "Q8_0",
+        241LL * 1024 * 1024,      // ~241 MB
+        "Ultra-small Gemma 3",
+        "Gemma 3 270M Qat",
+        32768                    // 32K native context
+    };
+
+    model_registry_["gemma3qat:1b"] = {
+        "gemma3qat:1b",
+        "gemma3-qat-1b",
+        "ggml-org/gemma-3-1b-it-qat-GGUF",
+        "gemma-3-1b-it-qat-Q4_0.gguf",
+        "Q4_0",
+        729LL * 1024 * 1024,      // ~729 MB
+        "Compact Gemma 3",
+        "Gemma 3 1B",
+        32768                    // 32K native context (1B variant exception)
+    };
+    
+    model_registry_["gemma3qat:4b"] = {
+        "gemma3qat:4b",
+        "gemma3-qat-4b",
+        "ggml-org/gemma-3-4b-it-qat-GGUF",
+        "gemma-3-4b-it-qat-Q4_0.gguf",
+        "Q4_0",
+        2532LL * 1024 * 1024,     // ~2.53 GB
+        "Balanced Gemma 3",
+        "Gemma 3 4B",
+        131072                    // 128K native context
+    };
+    
+    model_registry_["gemma3qat:12b"] = {
+        "gemma3qat:12b",
+        "gemma3-qat-12b",
+        "ggml-org/gemma-3-12b-it-qat-GGUF",
+        "gemma-3-12b-it-qat-Q4_0.gguf",
+        "Q4_0",
+        7136LL * 1024 * 1024,     // ~7.13 GB
+        "Powerful Gemma 3",
+        "Gemma 3 12B",
         131072                    // 128K native context
     };
     
     model_registry_["gemma3:1b"] = {
         "gemma3:1b",
         "gemma3-1b",
-        "unsloth/gemma-3-1b-it-GGUF",
-        "gemma-3-1b-it-Q4_K_M.gguf",
-        "Q4_K_M",
-        729LL * 1024 * 1024,      // ~729 MB
+        "ggml-org/gemma-3-1b-it-GGUF",
+        "gemma-3-1b-it-Q8_0.gguf",
+        "Q8_0",
+        729LL * 1024 * 1024,      // ~1.07 GB
         "Compact Gemma 3",
         "Gemma 3 1B",
-        131072                     // 128K native context (1B variant exception)
+        32768                    // 32K native context (1B variant exception)
     };
     
     model_registry_["gemma3:4b"] = {
         "gemma3:4b",
         "gemma3-4b",
-        "unsloth/gemma-3-4b-it-GGUF",
+        "ggml-org/gemma-3-4b-it-GGUF",
         "gemma-3-4b-it-Q4_K_M.gguf",
-        "Q4_0",
-        2458LL * 1024 * 1024,     // ~2.4 GB
+        "Q4_K_M",
+        2496LL * 1024 * 1024,     // ~2.49 GB
         "Balanced Gemma 3",
         "Gemma 3 4B",
         131072                    // 128K native context
@@ -663,10 +807,10 @@ void ModelManager::init_model_registry() {
     model_registry_["gemma3:12b"] = {
         "gemma3:12b",
         "gemma3-12b",
-        "unsloth/gemma-3-12b-it-qat-GGUF",
-        "emma-3-12b-it-qat-Q4_K_M.gguf",
-        "Q4_0",
-        7372LL * 1024 * 1024,     // ~7.2 GB
+        "ggml-org/gemma-3-12b-it-GGUF",
+        "gemma-3-12b-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        7372LL * 1024 * 1024,     // ~7.3 GB
         "Powerful Gemma 3",
         "Gemma 3 12B",
         131072                    // 128K native context
@@ -675,13 +819,13 @@ void ModelManager::init_model_registry() {
     model_registry_["gemma3n:e2b"] = {
         "gemma3n:e2b",
         "gemma3n-e2b",
-        "unsloth/gemma-3n-E2B-it-GGUF",
-        "gemma-3n-E2B-it-Q4_K_M.gguf",
-        "Q4_K_M",
-        1536LL * 1024 * 1024,     // ~1.5 GB
+        "ggml-org/gemma-3n-E2B-it-GGUF",
+        "gemma-3n-E2B-it-Q8_0.gguf",
+        "Q8_0",
+        4704LL * 1024 * 1024,     // ~4.79 GB
         "Enhanced 2B variant",
         "Gemma 3N E2B",
-        131072                    // 128K native context
+        32768                    // 32K native context
     };
     
     model_registry_["gemma3n:e4b"] = {
@@ -690,10 +834,10 @@ void ModelManager::init_model_registry() {
         "unsloth/gemma-3n-E4B-it-GGUF",
         "gemma-3n-E4B-it-Q4_K_M.gguf",
         "Q4_K_M",
-        2458LL * 1024 * 1024,     // ~2.4 GB
+        4608LL * 1024 * 1024,     // ~4.54 GB
         "Enhanced 4B variant",
         "Gemma 3N E4B",
-        131072                    // 128K native context
+        32768                    // 32K native context
     };
     
     // ===== DEEPSEEK R1 SERIES (128K) =====

@@ -12,6 +12,8 @@
 #include <fstream>
 #include <map>
 #include <iomanip>
+#include <algorithm>
+#include <cctype>
 #ifdef _WIN32
     #include <windows.h>
     #include <limits.h>
@@ -228,6 +230,19 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
         << " -m \"" << model_path << "\""
         << " --port " << port
         << " -c " << ctx_size;
+    
+    // Add -fa flag for all models
+    cmd << " -fa";
+    
+    // Add --jinja flag for gemma3 models
+    // Check model_alias and model_path for gemma3 (case-insensitive)
+    std::string model_alias_lower = model_alias;
+    std::string model_path_lower = model_path;
+    std::transform(model_alias_lower.begin(), model_alias_lower.end(), model_alias_lower.begin(), ::tolower);
+    std::transform(model_path_lower.begin(), model_path_lower.end(), model_path_lower.begin(), ::tolower);
+    if (model_alias_lower.find("gemma3") != std::string::npos || model_path_lower.find("gemma3") != std::string::npos) {
+        cmd << " --jinja";
+    }
     
     // Add --alias flag to use short_name instead of filename in web UI
     if (!model_alias.empty()) {
