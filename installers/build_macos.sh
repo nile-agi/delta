@@ -119,8 +119,53 @@ else
     warning "assets/ directory not found. Web UI will not be included."
 fi
 
-# Step 5: Build application
-info "Step 5/5: Building Delta CLI..."
+# Step 5: Patch visionOS issues (must be done before building)
+info "Step 5/6: Patching visionOS compatibility issues..."
+# Work around visionOS compatibility issues in newer SDKs
+# The Accelerate framework headers and some Metal code reference visionOS which older compilers don't recognize
+# Since we're using Metal (the primary acceleration on macOS), we can disable BLAS/Accelerate
+# Patch the source file to remove visionOS references before building
+METAL_DEVICE_FILE="${PROJECT_DIR}/vendor/llama.cpp/ggml/src/ggml-metal/ggml-metal-device.m"
+if [ -f "$METAL_DEVICE_FILE" ]; then
+    # Create backup if it doesn't exist
+    if [ ! -f "${METAL_DEVICE_FILE}.backup" ]; then
+        cp "$METAL_DEVICE_FILE" "${METAL_DEVICE_FILE}.backup" 2>/dev/null || true
+    fi
+    # Remove visionOS from @available checks (replace with just the other platforms)
+    # Try macOS sed syntax first, then fall back to GNU sed syntax
+    if sed -i '' 's/@available(macOS 15.0, iOS 18.0, tvOS 18.0, visionOS 2.0, \*)/@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)/g' "$METAL_DEVICE_FILE" 2>/dev/null; then
+        success "Patched Metal device file (removed visionOS references)"
+    elif sed -i 's/@available(macOS 15.0, iOS 18.0, tvOS 18.0, visionOS 2.0, \*)/@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)/g' "$METAL_DEVICE_FILE" 2>/dev/null; then
+        success "Patched Metal device file (removed visionOS references)"
+    else
+        # Fallback: use perl or python if sed doesn't work
+        perl -i -pe 's/@available\(macOS 15\.0, iOS 18\.0, tvOS 18\.0, visionOS 2\.0, \*\)/@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)/g' "$METAL_DEVICE_FILE" 2>/dev/null && \
+        success "Patched Metal device file (removed visionOS references)" || \
+        warning "Could not patch Metal device file automatically"
+    fi
+else
+    warning "Metal device file not found at: $METAL_DEVICE_FILE"
+    warning "Trying alternative path..."
+    # Try relative path from current directory (we're in PROJECT_DIR)
+    METAL_DEVICE_FILE="vendor/llama.cpp/ggml/src/ggml-metal/ggml-metal-device.m"
+    if [ -f "$METAL_DEVICE_FILE" ]; then
+        if [ ! -f "${METAL_DEVICE_FILE}.backup" ]; then
+            cp "$METAL_DEVICE_FILE" "${METAL_DEVICE_FILE}.backup" 2>/dev/null || true
+        fi
+        if sed -i '' 's/@available(macOS 15.0, iOS 18.0, tvOS 18.0, visionOS 2.0, \*)/@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)/g' "$METAL_DEVICE_FILE" 2>/dev/null || \
+           sed -i 's/@available(macOS 15.0, iOS 18.0, tvOS 18.0, visionOS 2.0, \*)/@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)/g' "$METAL_DEVICE_FILE" 2>/dev/null || \
+           perl -i -pe 's/@available\(macOS 15\.0, iOS 18\.0, tvOS 18\.0, visionOS 2\.0, \*\)/@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)/g' "$METAL_DEVICE_FILE" 2>/dev/null; then
+            success "Patched Metal device file (removed visionOS references)"
+        else
+            warning "Could not patch Metal device file automatically"
+        fi
+    else
+        warning "Metal device file not found, build may fail with visionOS errors"
+    fi
+fi
+
+# Step 6: Build application
+info "Step 6/6: Building Delta CLI..."
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
@@ -142,33 +187,6 @@ fi
 
 info "Using C compiler: $C_COMPILER"
 info "Using C++ compiler: $CXX_COMPILER"
-
-# Work around visionOS compatibility issues in newer SDKs
-# The Accelerate framework headers and some Metal code reference visionOS which older compilers don't recognize
-# Since we're using Metal (the primary acceleration on macOS), we can disable BLAS/Accelerate
-# Patch the source file to remove visionOS references before building
-info "Patching visionOS compatibility issues in Metal code..."
-METAL_DEVICE_FILE="vendor/llama.cpp/ggml/src/ggml-metal/ggml-metal-device.m"
-if [ -f "$METAL_DEVICE_FILE" ]; then
-    # Create backup if it doesn't exist
-    if [ ! -f "${METAL_DEVICE_FILE}.backup" ]; then
-        cp "$METAL_DEVICE_FILE" "${METAL_DEVICE_FILE}.backup" 2>/dev/null || true
-    fi
-    # Remove visionOS from @available checks (replace with just the other platforms)
-    # Try macOS sed syntax first, then fall back to GNU sed syntax
-    if sed -i '' 's/@available(macOS 15.0, iOS 18.0, tvOS 18.0, visionOS 2.0, \*)/@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)/g' "$METAL_DEVICE_FILE" 2>/dev/null; then
-        success "Patched Metal device file (removed visionOS references)"
-    elif sed -i 's/@available(macOS 15.0, iOS 18.0, tvOS 18.0, visionOS 2.0, \*)/@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)/g' "$METAL_DEVICE_FILE" 2>/dev/null; then
-        success "Patched Metal device file (removed visionOS references)"
-    else
-        # Fallback: use perl or python if sed doesn't work
-        perl -i -pe 's/@available\(macOS 15\.0, iOS 18\.0, tvOS 18\.0, visionOS 2\.0, \*\)/@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)/g' "$METAL_DEVICE_FILE" 2>/dev/null && \
-        success "Patched Metal device file (removed visionOS references)" || \
-        warning "Could not patch Metal device file automatically"
-    fi
-else
-    warning "Metal device file not found, skipping patch"
-fi
 
 # Also use compiler flags as backup
 export CFLAGS="${CFLAGS} -Wno-error"
