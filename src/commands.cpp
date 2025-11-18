@@ -14,12 +14,20 @@
 #include <iomanip>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <memory>
+#include <vector>
 #ifdef _WIN32
     #include <windows.h>
     #include <limits.h>
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
 #else
     #include <unistd.h>
     #include <limits.h>
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <arpa/inet.h>
     #ifndef PATH_MAX
         #define PATH_MAX 4096
     #endif
@@ -254,22 +262,119 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
         cmd << " --path \"" << public_path << "\"";
     }
     
+    // Debug: Print the command being executed (can be removed in production)
+    // std::cerr << "Executing: " << cmd.str() << std::endl;
+    
     // Run in background
+    // Note: We redirect stderr to a temp file to capture errors for debugging
 #ifdef _WIN32
-    cmd << " >nul 2>&1";
+    std::string err_file = "nul";
+    cmd << " 2>" << err_file;
     // On Windows, use START to run in background
     std::string full_cmd = "start /B " + cmd.str();
     int result = std::system(full_cmd.c_str());
 #else
-    // Suppress output - server runs in background
-    cmd << " >/dev/null 2>&1 &";
+    // Create a temporary error log file to capture startup errors
+    std::string err_file = "/tmp/delta-server-err-" + std::to_string(port) + ".log";
+    // Remove old log file if it exists
+    std::remove(err_file.c_str());
+    cmd << " 2>" << err_file << " &";
     int result = std::system(cmd.str().c_str());
 #endif
     
-    // Small delay to let server start
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    // Wait for server to start and verify it's running
+    // Give server time to initialize (especially for model loading)
+    bool server_listening = false;
+    for (int attempt = 0; attempt < 20; attempt++) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        
+        // Check if port is listening using socket connection
+#ifdef _WIN32
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0) {
+            SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (sock != INVALID_SOCKET) {
+                sockaddr_in addr;
+                addr.sin_family = AF_INET;
+                addr.sin_port = htons(port);
+                inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+                if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
+                    server_listening = true;
+                    closesocket(sock);
+                } else {
+                    closesocket(sock);
+                }
+            }
+            WSACleanup();
+        }
+#else
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock >= 0) {
+            struct sockaddr_in addr;
+            addr.sin_family = AF_INET;
+            addr.sin_port = htons(port);
+            inet_aton("127.0.0.1", &addr.sin_addr);
+            if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
+                server_listening = true;
+                close(sock);
+            } else {
+                close(sock);
+            }
+        }
+#endif
+        if (server_listening) {
+            break;
+        }
+    }
     
-    return (result == 0);
+    // Check error log for any startup errors
+#ifndef _WIN32
+    std::ifstream err_log(err_file);
+    if (err_log.is_open()) {
+        std::string line;
+        std::vector<std::string> error_lines;
+        while (std::getline(err_log, line)) {
+            if (!line.empty()) {
+                // Filter out informational messages
+                std::string line_lower = line;
+                std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
+                // Look for actual error messages (not just info)
+                if (line_lower.find("error") != std::string::npos ||
+                    line_lower.find("failed") != std::string::npos ||
+                    line_lower.find("fatal") != std::string::npos ||
+                    (line_lower.find("unknown") != std::string::npos && line_lower.find("option") != std::string::npos)) {
+                    error_lines.push_back(line);
+                }
+            }
+        }
+        err_log.close();
+        
+        if (!error_lines.empty()) {
+            // Show errors - these indicate the server failed to start
+            UI::print_error("Server startup errors detected:");
+            for (size_t i = 0; i < error_lines.size() && i < 5; i++) {
+                std::cerr << "  " << error_lines[i] << std::endl;
+            }
+            std::cerr << "\nFull error log: " << err_file << std::endl;
+            std::cerr << "\nTip: If you see 'unknown option' errors, your llama-server build may not support all flags." << std::endl;
+            return false;
+        }
+    }
+#endif
+    
+    if (result != 0) {
+        UI::print_error("Failed to start server process");
+        return false;
+    }
+    
+    if (!server_listening) {
+        UI::print_error("Server process started but port " + std::to_string(port) + " is not listening");
+        UI::print_info("Check error log: " + err_file);
+        UI::print_info("The server may still be loading the model. Try accessing http://localhost:" + std::to_string(port) + " in a few seconds.");
+        // Don't return false here - server might still be starting
+    }
+    
+    return true;
 }
 
 void Commands::init() {
