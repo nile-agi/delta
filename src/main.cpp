@@ -865,8 +865,19 @@ int main(int argc, char** argv) {
             << " --parallel " << max_parallel
             << " -c " << max_context;
         
-        // Add --flash-attn flag for all models (use 'auto' to let system decide, prevents memory issues)
-        cmd << " --flash-attn auto";
+        // Add --flash-attn flag for all models
+        // Use 'off' if context is very large (>16K) to prevent GPU memory issues, otherwise use 'auto'
+        if (max_context > 16384) {
+            // Large context sizes can cause GPU memory issues with Flash Attention
+            cmd << " --flash-attn off";
+            // Also limit GPU layers for very large contexts to prevent memory exhaustion
+            if (max_context > 32768) {
+                cmd << " --gpu-layers 0";  // Disable GPU entirely for extremely large contexts
+            }
+        } else {
+            // For smaller contexts, let system decide automatically
+            cmd << " --flash-attn auto";
+        }
         
         // Add --jinja flag for gemma3 models
         // Check model_name, model_alias, and model_path for gemma3 (case-insensitive)
