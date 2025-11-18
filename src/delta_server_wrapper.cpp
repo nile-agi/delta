@@ -215,8 +215,8 @@ public:
         cmd += " --parallel " + std::to_string(max_parallel_);
         cmd += " -c " + std::to_string(max_context_);
         
-        // Add --flash-attn flag for all models (requires value: on, off, or auto)
-        cmd += " --flash-attn on";
+        // Add --flash-attn flag for all models (use 'auto' to let system decide, prevents memory issues)
+        cmd += " --flash-attn auto";
         
         // Add --jinja flag for gemma3 models
         // Check model_path for gemma3 (case-insensitive)

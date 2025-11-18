@@ -239,8 +239,8 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
         << " --port " << port
         << " -c " << ctx_size;
     
-    // Add --flash-attn flag for all models (requires value: on, off, or auto)
-    cmd << " --flash-attn on";
+    // Add --flash-attn flag for all models (use 'auto' to let system decide, prevents memory issues)
+    cmd << " --flash-attn auto";
     
     // Add --jinja flag for gemma3 models
     // Check model_alias and model_path for gemma3 (case-insensitive)

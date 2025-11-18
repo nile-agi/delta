@@ -865,8 +865,8 @@ int main(int argc, char** argv) {
             << " --parallel " << max_parallel
             << " -c " << max_context;
         
-        // Add --flash-attn flag for all models (requires value: on, off, or auto)
-        cmd << " --flash-attn on";
+        // Add --flash-attn flag for all models (use 'auto' to let system decide, prevents memory issues)
+        cmd << " --flash-attn auto";
         
         // Add --jinja flag for gemma3 models
         // Check model_name, model_alias, and model_path for gemma3 (case-insensitive)
