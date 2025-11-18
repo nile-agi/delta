@@ -4,21 +4,7 @@ Delta CLI can now be installed with a single command on all platforms!
 
 ## 🍎 macOS
 
-### Option 1: DMG Installer (Recommended - No Build Tools Required)
-
-Download and install the DMG package:
-
-1. Download `delta-<version>-macos-<arch>.dmg` from the [releases page](https://github.com/nile-agi/delta/releases)
-2. Double-click the DMG file to mount it
-3. Drag "Delta CLI.app" to the Applications folder
-4. Open Terminal and run: `delta --version`
-
-**What it does:**
-- ✅ No build tools required
-- ✅ Drag-and-drop installation
-- ✅ Ready to use immediately
-
-### Option 2: Install from Source (Requires Build Tools)
+### Install from Source (Requires Build Tools)
 
 ```bash
 brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
@@ -43,7 +29,7 @@ brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
 
 **Note:** Installation takes a few minutes to build, but everything is automatic.
 
-### Option 2: Install Pre-built Binary (No Build Tools Required)
+### Install Pre-built Binary (No Build Tools Required)
 
 If you don't have Xcode Command Line Tools installed, you can use the installation script instead:
 
@@ -82,27 +68,7 @@ curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/packaging/linux
 
 ## 🪟 Windows
 
-### Option 1: EXE Installer (Recommended - No Build Tools Required)
-
-Download and run the installer:
-
-1. Download `delta-<version>-windows-<arch>.exe` from the [releases page](https://github.com/nile-agi/delta/releases)
-2. Double-click the EXE file to run the installer
-3. Follow the installation wizard
-4. The installer will automatically:
-   - Install Delta CLI to `C:\Program Files\Delta CLI`
-   - Add Delta CLI to your system PATH
-   - Create Start Menu shortcuts
-5. Open a new Command Prompt or PowerShell window
-6. Run: `delta --version`
-
-**What it does:**
-- ✅ No build tools required
-- ✅ Automatic PATH configuration
-- ✅ Start Menu shortcuts
-- ✅ Easy uninstallation via Control Panel
-
-### Option 2: PowerShell Script (as Administrator)
+### PowerShell Script (as Administrator)
 
 ```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/packaging/windows/install.ps1" -OutFile install.ps1; .\install.ps1
