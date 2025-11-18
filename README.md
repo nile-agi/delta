@@ -78,9 +78,23 @@ Each platform has a dedicated installation method that handles everything automa
 
 #### 🍎 macOS
 
-**Homebrew (Recommended):**
+**Option 1: DMG Installer (Recommended - No Build Tools Required)**
 
-**Option 1: Install from Source (Requires Xcode Command Line Tools)**
+Download and install the DMG package:
+
+1. Download `delta-<version>-macos-<arch>.dmg` from the [releases page](https://github.com/nile-agi/delta/releases)
+2. Double-click the DMG file to mount it
+3. Drag "Delta CLI.app" to the Applications folder
+4. Open Terminal and run: `delta --version`
+
+**What it does:**
+- ✅ No build tools required
+- ✅ Drag-and-drop installation
+- ✅ Ready to use immediately
+
+**Option 2: Homebrew (Requires Xcode Command Line Tools)**
+
+**Install from Source:**
 ```bash
 brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
 ```
@@ -100,7 +114,7 @@ xcode-select --install
 
 **Note:** The Homebrew formula automatically installs Node.js as a build dependency to build the custom Delta web UI from the `assets/` directory. The web UI includes the Delta favicon, model name display improvements, and other customizations.
 
-**Option 2: Installation Script (No Build Tools Required)**
+**Option 3: Installation Script (No Build Tools Required)**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/install.sh | bash
 ```
@@ -130,7 +144,27 @@ brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli
 
 #### 🪟 Windows
 
-**Winget (Recommended):**
+**Option 1: EXE Installer (Recommended - No Build Tools Required)**
+
+Download and run the installer:
+
+1. Download `delta-<version>-windows-<arch>.exe` from the [releases page](https://github.com/nile-agi/delta/releases)
+2. Double-click the EXE file to run the installer
+3. Follow the installation wizard
+4. The installer will automatically:
+   - Install Delta CLI to `C:\Program Files\Delta CLI`
+   - Add Delta CLI to your system PATH
+   - Create Start Menu shortcuts
+5. Open a new Command Prompt or PowerShell window
+6. Run: `delta --version`
+
+**What it does:**
+- ✅ No build tools required
+- ✅ Automatic PATH configuration
+- ✅ Start Menu shortcuts
+- ✅ Easy uninstallation via Control Panel
+
+**Option 2: Winget**
 ```powershell
 winget install DeltaCLI.DeltaCLI
 ```
@@ -139,9 +173,9 @@ winget install DeltaCLI.DeltaCLI
 > - To submit the package to winget, use the automated script: `.\packaging\winget\submit-to-winget.ps1 -Version 1.0.0 -GitHubUsername YOUR_USERNAME`
 > - Or see [packaging/winget/AUTOMATION.md](packaging/winget/AUTOMATION.md) for automated submission guide
 > - Or see [packaging/winget/SUBMIT.md](packaging/winget/SUBMIT.md) for manual submission instructions
-> - In the meantime, use the PowerShell installation script below
+> - In the meantime, use the EXE installer or PowerShell installation script below
 
-**PowerShell Installation Script:**
+**Option 3: PowerShell Installation Script:**
 ```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/packaging/windows/install.ps1" -OutFile install.ps1; .\install.ps1
 ```
@@ -152,6 +186,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https:
 >
 > In that case, you can:
 > - Check available releases: https://github.com/nile-agi/delta/releases
+> - Use the EXE installer instead (if available)
 > - Build from source (see build instructions in the repository)
 > - Wait for an official release to be published
 
@@ -173,6 +208,7 @@ Professional offline AI assistant
 
 | Method | Windows | macOS | Linux | Speed | Git Required | Building Required |
 |---|---|---|---|---|---|---|
+| **DMG/EXE Installer** | ✅ | ✅ | ❌ | ⚡ Fast | ❌ No | ❌ No |
 | **Winget** | ✅ | ❌ | ❌ | ⚡ Fast | ❌ No | ❌ No |
 | **Homebrew** | ❌ | ✅ | ✅ | 🐢 Slow (builds) | ✅ Yes (automatic) | ✅ Yes (automatic) |
 | **Install Script** | ✅ | ✅ | ✅ | ⚡ Fast | ❌ No | ❌ No |
@@ -419,8 +455,19 @@ delta pull qwen2.5:0.5b
 
 ## Uninstallation
 
-### macOS (Homebrew)
+### macOS
 
+**If installed via DMG:**
+1. Open **Finder** and go to **Applications**
+2. Drag "Delta CLI.app" to the **Trash**
+3. Empty the Trash
+
+**Note:** If you copied the binaries to `/usr/local/bin/` manually, remove them:
+```bash
+sudo rm -f /usr/local/bin/delta /usr/local/bin/delta-server
+```
+
+**If installed via Homebrew:**
 ```bash
 brew uninstall delta-cli
 brew untap nile-agi/delta-cli
@@ -442,12 +489,24 @@ sudo rm -f /etc/profile.d/delta-cli.sh
 
 ### Windows
 
+**If installed via EXE Installer:**
+1. Go to **Control Panel** > **Programs** > **Uninstall a program**
+2. Find "Delta CLI" and click **Uninstall**
+3. Or run: `C:\Program Files\Delta CLI\uninst.exe`
+
+The uninstaller will automatically:
+- Remove Delta CLI files
+- Remove Start Menu shortcuts
+- Remove registry entries
+
+**Note:** The uninstaller may not automatically remove PATH entries. If needed, remove `C:\Program Files\Delta CLI` from your system PATH manually via System Properties > Environment Variables.
+
 **If installed via Winget:**
 ```powershell
 winget uninstall DeltaCLI.DeltaCLI
 ```
 
-> **Note:** If you get "No package found matching input criteria", Delta CLI was never installed via winget. You may have installed it via the PowerShell script or manually.
+> **Note:** If you get "No package found matching input criteria", Delta CLI was never installed via winget. You may have installed it via the EXE installer, PowerShell script, or manually.
 
 > **Note:** Winget will automatically remove the installation directory (`C:\Program Files\Delta CLI`). However, it may not automatically remove:
 > - PATH environment variable entries
