@@ -77,25 +77,66 @@ echo "⬇️  Downloading Delta CLI from: $DOWNLOAD_URL"
 TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
-# Download with error checking
-HTTP_CODE=0
+# Download with comprehensive error checking
+DOWNLOAD_FAILED=false
 
 if command -v curl &> /dev/null; then
-    # Download and capture HTTP code separately
-    # -w writes to stdout, -o writes to file, -s suppresses progress
-    HTTP_CODE=$(curl -L -w "%{http_code}" -o delta-cli.tar.gz -s "$DOWNLOAD_URL" | tail -1)
+    # Download and capture HTTP code
+    # -w writes HTTP code to stdout after the file is downloaded
+    # -o writes the file, -s suppresses progress
+    # Capture HTTP code separately from stderr
+    HTTP_CODE=$(curl -L -w "%{http_code}" -o delta-cli.tar.gz -s "$DOWNLOAD_URL" 2>/dev/null | tail -1)
+    
+    # If HTTP code is empty or not 200, check for errors
+    if [ -z "$HTTP_CODE" ] || [ "$HTTP_CODE" != "200" ]; then
+        DOWNLOAD_FAILED=true
+        HTTP_ERROR_CODE="${HTTP_CODE:-000}"
+    fi
 elif command -v wget &> /dev/null; then
     # Use wget and capture HTTP code
     HTTP_CODE=$(wget -O delta-cli.tar.gz --server-response "$DOWNLOAD_URL" 2>&1 | awk '/HTTP\// {print $2}' | tail -1)
+    if [ "$HTTP_CODE" != "200" ]; then
+        DOWNLOAD_FAILED=true
+        HTTP_ERROR_CODE="$HTTP_CODE"
+    fi
 else
     echo "❌ Error: curl or wget is required"
     exit 1
 fi
 
-# Check if download was successful
-if [ "$HTTP_CODE" != "200" ]; then
+# Verify the downloaded file exists
+if [ ! -f "delta-cli.tar.gz" ]; then
+    DOWNLOAD_FAILED=true
+fi
+
+# Check file size (should be more than a few bytes for a real archive)
+# A real tar.gz should be at least several KB
+FILE_SIZE=$(stat -f%z delta-cli.tar.gz 2>/dev/null || stat -c%s delta-cli.tar.gz 2>/dev/null || echo "0")
+if [ "$FILE_SIZE" -lt 1000 ]; then
+    DOWNLOAD_FAILED=true
+    if [ -z "$HTTP_ERROR_CODE" ]; then
+        HTTP_ERROR_CODE="000"
+    fi
+fi
+
+# Check if it's an HTML error page (common for 404s)
+if [ -f "delta-cli.tar.gz" ] && head -1 delta-cli.tar.gz 2>/dev/null | grep -q "<!DOCTYPE html\|<html\|404\|Not Found"; then
+    DOWNLOAD_FAILED=true
+    if [ -z "$HTTP_ERROR_CODE" ]; then
+        HTTP_ERROR_CODE="404"
+    fi
+fi
+
+# If download failed, show error and exit
+if [ "$DOWNLOAD_FAILED" = "true" ]; then
     echo ""
-    echo "❌ Error: Failed to download Delta CLI (HTTP $HTTP_CODE)"
+    echo "❌ Error: Failed to download Delta CLI"
+    if [ -n "$HTTP_ERROR_CODE" ]; then
+        echo "   HTTP Status: $HTTP_ERROR_CODE"
+    fi
+    if [ "$FILE_SIZE" -lt 1000 ]; then
+        echo "   File size: $FILE_SIZE bytes (too small for a valid archive)"
+    fi
     echo ""
     echo "📋 This usually means:"
     echo "   • No pre-built release is available for your platform yet"
@@ -128,31 +169,15 @@ if [ "$HTTP_CODE" != "200" ]; then
     exit 1
 fi
 
-# Verify the downloaded file exists and has content
-if [ ! -f "delta-cli.tar.gz" ]; then
-    echo "❌ Error: Download failed - file not created"
-    cd - > /dev/null
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
-
-# Check file size (should be more than a few bytes for a real archive)
-FILE_SIZE=$(stat -f%z delta-cli.tar.gz 2>/dev/null || stat -c%s delta-cli.tar.gz 2>/dev/null || echo "0")
-if [ "$FILE_SIZE" -lt 100 ]; then
-    echo "❌ Error: Download failed - file is too small (likely an error page)"
-    echo "   File size: $FILE_SIZE bytes"
-    cd - > /dev/null
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
-
-# Check if it's a valid tar.gz file (not an HTML error page)
-# First check if it's an HTML error page (most common case)
-if head -1 delta-cli.tar.gz 2>/dev/null | grep -q "<!DOCTYPE html\|<html\|404\|Not Found"; then
+# Additional validation: verify it's actually a gzip file
+if command -v file &> /dev/null; then
+    FILE_TYPE=$(file delta-cli.tar.gz 2>/dev/null)
+    if ! echo "$FILE_TYPE" | grep -q "gzip\|tar\|archive\|compressed"; then
         echo ""
-        echo "❌ Error: Release not found (received HTML error page)"
+        echo "❌ Error: Downloaded file is not a valid tar.gz archive"
+        echo "   File type: $FILE_TYPE"
         echo ""
-        echo "📋 This means no pre-built release is available yet."
+        echo "📋 This usually means the release file doesn't exist or the URL is incorrect."
         echo ""
         echo "💡 Alternative Installation Methods:"
         echo ""
@@ -171,20 +196,31 @@ if head -1 delta-cli.tar.gz 2>/dev/null | grep -q "<!DOCTYPE html\|<html\|404\|N
         cd - > /dev/null
         rm -rf "$TEMP_DIR"
         exit 1
-fi
-
-# Additional check: verify it's actually a gzip file
-if command -v file &> /dev/null; then
-    if ! file delta-cli.tar.gz 2>/dev/null | grep -q "gzip\|tar\|archive\|compressed"; then
-        echo "⚠️  Warning: Downloaded file may not be a valid tar.gz archive"
-        echo "   Proceeding anyway, but extraction may fail..."
     fi
 fi
 
 echo "📦 Extracting..."
 if ! tar -xzf delta-cli.tar.gz 2>/dev/null; then
-    echo "❌ Error: Failed to extract archive. The downloaded file may be corrupted."
-    echo "   Try downloading again or use an alternative installation method."
+    echo ""
+    echo "❌ Error: Failed to extract archive"
+    echo ""
+    echo "📋 The downloaded file may be corrupted or not a valid tar.gz archive."
+    echo "   File size: $FILE_SIZE bytes"
+    echo ""
+    echo "💡 Alternative Installation Methods:"
+    echo ""
+    if [ "$OS" = "Darwin" ]; then
+        echo "🍎 Option 1: Install via Homebrew (builds from source)"
+        echo "   First, install Xcode Command Line Tools:"
+        echo "   xcode-select --install"
+        echo ""
+        echo "   Then install Delta CLI:"
+        echo "   brew tap nile-agi/delta-cli && brew install --HEAD nile-agi/delta-cli/delta-cli"
+    else
+        echo "🐧 Build from source:"
+        echo "   See: $REPO_URL/blob/main/README.md#building-from-source"
+    fi
+    echo ""
     cd - > /dev/null
     rm -rf "$TEMP_DIR"
     exit 1
