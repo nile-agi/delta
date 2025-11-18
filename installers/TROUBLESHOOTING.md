@@ -63,7 +63,19 @@ brew install node
 
 ### Build Fails with Compiler Errors
 
-**Possible causes:**
+**Error: `unrecognized platform name visionOS`**
+
+This happens when the SDK headers reference visionOS but your compiler doesn't recognize it. The build script automatically handles this by:
+- Disabling BLAS/Accelerate (Metal is used instead, which is better for macOS)
+- Adding compiler flags to suppress these warnings
+
+If you still see this error:
+1. Make sure you're using the latest build script
+2. The script automatically disables BLAS/Accelerate and adds compatibility flags
+3. Metal acceleration will still work (it's the primary method on macOS)
+
+**Other compiler errors:**
+
 1. **Incomplete Xcode Command Line Tools installation**
    - Reinstall: `sudo rm -rf /Library/Developer/CommandLineTools && xcode-select --install`
 
