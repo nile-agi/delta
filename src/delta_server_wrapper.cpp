@@ -131,6 +131,10 @@ public:
             // Check Homebrew share directory (for installed packages)
             candidates.push_back(exe_path + "/../../share/delta-cli/webui");
             candidates.push_back(exe_path + "/../../../share/delta-cli/webui");
+            // Check macOS app bundle Resources directory (for DMG installs)
+            // Executable is at Contents/MacOS/delta, web UI is at Contents/Resources/webui
+            candidates.push_back(exe_path + "/../Resources/webui");
+            candidates.push_back(exe_path + "/../../Resources/webui");
             // Check relative to executable (Delta web UI from public/)
             candidates.push_back(exe_path + "/../public");
             candidates.push_back(exe_path + "/../../public");

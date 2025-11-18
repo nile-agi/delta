@@ -765,7 +765,11 @@ int main(int argc, char** argv) {
             "/usr/local/share/delta-cli/webui",
             tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"),
             tools::FileOps::join_path(exe_dir, "../../../share/delta-cli/webui"),
-            // Relative to executable
+            // macOS app bundle Resources directory (for DMG installs)
+            // Executable is at Contents/MacOS/delta, web UI is at Contents/Resources/webui
+            tools::FileOps::join_path(exe_dir, "../Resources/webui"),
+            tools::FileOps::join_path(exe_dir, "../../Resources/webui"),
+            // Relative to executable (Delta web UI from public/)
             tools::FileOps::join_path(exe_dir, "../public"),
             tools::FileOps::join_path(exe_dir, "../../public"),
             tools::FileOps::join_path(exe_grandparent, "public"),
