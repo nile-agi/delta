@@ -146,10 +146,10 @@ info "Using C++ compiler: $CXX_COMPILER"
 # Work around visionOS compatibility issues in newer SDKs
 # The Accelerate framework headers and some Metal code reference visionOS which older compilers don't recognize
 # Since we're using Metal (the primary acceleration on macOS), we can disable BLAS/Accelerate
-# Add compiler flags to treat these as warnings instead of errors
-export CFLAGS="${CFLAGS} -Wno-error=unrecognized-platform-name -Wno-unrecognized-platform-name -Wno-error=undeclared-identifier"
-export CXXFLAGS="${CXXFLAGS} -Wno-error=unrecognized-platform-name -Wno-unrecognized-platform-name -Wno-error=undeclared-identifier"
-export OBJCFLAGS="${OBJCFLAGS} -Wno-error=unrecognized-platform-name -Wno-unrecognized-platform-name"
+# Use a simpler approach: convert all errors to warnings (compatible with all clang versions)
+export CFLAGS="${CFLAGS} -Wno-error"
+export CXXFLAGS="${CXXFLAGS} -Wno-error"
+export OBJCFLAGS="${OBJCFLAGS} -Wno-error"
 
 info "Configuring build (Metal enabled, BLAS/Accelerate disabled to avoid SDK compatibility issues)..."
 

@@ -19,11 +19,9 @@ The build script (`build_macos.sh`) automatically handles this by:
 
 1. **Disabling BLAS/Accelerate**: Since Metal is the primary acceleration method on macOS, we disable BLAS/Accelerate to avoid the Accelerate framework header issues.
 
-2. **Adding compiler flags**: The script adds flags to suppress these errors:
+2. **Adding compiler flags**: The script adds flags to convert errors to warnings:
    ```bash
-   -Wno-error=unrecognized-platform-name
-   -Wno-unrecognized-platform-name
-   -Wno-error=undeclared-identifier
+   -Wno-error  # Convert all errors to warnings (compatible with all clang versions)
    ```
 
 3. **Metal still works**: Metal acceleration is enabled and will work perfectly - it's actually the preferred method on macOS.
@@ -33,9 +31,9 @@ The build script (`build_macos.sh`) automatically handles this by:
 If you need to build manually and encounter these errors:
 
 ```bash
-export CFLAGS="-Wno-error=unrecognized-platform-name -Wno-unrecognized-platform-name"
-export CXXFLAGS="-Wno-error=unrecognized-platform-name -Wno-unrecognized-platform-name"
-export OBJCFLAGS="-Wno-error=unrecognized-platform-name -Wno-unrecognized-platform-name"
+export CFLAGS="-Wno-error"
+export CXXFLAGS="-Wno-error"
+export OBJCFLAGS="-Wno-error"
 
 cmake .. \
   -DGGML_METAL=ON \
