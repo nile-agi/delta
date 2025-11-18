@@ -146,7 +146,31 @@ info "Using C++ compiler: $CXX_COMPILER"
 # Work around visionOS compatibility issues in newer SDKs
 # The Accelerate framework headers and some Metal code reference visionOS which older compilers don't recognize
 # Since we're using Metal (the primary acceleration on macOS), we can disable BLAS/Accelerate
-# Use a simpler approach: convert all errors to warnings (compatible with all clang versions)
+# Patch the source file to remove visionOS references before building
+info "Patching visionOS compatibility issues in Metal code..."
+METAL_DEVICE_FILE="vendor/llama.cpp/ggml/src/ggml-metal/ggml-metal-device.m"
+if [ -f "$METAL_DEVICE_FILE" ]; then
+    # Create backup if it doesn't exist
+    if [ ! -f "${METAL_DEVICE_FILE}.backup" ]; then
+        cp "$METAL_DEVICE_FILE" "${METAL_DEVICE_FILE}.backup" 2>/dev/null || true
+    fi
+    # Remove visionOS from @available checks (replace with just the other platforms)
+    # Try macOS sed syntax first, then fall back to GNU sed syntax
+    if sed -i '' 's/@available(macOS 15.0, iOS 18.0, tvOS 18.0, visionOS 2.0, \*)/@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)/g' "$METAL_DEVICE_FILE" 2>/dev/null; then
+        success "Patched Metal device file (removed visionOS references)"
+    elif sed -i 's/@available(macOS 15.0, iOS 18.0, tvOS 18.0, visionOS 2.0, \*)/@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)/g' "$METAL_DEVICE_FILE" 2>/dev/null; then
+        success "Patched Metal device file (removed visionOS references)"
+    else
+        # Fallback: use perl or python if sed doesn't work
+        perl -i -pe 's/@available\(macOS 15\.0, iOS 18\.0, tvOS 18\.0, visionOS 2\.0, \*\)/@available(macOS 15.0, iOS 18.0, tvOS 18.0, *)/g' "$METAL_DEVICE_FILE" 2>/dev/null && \
+        success "Patched Metal device file (removed visionOS references)" || \
+        warning "Could not patch Metal device file automatically"
+    fi
+else
+    warning "Metal device file not found, skipping patch"
+fi
+
+# Also use compiler flags as backup
 export CFLAGS="${CFLAGS} -Wno-error"
 export CXXFLAGS="${CXXFLAGS} -Wno-error"
 export OBJCFLAGS="${OBJCFLAGS} -Wno-error"
