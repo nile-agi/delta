@@ -243,15 +243,51 @@ end tell
 EOF
     fi
     
-    # Unmount
-    hdiutil detach "$MOUNT_DIR"
+    # Unmount - wait for it to complete and retry if needed
+    info "Unmounting DMG..."
+    for i in {1..5}; do
+        if hdiutil detach "$MOUNT_DIR" -quiet 2>/dev/null; then
+            success "DMG unmounted"
+            break
+        else
+            if [ $i -eq 5 ]; then
+                warning "Could not unmount cleanly, forcing detach..."
+                hdiutil detach "$MOUNT_DIR" -force 2>/dev/null || true
+            else
+                info "Waiting for DMG to unmount (attempt $i/5)..."
+                sleep 2
+            fi
+        fi
+    done
+    
+    # Wait a bit more to ensure the filesystem is released
+    sleep 1
 fi
 
 # Convert to final compressed DMG
-hdiutil convert "$DMG_PATH.temp.dmg" \
-    -format UDZO \
-    -imagekey zlib-level=9 \
-    -o "$DMG_PATH" || error_exit "Failed to convert DMG"
+info "Converting to compressed DMG..."
+# Remove existing final DMG if it exists
+rm -f "$DMG_PATH"
+
+# Try conversion with retry
+for i in {1..3}; do
+    if hdiutil convert "$DMG_PATH.temp.dmg" \
+        -format UDZO \
+        -imagekey zlib-level=9 \
+        -o "$DMG_PATH" 2>/dev/null; then
+        break
+    else
+        if [ $i -eq 3 ]; then
+            error_exit "Failed to convert DMG after 3 attempts. The DMG may still be mounted. Try: hdiutil detach all"
+        else
+            warning "Conversion failed (attempt $i/3), retrying..."
+            sleep 2
+            # Try to detach any remaining mounts
+            hdiutil detach "$MOUNT_DIR" -force 2>/dev/null || true
+            sleep 1
+        fi
+    fi
+done
 
 # Remove temporary DMG
 rm -f "$DMG_PATH.temp.dmg"

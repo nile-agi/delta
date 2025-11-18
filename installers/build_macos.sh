@@ -189,8 +189,9 @@ info "Using C compiler: $C_COMPILER"
 info "Using C++ compiler: $CXX_COMPILER"
 
 # Also use compiler flags as backup
-export CFLAGS="${CFLAGS} -Wno-error"
-export CXXFLAGS="${CXXFLAGS} -Wno-error"
+# Suppress deprecation warnings from dependencies (like llama.cpp using deprecated C++17 features)
+export CFLAGS="${CFLAGS} -Wno-error -Wno-deprecated-declarations"
+export CXXFLAGS="${CXXFLAGS} -Wno-error -Wno-deprecated-declarations"
 export OBJCFLAGS="${OBJCFLAGS} -Wno-error"
 
 info "Configuring build (Metal enabled, BLAS/Accelerate disabled to avoid SDK compatibility issues)..."
