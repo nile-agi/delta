@@ -14,6 +14,7 @@
 	} from '@lucide/svelte';
 	import { ChatSettingsFooter, ChatSettingsFields } from '$lib/components/app';
 	import ImportExportTab from './ImportExportTab.svelte';
+	import ModelManagementTab from '../ModelManagement/ModelManagementTab.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { config, updateMultipleConfig } from '$lib/stores/settings.svelte';
@@ -215,6 +216,11 @@
 		{
 			title: 'Import/Export',
 			icon: Database,
+			fields: []
+		},
+		{
+			title: 'Model Management',
+			icon: Brain,
 			fields: []
 		},
 		{
@@ -481,6 +487,8 @@
 
 						{#if currentSection.title === 'Import/Export'}
 							<ImportExportTab />
+						{:else if currentSection.title === 'Model Management'}
+							<ModelManagementTab />
 						{:else}
 							<div class="space-y-6">
 								<ChatSettingsFields

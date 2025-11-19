@@ -146,16 +146,31 @@ if(APPLE)
 endif()
 
 # Delta Server Wrapper (customized llama-server)
-add_executable(delta-server src/delta_server_wrapper.cpp)
+add_executable(delta-server src/delta_server_wrapper.cpp src/model_api_server.cpp)
 
 # Include directories for delta-server
 target_include_directories(delta-server PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/tools/server
 )
 
 # Link libraries for delta-server
 if(NOT APPLE)
     target_link_libraries(delta-server PRIVATE stdc++fs)
+endif()
+
+# Link httplib and json for model API server
+# Link to the same libraries that llama-server uses
+# Note: common and cpp-httplib are defined in llama.cpp's CMakeLists
+target_link_libraries(delta-server PRIVATE 
+    common 
+    cpp-httplib 
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+
+# On Windows, link ws2_32 for sockets
+if(WIN32)
+    target_link_libraries(delta-server PRIVATE ws2_32)
 endif()
 
 # Remove duplicate library warnings and ensure C++ stdlib linking (macOS)
