@@ -177,11 +177,11 @@
 										onclick={() => (confirmDeleteModel = model.name)}
 										disabled={removingModel === model.name}
 									>
-										{removingModel === model.name ? (
+										{#if removingModel === model.name}
 											<Loader2 class="h-4 w-4 animate-spin" />
-										) : (
+										{:else}
 											<Trash2 class="h-4 w-4" />
-										)}
+										{/if}
 									</Button>
 								</div>
 							</div>
@@ -232,17 +232,13 @@
 										onclick={() => handleDownload(model.name)}
 										disabled={downloadingModel === model.name}
 									>
-										{downloadingModel === model.name ? (
-											<>
-												<Loader2 class="h-4 w-4 mr-2 animate-spin" />
-												Downloading...
-											</>
-										) : (
-											<>
-												<Download class="h-4 w-4 mr-2" />
-												Download
-											</>
-										)}
+										{#if downloadingModel === model.name}
+											<Loader2 class="h-4 w-4 mr-2 animate-spin" />
+											Downloading...
+										{:else}
+											<Download class="h-4 w-4 mr-2" />
+											Download
+										{/if}
 									</Button>
 								{:else}
 									<Button variant="outline" size="sm" onclick={() => handleUse(model.name)}>

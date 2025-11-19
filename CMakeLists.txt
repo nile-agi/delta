@@ -146,11 +146,21 @@ if(APPLE)
 endif()
 
 # Delta Server Wrapper (customized llama-server)
-add_executable(delta-server src/delta_server_wrapper.cpp src/model_api_server.cpp)
+# Need to include models.cpp for ModelManager
+add_executable(delta-server 
+    src/delta_server_wrapper.cpp 
+    src/model_api_server.cpp
+    src/models.cpp
+    src/tools/file_ops.cpp
+    src/ui.cpp
+)
 
 # Include directories for delta-server
 target_include_directories(delta-server PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/vendor
+    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp
+    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/common
     ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/tools/server
 )
 
@@ -168,9 +178,19 @@ target_link_libraries(delta-server PRIVATE
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
+# Link curl for ModelManager (downloads from HuggingFace)
+if(USE_CURL AND CURL_FOUND)
+    target_link_libraries(delta-server PRIVATE CURL::libcurl)
+endif()
+
 # On Windows, link ws2_32 for sockets
 if(WIN32)
     target_link_libraries(delta-server PRIVATE ws2_32)
+endif()
+
+# Ensure C++ standard library is linked (macOS)
+if(APPLE)
+    target_link_libraries(delta-server PRIVATE c++)
 endif()
 
 # Remove duplicate library warnings and ensure C++ stdlib linking (macOS)
