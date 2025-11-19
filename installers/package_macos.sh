@@ -204,28 +204,33 @@ cat > "$TEMP_DMG_DIR/README.txt" <<EOF
 Delta CLI ${VERSION} - Installation Instructions
 ================================================
 
-IMPORTANT: Gatekeeper Security
--------------------------------
-macOS may show a security warning when you first open the app. This is normal
-for unsigned applications. To install:
+EASIEST INSTALLATION METHOD:
+----------------------------
+Double-click "Install Delta CLI.sh" - it will automatically:
+  ✓ Install the app to Applications
+  ✓ Remove security quarantine
+  ✓ Sign the app
+  ✓ Create terminal symlink
+  ✓ Verify installation
 
+MANUAL INSTALLATION:
+--------------------
 1. Drag "${APP_NAME}.app" to the Applications folder.
 
 2. When you first open it, if you see a security warning:
    - Right-click (or Control-click) on "${APP_NAME}.app" in Applications
    - Select "Open" from the menu
    - Click "Open" in the security dialog
-   - The app will now be trusted and can be opened normally
+   - The app will now be trusted
 
-   Alternative: Open Terminal and run:
-   xattr -cr /Applications/${APP_NAME}.app
-   (This removes the quarantine attribute)
+   OR use Terminal:
+   find /Applications/${APP_NAME}.app -exec xattr -c {} \;
 
 3. To use Delta CLI from Terminal:
    - Open Terminal
    - Run: delta --version
    
-   If the command is not found, add to your PATH:
+   If "command not found", add to PATH:
    export PATH="/Applications/${APP_NAME}.app/Contents/MacOS:\$PATH"
    
    Or create a symlink:
@@ -239,13 +244,20 @@ For more information, visit:
 https://github.com/oderoi/delta-cli
 
 Troubleshooting:
-- If the app won't open: Right-click → Open (first time only)
-- If "command not found": Add to PATH or create symlink (see above)
+- Use "Install Delta CLI.sh" for automatic installation
+- If app won't open: Right-click → Open (first time only)
+- If "command not found": Add to PATH or create symlink
 - For help: https://github.com/oderoi/delta-cli/issues
 
 EOF
 
-# Copy trust script to DMG for user convenience
+# Copy installer and trust scripts to DMG for user convenience
+if [ -f "$SCRIPT_DIR/install_delta.sh" ]; then
+    cp "$SCRIPT_DIR/install_delta.sh" "$TEMP_DMG_DIR/Install\ Delta\ CLI.sh"
+    chmod +x "$TEMP_DMG_DIR/Install\ Delta\ CLI.sh"
+    info "Added installer script to DMG"
+fi
+
 if [ -f "$SCRIPT_DIR/trust_app.sh" ]; then
     cp "$SCRIPT_DIR/trust_app.sh" "$TEMP_DMG_DIR/Trust\ App.sh"
     chmod +x "$TEMP_DMG_DIR/Trust\ App.sh"
