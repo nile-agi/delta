@@ -89,6 +89,21 @@ if [ -f "$APP_BUNDLE/Contents/MacOS/delta-server" ]; then
     chmod +x "$APP_BUNDLE/Contents/MacOS/delta-server"
 fi
 
+# Verify binary architecture
+info "Verifying binary architecture..."
+BINARY_ARCH=$(file "$APP_BUNDLE/Contents/MacOS/delta" | grep -o "arm64\|x86_64" | head -1)
+if [ -n "$BINARY_ARCH" ]; then
+    info "Binary architecture: $BINARY_ARCH"
+    if [ "$BINARY_ARCH" = "arm64" ]; then
+        success "Binary is arm64 (compatible with M1, M2, M3 Macs)"
+    fi
+else
+    warning "Could not determine binary architecture"
+fi
+
+# Remove quarantine attribute (allows app to run without Gatekeeper blocking)
+xattr -cr "$APP_BUNDLE" 2>/dev/null || true
+
 # Create Info.plist
 cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -110,9 +125,18 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>LSMinimumSystemVersion</key>
-    <string>10.15</string>
+    <string>11.0</string>
+    <key>LSRequiresIPhoneOS</key>
+    <false/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>LSArchitecturePriority</key>
+    <array>
+        <string>arm64</string>
+        <string>x86_64</string>
+    </array>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2024 Delta CLI. All rights reserved.</string>
 </dict>
 </plist>
 EOF
