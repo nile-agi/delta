@@ -219,11 +219,6 @@
 			fields: []
 		},
 		{
-			title: 'Model Management',
-			icon: Brain,
-			fields: []
-		},
-		{
 			title: 'Developer',
 			icon: Code,
 			fields: [
@@ -487,8 +482,23 @@
 
 						{#if currentSection.title === 'Import/Export'}
 							<ImportExportTab />
-						{:else if currentSection.title === 'Model Management'}
-							<ModelManagementTab />
+						{:else if currentSection.title === 'Developer'}
+							<div class="space-y-6">
+								<ChatSettingsFields
+									fields={currentSection.fields}
+									{localConfig}
+									onConfigChange={handleConfigChange}
+									onThemeChange={handleThemeChange}
+								/>
+								<div class="border-t border-border/30 pt-6">
+									<h4 class="mb-4 text-sm font-semibold">Model Management</h4>
+									<p class="mb-4 text-sm text-muted-foreground">
+										Manage your installed models and download new ones. Enable the model selector above to
+										choose models in the chat interface.
+									</p>
+									<ModelManagementTab />
+								</div>
+							</div>
 						{:else}
 							<div class="space-y-6">
 								<ChatSettingsFields
