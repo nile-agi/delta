@@ -125,6 +125,17 @@ fi
 # Use compatible xattr command for all macOS versions
 find "$APP_BUNDLE" -exec xattr -c {} \; 2>/dev/null || true
 
+# Try to ad-hoc sign the app (helps with Gatekeeper, but not a full solution)
+info "Signing app bundle (ad-hoc signature)..."
+if command -v codesign >/dev/null 2>&1; then
+    # Ad-hoc signing (no certificate needed, but helps with Gatekeeper)
+    codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null && \
+    success "App signed (ad-hoc)" || \
+    warning "Could not sign app (this is okay, users can still install)"
+else
+    warning "codesign not found, skipping signing"
+fi
+
 # Create Info.plist
 cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -193,9 +204,24 @@ cat > "$TEMP_DMG_DIR/README.txt" <<EOF
 Delta CLI ${VERSION} - Installation Instructions
 ================================================
 
+IMPORTANT: Gatekeeper Security
+-------------------------------
+macOS may show a security warning when you first open the app. This is normal
+for unsigned applications. To install:
+
 1. Drag "${APP_NAME}.app" to the Applications folder.
 
-2. To use Delta CLI from Terminal:
+2. When you first open it, if you see a security warning:
+   - Right-click (or Control-click) on "${APP_NAME}.app" in Applications
+   - Select "Open" from the menu
+   - Click "Open" in the security dialog
+   - The app will now be trusted and can be opened normally
+
+   Alternative: Open Terminal and run:
+   xattr -cr /Applications/${APP_NAME}.app
+   (This removes the quarantine attribute)
+
+3. To use Delta CLI from Terminal:
    - Open Terminal
    - Run: delta --version
    
@@ -205,14 +231,26 @@ Delta CLI ${VERSION} - Installation Instructions
    Or create a symlink:
    sudo ln -s /Applications/${APP_NAME}.app/Contents/MacOS/delta /usr/local/bin/delta
 
-3. Start using Delta CLI:
+4. Start using Delta CLI:
    delta pull qwen3:0.6b    # Download a model
    delta                    # Start chatting
 
 For more information, visit:
 https://github.com/oderoi/delta-cli
 
+Troubleshooting:
+- If the app won't open: Right-click → Open (first time only)
+- If "command not found": Add to PATH or create symlink (see above)
+- For help: https://github.com/oderoi/delta-cli/issues
+
 EOF
+
+# Copy trust script to DMG for user convenience
+if [ -f "$SCRIPT_DIR/trust_app.sh" ]; then
+    cp "$SCRIPT_DIR/trust_app.sh" "$TEMP_DMG_DIR/Trust\ App.sh"
+    chmod +x "$TEMP_DMG_DIR/Trust\ App.sh"
+    info "Added trust script to DMG"
+fi
 
 success "DMG contents prepared"
 
