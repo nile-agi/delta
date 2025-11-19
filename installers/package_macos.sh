@@ -102,7 +102,8 @@ else
 fi
 
 # Remove quarantine attribute (allows app to run without Gatekeeper blocking)
-xattr -cr "$APP_BUNDLE" 2>/dev/null || true
+# Use compatible xattr command for all macOS versions
+find "$APP_BUNDLE" -exec xattr -c {} \; 2>/dev/null || true
 
 # Create Info.plist
 cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF

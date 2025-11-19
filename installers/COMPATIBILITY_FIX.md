@@ -57,8 +57,11 @@ The app built on M1 will work on:
 
 4. **Check Gatekeeper:**
    ```bash
-   # On the M2 Mac, if blocked
+   # On the M2 Mac, if blocked (for newer macOS)
    xattr -cr /Applications/Delta\ CLI.app
+   
+   # Or for older macOS versions:
+   find /Applications/Delta\ CLI.app -exec xattr -c {} \;
    ```
 
 ## Building Universal Binaries (Optional)
