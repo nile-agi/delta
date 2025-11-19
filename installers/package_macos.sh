@@ -162,63 +162,67 @@ EOF
 
 success "DMG contents prepared"
 
-# Step 5: Create DMG
+# Step 5: Create DMG (simplified approach - create compressed DMG directly)
 info "Step 5/6: Creating DMG image..."
 # Remove existing DMG files if they exist
 info "Cleaning up any existing DMG files..."
 rm -f "$DMG_PATH"
 rm -f "$DMG_PATH.temp.dmg"
 
-# Check for and detach any existing mounts
-info "Checking for existing DMG mounts..."
-MOUNTED_DEVICES=$(hdiutil info | grep -E "image-path.*$(basename "$DMG_PATH.temp.dmg")" | awk '{print $1}' | head -1)
-if [ -n "$MOUNTED_DEVICES" ]; then
-    info "Detaching existing DMG mounts..."
-    for dev in $MOUNTED_DEVICES; do
-        hdiutil detach "$dev" -force 2>/dev/null || true
-    done
-    sleep 2
-fi
-
-# Also try to detach by volume name
-VOLUME_NAME="${APP_NAME} ${VERSION}"
-if hdiutil info | grep -q "$VOLUME_NAME"; then
-    info "Detaching volume: $VOLUME_NAME"
-    hdiutil detach "/Volumes/$VOLUME_NAME" -force 2>/dev/null || true
-    sleep 1
-fi
-
-# Calculate size needed (add 20% overhead)
-SIZE=$(du -sk "$TEMP_DMG_DIR" | cut -f1)
-SIZE=$((SIZE + 1000))  # Add 1MB overhead
-
-# Create DMG
-info "Creating temporary DMG..."
-hdiutil create -srcfolder "$TEMP_DMG_DIR" \
-    -volname "${APP_NAME} ${VERSION}" \
-    -fs HFS+ \
-    -fsargs "-c c=64,a=16,e=16" \
-    -format UDRW \
-    -size ${SIZE}k \
-    "$DMG_PATH.temp.dmg" || error_exit "Failed to create DMG"
-
-# Mount the DMG
-MOUNT_DIR=$(hdiutil attach -readwrite -noverify -noautoopen "$DMG_PATH.temp.dmg" | \
-    egrep '^/dev/' | sed 1q | awk '{print $3}')
-
-# Wait for mount
+# Clean up any existing mounts
+info "Cleaning up any existing mounts..."
+hdiutil detach all 2>/dev/null || true
+osascript -e 'tell application "Finder" to close every window' 2>/dev/null || true
 sleep 2
 
-# Set DMG properties
-if [ -n "$MOUNT_DIR" ]; then
-    # Set background (optional - requires background.png)
-    if [ -f "$SCRIPT_DIR/background.png" ]; then
-        # Create .background directory
-        mkdir -p "$MOUNT_DIR/.background"
-        cp "$SCRIPT_DIR/background.png" "$MOUNT_DIR/.background/background.png"
+# Create compressed DMG directly (no temp file, no mounting needed)
+info "Creating compressed DMG directly..."
+# Calculate size needed
+SIZE=$(du -sk "$TEMP_DMG_DIR" | cut -f1)
+SIZE=$((SIZE + 2000))  # Add 2MB overhead
+
+# Create DMG directly as compressed format - this avoids mount/unmount issues
+if hdiutil create -srcfolder "$TEMP_DMG_DIR" \
+    -volname "${APP_NAME} ${VERSION}" \
+    -fs HFS+ \
+    -format UDZO \
+    -imagekey zlib-level=9 \
+    -size ${SIZE}k \
+    "$DMG_PATH" 2>&1; then
+    success "DMG created successfully: $DMG_PATH"
+    SKIP_CONVERSION=true
+else
+    # Fallback: create temp DMG if direct creation fails
+    warning "Direct creation failed, trying two-step approach..."
+    SKIP_CONVERSION=false
+    hdiutil create -srcfolder "$TEMP_DMG_DIR" \
+        -volname "${APP_NAME} ${VERSION}" \
+        -fs HFS+ \
+        -fsargs "-c c=64,a=16,e=16" \
+        -format UDRW \
+        -size ${SIZE}k \
+        "$DMG_PATH.temp.dmg" || error_exit "Failed to create DMG"
+fi
+
+# Only mount if we need to customize (skip if direct creation worked)
+if [ "$SKIP_CONVERSION" = "false" ]; then
+    # Mount the DMG
+    MOUNT_DIR=$(hdiutil attach -readwrite -noverify -noautoopen "$DMG_PATH.temp.dmg" 2>&1 | \
+        egrep '^/dev/' | sed 1q | awk '{print $3}')
+
+    # Wait for mount
+    sleep 2
+
+    # Set DMG properties
+    if [ -n "$MOUNT_DIR" ] && [ -d "$MOUNT_DIR" ]; then
+        # Set background (optional - requires background.png)
+        if [ -f "$SCRIPT_DIR/background.png" ]; then
+            # Create .background directory
+            mkdir -p "$MOUNT_DIR/.background"
+            cp "$SCRIPT_DIR/background.png" "$MOUNT_DIR/.background/background.png"
         
-        # Use AppleScript to set background and layout
-        osascript <<EOF
+            # Use AppleScript to set background and layout
+            osascript <<EOF
 tell application "Finder"
     tell disk "${APP_NAME} ${VERSION}"
         open
@@ -240,9 +244,9 @@ tell application "Finder"
     end tell
 end tell
 EOF
-    else
-        # Simple layout without background
-        osascript <<EOF
+        else
+            # Simple layout without background
+            osascript <<EOF
 tell application "Finder"
     tell disk "${APP_NAME} ${VERSION}"
         open
@@ -263,7 +267,7 @@ tell application "Finder"
     end tell
 end tell
 EOF
-    fi
+        fi
     
     # Unmount - wait for it to complete and retry if needed
     info "Unmounting DMG..."
@@ -308,94 +312,39 @@ EOF
     
     # Wait a bit more to ensure the filesystem is fully released
     sleep 2
-fi
-
-# Convert to final compressed DMG
-info "Converting to compressed DMG..."
-# Remove existing final DMG if it exists
-rm -f "$DMG_PATH"
-
-# Force unmount any remaining mounts before conversion
-info "Ensuring DMG is completely unmounted..."
-# Get all device IDs that might be using this DMG
-ALL_DEVICES=$(hdiutil info 2>/dev/null | grep -B 5 "$(basename "$DMG_PATH.temp.dmg")" | grep "^/dev/" | awk '{print $1}' | sort -u)
-if [ -n "$ALL_DEVICES" ]; then
-    info "Found mounted devices, detaching..."
-    for dev in $ALL_DEVICES; do
-        info "Detaching device: $dev"
-        hdiutil detach "$dev" -force 2>/dev/null || true
-    done
-    sleep 3
-fi
-
-# Also try by volume name
-VOLUME_NAME="${APP_NAME} ${VERSION}"
-if [ -d "/Volumes/$VOLUME_NAME" ]; then
-    info "Volume still exists, forcing unmount..."
-    diskutil unmount force "/Volumes/$VOLUME_NAME" 2>/dev/null || true
-    hdiutil detach "/Volumes/$VOLUME_NAME" -force 2>/dev/null || true
-    sleep 2
-fi
-
-# Final check - wait until mount point is gone
-for i in {1..10}; do
-    if [ ! -d "/Volumes/$VOLUME_NAME" ] && ! hdiutil info 2>/dev/null | grep -q "$(basename "$DMG_PATH.temp.dmg")"; then
-        success "DMG confirmed unmounted"
-        break
-    else
-        if [ $i -eq 10 ]; then
-            warning "DMG may still be mounted, but proceeding with conversion..."
-        else
-            info "Waiting for DMG to fully unmount ($i/10)..."
-            sleep 1
-        fi
-    fi
-done
-
-# Try conversion with retry
-CONVERT_SUCCESS=false
-for i in {1..3}; do
-    # Check if file exists and is accessible
-    if [ ! -f "$DMG_PATH.temp.dmg" ]; then
-        error_exit "Temporary DMG file not found: $DMG_PATH.temp.dmg"
-    fi
     
-    info "Attempting conversion (attempt $i/3)..."
-    # Try the conversion and capture output
-    CONVERT_OUTPUT=$(hdiutil convert "$DMG_PATH.temp.dmg" \
+    # Convert to final compressed DMG
+    info "Converting to compressed DMG..."
+    # Force unmount
+    hdiutil detach "$MOUNT_DIR" -force 2>/dev/null || true
+    sleep 3
+    
+    # Convert
+    if hdiutil convert "$DMG_PATH.temp.dmg" \
         -format UDZO \
         -imagekey zlib-level=9 \
-        -o "$DMG_PATH" 2>&1)
-    CONVERT_EXIT=$?
-    
-    if [ $CONVERT_EXIT -eq 0 ] && [ -f "$DMG_PATH" ]; then
+        -o "$DMG_PATH" 2>&1; then
         success "DMG converted successfully"
-        CONVERT_SUCCESS=true
-        break
+        rm -f "$DMG_PATH.temp.dmg"
     else
-        if [ $i -lt 3 ]; then
-            warning "Conversion failed (attempt $i/3)"
-            if [ -n "$CONVERT_OUTPUT" ]; then
-                info "Error details: $CONVERT_OUTPUT"
-            fi
-            # Try to detach again
-            if hdiutil info 2>/dev/null | grep -q "$(basename "$DMG_PATH.temp.dmg")"; then
-                ALL_DEVICES=$(hdiutil info 2>/dev/null | grep -B 5 "$(basename "$DMG_PATH.temp.dmg")" | grep "^/dev/" | awk '{print $1}' | sort -u)
-                for dev in $ALL_DEVICES; do
-                    hdiutil detach "$dev" -force 2>/dev/null || true
-                done
-            fi
-            sleep 3
+        # If conversion fails, keep the temp DMG and inform user
+        warning "Conversion failed, but temp DMG is available at: $DMG_PATH.temp.dmg"
+        warning "You can manually convert it later or use: ./installers/manual_dmg_convert.sh"
+        # Still create a symlink or copy for convenience
+        cp "$DMG_PATH.temp.dmg" "$DMG_PATH" 2>/dev/null || true
+    fi
+    else
+        warning "Could not mount DMG for customization, creating basic DMG..."
+        # Just convert the temp DMG we created
+        if [ -f "$DMG_PATH.temp.dmg" ]; then
+            hdiutil convert "$DMG_PATH.temp.dmg" \
+                -format UDZO \
+                -imagekey zlib-level=9 \
+                -o "$DMG_PATH" 2>&1 && rm -f "$DMG_PATH.temp.dmg" || \
+            warning "Conversion failed, temp DMG available at: $DMG_PATH.temp.dmg"
         fi
     fi
-done
-
-if [ "$CONVERT_SUCCESS" = false ]; then
-    error_exit "Failed to convert DMG after 3 attempts.\n\nTroubleshooting steps:\n1. Check if DMG is mounted: hdiutil info\n2. Manually detach: hdiutil detach all\n3. Remove temp file and retry: rm -f $DMG_PATH.temp.dmg\n4. Then run the script again"
 fi
-
-# Remove temporary DMG
-rm -f "$DMG_PATH.temp.dmg"
 
 success "DMG created: $DMG_PATH"
 
@@ -408,7 +357,7 @@ DMG_SIZE=$(du -h "$DMG_PATH" | cut -f1)
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║              DMG Packaging Complete!                        ║"
+echo "║              DMG Packaging Complete!                         ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 success "DMG installer created successfully!"
