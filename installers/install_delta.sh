@@ -39,22 +39,25 @@ cp -R "$APP_SOURCE" "$APP_DEST"
 echo "✓ App copied to Applications"
 echo ""
 
-# Remove quarantine attributes
+# Remove quarantine attributes (critical for auto-trust)
 echo "Removing security quarantine..."
 find "$APP_DEST" -exec xattr -c {} \; 2>/dev/null || true
 echo "✓ Quarantine removed"
 echo ""
 
-# Try to ad-hoc sign
+# Try to ad-hoc sign (helps with Gatekeeper)
 echo "Signing app..."
 if command -v codesign >/dev/null 2>&1; then
     codesign --force --deep --sign - "$APP_DEST" 2>/dev/null && \
     echo "✓ App signed" || \
-    echo "⚠ Could not sign (this is okay)"
+    echo "⚠ Could not sign (app will auto-trust on first run)"
 else
-    echo "⚠ codesign not available"
+    echo "⚠ codesign not available (app will auto-trust on first run)"
 fi
 echo ""
+
+# Note: The app's launcher script will also auto-trust on first run
+# This provides a double layer of protection
 
 # Create symlink for easy terminal access
 echo "Creating terminal symlink..."

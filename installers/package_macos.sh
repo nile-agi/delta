@@ -90,14 +90,29 @@ if [ -f "$APP_BUNDLE/Contents/MacOS/delta-server" ]; then
 fi
 
 # Create launcher script (allows app to be double-clicked and opens Terminal)
+# Also automatically handles Gatekeeper trust on first run
 cat > "$APP_BUNDLE/Contents/MacOS/DeltaCLI" <<'LAUNCHER_EOF'
 #!/bin/bash
 # Launcher for Delta CLI - opens Terminal and runs delta
+# Automatically handles Gatekeeper trust on first run
 
 # Get the app bundle directory
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_ROOT="$(cd "$APP_DIR/../../.." && pwd)"
+APP_BUNDLE="$(cd "$APP_DIR/../.." && pwd)"
 DELTA_BINARY="$APP_DIR/delta"
+
+# Auto-trust: Remove quarantine and sign app on first run (if needed)
+# This allows the app to run without user intervention
+# Note: This runs every time but is safe and fast if already trusted
+if [ -d "$APP_BUNDLE" ]; then
+    # Always try to remove quarantine (safe operation, idempotent)
+    find "$APP_BUNDLE" -exec xattr -c {} \; 2>/dev/null || true
+    
+    # Try to ad-hoc sign (helps with Gatekeeper, idempotent)
+    if command -v codesign >/dev/null 2>&1; then
+        codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
+    fi
+fi
 
 # Open Terminal and run delta
 osascript <<EOF
@@ -136,7 +151,14 @@ else
     warning "codesign not found, skipping signing"
 fi
 
-# Create Info.plist
+# Create Info.plist (with icon reference if available)
+INFO_PLIST_ICON=""
+if [ -n "$APP_ICON" ]; then
+    INFO_PLIST_ICON="    <key>CFBundleIconFile</key>
+    <string>${APP_ICON}</string>
+"
+fi
+
 cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -156,7 +178,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
     <string>APPL</string>
     <key>CFBundleSignature</key>
     <string>????</string>
-    <key>LSMinimumSystemVersion</key>
+${INFO_PLIST_ICON}    <key>LSMinimumSystemVersion</key>
     <string>10.15</string>
     <key>LSRequiresIPhoneOS</key>
     <false/>
@@ -192,6 +214,50 @@ if [ -d "public" ] && ([ -f "public/index.html" ] || [ -f "public/index.html.gz"
     cp -r public/* "$APP_BUNDLE/Contents/Resources/webui/" 2>/dev/null || true
 fi
 
+# Copy logo if available and create .icns if possible
+if [ -f "assets/delta-logo.png" ]; then
+    info "Including logo..."
+    cp "assets/delta-logo.png" "$APP_BUNDLE/Contents/Resources/delta-logo.png" 2>/dev/null || true
+    
+    # Try to create .icns file from PNG (requires iconutil or sips)
+    # macOS apps need .icns format for proper icon display
+    if command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
+        # Create temporary iconset directory
+        ICONSET_DIR=$(mktemp -d)
+        ICONSET_NAME="delta-logo.iconset"
+        ICONSET_PATH="$ICONSET_DIR/$ICONSET_NAME"
+        mkdir -p "$ICONSET_PATH"
+        
+        # Generate different icon sizes (required for .icns)
+        # Note: sips can resize, but we need multiple sizes
+        LOGO_SRC="assets/delta-logo.png"
+        
+        # Create required icon sizes (macOS expects these specific sizes)
+        for size in 16 32 128 256 512 1024; do
+            # Create single and double resolution versions
+            sips -z $size $size "$LOGO_SRC" --out "$ICONSET_PATH/icon_${size}x${size}.png" 2>/dev/null || true
+            sips -z $((size*2)) $((size*2)) "$LOGO_SRC" --out "$ICONSET_PATH/icon_${size}x${size}@2x.png" 2>/dev/null || true
+        done
+        
+        # Convert iconset to .icns
+        if iconutil -c icns "$ICONSET_PATH" -o "$APP_BUNDLE/Contents/Resources/delta-logo.icns" 2>/dev/null; then
+            success "Created app icon (.icns)"
+            APP_ICON="delta-logo.icns"
+        else
+            warning "Could not create .icns file, PNG will be included instead"
+            APP_ICON=""
+        fi
+        
+        # Cleanup
+        rm -rf "$ICONSET_DIR" 2>/dev/null || true
+    else
+        warning "sips or iconutil not available, PNG will be included but not used as app icon"
+        APP_ICON=""
+    fi
+else
+    APP_ICON=""
+fi
+
 success "Application bundle created"
 
 # Step 4: Create Applications symlink and README
@@ -213,18 +279,17 @@ Double-click "Install Delta CLI.sh" - it will automatically:
   ✓ Create terminal symlink
   ✓ Verify installation
 
-MANUAL INSTALLATION:
---------------------
+SIMPLE INSTALLATION (Drag & Drop):
+-----------------------------------
 1. Drag "${APP_NAME}.app" to the Applications folder.
 
-2. When you first open it, if you see a security warning:
-   - Right-click (or Control-click) on "${APP_NAME}.app" in Applications
-   - Select "Open" from the menu
-   - Click "Open" in the security dialog
-   - The app will now be trusted
+2. Double-click "${APP_NAME}.app" to open it.
+   - The app will automatically handle security trust on first run
+   - If you see a security warning, right-click → Open (one time only)
+   - After that, it will work automatically
 
-   OR use Terminal:
-   find /Applications/${APP_NAME}.app -exec xattr -c {} \;
+The app includes auto-trust functionality, so it will handle
+Gatekeeper automatically when you first open it.
 
 3. To use Delta CLI from Terminal:
    - Open Terminal
