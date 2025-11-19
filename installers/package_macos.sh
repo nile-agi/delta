@@ -157,7 +157,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>LSMinimumSystemVersion</key>
-    <string>10.13</string>
+    <string>10.15</string>
     <key>LSRequiresIPhoneOS</key>
     <false/>
     <key>NSHighResolutionCapable</key>
