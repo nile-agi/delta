@@ -89,6 +89,26 @@ if [ -f "$APP_BUNDLE/Contents/MacOS/delta-server" ]; then
     chmod +x "$APP_BUNDLE/Contents/MacOS/delta-server"
 fi
 
+# Create launcher script (allows app to be double-clicked and opens Terminal)
+cat > "$APP_BUNDLE/Contents/MacOS/DeltaCLI" <<'LAUNCHER_EOF'
+#!/bin/bash
+# Launcher for Delta CLI - opens Terminal and runs delta
+
+# Get the app bundle directory
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_ROOT="$(cd "$APP_DIR/../../.." && pwd)"
+DELTA_BINARY="$APP_DIR/delta"
+
+# Open Terminal and run delta
+osascript <<EOF
+tell application "Terminal"
+    activate
+    do script "\"$DELTA_BINARY\" \"\$@\""
+end tell
+EOF
+LAUNCHER_EOF
+chmod +x "$APP_BUNDLE/Contents/MacOS/DeltaCLI"
+
 # Verify binary architecture
 info "Verifying binary architecture..."
 BINARY_ARCH=$(file "$APP_BUNDLE/Contents/MacOS/delta" | grep -o "arm64\|x86_64" | head -1)
@@ -112,7 +132,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>delta</string>
+    <string>DeltaCLI</string>
     <key>CFBundleIdentifier</key>
     <string>com.delta.cli</string>
     <key>CFBundleName</key>
@@ -126,7 +146,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>LSMinimumSystemVersion</key>
-    <string>11.0</string>
+    <string>10.13</string>
     <key>LSRequiresIPhoneOS</key>
     <false/>
     <key>NSHighResolutionCapable</key>
@@ -138,12 +158,21 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<EOF
     </array>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2024 Delta CLI. All rights reserved.</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
 </dict>
 </plist>
 EOF
 
 # Note: The CFBundleExecutable in Info.plist points to "delta"
 # So the main executable is the delta binary itself
+
+# Verify Info.plist is valid
+if plutil -lint "$APP_BUNDLE/Contents/Info.plist" >/dev/null 2>&1; then
+    success "Info.plist is valid"
+else
+    warning "Info.plist validation failed, but continuing..."
+fi
 
 # Copy web UI if available
 if [ -d "public" ] && ([ -f "public/index.html" ] || [ -f "public/index.html.gz" ]); then

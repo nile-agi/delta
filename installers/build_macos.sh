@@ -196,6 +196,11 @@ export OBJCFLAGS="${OBJCFLAGS} -Wno-error"
 
 info "Configuring build (Metal enabled, BLAS/Accelerate disabled to avoid SDK compatibility issues)..."
 
+# Set minimum deployment target for compatibility (macOS 10.13+)
+export MACOSX_DEPLOYMENT_TARGET=10.13
+export CFLAGS="${CFLAGS} -mmacosx-version-min=10.13"
+export CXXFLAGS="${CXXFLAGS} -mmacosx-version-min=10.13"
+
 cmake .. \
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
     -DCMAKE_C_COMPILER="$C_COMPILER" \
@@ -203,6 +208,7 @@ cmake .. \
     -DCMAKE_C_FLAGS="${CFLAGS}" \
     -DCMAKE_CXX_FLAGS="${CXXFLAGS}" \
     -DCMAKE_OBJC_FLAGS="${OBJCFLAGS}" \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 \
     -DGGML_METAL=ON \
     -DGGML_BLAS=OFF \
     -DGGML_ACCELERATE=OFF \
