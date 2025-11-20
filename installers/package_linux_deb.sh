@@ -371,10 +371,59 @@ else
     
     # Create data.tar.gz (use POSIX/ustar format)
     cd "$DEB_DIR"
+    
+    # Only archive 'usr' directory (share is under usr/share/, not a top-level directory)
+    if [ ! -d "usr" ]; then
+        error_exit "usr directory not found in $DEB_DIR\nDirectory contents:\n$(ls -la "$DEB_DIR" 2>/dev/null || echo 'Directory not accessible')"
+    fi
+    
+    info "Archiving usr directory..."
+    
     # Use ustar format to avoid macOS extended attributes
-    tar --format=ustar -czf "$DATA_TAR" usr share 2>/dev/null || \
-    tar --format=posix -czf "$DATA_TAR" usr share 2>/dev/null || \
-    tar -czf "$DATA_TAR" usr share 2>/dev/null || error_exit "Failed to create data.tar.gz"
+    # Try different tar formats in order of preference
+    TAR_SUCCESS=false
+    TAR_ERROR=""
+    
+    # Try ustar format first (POSIX standard, no extended attributes)
+    if tar --format=ustar -czf "$DATA_TAR" usr 2>&1; then
+        TAR_SUCCESS=true
+    else
+        TAR_ERROR=$(tar --format=ustar -czf "$DATA_TAR" usr 2>&1)
+        # Try posix format
+        if tar --format=posix -czf "$DATA_TAR" usr 2>&1; then
+            TAR_SUCCESS=true
+        else
+            TAR_ERROR=$(tar --format=posix -czf "$DATA_TAR" usr 2>&1)
+            # Try default format (last resort)
+            if tar -czf "$DATA_TAR" usr 2>&1; then
+                TAR_SUCCESS=true
+            else
+                TAR_ERROR=$(tar -czf "$DATA_TAR" usr 2>&1)
+            fi
+        fi
+    fi
+    
+    if [ "$TAR_SUCCESS" = false ]; then
+        # Show debugging info
+        warning "Failed to create data.tar.gz"
+        warning "Tar error output: $TAR_ERROR"
+        info "Current directory: $(pwd)"
+        info "usr directory contents:"
+        ls -la usr/ 2>/dev/null | head -10 || echo "Cannot list usr directory"
+        error_exit "Failed to create data.tar.gz"
+    fi
+    
+    # Verify the tar file was created and has content
+    if [ ! -f "$DATA_TAR" ]; then
+        error_exit "data.tar.gz was not created at $DATA_TAR"
+    fi
+    
+    TAR_SIZE=$(stat -f%z "$DATA_TAR" 2>/dev/null || stat -c%s "$DATA_TAR" 2>/dev/null || echo "0")
+    if [ "$TAR_SIZE" -eq 0 ]; then
+        error_exit "data.tar.gz was created but is empty"
+    fi
+    
+    success "Created data.tar.gz ($(du -h "$DATA_TAR" | cut -f1))"
     
     # Create .deb file using ar
     cd "$AR_TEMP"
