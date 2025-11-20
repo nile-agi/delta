@@ -13,6 +13,7 @@
 #else
     #include <unistd.h>
     #include <sys/wait.h>
+    #include <climits>
 #endif
 
 namespace delta {
@@ -44,7 +45,10 @@ DepProtocol::Result DepProtocol::execute(const std::string& command,
         if (getcwd(buffer, sizeof(buffer))) {
             original_dir = buffer;
         }
-        chdir(working_dir.c_str());
+        if (chdir(working_dir.c_str()) != 0) {
+            result.error = "Failed to change directory to " + working_dir;
+            return result;
+        }
 #endif
     }
     
@@ -87,7 +91,10 @@ DepProtocol::Result DepProtocol::execute(const std::string& command,
 #ifdef _WIN32
         SetCurrentDirectoryA(original_dir.c_str());
 #else
-        chdir(original_dir.c_str());
+        if (chdir(original_dir.c_str()) != 0) {
+            // Log error but don't fail - we're in cleanup
+            result.error += "\nWarning: Failed to restore original directory";
+        }
 #endif
     }
     
