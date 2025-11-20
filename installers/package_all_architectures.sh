@@ -121,20 +121,13 @@ if [ ${#AVAILABLE_BUILDS[@]} -eq 0 ]; then
 fi
 
 echo ""
-info "Found ${#AVAILABLE_BUILDS[@]} build(s):"
-for BUILD_ENTRY in "${AVAILABLE_BUILDS[@]}"; do
-    BUILD_DIR="${BUILD_ENTRY%%:*}"
-    BUILD_BINARY_ARCH="${BUILD_ENTRY##*:}"
-    echo "  • ${BUILD_DIR} → ${BUILD_BINARY_ARCH}"
-done
+info "Found ${#AVAILABLE_BUILDS[@]} build(s)"
 echo ""
 
 # Step 2: Match builds to requested architectures
-info "Step 2: Matching builds to requested architectures..."
+info "Step 2: Matching builds to architectures..."
 BUILDS_FOUND=()
 BUILD_DIRS_USED=()
-MISSING_ARCHES=()
-MISSING_ARCHES=()
 
 for ARCH in "${ARCHITECTURES[@]}"; do
     # Normalize architecture for matching
@@ -224,7 +217,6 @@ for ARCH in "${ARCHITECTURES[@]}"; do
     else
         warning "No matching build found for ${ARCH}"
         warning "  Need a build with architecture: ${ARCH}"
-        MISSING_ARCHES+=("$ARCH")
     fi
 done
 
@@ -330,78 +322,19 @@ if [ ${#PACKAGES_CREATED[@]} -gt 0 ]; then
         echo "  • $(basename "$DEB_FILE") (${FILE_SIZE})"
     done
     echo ""
-    
-    # Show missing architectures
-    if [ ${#MISSING_ARCHES[@]} -gt 0 ]; then
-        warning "⚠️  Missing packages for ${#MISSING_ARCHES[@]} architecture(s):"
-        for MISSING_ARCH in "${MISSING_ARCHES[@]}"; do
-            echo "    - ${MISSING_ARCH}"
-        done
-        echo ""
-        info "To create packages for missing architectures, build for those architectures first:"
-        echo ""
-        for MISSING_ARCH in "${MISSING_ARCHES[@]}"; do
-            case "$MISSING_ARCH" in
-                amd64)
-                    echo "  # Build for amd64:"
-                    echo "  BUILD_DIR=build_linux_release_amd64 ARCH=amd64 ./installers/build_linux.sh"
-                    echo "  BUILD_DIR=build_linux_release_amd64 ARCH=amd64 ./installers/package_linux_deb.sh"
-                    echo ""
-                    ;;
-                arm64)
-                    echo "  # Build for arm64:"
-                    echo "  BUILD_DIR=build_linux_release_arm64 ARCH=arm64 ./installers/build_linux.sh"
-                    echo "  BUILD_DIR=build_linux_release_arm64 ARCH=arm64 ./installers/package_linux_deb.sh"
-                    echo ""
-                    ;;
-                armhf)
-                    echo "  # Build for armhf:"
-                    echo "  BUILD_DIR=build_linux_release_armhf ARCH=armhf ./installers/build_linux.sh"
-                    echo "  BUILD_DIR=build_linux_release_armhf ARCH=armhf ./installers/package_linux_deb.sh"
-                    echo ""
-                    ;;
-            esac
-        done
-        echo "  Or run this script again after building:"
-        echo "    ./installers/package_all_architectures.sh"
-        echo ""
-    fi
-    
     info "Package location: $PACKAGE_DIR"
     echo ""
     info "Installation instructions:"
     echo ""
-    
-    # Only show installation instructions for packages that were created
-    CREATED_ARCHES=()
-    for DEB_FILE in "${PACKAGES_CREATED[@]}"; do
-        if [[ "$DEB_FILE" == *"_amd64.deb" ]]; then
-            CREATED_ARCHES+=("amd64")
-        elif [[ "$DEB_FILE" == *"_arm64.deb" ]]; then
-            CREATED_ARCHES+=("arm64")
-        elif [[ "$DEB_FILE" == *"_armhf.deb" ]]; then
-            CREATED_ARCHES+=("armhf")
-        fi
-    done
-    
-    if [[ " ${CREATED_ARCHES[@]} " =~ " amd64 " ]]; then
-        echo "For amd64/x86_64 systems:"
-        echo "  sudo dpkg -i $PACKAGE_DIR/delta-cli_${VERSION}_amd64.deb"
-        echo ""
-    fi
-    
-    if [[ " ${CREATED_ARCHES[@]} " =~ " arm64 " ]]; then
-        echo "For arm64/aarch64 systems:"
-        echo "  sudo dpkg -i $PACKAGE_DIR/delta-cli_${VERSION}_arm64.deb"
-        echo ""
-    fi
-    
-    if [[ " ${CREATED_ARCHES[@]} " =~ " armhf " ]]; then
-        echo "For armhf (32-bit ARM) systems:"
-        echo "  sudo dpkg -i $PACKAGE_DIR/delta-cli_${VERSION}_armhf.deb"
-        echo ""
-    fi
-    
+    echo "For amd64/x86_64 systems:"
+    echo "  sudo dpkg -i $PACKAGE_DIR/delta-cli_${VERSION}_amd64.deb"
+    echo ""
+    echo "For arm64/aarch64 systems:"
+    echo "  sudo dpkg -i $PACKAGE_DIR/delta-cli_${VERSION}_arm64.deb"
+    echo ""
+    echo "For armhf (32-bit ARM) systems:"
+    echo "  sudo dpkg -i $PACKAGE_DIR/delta-cli_${VERSION}_armhf.deb"
+    echo ""
     echo "To check your system architecture:"
     echo "  dpkg --print-architecture  # On Debian/Ubuntu"
     echo "  uname -m                    # On any Linux"
