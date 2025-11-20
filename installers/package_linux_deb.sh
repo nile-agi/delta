@@ -44,12 +44,7 @@ else
     ARCH="${ARCH:-$(uname -m)}"
 fi
 
-PACKAGE_NAME="${APP_NAME}_${VERSION}_${ARCH}"
-BUILD_DIR="${BUILD_DIR:-build_linux_release}"
-PACKAGE_DIR="$SCRIPT_DIR/packages"
-DEB_DIR="$PACKAGE_DIR/${PACKAGE_NAME}"
-
-# Normalize architecture names
+# Normalize architecture names first
 case "$ARCH" in
     x86_64|amd64)
         DEB_ARCH="amd64"
@@ -62,7 +57,13 @@ case "$ARCH" in
         ;;
 esac
 
-info "Building .deb package for ${DEB_ARCH}..."
+# Use normalized architecture in package name
+PACKAGE_NAME="${APP_NAME}_${VERSION}_${DEB_ARCH}"
+BUILD_DIR="${BUILD_DIR:-build_linux_release}"
+PACKAGE_DIR="$SCRIPT_DIR/packages"
+DEB_DIR="$PACKAGE_DIR/${PACKAGE_NAME}"
+
+info "Building .deb package for ${DEB_ARCH} (architecture: ${ARCH})..."
 
 # Step 1: Check if build exists
 info "Step 1/6: Verifying build..."
@@ -352,15 +353,27 @@ else
     # Create debian-binary file
     echo "2.0" > "$DEBIAN_BINARY"
     
-    # Create control.tar.gz
-    cd "$DEB_DIR/DEBIAN"
-    tar --format=gnu -czf "$CONTROL_TAR" . 2>/dev/null || tar -czf "$CONTROL_TAR" . 2>/dev/null || error_exit "Failed to create control.tar.gz"
+    # Remove macOS extended attributes before creating tar files
+    # This prevents "LIBARCHIVE.xattr" warnings on Linux
+    info "Cleaning macOS extended attributes..."
+    if command -v xattr >/dev/null 2>&1; then
+        find "$DEB_DIR" -exec xattr -c {} \; 2>/dev/null || true
+    fi
+    # Also remove .DS_Store files
+    find "$DEB_DIR" -name ".DS_Store" -delete 2>/dev/null || true
     
-    # Create data.tar.gz (include all directories except DEBIAN)
+    # Create control.tar.gz (use POSIX/ustar format to avoid macOS-specific attributes)
+    cd "$DEB_DIR/DEBIAN"
+    # Use ustar format (POSIX) which doesn't support extended attributes
+    tar --format=ustar -czf "$CONTROL_TAR" . 2>/dev/null || \
+    tar --format=posix -czf "$CONTROL_TAR" . 2>/dev/null || \
+    tar -czf "$CONTROL_TAR" . 2>/dev/null || error_exit "Failed to create control.tar.gz"
+    
+    # Create data.tar.gz (use POSIX/ustar format)
     cd "$DEB_DIR"
-    # Use find to get all files/dirs except DEBIAN
-    find usr share -type f -o -type d 2>/dev/null | tar --format=gnu -czf "$DATA_TAR" -T - 2>/dev/null || \
-    find usr share -type f -o -type d 2>/dev/null | tar -czf "$DATA_TAR" -T - 2>/dev/null || \
+    # Use ustar format to avoid macOS extended attributes
+    tar --format=ustar -czf "$DATA_TAR" usr share 2>/dev/null || \
+    tar --format=posix -czf "$DATA_TAR" usr share 2>/dev/null || \
     tar -czf "$DATA_TAR" usr share 2>/dev/null || error_exit "Failed to create data.tar.gz"
     
     # Create .deb file using ar
@@ -391,11 +404,19 @@ else
         echo ""
         success "✅ .deb package created successfully (using ar method)!"
         echo ""
+        info "Package architecture: ${DEB_ARCH}"
+        echo ""
         info "To install the package on Ubuntu/Debian:"
         echo "  sudo dpkg -i $DEB_FILE"
         echo ""
         info "If you get dependency errors, run:"
         echo "  sudo apt-get install -f"
+        echo ""
+        info "If you get architecture mismatch error:"
+        echo "  - Make sure you're installing the correct architecture"
+        echo "  - Check system architecture: dpkg --print-architecture"
+        echo "  - This package is for: ${DEB_ARCH}"
+        echo "  - Rebuild for your architecture if needed"
         echo ""
         info "To remove the package:"
         echo "  sudo dpkg -r $APP_NAME"

@@ -125,10 +125,28 @@ cmake .. -DCMAKE_TOOLCHAIN_FILE=/path/to/toolchain.cmake
 ## Creating Custom Installers
 
 ### Debian/Ubuntu (.deb)
+
+**Single Architecture:**
 1. Build the project: `./installers/build_linux.sh`
 2. Create package: `./installers/package_linux_deb.sh`
 3. Install: `sudo dpkg -i installers/packages/delta-cli_*.deb`
 4. If you get dependency errors: `sudo apt-get install -f`
+
+**Multiple Architectures:**
+1. Build for each architecture (see [MULTI_ARCH_BUILD.md](./MULTI_ARCH_BUILD.md))
+2. Create all packages: `./installers/package_all_architectures.sh`
+3. This creates separate .deb files:
+   - `delta-cli_1.0.0_amd64.deb` - For Intel/AMD 64-bit
+   - `delta-cli_1.0.0_arm64.deb` - For ARM 64-bit
+
+**Important:** Install the package matching your system architecture:
+```bash
+# Check your architecture
+dpkg --print-architecture
+
+# Install matching package
+sudo dpkg -i delta-cli_1.0.0_<your-arch>.deb
+```
 
 The .deb package includes:
 - `delta` binary in `/usr/bin/`
@@ -136,6 +154,9 @@ The .deb package includes:
 - Web UI files in `/usr/share/delta-cli/`
 - Proper Debian package metadata
 - Post-install scripts for setup
+- Ubuntu installation guide in documentation
+
+**Note:** Ubuntu may show a "potentially unsafe" warning for third-party packages. This is normal - see [UBUNTU_INSTALLATION.md](./UBUNTU_INSTALLATION.md) for details.
 
 ### macOS (.dmg)
 
