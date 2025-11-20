@@ -69,59 +69,52 @@ class ModelsStore {
 		this._error = null;
 
 		try {
-			// Fetch installed models to get display_name mapping
-			let displayNameMap = new Map<string, string>();
-			try {
-				const installedResponse = await ModelsService.listInstalled();
-				const installedModels = Array.isArray(installedResponse)
-					? installedResponse
-					: installedResponse.models || [];
-				for (const model of installedModels) {
-					// Map both name (e.g., "qwen3:0.6b") and display_name to display_name
-					displayNameMap.set(model.name, model.display_name);
-					displayNameMap.set(model.display_name, model.display_name);
-				}
-			} catch (e) {
-				console.warn('Failed to fetch installed models for display name mapping:', e);
+			// Fetch installed models - this is what we want to show in the dropdown
+			const installedResponse = await ModelsService.listInstalled();
+			const installedModels = Array.isArray(installedResponse)
+				? installedResponse
+				: installedResponse.models || [];
+
+			// Build display name map
+			const displayNameMap = new Map<string, string>();
+			for (const model of installedModels) {
+				// Map both name (e.g., "qwen3:0.6b") and display_name to display_name
+				displayNameMap.set(model.name, model.display_name);
+				displayNameMap.set(model.display_name, model.display_name);
 			}
 			this._displayNameMap = displayNameMap;
 
-			const response = await ModelsService.list();
+			// Also get the currently loaded model from /v1/models to know which one is active
+			let currentModelId: string | null = null;
+			try {
+				const currentResponse = await ModelsService.list();
+				if (currentResponse.data && currentResponse.data.length > 0) {
+					currentModelId = currentResponse.data[0].id;
+				}
+			} catch (e) {
+				console.warn('Failed to fetch current model from /v1/models:', e);
+			}
 
-			const models: ModelOption[] = response.data.map((item, index) => {
-				const details = response.models?.[index];
-				const rawCapabilities = Array.isArray(details?.capabilities) ? details?.capabilities : [];
-				const modelId = item.id;
-				
-				// Get display name: prefer from installed models map, then from details.name, then fallback to toDisplayName
-				let displayName = this._displayNameMap.get(modelId);
-				if (!displayName && details?.name) {
-					displayName = this._displayNameMap.get(details.name);
-				}
-				if (!displayName) {
-					// Only use toDisplayName as last resort, and only if it doesn't look like a filename
-					const displayNameSource = details?.name && details.name.trim().length > 0 ? details.name : modelId;
-					if (!displayNameSource.includes('.gguf') && !displayNameSource.includes('/') && !displayNameSource.includes('\\')) {
-						displayName = displayNameSource;
-					} else {
-						displayName = this.toDisplayName(displayNameSource);
-					}
-				}
+			// Convert installed models to ModelOption format
+			const models: ModelOption[] = installedModels.map((model) => {
+				const modelId = model.name; // Use name (e.g., "qwen3:0.6b") as the ID
+				const displayName = model.display_name || model.name;
 
 				return {
 					id: modelId,
 					name: displayName,
-					model: details?.model || modelId,
-					description: details?.description,
-					capabilities: rawCapabilities.filter((value): value is string => Boolean(value)),
-					details: details?.details,
-					meta: item.meta ?? null
+					model: model.name, // Use name for switching
+					description: model.description || '',
+					capabilities: [],
+					details: null,
+					meta: null
 				} satisfies ModelOption;
 			});
 
 			this._models = models;
 
-			const selection = this.determineInitialSelection(models);
+			// Determine selection: prefer current model, then persisted, then first available
+			const selection = this.determineInitialSelection(models, currentModelId);
 
 			this._selectedModelId = selection.id;
 			this._selectedModelName = selection.model;
@@ -130,6 +123,7 @@ class ModelsStore {
 		} catch (error) {
 			this._models = [];
 			this._error = error instanceof Error ? error.message : 'Failed to load models';
+			console.error('Error fetching models:', error);
 
 			throw error;
 		} finally {
@@ -234,35 +228,59 @@ class ModelsStore {
 
 	/**
 	 * Determines which model should be selected after fetching the models list.
-	 * Priority: current selection > persisted selection > first available model > none
+	 * Priority: current model from server > current selection > persisted selection > first available model > none
 	 */
-	private determineInitialSelection(models: ModelOption[]): {
+	private determineInitialSelection(models: ModelOption[], currentModelId: string | null = null): {
 		id: string | null;
 		model: string | null;
 	} {
 		const persisted = this._persistedSelection.value;
-		let nextSelectionId = this._selectedModelId ?? persisted?.id ?? null;
-		let nextSelectionName = this._selectedModelName ?? persisted?.model ?? null;
-
-		if (nextSelectionId) {
-			const match = models.find((m) => m.id === nextSelectionId);
-
-			if (match) {
-				nextSelectionId = match.id;
-				nextSelectionName = match.model;
-			} else if (models[0]) {
-				nextSelectionId = models[0].id;
-				nextSelectionName = models[0].model;
-			} else {
-				nextSelectionId = null;
-				nextSelectionName = null;
+		
+		// Priority 1: Current model from server (if it matches an installed model)
+		if (currentModelId) {
+			// Try to find by exact match
+			let match = models.find((m) => m.id === currentModelId || m.model === currentModelId);
+			
+			// If not found, try to match by name (handle different formats)
+			if (!match && currentModelId) {
+				// Try matching without .gguf extension or path
+				const cleanId = currentModelId.replace(/\.gguf$/, '').split(/[\/\\]/).pop() || currentModelId;
+				match = models.find((m) => 
+					m.id.includes(cleanId) || 
+					m.model.includes(cleanId) ||
+					cleanId.includes(m.id) ||
+					cleanId.includes(m.model)
+				);
 			}
-		} else if (models[0]) {
-			nextSelectionId = models[0].id;
-			nextSelectionName = models[0].model;
+			
+			if (match) {
+				return { id: match.id, model: match.model };
+			}
 		}
-
-		return { id: nextSelectionId, model: nextSelectionName };
+		
+		// Priority 2: Current selection
+		if (this._selectedModelId) {
+			const match = models.find((m) => m.id === this._selectedModelId);
+			if (match) {
+				return { id: match.id, model: match.model };
+			}
+		}
+		
+		// Priority 3: Persisted selection
+		if (persisted?.id) {
+			const match = models.find((m) => m.id === persisted.id);
+			if (match) {
+				return { id: match.id, model: match.model };
+			}
+		}
+		
+		// Priority 4: First available model
+		if (models.length > 0) {
+			return { id: models[0].id, model: models[0].model };
+		}
+		
+		// Priority 5: None
+		return { id: null, model: null };
 	}
 }
 
