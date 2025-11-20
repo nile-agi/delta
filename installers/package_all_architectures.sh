@@ -1,6 +1,7 @@
 #!/bin/bash
 # Delta CLI - Build .deb packages for all architectures
 # Creates separate .deb files for each supported architecture
+# Intelligently matches builds to architectures based on binary architecture
 
 set -e  # Exit on error, but we'll handle errors in the loop
 
@@ -49,165 +50,189 @@ info "This script will create .deb packages for multiple architectures."
 info "Each architecture will have its own installable .deb file."
 echo ""
 
-# Check if we have builds for the architectures
+# Function to detect binary architecture
+detect_binary_arch() {
+    local binary_path="$1"
+    local arch=""
+    
+    if [ ! -f "$binary_path" ]; then
+        echo ""
+        return
+    fi
+    
+    if command -v file >/dev/null 2>&1; then
+        FILE_OUTPUT=$(file "$binary_path" 2>/dev/null || echo "")
+        # Extract architecture from file output (order matters - check specific first)
+        if echo "$FILE_OUTPUT" | grep -qiE "(x86_64|amd64|Intel 80386)"; then
+            arch="amd64"
+        elif echo "$FILE_OUTPUT" | grep -qiE "(aarch64|arm64|ARM.*aarch64)"; then
+            arch="arm64"
+        elif echo "$FILE_OUTPUT" | grep -qiE "(armv7|armhf|ARM.*v7)"; then
+            arch="armhf"
+        elif echo "$FILE_OUTPUT" | grep -qiE "ARM"; then
+            arch="arm64"  # Default to 64-bit for generic ARM
+        fi
+    fi
+    
+    echo "$arch"
+}
+
+# Step 1: Scan for all available builds and detect their architectures
+info "Step 1: Scanning for available builds..."
+AVAILABLE_BUILDS=()  # Array of "BUILD_DIR:BINARY_ARCH"
+
+# Check all possible build directories
+ALL_BUILD_DIRS=(
+    "build_linux_release_amd64"
+    "build_linux_release_x86_64"
+    "build_linux_release_arm64"
+    "build_linux_release_aarch64"
+    "build_linux_release_armhf"
+    "build_linux_release_arm"
+    "build_linux_release_armv7l"
+    "build_linux_amd64"
+    "build_linux_arm64"
+    "build_linux_armhf"
+    "build_amd64"
+    "build_arm64"
+    "build_armhf"
+    "build_linux_release"  # Generic build (check last)
+)
+
+for BUILD_DIR in "${ALL_BUILD_DIRS[@]}"; do
+    if [ -f "${BUILD_DIR}/delta" ] && [ -x "${BUILD_DIR}/delta" ]; then
+        BINARY_ARCH=$(detect_binary_arch "${BUILD_DIR}/delta")
+        if [ -n "$BINARY_ARCH" ]; then
+            BUILD_ENTRY="${BUILD_DIR}:${BINARY_ARCH}"
+            # Only add if not already in list
+            if [[ ! " ${AVAILABLE_BUILDS[@]} " =~ " ${BUILD_ENTRY} " ]]; then
+                AVAILABLE_BUILDS+=("$BUILD_ENTRY")
+                info "Found build: ${BUILD_DIR} → ${BINARY_ARCH}"
+            fi
+        else
+            warning "Found build at ${BUILD_DIR} but could not detect architecture"
+        fi
+    fi
+done
+
+if [ ${#AVAILABLE_BUILDS[@]} -eq 0 ]; then
+    echo ""
+    error_exit "No builds found. Please build first:\n  ./installers/build_linux.sh\n\nOr build for specific architectures:\n  BUILD_DIR=build_linux_release_amd64 ARCH=amd64 ./installers/build_linux.sh"
+fi
+
+echo ""
+info "Found ${#AVAILABLE_BUILDS[@]} build(s)"
+echo ""
+
+# Step 2: Match builds to requested architectures
+info "Step 2: Matching builds to architectures..."
 BUILDS_FOUND=()
-BUILD_DIRS_USED=()  # Track which directories we've already used
+BUILD_DIRS_USED=()
 
 for ARCH in "${ARCHITECTURES[@]}"; do
-    # Try different build directory patterns (including normalized names)
-    # Map architecture to possible directory names
+    # Normalize architecture for matching
     case "$ARCH" in
         amd64)
-            BUILD_PATTERNS=(
-                "build_linux_release_amd64"
-                "build_linux_release_x86_64"
-                "build_linux_amd64"
-                "build_amd64"
-            )
+            MATCH_ARCHES=("amd64")
             ;;
         arm64)
-            BUILD_PATTERNS=(
-                "build_linux_release_arm64"
-                "build_linux_release_aarch64"
-                "build_linux_arm64"
-                "build_arm64"
-            )
+            MATCH_ARCHES=("arm64" "aarch64")
             ;;
         armhf)
-            BUILD_PATTERNS=(
-                "build_linux_release_armhf"
-                "build_linux_release_arm"
-                "build_linux_release_armv7l"
-                "build_linux_armhf"
-                "build_armhf"
-            )
+            MATCH_ARCHES=("armhf" "armv7" "armv7l")
             ;;
         *)
-            BUILD_PATTERNS=(
-                "build_linux_release_${ARCH}"
-                "build_linux_${ARCH}"
-                "build_${ARCH}"
-            )
+            MATCH_ARCHES=("$ARCH")
             ;;
     esac
     
     BUILD_FOUND=false
-    SELECTED_BUILD=""
+    BEST_MATCH=""
+    BEST_MATCH_DIR=""
     
-    # First, try architecture-specific directories
-    for BUILD_PATTERN in "${BUILD_PATTERNS[@]}"; do
-        if [ -f "${BUILD_PATTERN}/delta" ] && [ -x "${BUILD_PATTERN}/delta" ]; then
-            # Check if this directory was already assigned to another architecture
-            if [[ ! " ${BUILD_DIRS_USED[@]} " =~ " ${BUILD_PATTERN} " ]]; then
-                info "Found build for ${ARCH} at: ${BUILD_PATTERN}"
-                # Check the actual binary architecture if possible
-                if command -v file >/dev/null 2>&1; then
-                    FILE_OUTPUT=$(file "${BUILD_PATTERN}/delta" 2>/dev/null || echo "")
-                    BINARY_ARCH=""
-                    # Extract architecture from file output
-                    if echo "$FILE_OUTPUT" | grep -qiE "(x86_64|amd64|Intel 80386)"; then
-                        BINARY_ARCH="amd64"
-                    elif echo "$FILE_OUTPUT" | grep -qiE "(aarch64|arm64|ARM.*aarch64)"; then
-                        BINARY_ARCH="arm64"
-                    elif echo "$FILE_OUTPUT" | grep -qiE "(armv7|armhf|ARM.*v7)"; then
-                        BINARY_ARCH="armhf"
-                    elif echo "$FILE_OUTPUT" | grep -qiE "ARM"; then
-                        BINARY_ARCH="arm64"  # Default to 64-bit
-                    fi
-                    if [ -n "$BINARY_ARCH" ]; then
-                        info "  Binary architecture: ${BINARY_ARCH}"
-                        # Warn if architecture doesn't match expected
-                        case "$ARCH" in
-                            amd64)
-                                if [ "$BINARY_ARCH" != "amd64" ]; then
-                                    warning "  ⚠️  Architecture mismatch: expected ${ARCH} but binary is ${BINARY_ARCH}"
-                                fi
-                                ;;
-                            arm64)
-                                if [ "$BINARY_ARCH" != "arm64" ]; then
-                                    warning "  ⚠️  Architecture mismatch: expected ${ARCH} but binary is ${BINARY_ARCH}"
-                                fi
-                                ;;
-                            armhf)
-                                if [ "$BINARY_ARCH" != "armhf" ]; then
-                                    warning "  ⚠️  Architecture mismatch: expected ${ARCH} but binary is ${BINARY_ARCH}"
-                                fi
-                                ;;
-                        esac
-                    fi
-                fi
-                BUILDS_FOUND+=("${ARCH}:${BUILD_PATTERN}")
-                BUILD_DIRS_USED+=("${BUILD_PATTERN}")
-                BUILD_FOUND=true
-                SELECTED_BUILD="${BUILD_PATTERN}"
+    # Find the best matching build for this architecture
+    for BUILD_ENTRY in "${AVAILABLE_BUILDS[@]}"; do
+        BUILD_DIR="${BUILD_ENTRY%%:*}"
+        BUILD_BINARY_ARCH="${BUILD_ENTRY##*:}"
+        
+        # Skip if this build directory is already assigned
+        if [[ " ${BUILD_DIRS_USED[@]} " =~ " ${BUILD_DIR} " ]]; then
+            continue
+        fi
+        
+        # Check if binary architecture matches requested architecture
+        MATCHES=false
+        for MATCH_ARCH in "${MATCH_ARCHES[@]}"; do
+            if [ "$BUILD_BINARY_ARCH" = "$MATCH_ARCH" ]; then
+                MATCHES=true
                 break
             fi
-        elif [ -d "${BUILD_PATTERN}" ]; then
-            # Directory exists but no binary - might be incomplete build
-            warning "  Directory ${BUILD_PATTERN} exists but delta binary not found"
-            warning "  Run: ./installers/build_linux.sh to build"
+        done
+        
+        # Also check directory name as secondary indicator
+        if [ "$MATCHES" = false ]; then
+            case "$ARCH" in
+                amd64)
+                    if [[ "$BUILD_DIR" == *"amd64"* ]] || [[ "$BUILD_DIR" == *"x86_64"* ]]; then
+                        MATCHES=true
+                    fi
+                    ;;
+                arm64)
+                    if [[ "$BUILD_DIR" == *"arm64"* ]] || [[ "$BUILD_DIR" == *"aarch64"* ]]; then
+                        MATCHES=true
+                    fi
+                    ;;
+                armhf)
+                    if [[ "$BUILD_DIR" == *"armhf"* ]] || [[ "$BUILD_DIR" == *"armv7"* ]]; then
+                        MATCHES=true
+                    fi
+                    ;;
+            esac
+        fi
+        
+        if [ "$MATCHES" = true ]; then
+            # Prefer architecture-specific directories over generic
+            if [[ "$BUILD_DIR" == "build_linux_release" ]]; then
+                # Generic build - use as fallback
+                if [ -z "$BEST_MATCH" ]; then
+                    BEST_MATCH="$BUILD_ENTRY"
+                    BEST_MATCH_DIR="$BUILD_DIR"
+                fi
+            else
+                # Architecture-specific - prefer this
+                BEST_MATCH="$BUILD_ENTRY"
+                BEST_MATCH_DIR="$BUILD_DIR"
+                break  # Found specific match, use it
+            fi
         fi
     done
     
-    # If no architecture-specific build found, try generic (but only if not already used)
-    if [ "$BUILD_FOUND" = false ]; then
-        GENERIC_BUILD="build_linux_release"
-        if [ -f "${GENERIC_BUILD}/delta" ] && [ -x "${GENERIC_BUILD}/delta" ] && [[ ! " ${BUILD_DIRS_USED[@]} " =~ " ${GENERIC_BUILD} " ]]; then
-            info "Found generic build for ${ARCH} at: ${GENERIC_BUILD}"
-            # Check the actual binary architecture
-            if command -v file >/dev/null 2>&1; then
-                BINARY_ARCH=$(file "${GENERIC_BUILD}/delta" 2>/dev/null | grep -oE "(x86_64|amd64|arm64|aarch64)" | head -1 || echo "")
-                if [ -n "$BINARY_ARCH" ]; then
-                    info "  Binary architecture: ${BINARY_ARCH}"
-                    # Warn if architecture doesn't match
-                    case "$ARCH" in
-                        amd64)
-                            if [[ "$BINARY_ARCH" != "amd64" ]] && [[ "$BINARY_ARCH" != "x86_64" ]]; then
-                                warning "  ⚠️  Architecture mismatch: requested ${ARCH} but binary is ${BINARY_ARCH}"
-                            fi
-                            ;;
-                        arm64)
-                            if [[ "$BINARY_ARCH" != "arm64" ]] && [[ "$BINARY_ARCH" != "aarch64" ]]; then
-                                warning "  ⚠️  Architecture mismatch: requested ${ARCH} but binary is ${BINARY_ARCH}"
-                            fi
-                            ;;
-                    esac
-                fi
-            fi
-            warning "  ⚠️  Using same build directory for multiple architectures"
-            warning "  For best results, build separately for each architecture"
-            BUILDS_FOUND+=("${ARCH}:${GENERIC_BUILD}")
-            BUILD_DIRS_USED+=("${GENERIC_BUILD}")
-            BUILD_FOUND=true
-        elif [ -d "${GENERIC_BUILD}" ] && [ ! -f "${GENERIC_BUILD}/delta" ]; then
-            warning "Generic build directory exists but delta binary not found"
-            warning "  Run: ./installers/build_linux.sh to build"
-        elif [ -f "${GENERIC_BUILD}/delta" ]; then
-            warning "Generic build found but already assigned to another architecture"
-            warning "  Please create architecture-specific builds: build_linux_release_${ARCH}"
-        fi
-    fi
-    
-    if [ "$BUILD_FOUND" = false ]; then
-        warning "No build found for ${ARCH}"
-        warning "  Expected build directory: build_linux_release_${ARCH} or build_linux_${ARCH}"
-        warning "  Or a generic build_linux_release (will be used for all missing architectures)"
+    if [ -n "$BEST_MATCH" ]; then
+        BUILD_DIR="${BEST_MATCH%%:*}"
+        BUILD_BINARY_ARCH="${BEST_MATCH##*:}"
+        info "Matched ${ARCH} → ${BUILD_DIR} (binary: ${BUILD_BINARY_ARCH})"
+        BUILDS_FOUND+=("${ARCH}:${BUILD_DIR}")
+        BUILD_DIRS_USED+=("${BUILD_DIR}")
+        BUILD_FOUND=true
+    else
+        warning "No matching build found for ${ARCH}"
+        warning "  Need a build with architecture: ${ARCH}"
     fi
 done
 
 if [ ${#BUILDS_FOUND[@]} -eq 0 ]; then
     echo ""
-    error_exit "No builds found for any architecture.\n\nPlease build first:\n  ./installers/build_linux.sh\n\nOr build for specific architectures:\n  # For amd64\n  BUILD_DIR=build_linux_release_amd64 ./installers/build_linux.sh\n  # For arm64  \n  BUILD_DIR=build_linux_release_arm64 ./installers/build_linux.sh\n\nThen place the builds in:\n  build_linux_release_amd64/\n  build_linux_release_arm64/"
+    error_exit "No matching builds found for any requested architecture.\n\nAvailable builds:\n$(printf '  %s\n' "${AVAILABLE_BUILDS[@]}")\n\nPlease build for the architectures you need."
 fi
 
 echo ""
-info "Found builds for ${#BUILDS_FOUND[@]} architecture(s)"
+info "Matched ${#BUILDS_FOUND[@]} architecture(s) to builds"
 echo ""
 
-# Create packages directory
+# Step 3: Create packages directory
 mkdir -p "$PACKAGE_DIR"
 
-# Build package for each architecture
+# Step 4: Build package for each matched architecture
 PACKAGES_CREATED=()
 for BUILD_INFO in "${BUILDS_FOUND[@]}"; do
     ARCH="${BUILD_INFO%%:*}"
@@ -284,8 +309,6 @@ for BUILD_INFO in "${BUILDS_FOUND[@]}"; do
     fi
     
     echo ""
-    
-    echo ""
 done
 
 # Summary
@@ -324,4 +347,3 @@ else
 fi
 
 success "Done!"
-
