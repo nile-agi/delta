@@ -36,7 +36,14 @@ cd "$PROJECT_DIR"
 # Configuration
 APP_NAME="delta-cli"
 VERSION="${VERSION:-1.0.0}"
-ARCH="${ARCH:-$(dpkg --print-architecture 2>/dev/null || uname -m)}"
+
+# Detect architecture (works on both Linux and macOS)
+if command -v dpkg >/dev/null 2>&1; then
+    ARCH="${ARCH:-$(dpkg --print-architecture 2>/dev/null || uname -m)}"
+else
+    ARCH="${ARCH:-$(uname -m)}"
+fi
+
 PACKAGE_NAME="${APP_NAME}_${VERSION}_${ARCH}"
 BUILD_DIR="${BUILD_DIR:-build_linux_release}"
 PACKAGE_DIR="$SCRIPT_DIR/packages"
@@ -60,9 +67,25 @@ info "Building .deb package for ${DEB_ARCH}..."
 # Step 1: Check if build exists
 info "Step 1/6: Verifying build..."
 if [ ! -f "$BUILD_DIR/delta" ]; then
-    error_exit "Build not found at $BUILD_DIR/delta. Please run ./installers/build_linux.sh first."
+    # Try alternative build directories (non-interactive)
+    ALTERNATIVE_BUILDS=("build_linux" "build" "build_release")
+    BUILD_FOUND=false
+    
+    for alt_build in "${ALTERNATIVE_BUILDS[@]}"; do
+        if [ -f "$alt_build/delta" ]; then
+            warning "Build not found at $BUILD_DIR/delta, but found at $alt_build/delta"
+            info "Using $alt_build instead"
+            BUILD_DIR="$alt_build"
+            BUILD_FOUND=true
+            break
+        fi
+    done
+    
+    if [ "$BUILD_FOUND" = false ]; then
+        error_exit "Build not found at $BUILD_DIR/delta. Please run ./installers/build_linux.sh first.\n\nOr specify a build directory:\n  BUILD_DIR=/path/to/build ./installers/package_linux_deb.sh"
+    fi
 fi
-success "Build found"
+success "Build found at $BUILD_DIR/delta"
 
 # Step 2: Create package directory structure
 info "Step 2/6: Creating Debian package structure..."
@@ -227,38 +250,133 @@ find "$DEB_DIR" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "$DEB_DIR/usr/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 find "$DEB_DIR/DEBIAN" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
+# Check for dpkg-deb
+DPKG_DEB=""
+if command -v dpkg-deb >/dev/null 2>&1; then
+    DPKG_DEB="dpkg-deb"
+elif command -v dpkg >/dev/null 2>&1 && dpkg --version >/dev/null 2>&1; then
+    # Try to find dpkg-deb in common locations
+    if [ -f "/usr/bin/dpkg-deb" ]; then
+        DPKG_DEB="/usr/bin/dpkg-deb"
+    elif [ -f "/usr/local/bin/dpkg-deb" ]; then
+        DPKG_DEB="/usr/local/bin/dpkg-deb"
+    fi
+fi
+
 # Build the package
 DEB_FILE="$PACKAGE_DIR/${PACKAGE_NAME}.deb"
-if dpkg-deb --build "$DEB_DIR" "$DEB_FILE" 2>/dev/null; then
-    success "Package built successfully: $DEB_FILE"
-    
-    # Show package info
-    info "Package information:"
-    dpkg-deb -I "$DEB_FILE" 2>/dev/null | head -20 || true
-    
-    # Calculate and display checksum
-    if command -v sha256sum >/dev/null 2>&1; then
-        SHA256=$(sha256sum "$DEB_FILE" | cut -d' ' -f1)
+
+if [ -n "$DPKG_DEB" ]; then
+    # Use dpkg-deb if available
+    if $DPKG_DEB --build "$DEB_DIR" "$DEB_FILE" 2>/dev/null; then
+        success "Package built successfully: $DEB_FILE"
+        
+        # Show package info
+        if command -v dpkg-deb >/dev/null 2>&1; then
+            info "Package information:"
+            dpkg-deb -I "$DEB_FILE" 2>/dev/null | head -20 || true
+        fi
+        
+        # Calculate and display checksum
+        if command -v sha256sum >/dev/null 2>&1; then
+            SHA256=$(sha256sum "$DEB_FILE" | cut -d' ' -f1)
+        elif command -v shasum >/dev/null 2>&1; then
+            SHA256=$(shasum -a 256 "$DEB_FILE" | cut -d' ' -f1)
+        fi
+        
+        if [ -n "$SHA256" ]; then
+            echo ""
+            info "SHA256: $SHA256"
+            echo "$SHA256  $(basename "$DEB_FILE")" > "${DEB_FILE}.sha256"
+            success "Checksum saved to ${DEB_FILE}.sha256"
+        fi
+        
         echo ""
-        info "SHA256: $SHA256"
-        echo "$SHA256  $(basename "$DEB_FILE")" > "${DEB_FILE}.sha256"
-        success "Checksum saved to ${DEB_FILE}.sha256"
+        success "✅ .deb package created successfully!"
+        echo ""
+        info "To install the package:"
+        echo "  sudo dpkg -i $DEB_FILE"
+        echo ""
+        info "If you get dependency errors, run:"
+        echo "  sudo apt-get install -f"
+        echo ""
+        info "To remove the package:"
+        echo "  sudo dpkg -r $APP_NAME"
+        echo ""
+    else
+        error_exit "Failed to build .deb package with dpkg-deb."
+    fi
+else
+    # Alternative: Create .deb manually using ar (available on macOS)
+    info "dpkg-deb not found, using alternative method (ar)..."
+    
+    if ! command -v ar >/dev/null 2>&1; then
+        error_exit "Neither dpkg-deb nor ar found. On macOS, install dpkg via Homebrew:\n  brew install dpkg\n\nOr use Docker to build the .deb package on a Linux system."
     fi
     
-    echo ""
-    success "✅ .deb package created successfully!"
-    echo ""
-    info "To install the package:"
-    echo "  sudo dpkg -i $DEB_FILE"
-    echo ""
-    info "If you get dependency errors, run:"
-    echo "  sudo apt-get install -f"
-    echo ""
-    info "To remove the package:"
-    echo "  sudo dpkg -r $APP_NAME"
-    echo ""
-else
-    error_exit "Failed to build .deb package. Make sure dpkg-deb is installed."
+    # Create temporary directory for ar archive
+    AR_TEMP=$(mktemp -d)
+    DEBIAN_BINARY="$AR_TEMP/debian-binary"
+    CONTROL_TAR="$AR_TEMP/control.tar.gz"
+    DATA_TAR="$AR_TEMP/data.tar.gz"
+    
+    # Create debian-binary file
+    echo "2.0" > "$DEBIAN_BINARY"
+    
+    # Create control.tar.gz
+    cd "$DEB_DIR/DEBIAN"
+    tar --format=gnu -czf "$CONTROL_TAR" . 2>/dev/null || tar -czf "$CONTROL_TAR" . 2>/dev/null || error_exit "Failed to create control.tar.gz"
+    
+    # Create data.tar.gz (include all directories except DEBIAN)
+    cd "$DEB_DIR"
+    # Use find to get all files/dirs except DEBIAN
+    find usr share -type f -o -type d 2>/dev/null | tar --format=gnu -czf "$DATA_TAR" -T - 2>/dev/null || \
+    find usr share -type f -o -type d 2>/dev/null | tar -czf "$DATA_TAR" -T - 2>/dev/null || \
+    tar -czf "$DATA_TAR" usr share 2>/dev/null || error_exit "Failed to create data.tar.gz"
+    
+    # Create .deb file using ar
+    cd "$AR_TEMP"
+    ar -r "$DEB_FILE" debian-binary control.tar.gz data.tar.gz 2>/dev/null || error_exit "Failed to create .deb with ar"
+    
+    # Cleanup
+    rm -rf "$AR_TEMP"
+    cd "$PROJECT_DIR"
+    
+    if [ -f "$DEB_FILE" ]; then
+        success "Package built successfully: $DEB_FILE"
+        
+        # Calculate and display checksum
+        if command -v sha256sum >/dev/null 2>&1; then
+            SHA256=$(sha256sum "$DEB_FILE" | cut -d' ' -f1)
+        elif command -v shasum >/dev/null 2>&1; then
+            SHA256=$(shasum -a 256 "$DEB_FILE" | cut -d' ' -f1)
+        fi
+        
+        if [ -n "$SHA256" ]; then
+            echo ""
+            info "SHA256: $SHA256"
+            echo "$SHA256  $(basename "$DEB_FILE")" > "${DEB_FILE}.sha256"
+            success "Checksum saved to ${DEB_FILE}.sha256"
+        fi
+        
+        echo ""
+        success "✅ .deb package created successfully (using ar method)!"
+        echo ""
+        info "To install the package on Ubuntu/Debian:"
+        echo "  sudo dpkg -i $DEB_FILE"
+        echo ""
+        info "If you get dependency errors, run:"
+        echo "  sudo apt-get install -f"
+        echo ""
+        info "To remove the package:"
+        echo "  sudo dpkg -r $APP_NAME"
+        echo ""
+        warning "Note: Package was built using ar. For best compatibility,"
+        warning "consider building on a Linux system or using Docker."
+        echo ""
+    else
+        error_exit "Failed to create .deb package."
+    fi
 fi
 
 success "Done!"
