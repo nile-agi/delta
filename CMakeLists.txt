@@ -101,6 +101,7 @@ set(DELTA_SOURCES
     src/tools/dep_protocol.cpp
     src/tools/shell.cpp
     src/tools/browser.cpp
+    src/model_api_server.cpp
 )
 
 # Main executable
@@ -112,6 +113,7 @@ target_include_directories(delta PRIVATE
     ${CMAKE_SOURCE_DIR}/vendor
     ${CMAKE_SOURCE_DIR}/vendor/llama.cpp
     ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/common
+    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/tools/server
 )
 
 # Link libraries (with llama-cpp integration)
@@ -119,6 +121,8 @@ target_link_libraries(delta PRIVATE
     llama
     ggml
     common
+    cpp-httplib
+    ${CMAKE_THREAD_LIBS_INIT}
 )
 
 # Link platform-specific libraries
@@ -146,16 +150,50 @@ if(APPLE)
 endif()
 
 # Delta Server Wrapper (customized llama-server)
-add_executable(delta-server src/delta_server_wrapper.cpp)
+# Need to include models.cpp for ModelManager
+add_executable(delta-server 
+    src/delta_server_wrapper.cpp 
+    src/model_api_server.cpp
+    src/models.cpp
+    src/tools/file_ops.cpp
+    src/ui.cpp
+)
 
 # Include directories for delta-server
 target_include_directories(delta-server PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/vendor
+    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp
+    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/common
+    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/tools/server
 )
 
 # Link libraries for delta-server
 if(NOT APPLE)
     target_link_libraries(delta-server PRIVATE stdc++fs)
+endif()
+
+# Link httplib and json for model API server
+# Link to the same libraries that llama-server uses
+target_link_libraries(delta-server PRIVATE 
+    common 
+    cpp-httplib 
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+
+# Link curl for ModelManager (downloads from HuggingFace)
+if(USE_CURL AND CURL_FOUND)
+    target_link_libraries(delta-server PRIVATE CURL::libcurl)
+endif()
+
+# On Windows, link ws2_32 for sockets
+if(WIN32)
+    target_link_libraries(delta-server PRIVATE ws2_32)
+endif()
+
+# Ensure C++ standard library is linked (macOS)
+if(APPLE)
+    target_link_libraries(delta-server PRIVATE c++)
 endif()
 
 # Remove duplicate library warnings and ensure C++ stdlib linking (macOS)

@@ -1510,13 +1510,20 @@ static int progress_callback_wrapper(void* clientp,
     (void)ultotal;
     (void)ulnow;
     
-    if (dltotal > 0) {
         ModelManager::ProgressCallback* callback = 
             static_cast<ModelManager::ProgressCallback*>(clientp);
         if (*callback) {
-            double progress = (double)dlnow / (double)dltotal * 100.0;
-            (*callback)(progress, dlnow, dltotal);
+        // Always call callback, even if total is unknown (dltotal == 0)
+        // This allows progress updates from the start
+        double progress = 0.0;
+        if (dltotal > 0) {
+            progress = (double)dlnow / (double)dltotal * 100.0;
+        } else if (dlnow > 0) {
+            // If we have downloaded bytes but don't know total yet, show indeterminate progress
+            // Use a small percentage to indicate download has started
+            progress = 0.1; // Show 0.1% to indicate download started
         }
+        (*callback)(progress, dlnow, dltotal > 0 ? dltotal : 0);
     }
     return 0; // Return 0 to continue download
 }
@@ -1693,6 +1700,7 @@ bool ModelManager::pull_model(const std::string& model_name, const std::string& 
         UI::print_info("✓ Download complete!");
         UI::print_info("Model saved to: " + dest_path);
         UI::print_info("You can now use: delta --model " + model_name);
+        UI::print_info("Note: The web UI server continues running. Switch to this model using the model selector.");
         return true;
     } else {
         std::cout << std::endl;
