@@ -38,7 +38,7 @@ VERSION="${VERSION:-1.0.0}"
 PACKAGE_DIR="$SCRIPT_DIR/packages"
 
 # Supported architectures
-ARCHITECTURES=("amd64" "arm64")
+ARCHITECTURES=("amd64" "arm64" "armhf")
 
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║    Delta CLI - Multi-Architecture .deb Package Builder       ║"
@@ -54,12 +54,42 @@ BUILDS_FOUND=()
 BUILD_DIRS_USED=()  # Track which directories we've already used
 
 for ARCH in "${ARCHITECTURES[@]}"; do
-    # Try different build directory patterns (architecture-specific first)
-    BUILD_PATTERNS=(
-        "build_linux_release_${ARCH}"
-        "build_linux_${ARCH}"
-        "build_${ARCH}"
-    )
+    # Try different build directory patterns (including normalized names)
+    # Map architecture to possible directory names
+    case "$ARCH" in
+        amd64)
+            BUILD_PATTERNS=(
+                "build_linux_release_amd64"
+                "build_linux_release_x86_64"
+                "build_linux_amd64"
+                "build_amd64"
+            )
+            ;;
+        arm64)
+            BUILD_PATTERNS=(
+                "build_linux_release_arm64"
+                "build_linux_release_aarch64"
+                "build_linux_arm64"
+                "build_arm64"
+            )
+            ;;
+        armhf)
+            BUILD_PATTERNS=(
+                "build_linux_release_armhf"
+                "build_linux_release_arm"
+                "build_linux_release_armv7l"
+                "build_linux_armhf"
+                "build_armhf"
+            )
+            ;;
+        *)
+            BUILD_PATTERNS=(
+                "build_linux_release_${ARCH}"
+                "build_linux_${ARCH}"
+                "build_${ARCH}"
+            )
+            ;;
+    esac
     
     BUILD_FOUND=false
     SELECTED_BUILD=""
@@ -72,9 +102,38 @@ for ARCH in "${ARCHITECTURES[@]}"; do
                 info "Found build for ${ARCH} at: ${BUILD_PATTERN}"
                 # Check the actual binary architecture if possible
                 if command -v file >/dev/null 2>&1; then
-                    BINARY_ARCH=$(file "${BUILD_PATTERN}/delta" 2>/dev/null | grep -oE "(x86_64|amd64|arm64|aarch64)" | head -1 || echo "")
+                    FILE_OUTPUT=$(file "${BUILD_PATTERN}/delta" 2>/dev/null || echo "")
+                    BINARY_ARCH=""
+                    # Extract architecture from file output
+                    if echo "$FILE_OUTPUT" | grep -qiE "(x86_64|amd64|Intel 80386)"; then
+                        BINARY_ARCH="amd64"
+                    elif echo "$FILE_OUTPUT" | grep -qiE "(aarch64|arm64|ARM.*aarch64)"; then
+                        BINARY_ARCH="arm64"
+                    elif echo "$FILE_OUTPUT" | grep -qiE "(armv7|armhf|ARM.*v7)"; then
+                        BINARY_ARCH="armhf"
+                    elif echo "$FILE_OUTPUT" | grep -qiE "ARM"; then
+                        BINARY_ARCH="arm64"  # Default to 64-bit
+                    fi
                     if [ -n "$BINARY_ARCH" ]; then
                         info "  Binary architecture: ${BINARY_ARCH}"
+                        # Warn if architecture doesn't match expected
+                        case "$ARCH" in
+                            amd64)
+                                if [ "$BINARY_ARCH" != "amd64" ]; then
+                                    warning "  ⚠️  Architecture mismatch: expected ${ARCH} but binary is ${BINARY_ARCH}"
+                                fi
+                                ;;
+                            arm64)
+                                if [ "$BINARY_ARCH" != "arm64" ]; then
+                                    warning "  ⚠️  Architecture mismatch: expected ${ARCH} but binary is ${BINARY_ARCH}"
+                                fi
+                                ;;
+                            armhf)
+                                if [ "$BINARY_ARCH" != "armhf" ]; then
+                                    warning "  ⚠️  Architecture mismatch: expected ${ARCH} but binary is ${BINARY_ARCH}"
+                                fi
+                                ;;
+                        esac
                     fi
                 fi
                 BUILDS_FOUND+=("${ARCH}:${BUILD_PATTERN}")
@@ -166,6 +225,9 @@ for BUILD_INFO in "${BUILDS_FOUND[@]}"; do
         aarch64|arm64)
             DEB_ARCH="arm64"
             ;;
+        armv7l|armv7|arm)
+            DEB_ARCH="armhf"
+            ;;
         *)
             DEB_ARCH="$ARCH"
             ;;
@@ -247,11 +309,16 @@ if [ ${#PACKAGES_CREATED[@]} -gt 0 ]; then
     echo "For arm64/aarch64 systems:"
     echo "  sudo dpkg -i $PACKAGE_DIR/delta-cli_${VERSION}_arm64.deb"
     echo ""
+    echo "For armhf (32-bit ARM) systems:"
+    echo "  sudo dpkg -i $PACKAGE_DIR/delta-cli_${VERSION}_armhf.deb"
+    echo ""
     echo "To check your system architecture:"
     echo "  dpkg --print-architecture  # On Debian/Ubuntu"
     echo "  uname -m                    # On any Linux"
     echo ""
-    warning "⚠️  Note: Make sure to install the package matching your system architecture!"
+    warning "⚠️  CRITICAL: Make sure to install the package matching your system architecture!"
+    warning "   Installing the wrong architecture will cause 'Exec format error'"
+    echo ""
 else
     error_exit "No packages were created. Check build directories and try again."
 fi

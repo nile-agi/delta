@@ -52,6 +52,9 @@ case "$ARCH" in
     aarch64|arm64)
         DEB_ARCH="arm64"
         ;;
+    armv7l|armv7|arm)
+        DEB_ARCH="armhf"
+        ;;
     *)
         DEB_ARCH="$ARCH"
         ;;
@@ -97,8 +100,47 @@ mkdir -p "$DEB_DIR/usr/share/delta-cli"
 mkdir -p "$DEB_DIR/usr/share/doc/delta-cli"
 mkdir -p "$DEB_DIR/usr/share/man/man1"
 
-# Step 3: Copy binaries
-info "Step 3/6: Copying binaries..."
+# Step 3: Copy binaries and verify architecture
+info "Step 3/6: Copying binaries and verifying architecture..."
+
+# Detect the actual binary architecture
+BINARY_ARCH=""
+if command -v file >/dev/null 2>&1; then
+    FILE_OUTPUT=$(file "$BUILD_DIR/delta" 2>/dev/null || echo "")
+    # Extract architecture from file output
+    # Order matters: check more specific patterns first
+    if echo "$FILE_OUTPUT" | grep -qiE "(x86_64|amd64|Intel 80386)"; then
+        BINARY_ARCH="amd64"
+    elif echo "$FILE_OUTPUT" | grep -qiE "(aarch64|arm64|ARM.*aarch64)"; then
+        BINARY_ARCH="arm64"  # 64-bit ARM
+    elif echo "$FILE_OUTPUT" | grep -qiE "(armv7|armhf|ARM.*v7)"; then
+        BINARY_ARCH="armhf"  # 32-bit ARM
+    elif echo "$FILE_OUTPUT" | grep -qiE "ARM"; then
+        # Generic ARM - try to determine from context
+        # Default to arm64 for modern systems
+        BINARY_ARCH="arm64"
+    fi
+    
+    if [ -n "$BINARY_ARCH" ]; then
+        info "Detected binary architecture: ${BINARY_ARCH}"
+        
+        # Error if architecture mismatch
+        if [ "$BINARY_ARCH" != "$DEB_ARCH" ]; then
+            error_exit "❌ Architecture mismatch detected!\n   Binary is built for: ${BINARY_ARCH}\n   Package will be labeled as: ${DEB_ARCH}\n   This will cause 'Exec format error' on ${DEB_ARCH} systems!\n\nPlease build for ${DEB_ARCH} architecture first:\n   BUILD_DIR=build_linux_release_${DEB_ARCH} ARCH=${DEB_ARCH} ./installers/build_linux.sh\n\nOr use the correct binary:\n   BUILD_DIR=build_linux_release_${BINARY_ARCH} ARCH=${BINARY_ARCH} ./installers/package_linux_deb.sh"
+        else
+            success "✓ Binary architecture matches package architecture: ${DEB_ARCH}"
+        fi
+    else
+        warning "Could not detect binary architecture from file command"
+        warning "Proceeding, but package may not work correctly if architecture is wrong"
+        info "File output: $FILE_OUTPUT"
+    fi
+else
+    warning "file command not available, cannot verify binary architecture"
+    warning "Proceeding, but package may not work correctly if architecture is wrong"
+fi
+
+# Copy the binary
 cp "$BUILD_DIR/delta" "$DEB_DIR/usr/bin/delta"
 chmod +x "$DEB_DIR/usr/bin/delta"
 
@@ -310,6 +352,17 @@ if [ -n "$DPKG_DEB" ]; then
     echo "   package is not signed or from a trusted repository. This is normal"
     echo "   for third-party packages. The package is safe to install."
     echo ""
+    info "Package Architecture: ${DEB_ARCH}"
+    echo ""
+    warning "⚠️  CRITICAL: Architecture Verification"
+    echo "   This package is built for: ${DEB_ARCH}"
+    echo "   Make sure your system architecture matches!"
+    echo "   Installing the wrong architecture will cause 'Exec format error'"
+    echo ""
+    echo "   Check your system architecture:"
+    echo "     dpkg --print-architecture  # On Debian/Ubuntu"
+    echo "     uname -m                    # On any Linux"
+    echo ""
     info "Installation options:"
     echo ""
     echo "Option 1: Install via command line (recommended):"
@@ -321,6 +374,8 @@ if [ -n "$DPKG_DEB" ]; then
     echo "  - Click 'Install' when prompted (the warning is normal)"
     echo ""
     echo "Option 3: Verify package before installing:"
+    echo "  # Check package architecture:"
+    echo "  dpkg-deb -I $DEB_FILE | grep Architecture"
     echo "  # Check package contents:"
     echo "  dpkg-deb -c $DEB_FILE"
     echo "  # Check package info:"
