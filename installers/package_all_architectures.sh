@@ -2,7 +2,7 @@
 # Delta CLI - Build .deb packages for all architectures
 # Creates separate .deb files for each supported architecture
 
-set -e
+set -e  # Exit on error, but we'll handle errors in the loop
 
 # Colors for output
 RED='\033[0;31m'
@@ -51,33 +51,94 @@ echo ""
 
 # Check if we have builds for the architectures
 BUILDS_FOUND=()
+BUILD_DIRS_USED=()  # Track which directories we've already used
+
 for ARCH in "${ARCHITECTURES[@]}"; do
-    # Try different build directory patterns
+    # Try different build directory patterns (architecture-specific first)
     BUILD_PATTERNS=(
         "build_linux_release_${ARCH}"
         "build_linux_${ARCH}"
         "build_${ARCH}"
-        "build_linux_release"  # Generic fallback
     )
     
     BUILD_FOUND=false
+    SELECTED_BUILD=""
+    
+    # First, try architecture-specific directories
     for BUILD_PATTERN in "${BUILD_PATTERNS[@]}"; do
-        if [ -f "${BUILD_PATTERN}/delta" ]; then
-            info "Found build for ${ARCH} at: ${BUILD_PATTERN}"
-            BUILDS_FOUND+=("${ARCH}:${BUILD_PATTERN}")
-            BUILD_FOUND=true
-            break
+        if [ -f "${BUILD_PATTERN}/delta" ] && [ -x "${BUILD_PATTERN}/delta" ]; then
+            # Check if this directory was already assigned to another architecture
+            if [[ ! " ${BUILD_DIRS_USED[@]} " =~ " ${BUILD_PATTERN} " ]]; then
+                info "Found build for ${ARCH} at: ${BUILD_PATTERN}"
+                # Check the actual binary architecture if possible
+                if command -v file >/dev/null 2>&1; then
+                    BINARY_ARCH=$(file "${BUILD_PATTERN}/delta" 2>/dev/null | grep -oE "(x86_64|amd64|arm64|aarch64)" | head -1 || echo "")
+                    if [ -n "$BINARY_ARCH" ]; then
+                        info "  Binary architecture: ${BINARY_ARCH}"
+                    fi
+                fi
+                BUILDS_FOUND+=("${ARCH}:${BUILD_PATTERN}")
+                BUILD_DIRS_USED+=("${BUILD_PATTERN}")
+                BUILD_FOUND=true
+                SELECTED_BUILD="${BUILD_PATTERN}"
+                break
+            fi
+        elif [ -d "${BUILD_PATTERN}" ]; then
+            # Directory exists but no binary - might be incomplete build
+            warning "  Directory ${BUILD_PATTERN} exists but delta binary not found"
+            warning "  Run: ./installers/build_linux.sh to build"
         fi
     done
+    
+    # If no architecture-specific build found, try generic (but only if not already used)
+    if [ "$BUILD_FOUND" = false ]; then
+        GENERIC_BUILD="build_linux_release"
+        if [ -f "${GENERIC_BUILD}/delta" ] && [ -x "${GENERIC_BUILD}/delta" ] && [[ ! " ${BUILD_DIRS_USED[@]} " =~ " ${GENERIC_BUILD} " ]]; then
+            info "Found generic build for ${ARCH} at: ${GENERIC_BUILD}"
+            # Check the actual binary architecture
+            if command -v file >/dev/null 2>&1; then
+                BINARY_ARCH=$(file "${GENERIC_BUILD}/delta" 2>/dev/null | grep -oE "(x86_64|amd64|arm64|aarch64)" | head -1 || echo "")
+                if [ -n "$BINARY_ARCH" ]; then
+                    info "  Binary architecture: ${BINARY_ARCH}"
+                    # Warn if architecture doesn't match
+                    case "$ARCH" in
+                        amd64)
+                            if [[ "$BINARY_ARCH" != "amd64" ]] && [[ "$BINARY_ARCH" != "x86_64" ]]; then
+                                warning "  ⚠️  Architecture mismatch: requested ${ARCH} but binary is ${BINARY_ARCH}"
+                            fi
+                            ;;
+                        arm64)
+                            if [[ "$BINARY_ARCH" != "arm64" ]] && [[ "$BINARY_ARCH" != "aarch64" ]]; then
+                                warning "  ⚠️  Architecture mismatch: requested ${ARCH} but binary is ${BINARY_ARCH}"
+                            fi
+                            ;;
+                    esac
+                fi
+            fi
+            warning "  ⚠️  Using same build directory for multiple architectures"
+            warning "  For best results, build separately for each architecture"
+            BUILDS_FOUND+=("${ARCH}:${GENERIC_BUILD}")
+            BUILD_DIRS_USED+=("${GENERIC_BUILD}")
+            BUILD_FOUND=true
+        elif [ -d "${GENERIC_BUILD}" ] && [ ! -f "${GENERIC_BUILD}/delta" ]; then
+            warning "Generic build directory exists but delta binary not found"
+            warning "  Run: ./installers/build_linux.sh to build"
+        elif [ -f "${GENERIC_BUILD}/delta" ]; then
+            warning "Generic build found but already assigned to another architecture"
+            warning "  Please create architecture-specific builds: build_linux_release_${ARCH}"
+        fi
+    fi
     
     if [ "$BUILD_FOUND" = false ]; then
         warning "No build found for ${ARCH}"
         warning "  Expected build directory: build_linux_release_${ARCH} or build_linux_${ARCH}"
+        warning "  Or a generic build_linux_release (will be used for all missing architectures)"
     fi
 done
 
 if [ ${#BUILDS_FOUND[@]} -eq 0 ]; then
-    error_exit "No builds found for any architecture. Please build first:\n  ./installers/build_linux.sh\n\nOr build for specific architectures and place them in:\n  build_linux_release_amd64/\n  build_linux_release_arm64/"
+    echo ""
+    error_exit "No builds found for any architecture.\n\nPlease build first:\n  ./installers/build_linux.sh\n\nOr build for specific architectures:\n  # For amd64\n  BUILD_DIR=build_linux_release_amd64 ./installers/build_linux.sh\n  # For arm64  \n  BUILD_DIR=build_linux_release_arm64 ./installers/build_linux.sh\n\nThen place the builds in:\n  build_linux_release_amd64/\n  build_linux_release_arm64/"
 fi
 
 echo ""
@@ -97,20 +158,70 @@ for BUILD_INFO in "${BUILDS_FOUND[@]}"; do
     info "Building .deb package for ${ARCH}..."
     echo ""
     
-    # Build the package
-    if BUILD_DIR="$BUILD_DIR" ARCH="$ARCH" VERSION="$VERSION" "$SCRIPT_DIR/package_linux_deb.sh" >/dev/null 2>&1; then
-        # Find the created package
-        DEB_FILE=$(find "$PACKAGE_DIR" -name "delta-cli_${VERSION}_${ARCH}.deb" -o -name "delta-cli_${VERSION}_*${ARCH}*.deb" | head -1)
+    # Normalize architecture name for package filename
+    case "$ARCH" in
+        x86_64|amd64)
+            DEB_ARCH="amd64"
+            ;;
+        aarch64|arm64)
+            DEB_ARCH="arm64"
+            ;;
+        *)
+            DEB_ARCH="$ARCH"
+            ;;
+    esac
+    
+    # Verify build exists before attempting to package
+    if [ ! -f "$BUILD_DIR/delta" ]; then
+        warning "Build binary not found at: $BUILD_DIR/delta"
+        warning "Skipping package creation for ${ARCH}"
+        echo ""
+        continue
+    fi
+    
+    # Build the package (show output so we can see errors)
+    info "Running: BUILD_DIR=\"$BUILD_DIR\" ARCH=\"$ARCH\" VERSION=\"$VERSION\""
+    info "Expected package: delta-cli_${VERSION}_${DEB_ARCH}.deb"
+    echo ""
+    
+    # Capture output but also show it
+    LOG_FILE="/tmp/delta-deb-build-${ARCH}.log"
+    if BUILD_DIR="$BUILD_DIR" ARCH="$ARCH" VERSION="$VERSION" "$SCRIPT_DIR/package_linux_deb.sh" 2>&1 | tee "$LOG_FILE"; then
+        # Find the created package using normalized architecture
+        DEB_FILE="$PACKAGE_DIR/delta-cli_${VERSION}_${DEB_ARCH}.deb"
+        
+        # If not found with normalized name, search for it
+        if [ ! -f "$DEB_FILE" ]; then
+            DEB_FILE=$(find "$PACKAGE_DIR" -name "delta-cli_${VERSION}_${DEB_ARCH}.deb" 2>/dev/null | head -1)
+        fi
+        
+        # If still not found, try any recently created deb file
+        if [ ! -f "$DEB_FILE" ]; then
+            DEB_FILE=$(find "$PACKAGE_DIR" -name "delta-cli_${VERSION}_*.deb" -type f -newermt "1 minute ago" 2>/dev/null | head -1)
+        fi
         
         if [ -n "$DEB_FILE" ] && [ -f "$DEB_FILE" ]; then
             success "Package created: $(basename "$DEB_FILE")"
             PACKAGES_CREATED+=("$DEB_FILE")
         else
-            warning "Package build completed but file not found for ${ARCH}"
+            warning "Package build reported success but file not found for ${ARCH} (${DEB_ARCH})"
+            warning "Searched in: $PACKAGE_DIR"
+            warning "Looking for: delta-cli_${VERSION}_${DEB_ARCH}.deb"
+            if [ -d "$PACKAGE_DIR" ]; then
+                info "Files in package directory:"
+                ls -la "$PACKAGE_DIR" 2>/dev/null | head -10 || true
+            fi
         fi
     else
-        warning "Failed to build package for ${ARCH}"
+        EXIT_CODE=${PIPESTATUS[0]}
+        warning "Failed to build package for ${ARCH} (exit code: ${EXIT_CODE})"
+        if [ -f "$LOG_FILE" ]; then
+            warning "Last few lines of build log:"
+            tail -20 "$LOG_FILE" 2>/dev/null || true
+        fi
     fi
+    
+    echo ""
     
     echo ""
 done
