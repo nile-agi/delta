@@ -127,7 +127,15 @@ cmake .. -DCMAKE_TOOLCHAIN_FILE=/path/to/toolchain.cmake
 ### Debian/Ubuntu (.deb)
 1. Build the project: `./installers/build_linux.sh`
 2. Create package: `./installers/package_linux_deb.sh`
-3. Install: `sudo dpkg -i installers/packages/*.deb`
+3. Install: `sudo dpkg -i installers/packages/delta-cli_*.deb`
+4. If you get dependency errors: `sudo apt-get install -f`
+
+The .deb package includes:
+- `delta` binary in `/usr/bin/`
+- `delta-server` binary (if built)
+- Web UI files in `/usr/share/delta-cli/`
+- Proper Debian package metadata
+- Post-install scripts for setup
 
 ### macOS (.dmg)
 
@@ -151,8 +159,19 @@ This will build the application and create a .dmg installer in one step.
 **Distribution:**
 - Upload the .dmg file to your release page or hosting service
 - Users can download and double-click to mount
-- They drag "Delta CLI.app" to the Applications folder
+- **Easiest method**: Double-click "Double-click to Install.command" - it handles everything automatically (no Terminal commands needed!)
+- **Alternative**: Drag "Delta CLI.app" to the Applications folder
 - The app can be run from Terminal or by double-clicking
+
+**Auto-Installation:**
+The DMG includes an auto-installer that:
+- Installs the app to Applications
+- Removes security quarantine automatically
+- Signs the app
+- Creates terminal symlink
+- Opens Applications folder
+
+No manual Terminal commands required!
 
 **Customization:**
 - Set version: `VERSION=1.2.3 ./installers/package_macos.sh`

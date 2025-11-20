@@ -272,12 +272,15 @@ Delta CLI ${VERSION} - Installation Instructions
 
 EASIEST INSTALLATION METHOD:
 ----------------------------
-Double-click "Install Delta CLI.sh" - it will automatically:
+Double-click "Double-click to Install.command" - it will automatically:
   ✓ Install the app to Applications
-  ✓ Remove security quarantine
+  ✓ Remove security quarantine (no manual commands needed!)
   ✓ Sign the app
   ✓ Create terminal symlink
   ✓ Verify installation
+  ✓ Open Applications folder
+
+This method handles all security settings automatically - no Terminal commands needed!
 
 SIMPLE INSTALLATION (Drag & Drop):
 -----------------------------------
@@ -316,7 +319,14 @@ Troubleshooting:
 
 EOF
 
-# Copy installer and trust scripts to DMG for user convenience
+# Copy auto-installer (primary installation method - handles trust automatically)
+if [ -f "$SCRIPT_DIR/auto_install.command" ]; then
+    cp "$SCRIPT_DIR/auto_install.command" "$TEMP_DMG_DIR/Double-click\ to\ Install.command"
+    chmod +x "$TEMP_DMG_DIR/Double-click\ to\ Install.command"
+    info "Added auto-installer to DMG (handles trust automatically)"
+fi
+
+# Copy installer and trust scripts to DMG for user convenience (backup methods)
 if [ -f "$SCRIPT_DIR/install_delta.sh" ]; then
     cp "$SCRIPT_DIR/install_delta.sh" "$TEMP_DMG_DIR/Install\ Delta\ CLI.sh"
     chmod +x "$TEMP_DMG_DIR/Install\ Delta\ CLI.sh"
