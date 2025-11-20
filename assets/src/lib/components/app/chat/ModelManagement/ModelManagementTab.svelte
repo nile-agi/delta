@@ -5,7 +5,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Download, Trash2, RefreshCw, CheckCircle2, XCircle, Loader2 } from '@lucide/svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 
 	type TabType = 'available' | 'installed';
 
@@ -14,9 +14,12 @@
 	let installedModels: ModelInfo[] = $state([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-	let downloadingModel: string | null = $state(null);
-	let removingModel: string | null = $state(null);
-	let confirmDeleteModel: string | null = $state(null);
+	let downloadingModel = $state<string | null>(null);
+	let removingModel = $state<string | null>(null);
+	let confirmDeleteModel = $state<string | null>(null);
+	
+	// Download progress state
+	let downloadProgress: Record<string, { progress: number; currentMB: number; totalMB: number }> = $state({});
 
 	async function loadModels() {
 		loading = true;
@@ -24,14 +27,28 @@
 		try {
 			if (activeTab === 'available') {
 				const response = await ModelsService.listAvailable();
-				availableModels = response.models;
+				// Handle both formats: {models: [...]} or [...] (for backward compatibility)
+				availableModels = Array.isArray(response)
+					? response
+					: response.models || [];
+				console.log('Loaded available models:', availableModels.length);
 			} else {
 				const response = await ModelsService.listInstalled();
-				installedModels = response.models;
+				// Handle both formats: {models: [...]} or [...] (for backward compatibility)
+				installedModels = Array.isArray(response)
+					? response
+					: response.models || [];
+				console.log('Loaded installed models:', installedModels.length);
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load models';
 			console.error('Error loading models:', e);
+			// Set empty arrays on error
+			if (activeTab === 'available') {
+				availableModels = [];
+			} else {
+				installedModels = [];
+			}
 		} finally {
 			loading = false;
 		}
@@ -40,8 +57,26 @@
 	async function handleDownload(modelName: string) {
 		downloadingModel = modelName;
 		error = null;
+		// Initialize progress
+		downloadProgress[modelName] = { progress: 0, currentMB: 0, totalMB: 0 };
+		// Force reactivity
+		downloadProgress = { ...downloadProgress };
+		
 		try {
-			await ModelsService.download(modelName);
+			await ModelsService.download(
+				modelName,
+				(progress, currentMB, totalMB) => {
+					// Update progress with new values
+					downloadProgress[modelName] = { 
+						progress: Math.max(0, Math.min(100, progress)), // Clamp to 0-100
+						currentMB: Math.max(0, currentMB),
+						totalMB: Math.max(0, totalMB)
+					};
+					// Force reactivity by creating a new object
+					downloadProgress = { ...downloadProgress };
+					console.log(`Download progress for ${modelName}:`, progress.toFixed(1) + '%', currentMB.toFixed(1) + 'MB /', totalMB.toFixed(1) + 'MB');
+				}
+			);
 			// Reload both lists to update status
 			await loadModels();
 			if (activeTab === 'installed') {
@@ -53,6 +88,9 @@
 			console.error('Error downloading model:', e);
 		} finally {
 			downloadingModel = null;
+			// Clear progress
+			delete downloadProgress[modelName];
+			downloadProgress = { ...downloadProgress };
 		}
 	}
 
@@ -90,12 +128,16 @@
 		}
 	}
 
-	$effect(() => {
+	onMount(() => {
+		console.log('ModelManagementTab mounted');
 		loadModels();
 	});
 </script>
 
-<div class="space-y-4">
+<div class="space-y-4" data-model-management="true" style="display: block;">
+	<!-- Debug: Component is rendering -->
+	<div class="mb-2 text-xs text-green-600 dark:text-green-400">✓ Model Management Component Loaded</div>
+	
 	<div class="flex items-center justify-between">
 		<div class="flex gap-2">
 			<button
@@ -220,30 +262,48 @@
 							</div>
 						</CardHeader>
 						<CardContent>
-							<div class="flex items-center justify-between">
-								<div class="text-sm text-muted-foreground">
-									<span class="font-medium">Size:</span> {model.size_str} •{' '}
-									<span class="font-medium">Quantization:</span> {model.quantization}
+							<div class="space-y-3">
+								<div class="flex items-center justify-between">
+									<div class="text-sm text-muted-foreground">
+										<span class="font-medium">Size:</span> {model.size_str} •{' '}
+										<span class="font-medium">Quantization:</span> {model.quantization}
+									</div>
+									{#if !model.installed}
+										<Button
+											variant="default"
+											size="sm"
+											onclick={() => handleDownload(model.name)}
+											disabled={downloadingModel === model.name}
+										>
+											{#if downloadingModel === model.name}
+												<Loader2 class="h-4 w-4 mr-2 animate-spin" />
+												Downloading...
+											{:else}
+												<Download class="h-4 w-4 mr-2" />
+												Download
+											{/if}
+										</Button>
+									{:else}
+										<Button variant="outline" size="sm" onclick={() => handleUse(model.name)}>
+											Use Model
+										</Button>
+									{/if}
 								</div>
-								{#if !model.installed}
-									<Button
-										variant="default"
-										size="sm"
-										onclick={() => handleDownload(model.name)}
-										disabled={downloadingModel === model.name}
-									>
-										{#if downloadingModel === model.name}
-											<Loader2 class="h-4 w-4 mr-2 animate-spin" />
-											Downloading...
-										{:else}
-											<Download class="h-4 w-4 mr-2" />
-											Download
-										{/if}
-									</Button>
-								{:else}
-									<Button variant="outline" size="sm" onclick={() => handleUse(model.name)}>
-										Use Model
-									</Button>
+								{#if downloadingModel === model.name && downloadProgress[model.name]}
+									{@const prog = downloadProgress[model.name]}
+									<div class="space-y-2">
+										<div class="flex items-center justify-between text-xs text-muted-foreground">
+											<span>
+												{prog.progress.toFixed(1)}% ({prog.currentMB.toFixed(1)} / {prog.totalMB.toFixed(1)} MB)
+											</span>
+										</div>
+										<div class="w-full bg-muted rounded-full h-2 overflow-hidden">
+											<div
+												class="h-full bg-primary transition-all duration-300 ease-out"
+												style="width: {prog.progress}%"
+											></div>
+										</div>
+									</div>
 								{/if}
 							</div>
 						</CardContent>

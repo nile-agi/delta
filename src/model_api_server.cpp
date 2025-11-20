@@ -11,12 +11,14 @@
  */
 
 #include "delta_cli.h"
+#include "commands.h"
 #include <cpp-httplib/httplib.h>
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <thread>
 #include <atomic>
 #include <memory>
+#include <chrono>
 
 using json = nlohmann::json;
 
@@ -189,10 +191,65 @@ private:
                     return;
                 }
                 
+                // Get model's max context from registry
+                int ctx_size = 4096;  // Default fallback
+                std::string registry_name = model_name;
+                if (model_mgr_.is_in_registry(registry_name)) {
+                    auto entry = model_mgr_.get_registry_entry(registry_name);
+                    if (entry.max_context > 0) {
+                        ctx_size = entry.max_context;
+                    }
+                } else {
+                    // Try converting dash to colon format
+                    size_t last_dash = registry_name.find_last_of('-');
+                    if (last_dash != std::string::npos) {
+                        std::string colon_name = registry_name.substr(0, last_dash) + ":" + 
+                                                 registry_name.substr(last_dash + 1);
+                        if (model_mgr_.is_in_registry(colon_name)) {
+                            auto entry = model_mgr_.get_registry_entry(colon_name);
+                            if (entry.max_context > 0) {
+                                ctx_size = entry.max_context;
+                            }
+                        }
+                    }
+                }
+                
+                // Get model alias (name with colon) for web UI
+                std::string model_alias;
+                std::string found_name = model_mgr_.get_name_from_filename(model_path);
+                if (!found_name.empty()) {
+                    model_alias = found_name;
+                } else if (model_mgr_.is_in_registry(registry_name)) {
+                    auto entry = model_mgr_.get_registry_entry(registry_name);
+                    if (!entry.name.empty()) {
+                        model_alias = entry.name;
+                    }
+                } else {
+                    // Try converting dash to colon format
+                    size_t last_dash = registry_name.find_last_of('-');
+                    if (last_dash != std::string::npos) {
+                        std::string colon_name = registry_name.substr(0, last_dash) + ":" + 
+                                                 registry_name.substr(last_dash + 1);
+                        if (model_mgr_.is_in_registry(colon_name)) {
+                            auto entry = model_mgr_.get_registry_entry(colon_name);
+                            if (!entry.name.empty()) {
+                                model_alias = entry.name;
+                            }
+                        }
+                    }
+                }
+                
+                // Restart the server with the new model
+                bool server_restarted = Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias);
+                
                 json result = {
                     {"success", true},
                     {"model_path", model_path},
-                    {"message", "Model switched successfully. Please restart the server with the new model."}
+                    {"model_alias", model_alias},
+                    {"server_restarted", server_restarted},
+                    {"message", server_restarted 
+                        ? "Model switched successfully. Server is restarting with the new model."
+                        : "Model switched successfully, but server restart failed. Please restart manually."}
                 };
                 res.set_content(result.dump(), "application/json");
             } catch (const json::parse_error& e) {

@@ -490,13 +490,16 @@
 									onConfigChange={handleConfigChange}
 									onThemeChange={handleThemeChange}
 								/>
-								<div class="border-t border-border/30 pt-6">
+								<div class="border-t border-border/30 pt-6 mt-6">
 									<h4 class="mb-4 text-sm font-semibold">Model Management</h4>
 									<p class="mb-4 text-sm text-muted-foreground">
 										Manage your installed models and download new ones. Enable the model selector above to
 										choose models in the chat interface.
 									</p>
-									<ModelManagementTab />
+									<!-- Model Management Component -->
+									<div class="model-management-container" style="min-height: 200px;">
+										<ModelManagementTab />
+									</div>
 								</div>
 							</div>
 						{:else}

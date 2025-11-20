@@ -1,4 +1,4 @@
-import { ModelsService } from '$lib/services/models';
+import { ModelsService, type ModelInfo } from '$lib/services/models';
 import { persisted } from '$lib/stores/persisted.svelte';
 import { SELECTED_MODEL_LOCALSTORAGE_KEY } from '$lib/constants/localstorage-keys';
 import type { ModelOption } from '$lib/types/models';
@@ -15,6 +15,7 @@ class ModelsStore {
 	private _error = $state<string | null>(null);
 	private _selectedModelId = $state<string | null>(null);
 	private _selectedModelName = $state<string | null>(null);
+	private _displayNameMap = $state<Map<string, string>>(new Map());
 	private _persistedSelection = persisted<PersistedModelSelection | null>(
 		SELECTED_MODEL_LOCALSTORAGE_KEY,
 		null
@@ -68,19 +69,49 @@ class ModelsStore {
 		this._error = null;
 
 		try {
+			// Fetch installed models to get display_name mapping
+			let displayNameMap = new Map<string, string>();
+			try {
+				const installedResponse = await ModelsService.listInstalled();
+				const installedModels = Array.isArray(installedResponse)
+					? installedResponse
+					: installedResponse.models || [];
+				for (const model of installedModels) {
+					// Map both name (e.g., "qwen3:0.6b") and display_name to display_name
+					displayNameMap.set(model.name, model.display_name);
+					displayNameMap.set(model.display_name, model.display_name);
+				}
+			} catch (e) {
+				console.warn('Failed to fetch installed models for display name mapping:', e);
+			}
+			this._displayNameMap = displayNameMap;
+
 			const response = await ModelsService.list();
 
 			const models: ModelOption[] = response.data.map((item, index) => {
 				const details = response.models?.[index];
 				const rawCapabilities = Array.isArray(details?.capabilities) ? details?.capabilities : [];
-				const displayNameSource =
-					details?.name && details.name.trim().length > 0 ? details.name : item.id;
-				const displayName = this.toDisplayName(displayNameSource);
+				const modelId = item.id;
+				
+				// Get display name: prefer from installed models map, then from details.name, then fallback to toDisplayName
+				let displayName = this._displayNameMap.get(modelId);
+				if (!displayName && details?.name) {
+					displayName = this._displayNameMap.get(details.name);
+				}
+				if (!displayName) {
+					// Only use toDisplayName as last resort, and only if it doesn't look like a filename
+					const displayNameSource = details?.name && details.name.trim().length > 0 ? details.name : modelId;
+					if (!displayNameSource.includes('.gguf') && !displayNameSource.includes('/') && !displayNameSource.includes('\\')) {
+						displayName = displayNameSource;
+					} else {
+						displayName = this.toDisplayName(displayNameSource);
+					}
+				}
 
 				return {
-					id: item.id,
+					id: modelId,
 					name: displayName,
-					model: details?.model || item.id,
+					model: details?.model || modelId,
 					description: details?.description,
 					capabilities: rawCapabilities.filter((value): value is string => Boolean(value)),
 					details: details?.details,
@@ -124,6 +155,46 @@ class ModelsStore {
 		this._error = null;
 
 		try {
+			// Get the model name (e.g., "qwen3:0.6b") from the option
+			// The option.model should be the model name, or we can use option.id
+			const modelName = option.model || option.id;
+			
+			// Call the API to switch models
+			try {
+				const result = await ModelsService.use(modelName);
+				
+				// If server is restarting, wait a bit and retry fetching models
+				if (result.server_restarted) {
+					// Wait for server to restart (give it 2 seconds)
+					await new Promise(resolve => setTimeout(resolve, 2000));
+					
+					// Retry fetching models with exponential backoff
+					let retries = 3;
+					let delay = 1000;
+					while (retries > 0) {
+						try {
+							await this.fetch(true);
+							break;
+						} catch (error) {
+							retries--;
+							if (retries > 0) {
+								await new Promise(resolve => setTimeout(resolve, delay));
+								delay *= 2; // Exponential backoff
+							} else {
+								console.warn('Failed to refresh models after server restart, but model switch was successful');
+							}
+						}
+					}
+				} else {
+					// Server didn't restart, just refresh normally
+					await this.fetch(true);
+				}
+			} catch (error) {
+				console.error('Failed to switch model via API:', error);
+				// Still update local state even if API call fails
+				// The server might restart, so we'll handle connection errors gracefully
+			}
+
 			this._selectedModelId = option.id;
 			this._selectedModelName = option.model;
 			this._persistedSelection.value = { id: option.id, model: option.model };
@@ -133,6 +204,28 @@ class ModelsStore {
 	}
 
 	private toDisplayName(id: string): string {
+		// If it's already a display name (from our map), use it
+		if (this._displayNameMap.has(id)) {
+			return this._displayNameMap.get(id)!;
+		}
+		
+		// If it looks like a filename (contains .gguf), try to extract a better name
+		if (id.includes('.gguf')) {
+			// Remove .gguf extension
+			let name = id.replace(/\.gguf$/, '');
+			// Try to convert common patterns:
+			// "Qwen3-1.7B-f16" -> "Qwen 3 1.7B"
+			// "qwen2.5-0.5b" -> "Qwen 2.5 0.5B"
+			name = name
+				.replace(/([a-z])(\d)/g, '$1 $2') // Add space before numbers
+				.replace(/(\d)([A-Z])/g, '$1 $2') // Add space between number and capital
+				.replace(/-([a-z])/g, (_, letter) => ` ${letter.toUpperCase()}`) // Convert dash to space and capitalize
+				.replace(/\b([a-z])/g, (_, letter) => letter.toUpperCase()); // Capitalize first letter of words
+			
+			return name;
+		}
+		
+		// Otherwise, just extract filename from path
 		const segments = id.split(/\\|\//);
 		const candidate = segments.pop();
 

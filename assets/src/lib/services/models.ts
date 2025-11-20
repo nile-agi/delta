@@ -12,16 +12,6 @@ export interface ModelInfo {
 	installed?: boolean;
 }
 
-export interface ModelListResponse {
-	models: ModelInfo[];
-}
-
-export interface ModelOperationResponse {
-	success: boolean;
-	message?: string;
-	model_path?: string;
-}
-
 export class ModelsService {
 	static async list(): Promise<ApiModelListResponse> {
 		const currentConfig = config();
@@ -40,46 +30,34 @@ export class ModelsService {
 		return response.json() as Promise<ApiModelListResponse>;
 	}
 
-	/**
-	 * List all available models (both installed and available to download)
-	 */
-	static async listAvailable(): Promise<ModelListResponse> {
-		const response = await fetch('http://localhost:8081/api/models/available', {
-			method: 'GET',
-			headers: {
-				'Content-Type': 'application/json'
-			}
-		});
+	static async listAvailable(): Promise<{ models: ModelInfo[] } | ModelInfo[]> {
+		const response = await fetch('http://localhost:8081/api/models/available');
 
 		if (!response.ok) {
 			throw new Error(`Failed to fetch available models (status ${response.status})`);
 		}
 
-		return response.json() as Promise<ModelListResponse>;
+		const data = await response.json();
+		// Return in consistent format
+		return Array.isArray(data) ? { models: data } : data;
 	}
 
-	/**
-	 * List only installed models
-	 */
-	static async listInstalled(): Promise<ModelListResponse> {
-		const response = await fetch('http://localhost:8081/api/models/list', {
-			method: 'GET',
-			headers: {
-				'Content-Type': 'application/json'
-			}
-		});
+	static async listInstalled(): Promise<{ models: ModelInfo[] } | ModelInfo[]> {
+		const response = await fetch('http://localhost:8081/api/models/list');
 
 		if (!response.ok) {
 			throw new Error(`Failed to fetch installed models (status ${response.status})`);
 		}
 
-		return response.json() as Promise<ModelListResponse>;
+		const data = await response.json();
+		// Return in consistent format
+		return Array.isArray(data) ? { models: data } : data;
 	}
 
-	/**
-	 * Download a model
-	 */
-	static async download(modelName: string): Promise<ModelOperationResponse> {
+	static async download(
+		modelName: string,
+		onProgress?: (progress: number, currentMB: number, totalMB: number) => void
+	): Promise<{ success: boolean; message: string }> {
 		const response = await fetch('http://localhost:8081/api/models/download', {
 			method: 'POST',
 			headers: {
@@ -89,40 +67,33 @@ export class ModelsService {
 		});
 
 		if (!response.ok) {
-			const error = await response.json().catch(() => ({}));
-			throw new Error(
-				error.error?.message || `Failed to download model (status ${response.status})`
-			);
+			const error = await response.json();
+			throw new Error(error.error?.message || `Failed to download model (status ${response.status})`);
 		}
 
-		return response.json() as Promise<ModelOperationResponse>;
+		return response.json();
 	}
 
-	/**
-	 * Remove a model
-	 */
-	static async remove(modelName: string): Promise<ModelOperationResponse> {
+	static async remove(modelName: string): Promise<{ success: boolean; message: string }> {
 		const response = await fetch(`http://localhost:8081/api/models/${encodeURIComponent(modelName)}`, {
-			method: 'DELETE',
-			headers: {
-				'Content-Type': 'application/json'
-			}
+			method: 'DELETE'
 		});
 
 		if (!response.ok) {
-			const error = await response.json().catch(() => ({}));
-			throw new Error(
-				error.error?.message || `Failed to remove model (status ${response.status})`
-			);
+			const error = await response.json();
+			throw new Error(error.error?.message || `Failed to remove model (status ${response.status})`);
 		}
 
-		return response.json() as Promise<ModelOperationResponse>;
+		return response.json();
 	}
 
-	/**
-	 * Switch to a model (returns model path, but server restart is required)
-	 */
-	static async use(modelName: string): Promise<ModelOperationResponse> {
+	static async use(modelName: string): Promise<{ 
+		success: boolean; 
+		message: string; 
+		model_path?: string;
+		model_alias?: string;
+		server_restarted?: boolean;
+	}> {
 		const response = await fetch('http://localhost:8081/api/models/use', {
 			method: 'POST',
 			headers: {
@@ -132,12 +103,11 @@ export class ModelsService {
 		});
 
 		if (!response.ok) {
-			const error = await response.json().catch(() => ({}));
-			throw new Error(
-				error.error?.message || `Failed to switch model (status ${response.status})`
-			);
+			const error = await response.json();
+			throw new Error(error.error?.message || `Failed to switch model (status ${response.status})`);
 		}
 
-		return response.json() as Promise<ModelOperationResponse>;
+		return response.json();
 	}
 }
+

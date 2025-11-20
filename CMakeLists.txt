@@ -101,6 +101,7 @@ set(DELTA_SOURCES
     src/tools/dep_protocol.cpp
     src/tools/shell.cpp
     src/tools/browser.cpp
+    src/model_api_server.cpp
 )
 
 # Main executable
@@ -112,6 +113,7 @@ target_include_directories(delta PRIVATE
     ${CMAKE_SOURCE_DIR}/vendor
     ${CMAKE_SOURCE_DIR}/vendor/llama.cpp
     ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/common
+    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/tools/server
 )
 
 # Link libraries (with llama-cpp integration)
@@ -119,6 +121,8 @@ target_link_libraries(delta PRIVATE
     llama
     ggml
     common
+    cpp-httplib
+    ${CMAKE_THREAD_LIBS_INIT}
 )
 
 # Link platform-specific libraries
@@ -171,7 +175,6 @@ endif()
 
 # Link httplib and json for model API server
 # Link to the same libraries that llama-server uses
-# Note: common and cpp-httplib are defined in llama.cpp's CMakeLists
 target_link_libraries(delta-server PRIVATE 
     common 
     cpp-httplib 
