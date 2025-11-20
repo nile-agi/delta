@@ -258,21 +258,21 @@ void ModelManager::init_model_registry() {
         "qwen3:0.6b",
         "qwen3-0.6b",
         "ggml-org/Qwen3-0.6B-GGUF",
-        "Qwen3-0.6B-f16.gguf",
+        "Qwen3-0.6B-Q8_0.gguf",
         "F16",
-        1546LL * 1024 * 1024,      // ~1.51 GB
+        805LL * 1024 * 1024,      // ~ 805 MB
         "Ultra-compact multilingual model",
         "Qwen 3 0.6B",
-        4096                     // 4K native context
+        40960                     // 4K native context
     };
     
     model_registry_["qwen3:1.7b"] = {
         "qwen3:1.7b",
         "qwen3-1.7b",
         "ggml-org/Qwen3-1.7B-GGUF",
-        "Qwen3-1.7B-f16.gguf",
-        "F16",
-        1126LL * 1024 * 1024,     // ~1.28 GB
+        "Qwen3-1.7B-Q4_K_M.gguf",
+        "Q4_K_M",
+        1280LL * 1024 * 1024,     // ~1.28 GB
         "Efficient small multilingual model",
         "Qwen 3 1.7B",
         40960                     // 40K native context
@@ -284,7 +284,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen3-4B-GGUF",
         "Qwen3-4B-Q4_K_M.gguf",
         "Q4_K_M",
-        2560LL * 1024 * 1024,     // ~2.5 GB
+        2500LL * 1024 * 1024,     // ~2.5 GB
         "Balanced multilingual reasoning model",
         "Qwen 3 4B",
         40960                     // 40K native context
@@ -296,7 +296,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen3-8B-GGUF",
         "Qwen3-8B-Q4_K_M.gguf",
         "Q4_K_M",
-        5150LL * 1024 * 1024,     // ~5.03 GB
+        5030LL * 1024 * 1024,     // ~5.03 GB
         "Powerful multilingual instruct model",
         "Qwen 3 8B",
         40960                     // 40K native context
@@ -308,7 +308,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen3-14B-GGUF",
         "Qwen3-14B-Q4_K_M.gguf",
         "Q4_K_M",
-        9216LL * 1024 * 1024,     // ~9 GB
+        9000LL * 1024 * 1024,     // ~9 GB
         "Powerful multilingual instruct model",
         "Qwen 3 14B",
         40960                     // 40K native context
@@ -320,7 +320,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen3-4B-Thinking-2507-Q8_0-GGUF",
         "qwen3-4b-thinking-2507-q8_0.gguf",
         "Q8_0",
-        4288LL * 1024 * 1024,     // ~4.28 GB
+        4280LL * 1024 * 1024,     // ~4.28 GB
         "Powerful reasoning model",
         "Qwen 3 4B Thinking",
         262144                     // 256K native context
@@ -332,7 +332,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen3-4B-Instruct-2507-Q8_0-GGUF",
         "qwen3-4b-instruct-2507-q8_0.gguf",
         "Q8_0",
-        4288LL * 1024 * 1024,     // ~4.28 GB
+        4280LL * 1024 * 1024,     // ~4.28 GB
         "Powerful reasoning model",
         "Qwen 3 4B Instruct",
         262144                     // 256K native context
@@ -345,10 +345,10 @@ void ModelManager::init_model_registry() {
         "KathAhegao/Qwen3-VL-4B-Instruct-Q4_K_M-GGUF",
         "qwen3-vl-4b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4000LL * 1024 * 1024,     // ~4.0 GB (approx)
+        2500LL * 1024 * 1024,     // ~2.5 GB (approx)
         "Qwen3-VL 4B Instruct vision-language model",
         "Qwen3-VL 4B Instruct",
-        32768                     // 32K native context
+        262144                     // 256K native context
     };
     
     model_registry_["qwen3-vl:8b-instruct"] = {
@@ -357,10 +357,10 @@ void ModelManager::init_model_registry() {
         "mazrba/Huihui-Qwen3-VL-8B-Instruct-abliterated-Q4_K_M-GGUF",
         "huihui-qwen3-vl-8b-instruct-abliterated-q4_k_m-imat.gguf",
         "Q4_K_M",
-        8000LL * 1024 * 1024,     // ~8.0 GB (approx)
+        5030LL * 1024 * 1024,     // ~5.03 GB (approx)
         "Qwen3-VL 8B Instruct vision-language model",
         "Qwen3-VL 8B Instruct",
-        32768                     // 32K native context
+        262144                     // 256K native context
     };
     
     // ===== QWEN 2.5 CODER SERIES (Code-specialized)(128K native) =====
@@ -370,7 +370,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen2.5-Coder-0.5B-Q8_0-GGUF",
         "qwen2.5-coder-0.5b-q8_0.gguf",
         "Q8_0",
-        352LL * 1024 * 1024,      // ~0.53 GB
+        531LL * 1024 * 1024,      // ~0.531 GB
         "Tiny code generation model",
         "Qwen 2.5 Coder 0.5B",
         32768                    // 32K with RoPE scaling (explicit in filename)
@@ -382,7 +382,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen2.5-Coder-1.5B-Q8_0-GGUF",
         "qwen2.5-coder-1.5b-q8_0.gguf",
         "Q8_0",
-        1689LL * 1024 * 1024,     // ~1.65 GB
+        1650LL * 1024 * 1024,     // ~1.65 GB
         "Small code-focused model",
         "Qwen 2.5 Coder 1.5B",
         32768                    // 32K with RoPE scaling
@@ -394,7 +394,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen2.5-Coder-3B-Q8_0-GGUF",
         "qwen2.5-coder-3b-q8_0.gguf",
         "Q8_0",
-        3296LL * 1024 * 1024,     // ~3.29 GB
+        3290LL * 1024 * 1024,     // ~3.29 GB
         "Balanced coding assistant",
         "Qwen 2.5 Coder 3B",
         32768                    // 32K with RoPE scaling
@@ -406,7 +406,7 @@ void ModelManager::init_model_registry() {
         "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
         "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.5 GB
+        3990LL * 1024 * 1024,     // ~3.99 GB
         "Advanced code generation model",
         "Qwen 2.5 Coder 7B",
         131072                    // 128K with RoPE scaling
@@ -419,10 +419,10 @@ void ModelManager::init_model_registry() {
         "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
         "qwen2.5-0.5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        350LL * 1024 * 1024,       // ~0.35 GB
+        491LL * 1024 * 1024,       // ~491 GB
         "Ultra-compact instruct model",
         "Qwen 2.5 0.5B",
-        131072                      // 128K native context
+        32768                      // 32K native context
     };
     
     model_registry_["qwen2.5:1.5b"] = {
@@ -431,10 +431,10 @@ void ModelManager::init_model_registry() {
         "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
         "qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        1024LL * 1024 * 1024,      // ~1 GB
+        1120LL * 1024 * 1024,      // ~1.12 GB
         "Small instruct model for edge devices",
         "Qwen 2.5 1.5B",
-        131072                      // 128K native context
+        32768                     // 32K native context
     };
     
     model_registry_["qwen2.5:3b"] = {
@@ -443,10 +443,10 @@ void ModelManager::init_model_registry() {
         "Qwen/Qwen2.5-3B-Instruct-GGUF",
         "qwen2.5-3b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        2048LL * 1024 * 1024,      // ~2 GB
+        2100LL * 1024 * 1024,      // ~2.1 GB
         "Balanced instruct model",
         "Qwen 2.5 3B",
-        131072                      // 128K native context
+        32768                     // 32K native context
     };
     
     model_registry_["qwen2.5:7b"] = {
@@ -455,10 +455,10 @@ void ModelManager::init_model_registry() {
         "paultimothymooney/Qwen2.5-7B-Instruct-Q4_K_M-GGUF",
         "qwen2.5-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,      // ~4.5 GB
+        4680LL * 1024 * 1024,      // ~4.68 GB
         "Powerful instruct model for complex tasks",
         "Qwen 2.5 7B",
-        131072                      // 128K native context
+        32768                     // 32K native context
     };
     
     // ===== ORIGINAL QWEN SERIES (32K) =====
@@ -468,7 +468,7 @@ void ModelManager::init_model_registry() {
         "Qwen/Qwen2-0.5B-Instruct-GGUF",
         "qwen2-0_5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        352LL * 1024 * 1024,      // ~352 MB
+        398LL * 1024 * 1024,      // ~398 MB
         "Original compact Qwen model",
         "Qwen 2 0.5B",
         32768                      // 32K native context
@@ -480,10 +480,10 @@ void ModelManager::init_model_registry() {
         "mradermacher/Qwen-1_8B-GGUF",
         "Qwen-1_8B.Q4_K_M.gguf",
         "Q4_K_M",
-        1126LL * 1024 * 1024,     // ~1.1 GB
+        1240LL * 1024 * 1024,     // ~1.24 GB
         "Early Qwen series model",
         "Qwen 1.8B",
-        32768                      // 32K native context
+        8192                      // 8K native context
     };
     
     model_registry_["qwen3:4b"] = {
@@ -492,10 +492,10 @@ void ModelManager::init_model_registry() {
         "Qwen/Qwen3-4B-GGUF",
         "Qwen3-4B-Q4_K_M.gguf",
         "Q4_K_M",
-        2458LL * 1024 * 1024,     // ~2.4 GB
+        2500LL * 1024 * 1024,     // ~2.5 GB
         "Mid-size original Qwen",
         "Qwen 3 4B",
-        32768                      // 32K native context
+        40960                      // 32K native context
     };
     
     model_registry_["qwen2:7b"] = {
@@ -504,7 +504,7 @@ void ModelManager::init_model_registry() {
         "NikolayKozloff/Qwen2-7B-Instruct-Q4_K_M-GGUF",
         "qwen2-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4368LL * 1024 * 1024,     // ~4.3 GB
+        4680LL * 1024 * 1024,     // ~4.68 GB
         "Full-size original Qwen model",
         "Qwen 2 7B",
         32768                      // 32K native context
@@ -517,7 +517,7 @@ void ModelManager::init_model_registry() {
         "Qwen/Qwen2-0.5B-Instruct-GGUF",
         "qwen2-0_5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        352LL * 1024 * 1024,      // ~352 MB
+        398LL * 1024 * 1024,      // ~398 MB
         "Improved compact model",
         "Qwen 2 0.5B",
         32768                      // 32K native context
@@ -529,7 +529,7 @@ void ModelManager::init_model_registry() {
         "Qwen/Qwen2-1.5B-Instruct-GGUF",
         "qwen2-1_5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        1024LL * 1024 * 1024,     // ~1 GB
+        986LL * 1024 * 1024,     // ~986 MB
         "Enhanced small model",
         "Qwen 2 1.5B",
         32768                      // 32K native context
@@ -541,7 +541,7 @@ void ModelManager::init_model_registry() {
         "Qwen/Qwen2-7B-Instruct-GGUF",
         "qwen2-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.5 GB
+        4680LL * 1024 * 1024,     // ~4.68 GB
         "Advanced Qwen 2 series",
         "Qwen 2 7B",
         32768                      // 32K native context
@@ -554,10 +554,10 @@ void ModelManager::init_model_registry() {
         "Triangle104/Qwen2.5-1.5B-Instruct-Q4_K_M-GGUF",
         "qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        1024LL * 1024 * 1024,     // ~1 GB
+        986LL * 1024 * 1024,     // ~986 MB
         "Vision-language model",
         "Qwen 2.5 VL 1.5B",
-        131072                      // 128K native context
+        32768                      // 32K native context
     };
 
     model_registry_["qwen2.5vl:3b"] = {
@@ -566,10 +566,10 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF",
         "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf",
         "Q4_K_M",
-        1976LL * 1024 * 1024,     // ~1.93 GB
+        1930LL * 1024 * 1024,     // ~1.93 GB
         "Vision-language model",
         "Qwen 2.5 VL 3B",
-        131072                      // 128K native context
+        128000                      // 128K native context
     };
 
     model_registry_["qwen2.5vl:7b"] = {
@@ -578,19 +578,19 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF",
         "Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
         "Q4_K_M",
-        4792LL * 1024 * 1024,     // ~4.68 GB
+        4680LL * 1024 * 1024,     // ~4.68 GB
         "Vision-language model",
         "Qwen 2.5 VL 7B",
-        131072                      // 128K native context
+        128000                      // 128K native context
     };
 
     model_registry_["qwen2vl:2b"] = {
         "qwen2vl:2b",
         "qwen2vl-2b",
         "ggml-org/Qwen2-VL-2B-Instruct-GGUF",
-        "Qwen2-VL-2B-Instruct-Q8_0.gguf",
-        "Q8_0",
-        1656LL * 1024 * 1024,     // ~1.65 GB
+        "Qwen2-VL-2B-Instruct-Q4_K_M.gguf",
+        "Q4_K_M",
+        986LL * 1024 * 1024,     // ~986 GB
         "Vision-language model",
         "Qwen 2 VL 2B",
         32768                      // 32K native context
@@ -602,10 +602,10 @@ void ModelManager::init_model_registry() {
         "rexionmars/Qwen2.5-VL-7B-Instruct-Q4_K_M-GGUF",
         "qwen2.5-vl-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.5 GB
+        4680LL * 1024 * 1024,     // ~4.68 GB
         "Advanced vision-language model",
         "Qwen 2.5 VL 7B",
-        131072                      // 128K native context
+        128000                      // 128K native context
     };
     
     // ===== QWEN 2 MATH (Math-specialized) (32K) =====
@@ -615,10 +615,10 @@ void ModelManager::init_model_registry() {
         "itlwas/Qwen2-Math-1.5B-Instruct-Q4_K_M-GGUF",
         "qwen2-math-1.5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        1024LL * 1024 * 1024,     // ~1 GB
+        986LL * 1024 * 1024,     // ~986 GB
         "Math-specialized model",
         "Qwen 2 Math 1.5B",
-        32768                      // 32K native context
+        40960                      // 40K native context
     };
     
     model_registry_["qwen2-math:7b"] = {
@@ -627,10 +627,10 @@ void ModelManager::init_model_registry() {
         "gdhnes/Qwen2-Math-7B-Instruct-Q4_K_M-GGUF",
         "qwen2-math-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.5 GB
+        4680LL * 1024 * 1024,     // ~4.68 GB
         "Advanced math reasoning model",
         "Qwen 2 Math 7B",
-        32768                      // 32K native context
+        40960                      // 40K native context
     };
     
     // ===== QWEN 3 EMBEDDING MODELS  (32K)=====
@@ -640,7 +640,7 @@ void ModelManager::init_model_registry() {
         "WariHima/Qwen3-Embedding-0.6B-Q4_K_M-GGUF",
         "qwen3-embedding-0.6b-q4_k_m.gguf",
         "Q4_K_M",
-        400LL * 1024 * 1024,      // ~400 MB
+        396LL * 1024 * 1024,      // ~396 MB
         "Compact embedding model",
         "Qwen 3 Embedding 0.6B",
         32768                       // Embedding models typically 32K
@@ -652,10 +652,10 @@ void ModelManager::init_model_registry() {
         "enacimie/Qwen3-Embedding-4B-Q4_K_M-GGUF",
         "qwen3-embedding-4b-q4_k_m.gguf",
         "Q4_K_M",
-        2458LL * 1024 * 1024,     // ~2.4 GB
+        2500LL * 1024 * 1024,     // ~2.5 GB
         "Balanced embedding model",
         "Qwen 3 Embedding 4B",
-        32768                       // Embedding models typically 32K
+        40960                       // Embedding models typically 40K
     };
     
     model_registry_["qwen3-embedding:8b"] = {
@@ -664,10 +664,10 @@ void ModelManager::init_model_registry() {
         "endyjasmi/Qwen3-Embedding-8B-Q4_K_M-GGUF",
         "qwen3-embedding-8b-q4_k_m.gguf",
         "Q4_K_M",
-        4915LL * 1024 * 1024,     // ~4.8 GB
+        4680LL * 1024 * 1024,     // ~4.68 GB
         "Powerful embedding model",
         "Qwen 3 Embedding 8B",
-        32768                       // Embedding models typically 32K
+        40960                       // Embedding models typically 40K
     };
     
     // ===== GEMMA SERIES (8K) =====
@@ -677,7 +677,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-1.1-2b-it-Q8_0-GGUF",
         "gemma-1.1-2b-it.Q8_0.gguf",
         "Q8_0",
-        2592LL * 1024 * 1024,     // ~2.6 GB
+        2670LL * 1024 * 1024,     // ~2.67 GB
         "Google's lightweight model",
         "Gemma 1.1 2B",
         8192                       // 8K native context
@@ -689,7 +689,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-1.1-7b-it-Q4_K_M-GGUF",
         "gemma-1.1-7b-it.Q4_K_M.gguf",
         "Q4_K_M",
-        9024LL * 1024 * 1024,     // ~5.38 GB
+        5330LL * 1024 * 1024,     // ~5.33 GB
         "Google's lightweight model",
         "Gemma 1.1 7B",
         8192                       // 8K native context
@@ -701,7 +701,7 @@ void ModelManager::init_model_registry() {
         "llm-exp/gemma-2b-Q4_K_M-GGUF",
         "gemma-2b.Q4_K_M.gguf",
         "Q4_K_M",
-        1536LL * 1024 * 1024,     // ~1.5 GB
+        1630LL * 1024 * 1024,     // ~1.63 GB
         "Google's lightweight model",
         "Gemma 2B",
         8192                       // 8K native context
@@ -713,7 +713,7 @@ void ModelManager::init_model_registry() {
         "goromlagche/gemma-7b-Q4_K_M-GGUF",
         "gemma-7b-q4_k_m.gguf",
         "Q4_K_M",
-        4368LL * 1024 * 1024,     // ~4.3 GB
+        5330LL * 1024 * 1024,     // 5.33 GB
         "Google's efficient model",
         "Gemma 7B",
         8192                       // 8K native context
@@ -750,7 +750,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-3-1b-it-qat-GGUF",
         "gemma-3-1b-it-qat-Q4_0.gguf",
         "Q4_0",
-        729LL * 1024 * 1024,      // ~729 MB
+        720LL * 1024 * 1024,      // ~720 MB
         "Compact Gemma 3",
         "Gemma 3 1B",
         32768                    // 32K native context (1B variant exception)
@@ -762,7 +762,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-3-4b-it-qat-GGUF",
         "gemma-3-4b-it-qat-Q4_0.gguf",
         "Q4_0",
-        2532LL * 1024 * 1024,     // ~2.53 GB
+        2530LL * 1024 * 1024,     // ~2.53 GB
         "Balanced Gemma 3",
         "Gemma 3 4B",
         131072                    // 128K native context
@@ -774,7 +774,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-3-12b-it-qat-GGUF",
         "gemma-3-12b-it-qat-Q4_0.gguf",
         "Q4_0",
-        7136LL * 1024 * 1024,     // ~7.13 GB
+        7130LL * 1024 * 1024,     // ~7.13 GB
         "Powerful Gemma 3",
         "Gemma 3 12B",
         131072                    // 128K native context
@@ -786,7 +786,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-3-1b-it-GGUF",
         "gemma-3-1b-it-Q8_0.gguf",
         "Q8_0",
-        729LL * 1024 * 1024,      // ~1.07 GB
+        1070LL * 1024 * 1024,      // ~1.07 GB
         "Compact Gemma 3",
         "Gemma 3 1B",
         32768                    // 32K native context (1B variant exception)
@@ -798,7 +798,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-3-4b-it-GGUF",
         "gemma-3-4b-it-Q4_K_M.gguf",
         "Q4_K_M",
-        2496LL * 1024 * 1024,     // ~2.49 GB
+        2490LL * 1024 * 1024,     // ~2.49 GB
         "Balanced Gemma 3",
         "Gemma 3 4B",
         131072                    // 128K native context
@@ -810,7 +810,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-3-12b-it-GGUF",
         "gemma-3-12b-it-Q4_K_M.gguf",
         "Q4_K_M",
-        7372LL * 1024 * 1024,     // ~7.3 GB
+        7300LL * 1024 * 1024,     // ~7.3 GB
         "Powerful Gemma 3",
         "Gemma 3 12B",
         131072                    // 128K native context
@@ -822,7 +822,7 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-3n-E2B-it-GGUF",
         "gemma-3n-E2B-it-Q8_0.gguf",
         "Q8_0",
-        4704LL * 1024 * 1024,     // ~4.79 GB
+        4790LL * 1024 * 1024,     // ~4.79 GB
         "Enhanced 2B variant",
         "Gemma 3N E2B",
         32768                    // 32K native context
@@ -834,7 +834,7 @@ void ModelManager::init_model_registry() {
         "unsloth/gemma-3n-E4B-it-GGUF",
         "gemma-3n-E4B-it-Q4_K_M.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.54 GB
+        4540LL * 1024 * 1024,     // ~4.54 GB
         "Enhanced 4B variant",
         "Gemma 3N E4B",
         32768                    // 32K native context
@@ -847,7 +847,7 @@ void ModelManager::init_model_registry() {
         "unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF",
         "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
         "Q4_K_M",
-        1024LL * 1024 * 1024,     // ~1 GB
+        1120LL * 1024 * 1024,     // ~1.12 GB
         "Research-focused model",
         "DeepSeek R1 1.5B",
         131072                     // Based on Qwen base (128K)
@@ -859,7 +859,7 @@ void ModelManager::init_model_registry() {
         "unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF",
         "DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.5 GB
+        4680LL * 1024 * 1024,     // ~4.68 GB
         "Advanced research model",
         "DeepSeek R1 7B",
         131072                    // Based on Qwen base (128K)
@@ -871,7 +871,7 @@ void ModelManager::init_model_registry() {
         "unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF",
         "DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf",
         "Q4_K_M",
-        4915LL * 1024 * 1024,     // ~4.8 GB
+        4920LL * 1024 * 1024,     // ~4.92 GB
         "High-performance research model",
         "DeepSeek R1 8B",
         131072                    // Based on Llama base (128K for Llama 3.1)
@@ -884,7 +884,7 @@ void ModelManager::init_model_registry() {
         "QuantFactory/Meta-Llama-3-8B-Instruct-GGUF",
         "Meta-Llama-3-8B-Instruct.Q4_K_M.gguf",
         "Q4_K_M",
-        4661LL * 1024 * 1024,     // ~4.7 GB
+        4920LL * 1024 * 1024,     // ~4.92 GB
         "Meta's open-source model",
         "Llama 3 8B",
         8192                      // 8K native context
@@ -897,7 +897,7 @@ void ModelManager::init_model_registry() {
         "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
         "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
         "Q4_K_M",
-        4700LL * 1024 * 1024,     // ~4.7 GB
+        4920LL * 1024 * 1024,     // ~4.92 GB
         "Meta's versatile multilingual instruct model",
         "Llama 3.1 8B",
         131072                    // 128K native context
@@ -910,7 +910,7 @@ void ModelManager::init_model_registry() {
         "bartowski/Llama-3.2-1B-Instruct-GGUF",
         "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
         "Q4_K_M",
-        730LL * 1024 * 1024,      // ~0.73 GB
+        808LL * 1024 * 1024,      // ~808 MB
         "Meta's compact vision-language model",
         "Llama 3.2 1B",
         131072                    // 128K native context
@@ -922,7 +922,7 @@ void ModelManager::init_model_registry() {
         "bartowski/Llama-3.2-3B-Instruct-GGUF",
         "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
         "Q4_K_M",
-        2000LL * 1024 * 1024,     // ~2.0 GB
+        2020LL * 1024 * 1024,     // ~2.02 GB
         "Meta's balanced vision-language model for edge devices",
         "Llama 3.2 3B",
         131072                    // 128K native context
@@ -935,7 +935,7 @@ void ModelManager::init_model_registry() {
         "second-state/Llava-v1.5-7B-GGUF",
         "llava-v1.5-7b-Q4_K_M.gguf",
         "Q4_K_M",
-        4368LL * 1024 * 1024,     // ~4.3 GB
+        4080LL * 1024 * 1024,     // ~4.08 GB
         "Multimodal vision-language model",
         "LLaVA 1.5 7B",
         4096                      // 4K native context
@@ -948,7 +948,7 @@ void ModelManager::init_model_registry() {
         "TheBloke/Llama-2-7B-GGUF",
         "llama-2-7b.Q4_K_M.gguf",
         "Q4_K_M",
-        4080LL * 1024 * 1024,     // ~4 GB
+        4080LL * 1024 * 1024,     // ~4.08 GB
         "Original Llama series",
         "Llama 2 7B",
         4096                      // 4K native context
@@ -960,7 +960,7 @@ void ModelManager::init_model_registry() {
         "TheBloke/Llama-2-13B-GGUF",
         "llama-2-13b.Q4_K_M.gguf",
         "Q4_K_M",
-        7370LL * 1024 * 1024,     // ~7.2 GB
+        7870LL * 1024 * 1024,     // ~7.87 GB
         "Larger original Llama",
         "Llama 2 13B",
         4096                      // 4K native context
@@ -986,7 +986,7 @@ void ModelManager::init_model_registry() {
         "groonga/bge-m3-Q4_K_M-GGUF",
         "bge-m3-q4_k_m.gguf",
         "Q4_K_M",
-        512LL * 1024 * 1024,      // ~512 MB
+        438LL * 1024 * 1024,      // ~438 MB
         "Embedding model for retrieval",
         "BGE-M3",
         8192                      // 8K context for embeddings
@@ -1510,20 +1510,13 @@ static int progress_callback_wrapper(void* clientp,
     (void)ultotal;
     (void)ulnow;
     
+    if (dltotal > 0) {
         ModelManager::ProgressCallback* callback = 
             static_cast<ModelManager::ProgressCallback*>(clientp);
         if (*callback) {
-        // Always call callback, even if total is unknown (dltotal == 0)
-        // This allows progress updates from the start
-        double progress = 0.0;
-        if (dltotal > 0) {
-            progress = (double)dlnow / (double)dltotal * 100.0;
-        } else if (dlnow > 0) {
-            // If we have downloaded bytes but don't know total yet, show indeterminate progress
-            // Use a small percentage to indicate download has started
-            progress = 0.1; // Show 0.1% to indicate download started
+            double progress = (double)dlnow / (double)dltotal * 100.0;
+            (*callback)(progress, dlnow, dltotal);
         }
-        (*callback)(progress, dlnow, dltotal > 0 ? dltotal : 0);
     }
     return 0; // Return 0 to continue download
 }
@@ -1700,7 +1693,6 @@ bool ModelManager::pull_model(const std::string& model_name, const std::string& 
         UI::print_info("✓ Download complete!");
         UI::print_info("Model saved to: " + dest_path);
         UI::print_info("You can now use: delta --model " + model_name);
-        UI::print_info("Note: The web UI server continues running. Switch to this model using the model selector.");
         return true;
     } else {
         std::cout << std::endl;
