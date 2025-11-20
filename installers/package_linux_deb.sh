@@ -123,7 +123,7 @@ info "Step 4/6: Creating Debian control files..."
 # Calculate installed size
 INSTALLED_SIZE=$(du -sk "$DEB_DIR" | cut -f1)
 
-# Create control file
+# Create control file with enhanced metadata
 cat > "$DEB_DIR/DEBIAN/control" <<EOF
 Package: ${APP_NAME}
 Version: ${VERSION}
@@ -135,6 +135,8 @@ Recommends: curl
 Section: utils
 Priority: optional
 Homepage: https://github.com/oderoi/delta-cli
+Origin: Delta CLI
+Bugs: https://github.com/oderoi/delta-cli/issues
 Description: Delta CLI - AI-powered command-line interface
  Delta CLI is a powerful command-line interface for interacting with
  large language models. It provides an easy-to-use interface for
@@ -146,6 +148,9 @@ Description: Delta CLI - AI-powered command-line interface
   - Web UI dashboard
   - Server mode for API access
   - Support for multiple model formats
+ .
+ This package is open-source software available on GitHub.
+ Source code: https://github.com/oderoi/delta-cli
 EOF
 
 # Create postinst script (runs after installation)
@@ -241,6 +246,11 @@ if [ -f "README.md" ]; then
     cp "README.md" "$DEB_DIR/usr/share/doc/delta-cli/README.md" 2>/dev/null || true
 fi
 
+# Copy Ubuntu installation guide if available
+if [ -f "$SCRIPT_DIR/UBUNTU_INSTALLATION.md" ]; then
+    cp "$SCRIPT_DIR/UBUNTU_INSTALLATION.md" "$DEB_DIR/usr/share/doc/delta-cli/UBUNTU_INSTALLATION.md" 2>/dev/null || true
+fi
+
 # Step 6: Build the .deb package
 info "Step 6/6: Building .deb package..."
 
@@ -291,18 +301,37 @@ if [ -n "$DPKG_DEB" ]; then
             success "Checksum saved to ${DEB_FILE}.sha256"
         fi
         
-        echo ""
-        success "✅ .deb package created successfully!"
-        echo ""
-        info "To install the package:"
-        echo "  sudo dpkg -i $DEB_FILE"
-        echo ""
-        info "If you get dependency errors, run:"
-        echo "  sudo apt-get install -f"
-        echo ""
-        info "To remove the package:"
-        echo "  sudo dpkg -r $APP_NAME"
-        echo ""
+    echo ""
+    success "✅ .deb package created successfully!"
+    echo ""
+    warning "⚠️  Ubuntu App Center Warning:"
+    echo "   Ubuntu will show a 'potentially unsafe' warning because this"
+    echo "   package is not signed or from a trusted repository. This is normal"
+    echo "   for third-party packages. The package is safe to install."
+    echo ""
+    info "Installation options:"
+    echo ""
+    echo "Option 1: Install via command line (recommended):"
+    echo "  sudo dpkg -i $DEB_FILE"
+    echo "  sudo apt-get install -f  # Fix dependencies if needed"
+    echo ""
+    echo "Option 2: Install via App Center:"
+    echo "  - Double-click the .deb file"
+    echo "  - Click 'Install' when prompted (the warning is normal)"
+    echo ""
+    echo "Option 3: Verify package before installing:"
+    echo "  # Check package contents:"
+    echo "  dpkg-deb -c $DEB_FILE"
+    echo "  # Check package info:"
+    echo "  dpkg-deb -I $DEB_FILE"
+    echo ""
+    info "To remove the package:"
+    echo "  sudo dpkg -r $APP_NAME"
+    echo ""
+    info "Package source and verification:"
+    echo "  - Source code: https://github.com/oderoi/delta-cli"
+    echo "  - Report issues: https://github.com/oderoi/delta-cli/issues"
+    echo ""
     else
         error_exit "Failed to build .deb package with dpkg-deb."
     fi
