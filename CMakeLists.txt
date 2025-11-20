@@ -151,12 +151,15 @@ endif()
 
 # Delta Server Wrapper (customized llama-server)
 # Need to include models.cpp for ModelManager and commands.cpp for launch_server_auto
+# Also need inference.cpp and tools/browser.cpp for commands.cpp dependencies
 add_executable(delta-server 
     src/delta_server_wrapper.cpp 
     src/model_api_server.cpp
     src/models.cpp
     src/commands.cpp
+    src/inference.cpp
     src/tools/file_ops.cpp
+    src/tools/browser.cpp
     src/ui.cpp
 )
 
