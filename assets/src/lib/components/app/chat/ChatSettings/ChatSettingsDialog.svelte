@@ -14,6 +14,7 @@
 	} from '@lucide/svelte';
 	import { ChatSettingsFooter, ChatSettingsFields } from '$lib/components/app';
 	import ImportExportTab from './ImportExportTab.svelte';
+	import ModelManagementTab from '../ModelManagement/ModelManagementTab.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { config, updateMultipleConfig } from '$lib/stores/settings.svelte';
@@ -481,6 +482,26 @@
 
 						{#if currentSection.title === 'Import/Export'}
 							<ImportExportTab />
+						{:else if currentSection.title === 'Developer'}
+							<div class="space-y-6">
+								<ChatSettingsFields
+									fields={currentSection.fields}
+									{localConfig}
+									onConfigChange={handleConfigChange}
+									onThemeChange={handleThemeChange}
+								/>
+								<div class="border-t border-border/30 pt-6 mt-6">
+									<h4 class="mb-4 text-sm font-semibold">Model Management</h4>
+									<p class="mb-4 text-sm text-muted-foreground">
+										Manage your installed models and download new ones. Enable the model selector above to
+										choose models in the chat interface.
+									</p>
+									<!-- Model Management Component -->
+									<div class="model-management-container" style="min-height: 200px;">
+										<ModelManagementTab />
+									</div>
+								</div>
+							</div>
 						{:else}
 							<div class="space-y-6">
 								<ChatSettingsFields

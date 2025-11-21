@@ -1,4 +1,4 @@
-import { ModelsService } from '$lib/services/models';
+import { ModelsService, type ModelInfo } from '$lib/services/models';
 import { persisted } from '$lib/stores/persisted.svelte';
 import { SELECTED_MODEL_LOCALSTORAGE_KEY } from '$lib/constants/localstorage-keys';
 import type { ModelOption } from '$lib/types/models';
@@ -15,6 +15,7 @@ class ModelsStore {
 	private _error = $state<string | null>(null);
 	private _selectedModelId = $state<string | null>(null);
 	private _selectedModelName = $state<string | null>(null);
+	private _displayNameMap = $state<Map<string, string>>(new Map());
 	private _persistedSelection = persisted<PersistedModelSelection | null>(
 		SELECTED_MODEL_LOCALSTORAGE_KEY,
 		null
@@ -68,29 +69,52 @@ class ModelsStore {
 		this._error = null;
 
 		try {
-			const response = await ModelsService.list();
+			// Fetch installed models - this is what we want to show in the dropdown
+			const installedResponse = await ModelsService.listInstalled();
+			const installedModels = Array.isArray(installedResponse)
+				? installedResponse
+				: installedResponse.models || [];
 
-			const models: ModelOption[] = response.data.map((item, index) => {
-				const details = response.models?.[index];
-				const rawCapabilities = Array.isArray(details?.capabilities) ? details?.capabilities : [];
-				const displayNameSource =
-					details?.name && details.name.trim().length > 0 ? details.name : item.id;
-				const displayName = this.toDisplayName(displayNameSource);
+			// Build display name map
+			const displayNameMap = new Map<string, string>();
+			for (const model of installedModels) {
+				// Map both name (e.g., "qwen3:0.6b") and display_name to display_name
+				displayNameMap.set(model.name, model.display_name);
+				displayNameMap.set(model.display_name, model.display_name);
+			}
+			this._displayNameMap = displayNameMap;
+
+			// Also get the currently loaded model from /v1/models to know which one is active
+			let currentModelId: string | null = null;
+			try {
+				const currentResponse = await ModelsService.list();
+				if (currentResponse.data && currentResponse.data.length > 0) {
+					currentModelId = currentResponse.data[0].id;
+				}
+			} catch (e) {
+				console.warn('Failed to fetch current model from /v1/models:', e);
+			}
+
+			// Convert installed models to ModelOption format
+			const models: ModelOption[] = installedModels.map((model) => {
+				const modelId = model.name; // Use name (e.g., "qwen3:0.6b") as the ID
+				const displayName = model.display_name || model.name;
 
 				return {
-					id: item.id,
+					id: modelId,
 					name: displayName,
-					model: details?.model || item.id,
-					description: details?.description,
-					capabilities: rawCapabilities.filter((value): value is string => Boolean(value)),
-					details: details?.details,
-					meta: item.meta ?? null
+					model: model.name, // Use name for switching
+					description: model.description || '',
+					capabilities: [],
+					details: null,
+					meta: null
 				} satisfies ModelOption;
 			});
 
 			this._models = models;
 
-			const selection = this.determineInitialSelection(models);
+			// Determine selection: prefer current model, then persisted, then first available
+			const selection = this.determineInitialSelection(models, currentModelId);
 
 			this._selectedModelId = selection.id;
 			this._selectedModelName = selection.model;
@@ -99,6 +123,7 @@ class ModelsStore {
 		} catch (error) {
 			this._models = [];
 			this._error = error instanceof Error ? error.message : 'Failed to load models';
+			console.error('Error fetching models:', error);
 
 			throw error;
 		} finally {
@@ -124,6 +149,46 @@ class ModelsStore {
 		this._error = null;
 
 		try {
+			// Get the model name (e.g., "qwen3:0.6b") from the option
+			// The option.model should be the model name, or we can use option.id
+			const modelName = option.model || option.id;
+			
+			// Call the API to switch models
+			try {
+				const result = await ModelsService.use(modelName);
+				
+				// If server is restarting, wait a bit and retry fetching models
+				if (result.server_restarted) {
+					// Wait for server to restart (give it 2 seconds)
+					await new Promise(resolve => setTimeout(resolve, 2000));
+					
+					// Retry fetching models with exponential backoff
+					let retries = 3;
+					let delay = 1000;
+					while (retries > 0) {
+						try {
+							await this.fetch(true);
+							break;
+						} catch (error) {
+							retries--;
+							if (retries > 0) {
+								await new Promise(resolve => setTimeout(resolve, delay));
+								delay *= 2; // Exponential backoff
+							} else {
+								console.warn('Failed to refresh models after server restart, but model switch was successful');
+							}
+						}
+					}
+				} else {
+					// Server didn't restart, just refresh normally
+					await this.fetch(true);
+				}
+			} catch (error) {
+				console.error('Failed to switch model via API:', error);
+				// Still update local state even if API call fails
+				// The server might restart, so we'll handle connection errors gracefully
+			}
+
 			this._selectedModelId = option.id;
 			this._selectedModelName = option.model;
 			this._persistedSelection.value = { id: option.id, model: option.model };
@@ -133,6 +198,28 @@ class ModelsStore {
 	}
 
 	private toDisplayName(id: string): string {
+		// If it's already a display name (from our map), use it
+		if (this._displayNameMap.has(id)) {
+			return this._displayNameMap.get(id)!;
+		}
+		
+		// If it looks like a filename (contains .gguf), try to extract a better name
+		if (id.includes('.gguf')) {
+			// Remove .gguf extension
+			let name = id.replace(/\.gguf$/, '');
+			// Try to convert common patterns:
+			// "Qwen3-1.7B-f16" -> "Qwen 3 1.7B"
+			// "qwen2.5-0.5b" -> "Qwen 2.5 0.5B"
+			name = name
+				.replace(/([a-z])(\d)/g, '$1 $2') // Add space before numbers
+				.replace(/(\d)([A-Z])/g, '$1 $2') // Add space between number and capital
+				.replace(/-([a-z])/g, (_, letter) => ` ${letter.toUpperCase()}`) // Convert dash to space and capitalize
+				.replace(/\b([a-z])/g, (_, letter) => letter.toUpperCase()); // Capitalize first letter of words
+			
+			return name;
+		}
+		
+		// Otherwise, just extract filename from path
 		const segments = id.split(/\\|\//);
 		const candidate = segments.pop();
 
@@ -141,35 +228,59 @@ class ModelsStore {
 
 	/**
 	 * Determines which model should be selected after fetching the models list.
-	 * Priority: current selection > persisted selection > first available model > none
+	 * Priority: current model from server > current selection > persisted selection > first available model > none
 	 */
-	private determineInitialSelection(models: ModelOption[]): {
+	private determineInitialSelection(models: ModelOption[], currentModelId: string | null = null): {
 		id: string | null;
 		model: string | null;
 	} {
 		const persisted = this._persistedSelection.value;
-		let nextSelectionId = this._selectedModelId ?? persisted?.id ?? null;
-		let nextSelectionName = this._selectedModelName ?? persisted?.model ?? null;
-
-		if (nextSelectionId) {
-			const match = models.find((m) => m.id === nextSelectionId);
-
-			if (match) {
-				nextSelectionId = match.id;
-				nextSelectionName = match.model;
-			} else if (models[0]) {
-				nextSelectionId = models[0].id;
-				nextSelectionName = models[0].model;
-			} else {
-				nextSelectionId = null;
-				nextSelectionName = null;
+		
+		// Priority 1: Current model from server (if it matches an installed model)
+		if (currentModelId) {
+			// Try to find by exact match
+			let match = models.find((m) => m.id === currentModelId || m.model === currentModelId);
+			
+			// If not found, try to match by name (handle different formats)
+			if (!match && currentModelId) {
+				// Try matching without .gguf extension or path
+				const cleanId = currentModelId.replace(/\.gguf$/, '').split(/[\/\\]/).pop() || currentModelId;
+				match = models.find((m) => 
+					m.id.includes(cleanId) || 
+					m.model.includes(cleanId) ||
+					cleanId.includes(m.id) ||
+					cleanId.includes(m.model)
+				);
 			}
-		} else if (models[0]) {
-			nextSelectionId = models[0].id;
-			nextSelectionName = models[0].model;
+			
+			if (match) {
+				return { id: match.id, model: match.model };
+			}
 		}
-
-		return { id: nextSelectionId, model: nextSelectionName };
+		
+		// Priority 2: Current selection
+		if (this._selectedModelId) {
+			const match = models.find((m) => m.id === this._selectedModelId);
+			if (match) {
+				return { id: match.id, model: match.model };
+			}
+		}
+		
+		// Priority 3: Persisted selection
+		if (persisted?.id) {
+			const match = models.find((m) => m.id === persisted.id);
+			if (match) {
+				return { id: match.id, model: match.model };
+			}
+		}
+		
+		// Priority 4: First available model
+		if (models.length > 0) {
+			return { id: models[0].id, model: models[0].model };
+		}
+		
+		// Priority 5: None
+		return { id: null, model: null };
 	}
 }
 

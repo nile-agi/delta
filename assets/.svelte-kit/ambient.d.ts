@@ -37,6 +37,10 @@ declare module '$env/static/private' {
 	export const XDG_SESSION_TYPE: string;
 	export const GIT_ASKPASS: string;
 	export const GTK_EXE_PREFIX_VSCODE_SNAP_ORIG: string;
+	export const VSCODE_PID: string;
+	export const CC: string;
+	export const OSLogRateLimit: string;
+	export const VSCODE_CWD: string;
 	export const npm_node_execpath: string;
 	export const GDK_BACKEND_VSCODE_SNAP_ORIG: string;
 	export const CLUTTER_DISABLE_MIPMAPPED_TEXT: string;
@@ -189,6 +193,10 @@ declare module '$env/dynamic/private' {
 		XDG_SESSION_TYPE: string;
 		GIT_ASKPASS: string;
 		GTK_EXE_PREFIX_VSCODE_SNAP_ORIG: string;
+		VSCODE_PID: string;
+		CC: string;
+		OSLogRateLimit: string;
+		VSCODE_CWD: string;
 		npm_node_execpath: string;
 		GDK_BACKEND_VSCODE_SNAP_ORIG: string;
 		CLUTTER_DISABLE_MIPMAPPED_TEXT: string;

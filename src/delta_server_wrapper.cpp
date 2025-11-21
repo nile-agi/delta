@@ -3,6 +3,8 @@
  * Uses Delta web UI from public/ directory (built from assets/)
  */
 
+#include "delta_cli.h"
+#include "model_api_server.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -11,6 +13,8 @@
 #include <limits.h>
 #include <algorithm>
 #include <cctype>
+#include <thread>
+#include <chrono>
 #ifdef _WIN32
 #include <windows.h>
 #include <shlwapi.h>
@@ -270,12 +274,23 @@ public:
         std::cout << "🧠 Context: " << max_context_ << std::endl;
         std::cout << "🌐 Web UI: http://localhost:" << port_ << std::endl;
         std::cout << "📡 API: http://localhost:" << port_ << "/v1/chat/completions" << std::endl;
+        std::cout << "🔧 Model Management API: http://localhost:8081" << std::endl;
         std::cout << std::endl;
         std::cout << "Press Ctrl+C to stop the server" << std::endl;
         std::cout << std::endl;
 
+        // Start model management API server on port 8081
+        delta::start_model_api_server(8081);
+        
+        // Give the model API server a moment to start
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
         // Execute llama-server
         int result = system(cmd.c_str());
+        
+        // Stop model API server when llama-server exits
+        delta::stop_model_api_server();
+        
         return result;
     }
 };
