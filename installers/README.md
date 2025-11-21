@@ -125,14 +125,78 @@ cmake .. -DCMAKE_TOOLCHAIN_FILE=/path/to/toolchain.cmake
 ## Creating Custom Installers
 
 ### Debian/Ubuntu (.deb)
+
+**Single Architecture:**
 1. Build the project: `./installers/build_linux.sh`
 2. Create package: `./installers/package_linux_deb.sh`
-3. Install: `sudo dpkg -i installers/packages/*.deb`
+3. Install: `sudo dpkg -i installers/packages/delta-cli_*.deb`
+4. If you get dependency errors: `sudo apt-get install -f`
+
+**Multiple Architectures:**
+1. Build for each architecture (see [MULTI_ARCH_BUILD.md](./MULTI_ARCH_BUILD.md))
+2. Create all packages: `./installers/package_all_architectures.sh`
+3. This creates separate .deb files:
+   - `delta-cli_1.0.0_amd64.deb` - For Intel/AMD 64-bit
+   - `delta-cli_1.0.0_arm64.deb` - For ARM 64-bit
+
+**Important:** Install the package matching your system architecture:
+```bash
+# Check your architecture
+dpkg --print-architecture
+
+# Install matching package
+sudo dpkg -i delta-cli_1.0.0_<your-arch>.deb
+```
+
+The .deb package includes:
+- `delta` binary in `/usr/bin/`
+- `delta-server` binary (if built)
+- Web UI files in `/usr/share/delta-cli/`
+- Proper Debian package metadata
+- Post-install scripts for setup
+- Ubuntu installation guide in documentation
+
+**Note:** Ubuntu may show a "potentially unsafe" warning for third-party packages. This is normal - see [UBUNTU_INSTALLATION.md](./UBUNTU_INSTALLATION.md) for details.
 
 ### macOS (.dmg)
+
+**Quick Start (All-in-One):**
+```bash
+./installers/create_dmg.sh
+```
+This will build the application and create a .dmg installer in one step.
+
+**Step-by-Step:**
 1. Build the project: `./installers/build_macos.sh`
 2. Create DMG: `./installers/package_macos.sh`
-3. Mount DMG and drag to Applications
+3. The DMG will be created in `installers/packages/DeltaCLI-<version>-macOS-<arch>.dmg`
+
+**What's Included:**
+- Delta CLI application bundle (.app)
+- Applications folder symlink for easy installation
+- README with installation instructions
+- Web UI (if built)
+
+**Distribution:**
+- Upload the .dmg file to your release page or hosting service
+- Users can download and double-click to mount
+- **Easiest method**: Double-click "Double-click to Install.command" - it handles everything automatically (no Terminal commands needed!)
+- **Alternative**: Drag "Delta CLI.app" to the Applications folder
+- The app can be run from Terminal or by double-clicking
+
+**Auto-Installation:**
+The DMG includes an auto-installer that:
+- Installs the app to Applications
+- Removes security quarantine automatically
+- Signs the app
+- Creates terminal symlink
+- Opens Applications folder
+
+No manual Terminal commands required!
+
+**Customization:**
+- Set version: `VERSION=1.2.3 ./installers/package_macos.sh`
+- Add custom background: Place `background.png` in `installers/` directory
 
 ### Windows (.exe)
 1. Build the project: `installers\build_windows.bat`

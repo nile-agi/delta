@@ -5,6 +5,7 @@
 #include "commands.h"
 #include "update.h"
 #include "history.h"
+#include "model_api_server.h"
 #include <iostream>
 #include <sstream>
 #include <thread>
@@ -118,10 +119,18 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
     std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
     
-    // Check for Homebrew share directory first, then public/ (built Delta web UI from assets/)
-    // Only use Delta web UI from public/, never fall back to llama.cpp web UI or assets/ source
+    // Check for public/ directory first (development builds), then Homebrew share directory
+    // Priority: local public/ directory for development, then installed locations
     std::vector<std::string> public_candidates = {
-        // Homebrew installed location (priority)
+        // Relative to executable (Delta web UI from public/) - PRIORITY for development
+        tools::FileOps::join_path(exe_dir, "../public"),
+        tools::FileOps::join_path(exe_dir, "../../public"),
+        tools::FileOps::join_path(exe_grandparent, "public"),
+        // Current directory (when running from project root)
+        "public",
+        "./public",
+        "../public",
+        // Homebrew installed location (for installed versions)
         "/opt/homebrew/share/delta-cli/webui",
         "/usr/local/share/delta-cli/webui",
         tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"),
@@ -130,16 +139,8 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
         // Executable is at Contents/MacOS/delta, web UI is at Contents/Resources/webui
         tools::FileOps::join_path(exe_dir, "../Resources/webui"),
         tools::FileOps::join_path(exe_dir, "../../Resources/webui"),
-        // Relative to executable (Delta web UI from public/)
-        tools::FileOps::join_path(exe_dir, "../public"),
-        tools::FileOps::join_path(exe_dir, "../../public"),
-        tools::FileOps::join_path(exe_grandparent, "public"),
         tools::FileOps::join_path(exe_dir, "../webui"),
         tools::FileOps::join_path(exe_dir, "../../webui"),
-        // Current directory
-        "public",
-        "./public",
-        "../public",
         "webui",
         "./webui",
         "../webui"
@@ -242,18 +243,18 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
         << " --port " << port
         << " -c " << ctx_size;
     
-    // Add --flash-attn flag for all models
-    // Use 'off' if context is very large (>16K) to prevent GPU memory issues, otherwise use 'auto'
-    if (ctx_size > 16384) {
-        // Large context sizes can cause GPU memory issues with Flash Attention
-        cmd << " --flash-attn off";
+    // Add --flash-attn flag for smaller contexts (auto mode)
+    // For large contexts, omit the flag to let server use defaults
+    // Some llama-server versions don't support --flash-attn off
+    if (ctx_size <= 16384) {
+        // For smaller contexts, let system decide automatically
+        cmd << " --flash-attn auto";
+    } else {
+        // Large context sizes: omit flash-attn flag to avoid GPU memory issues
         // Also limit GPU layers for very large contexts to prevent memory exhaustion
         if (ctx_size > 32768) {
             cmd << " --gpu-layers 0";  // Disable GPU entirely for extremely large contexts
         }
-    } else {
-        // For smaller contexts, let system decide automatically
-        cmd << " --flash-attn auto";
     }
     
     // Add --jinja flag for gemma3 models
@@ -387,6 +388,10 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
         UI::print_info("The server may still be loading the model. Try accessing http://localhost:" + std::to_string(port) + " in a few seconds.");
         // Don't return false here - server might still be starting
     }
+    
+    // Start model management API server on port 8081
+    delta::start_model_api_server(8081);
+    UI::print_info("Model Management API: http://localhost:8081");
     
     return true;
 }

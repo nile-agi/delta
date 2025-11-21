@@ -3,6 +3,8 @@
  * Uses Delta web UI from public/ directory (built from assets/)
  */
 
+#include "delta_cli.h"
+#include "model_api_server.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -11,6 +13,8 @@
 #include <limits.h>
 #include <algorithm>
 #include <cctype>
+#include <thread>
+#include <chrono>
 #ifdef _WIN32
 #include <windows.h>
 #include <shlwapi.h>
@@ -220,18 +224,18 @@ public:
         cmd += " --parallel " + std::to_string(max_parallel_);
         cmd += " -c " + std::to_string(max_context_);
         
-        // Add --flash-attn flag for all models
-        // Use 'off' if context is very large (>16K) to prevent GPU memory issues, otherwise use 'auto'
-        if (max_context_ > 16384) {
-            // Large context sizes can cause GPU memory issues with Flash Attention
-            cmd += " --flash-attn off";
+        // Add --flash-attn flag for smaller contexts (auto mode)
+        // For large contexts, omit the flag to let server use defaults
+        // Some llama-server versions don't support --flash-attn off
+        if (max_context_ <= 16384) {
+            // For smaller contexts, let system decide automatically
+            cmd += " --flash-attn auto";
+        } else {
+            // Large context sizes: omit flash-attn flag to avoid GPU memory issues
             // Also limit GPU layers for very large contexts to prevent memory exhaustion
             if (max_context_ > 32768) {
                 cmd += " --gpu-layers 0";  // Disable GPU entirely for extremely large contexts
             }
-        } else {
-            // For smaller contexts, let system decide automatically
-            cmd += " --flash-attn auto";
         }
         
         // Add --jinja flag for gemma3 models
@@ -270,12 +274,23 @@ public:
         std::cout << "🧠 Context: " << max_context_ << std::endl;
         std::cout << "🌐 Web UI: http://localhost:" << port_ << std::endl;
         std::cout << "📡 API: http://localhost:" << port_ << "/v1/chat/completions" << std::endl;
+        std::cout << "🔧 Model Management API: http://localhost:8081" << std::endl;
         std::cout << std::endl;
         std::cout << "Press Ctrl+C to stop the server" << std::endl;
         std::cout << std::endl;
 
+        // Start model management API server on port 8081
+        delta::start_model_api_server(8081);
+        
+        // Give the model API server a moment to start
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
         // Execute llama-server
         int result = system(cmd.c_str());
+        
+        // Stop model API server when llama-server exits
+        delta::stop_model_api_server();
+        
         return result;
     }
 };

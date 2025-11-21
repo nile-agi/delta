@@ -14,7 +14,6 @@ endif()
 
 # Options for llama-cpp features
 option(LLAMA_CUDA "Enable CUDA support" OFF)
-option(GGML_METAL "Enable Metal support (macOS)" ON) # Updated to use GGML_METAL instead of deprecated LLAMA_METAL
 option(LLAMA_VULKAN "Enable Vulkan support" OFF)
 option(LLAMA_HIPBLAS "Enable HIP/ROCm support" OFF)
 option(LLAMA_BLAS "Enable BLAS support" OFF)
@@ -25,14 +24,20 @@ option(BUILD_SERVER "Build web dashboard server" ON)
 option(GGML_CCACHE "Enable ccache for faster compilation" OFF) # Disable ccache warning
 option(GGML_OPENMP "Enable OpenMP support" OFF) # Disable OpenMP warnings
 
-# Detect platform
+# Detect platform and set Metal support accordingly
 if(APPLE)
-    set(GGML_METAL ON) # Use GGML_METAL instead of deprecated LLAMA_METAL
+    option(GGML_METAL "Enable Metal support (macOS)" ON)
+    set(GGML_METAL ON) # Force ON on macOS
     add_compile_definitions(TARGET_OS_MAC=1)
     if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         add_compile_definitions(TARGET_OS_IOS=1)
     endif()
-elseif(ANDROID)
+else()
+    option(GGML_METAL "Enable Metal support (macOS)" OFF)
+    set(GGML_METAL OFF) # Force OFF on non-Apple platforms
+endif()
+
+if(ANDROID)
     add_compile_definitions(__ANDROID__=1)
 elseif(WIN32)
     add_compile_definitions(_WIN32=1)
@@ -101,6 +106,7 @@ set(DELTA_SOURCES
     src/tools/dep_protocol.cpp
     src/tools/shell.cpp
     src/tools/browser.cpp
+    src/model_api_server.cpp
 )
 
 # Main executable
@@ -112,6 +118,7 @@ target_include_directories(delta PRIVATE
     ${CMAKE_SOURCE_DIR}/vendor
     ${CMAKE_SOURCE_DIR}/vendor/llama.cpp
     ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/common
+    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/tools/server
 )
 
 # Link libraries (with llama-cpp integration)
@@ -119,6 +126,8 @@ target_link_libraries(delta PRIVATE
     llama
     ggml
     common
+    cpp-httplib
+    ${CMAKE_THREAD_LIBS_INIT}
 )
 
 # Link platform-specific libraries
@@ -146,16 +155,54 @@ if(APPLE)
 endif()
 
 # Delta Server Wrapper (customized llama-server)
-add_executable(delta-server src/delta_server_wrapper.cpp)
+# Need to include models.cpp for ModelManager and commands.cpp for launch_server_auto
+# Also need inference.cpp and tools/browser.cpp for commands.cpp dependencies
+add_executable(delta-server 
+    src/delta_server_wrapper.cpp 
+    src/model_api_server.cpp
+    src/models.cpp
+    src/commands.cpp
+    src/inference.cpp
+    src/tools/file_ops.cpp
+    src/tools/browser.cpp
+    src/ui.cpp
+)
 
 # Include directories for delta-server
 target_include_directories(delta-server PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/vendor
+    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp
+    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/common
+    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/tools/server
 )
 
 # Link libraries for delta-server
 if(NOT APPLE)
     target_link_libraries(delta-server PRIVATE stdc++fs)
+endif()
+
+# Link httplib and json for model API server
+# Link to the same libraries that llama-server uses
+target_link_libraries(delta-server PRIVATE 
+    common 
+    cpp-httplib 
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+
+# Link curl for ModelManager (downloads from HuggingFace)
+if(USE_CURL AND CURL_FOUND)
+    target_link_libraries(delta-server PRIVATE CURL::libcurl)
+endif()
+
+# On Windows, link ws2_32 for sockets
+if(WIN32)
+    target_link_libraries(delta-server PRIVATE ws2_32)
+endif()
+
+# Ensure C++ standard library is linked (macOS)
+if(APPLE)
+    target_link_libraries(delta-server PRIVATE c++)
 endif()
 
 # Remove duplicate library warnings and ensure C++ stdlib linking (macOS)
