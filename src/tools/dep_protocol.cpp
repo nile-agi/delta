@@ -13,14 +13,10 @@
 #else
     #include <unistd.h>
     #include <sys/wait.h>
-<<<<<<< HEAD
-    #include <climits>
-=======
     #include <limits.h>
     #ifndef PATH_MAX
         #define PATH_MAX 4096
     #endif
->>>>>>> 4d40c1f867b9c2fd7507905a8f09f0891de94e7f
 #endif
 
 namespace delta {
