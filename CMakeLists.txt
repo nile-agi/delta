@@ -14,7 +14,6 @@ endif()
 
 # Options for llama-cpp features
 option(LLAMA_CUDA "Enable CUDA support" OFF)
-option(GGML_METAL "Enable Metal support (macOS)" ON) # Updated to use GGML_METAL instead of deprecated LLAMA_METAL
 option(LLAMA_VULKAN "Enable Vulkan support" OFF)
 option(LLAMA_HIPBLAS "Enable HIP/ROCm support" OFF)
 option(LLAMA_BLAS "Enable BLAS support" OFF)
@@ -25,14 +24,20 @@ option(BUILD_SERVER "Build web dashboard server" ON)
 option(GGML_CCACHE "Enable ccache for faster compilation" OFF) # Disable ccache warning
 option(GGML_OPENMP "Enable OpenMP support" OFF) # Disable OpenMP warnings
 
-# Detect platform
+# Detect platform and set Metal support accordingly
 if(APPLE)
-    set(GGML_METAL ON) # Use GGML_METAL instead of deprecated LLAMA_METAL
+    option(GGML_METAL "Enable Metal support (macOS)" ON)
+    set(GGML_METAL ON) # Force ON on macOS
     add_compile_definitions(TARGET_OS_MAC=1)
     if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         add_compile_definitions(TARGET_OS_IOS=1)
     endif()
-elseif(ANDROID)
+else()
+    option(GGML_METAL "Enable Metal support (macOS)" OFF)
+    set(GGML_METAL OFF) # Force OFF on non-Apple platforms
+endif()
+
+if(ANDROID)
     add_compile_definitions(__ANDROID__=1)
 elseif(WIN32)
     add_compile_definitions(_WIN32=1)
