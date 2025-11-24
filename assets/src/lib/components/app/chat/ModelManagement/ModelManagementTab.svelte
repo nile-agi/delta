@@ -15,11 +15,17 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let downloadingModel = $state<string | null>(null);
+	let downloadProgress = $state<{
+		progress: number;
+		current_bytes: number;
+		total_bytes: number;
+		completed: boolean;
+		failed: boolean;
+		error_message?: string;
+	} | null>(null);
+	let progressPollInterval: ReturnType<typeof setInterval> | null = null;
 	let removingModel = $state<string | null>(null);
 	let confirmDeleteModel = $state<string | null>(null);
-	
-	// Download progress state
-	let downloadProgress: Record<string, { progress: number; currentMB: number; totalMB: number }> = $state({});
 
 	async function loadModels() {
 		loading = true;
@@ -55,44 +61,81 @@
 	}
 
 	async function handleDownload(modelName: string) {
+		console.log('[Download] Starting download for:', modelName);
 		downloadingModel = modelName;
+		downloadProgress = { progress: 0, current_bytes: 0, total_bytes: 0, completed: false, failed: false };
 		error = null;
-		// Initialize progress
-		downloadProgress[modelName] = { progress: 0, currentMB: 0, totalMB: 0 };
-		// Force reactivity
-		downloadProgress = { ...downloadProgress };
 		
 		try {
-			await ModelsService.download(
-				modelName,
-				(progress, currentMB, totalMB) => {
-					// Update progress with new values
-					downloadProgress[modelName] = { 
-						progress: Math.max(0, Math.min(100, progress)), // Clamp to 0-100
-						currentMB: Math.max(0, currentMB),
-						totalMB: Math.max(0, totalMB)
-					};
-					// Force reactivity by creating a new object
-					downloadProgress = { ...downloadProgress };
-					console.log(`Download progress for ${modelName}:`, progress.toFixed(1) + '%', currentMB.toFixed(1) + 'MB /', totalMB.toFixed(1) + 'MB');
+			// Start download (returns immediately)
+			console.log('[Download] Calling download API...');
+			await ModelsService.download(modelName);
+			console.log('[Download] Download API returned, starting progress polling...');
+			
+			// Poll for progress immediately, then every 500ms
+			const pollProgress = async () => {
+				try {
+					const progress = await ModelsService.getDownloadProgress(modelName);
+					console.log('[Download] Progress update for', modelName, ':', progress);
+					
+					// Always update progress, even if 0
+					if (progress) {
+						downloadProgress = progress;
+					}
+					
+					if (progress.completed || progress.failed) {
+						console.log('[Download] Download finished:', progress.completed ? 'completed' : 'failed');
+						if (progressPollInterval) {
+							clearInterval(progressPollInterval);
+							progressPollInterval = null;
+						}
+						
+						if (progress.completed) {
+							// Reload both lists to update status
+							await loadModels();
+							if (activeTab === 'installed') {
+								const response = await ModelsService.listInstalled();
+								installedModels = response.models;
+							}
+							// Clear progress after a short delay
+							setTimeout(() => {
+								downloadProgress = null;
+								downloadingModel = null;
+							}, 2000);
+						} else if (progress.failed) {
+							error = progress.error_message || 'Download failed';
+							downloadProgress = null;
+							downloadingModel = null;
+						}
+					}
+				} catch (e) {
+					console.error('[Download] Error polling download progress:', e);
+					// Don't stop polling on error, might be temporary
 				}
-			);
-			// Reload both lists to update status
-			await loadModels();
-			if (activeTab === 'installed') {
-				const response = await ModelsService.listInstalled();
-				installedModels = response.models;
-			}
+			};
+			
+			// Poll immediately
+			await pollProgress();
+			
+			// Then poll every 500ms
+			progressPollInterval = setInterval(pollProgress, 500);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to download model';
-			console.error('Error downloading model:', e);
-		} finally {
+			console.error('[Download] Error downloading model:', e);
+			if (progressPollInterval) {
+				clearInterval(progressPollInterval);
+				progressPollInterval = null;
+			}
+			downloadProgress = null;
 			downloadingModel = null;
-			// Clear progress
-			delete downloadProgress[modelName];
-			downloadProgress = { ...downloadProgress };
 		}
 	}
+	
+	onDestroy(() => {
+		if (progressPollInterval) {
+			clearInterval(progressPollInterval);
+		}
+	});
 
 	async function handleRemove(modelName: string) {
 		removingModel = modelName;
@@ -262,7 +305,7 @@
 							</div>
 						</CardHeader>
 						<CardContent>
-							<div class="space-y-3">
+							<div class="space-y-2">
 								<div class="flex items-center justify-between">
 									<div class="text-sm text-muted-foreground">
 										<span class="font-medium">Size:</span> {model.size_str} •{' '}
@@ -289,18 +332,21 @@
 										</Button>
 									{/if}
 								</div>
-								{#if downloadingModel === model.name && downloadProgress[model.name]}
-									{@const prog = downloadProgress[model.name]}
-									<div class="space-y-2">
-										<div class="flex items-center justify-between text-xs text-muted-foreground">
-											<span>
-												{prog.progress.toFixed(1)}% ({prog.currentMB.toFixed(1)} / {prog.totalMB.toFixed(1)} MB)
+								{#if downloadingModel === model.name && downloadProgress !== null}
+									<div class="space-y-1.5 mt-2 pt-2 border-t border-border">
+										<div class="flex items-center justify-between text-xs">
+											<span class="text-muted-foreground font-medium">
+												Downloading: {downloadProgress.progress.toFixed(1)}%
+											</span>
+											<span class="text-muted-foreground">
+												{(downloadProgress.current_bytes / (1024 * 1024)).toFixed(1)} MB /{' '}
+												{(downloadProgress.total_bytes / (1024 * 1024)).toFixed(1)} MB
 											</span>
 										</div>
-										<div class="w-full bg-muted rounded-full h-2 overflow-hidden">
+										<div class="w-full bg-secondary rounded-full h-2.5 overflow-hidden shadow-inner">
 											<div
-												class="h-full bg-primary transition-all duration-300 ease-out"
-												style="width: {prog.progress}%"
+												class="h-full bg-primary transition-all duration-300 ease-out rounded-full"
+												style="width: {Math.max(0, Math.min(100, downloadProgress.progress))}%"
 											></div>
 										</div>
 									</div>

@@ -14,6 +14,7 @@ endif()
 
 # Options for llama-cpp features
 option(LLAMA_CUDA "Enable CUDA support" OFF)
+option(GGML_METAL "Enable Metal support (macOS)" ON) # Updated to use GGML_METAL instead of deprecated LLAMA_METAL
 option(LLAMA_VULKAN "Enable Vulkan support" OFF)
 option(LLAMA_HIPBLAS "Enable HIP/ROCm support" OFF)
 option(LLAMA_BLAS "Enable BLAS support" OFF)
@@ -24,20 +25,14 @@ option(BUILD_SERVER "Build web dashboard server" ON)
 option(GGML_CCACHE "Enable ccache for faster compilation" OFF) # Disable ccache warning
 option(GGML_OPENMP "Enable OpenMP support" OFF) # Disable OpenMP warnings
 
-# Detect platform and set Metal support accordingly
+# Detect platform
 if(APPLE)
-    option(GGML_METAL "Enable Metal support (macOS)" ON)
-    set(GGML_METAL ON) # Force ON on macOS
+    set(GGML_METAL ON) # Use GGML_METAL instead of deprecated LLAMA_METAL
     add_compile_definitions(TARGET_OS_MAC=1)
     if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         add_compile_definitions(TARGET_OS_IOS=1)
     endif()
-else()
-    option(GGML_METAL "Enable Metal support (macOS)" OFF)
-    set(GGML_METAL OFF) # Force OFF on non-Apple platforms
-endif()
-
-if(ANDROID)
+elseif(ANDROID)
     add_compile_definitions(__ANDROID__=1)
 elseif(WIN32)
     add_compile_definitions(_WIN32=1)
@@ -155,16 +150,12 @@ if(APPLE)
 endif()
 
 # Delta Server Wrapper (customized llama-server)
-# Need to include models.cpp for ModelManager and commands.cpp for launch_server_auto
-# Also need inference.cpp and tools/browser.cpp for commands.cpp dependencies
+# Need to include models.cpp for ModelManager
 add_executable(delta-server 
     src/delta_server_wrapper.cpp 
     src/model_api_server.cpp
     src/models.cpp
-    src/commands.cpp
-    src/inference.cpp
     src/tools/file_ops.cpp
-    src/tools/browser.cpp
     src/ui.cpp
 )
 

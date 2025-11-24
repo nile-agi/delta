@@ -1,35 +1,16 @@
 import { config } from '$lib/stores/settings.svelte';
 import { selectedModelName } from '$lib/stores/models.svelte';
 import { slotsService } from './slots';
-import type {
-	ApiChatCompletionRequest,
-	ApiChatCompletionResponse,
-	ApiChatCompletionStreamChunk,
-	ApiChatCompletionToolCall,
-	ApiChatCompletionToolCallDelta,
-	ApiChatMessageData
-} from '$lib/types/api';
-import type {
-	DatabaseMessage,
-	DatabaseMessageExtra,
-	DatabaseMessageExtraAudioFile,
-	DatabaseMessageExtraImageFile,
-	DatabaseMessageExtraLegacyContext,
-	DatabaseMessageExtraPdfFile,
-	DatabaseMessageExtraTextFile
-} from '$lib/types/database';
-import type { ChatMessagePromptProgress, ChatMessageTimings } from '$lib/types/chat';
-import type { SettingsChatServiceOptions } from '$lib/types/settings';
 /**
- * ChatService - Low-level API communication layer for llama.cpp server interactions
+ * ChatService - Low-level API communication layer for Delta server interactions
  *
- * This service handles direct communication with the llama.cpp server's chat completion API.
+ * This service handles direct communication with the Delta server's chat completion API.
  * It provides the network layer abstraction for AI model interactions while remaining
  * stateless and focused purely on API communication.
  *
  * **Architecture & Relationship with ChatStore:**
  * - **ChatService** (this class): Stateless API communication layer
- *   - Handles HTTP requests/responses with llama.cpp server
+ *   - Handles HTTP requests/responses with Delta server
  *   - Manages streaming and non-streaming response parsing
  *   - Provides request abortion capabilities
  *   - Converts database messages to API format
@@ -52,7 +33,7 @@ export class ChatService {
 	private abortControllers: Map<string, AbortController> = new Map();
 
 	/**
-	 * Sends a chat completion request to the llama.cpp server.
+	 * Sends a chat completion request to the Delta server.
 	 * Supports both streaming and non-streaming responses with comprehensive parameter configuration.
 	 * Automatically converts database messages with attachments to the appropriate API format.
 	 *
@@ -72,7 +53,6 @@ export class ChatService {
 			onComplete,
 			onError,
 			onReasoningChunk,
-			onToolCallChunk,
 			onModel,
 			onFirstValidChunk,
 			// Generation parameters
@@ -221,7 +201,6 @@ export class ChatService {
 					onComplete,
 					onError,
 					onReasoningChunk,
-					onToolCallChunk,
 					onModel,
 					onFirstValidChunk,
 					conversationId,
@@ -229,13 +208,7 @@ export class ChatService {
 				);
 				return;
 			} else {
-				return this.handleNonStreamResponse(
-					response,
-					onComplete,
-					onError,
-					onToolCallChunk,
-					onModel
-				);
+				return this.handleNonStreamResponse(response, onComplete, onError, onModel);
 			}
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
@@ -291,12 +264,10 @@ export class ChatService {
 		onComplete?: (
 			response: string,
 			reasoningContent?: string,
-			timings?: ChatMessageTimings,
-			toolCalls?: string
+			timings?: ChatMessageTimings
 		) => void,
 		onError?: (error: Error) => void,
 		onReasoningChunk?: (chunk: string) => void,
-		onToolCallChunk?: (chunk: string) => void,
 		onModel?: (model: string) => void,
 		onFirstValidChunk?: () => void,
 		conversationId?: string,
@@ -311,53 +282,11 @@ export class ChatService {
 		const decoder = new TextDecoder();
 		let aggregatedContent = '';
 		let fullReasoningContent = '';
-		let aggregatedToolCalls: ApiChatCompletionToolCall[] = [];
 		let hasReceivedData = false;
 		let lastTimings: ChatMessageTimings | undefined;
 		let streamFinished = false;
 		let modelEmitted = false;
 		let firstValidChunkEmitted = false;
-		let toolCallIndexOffset = 0;
-		let hasOpenToolCallBatch = false;
-
-		const finalizeOpenToolCallBatch = () => {
-			if (!hasOpenToolCallBatch) {
-				return;
-			}
-
-			toolCallIndexOffset = aggregatedToolCalls.length;
-			hasOpenToolCallBatch = false;
-		};
-
-		const processToolCallDelta = (toolCalls?: ApiChatCompletionToolCallDelta[]) => {
-			if (!toolCalls || toolCalls.length === 0) {
-				return;
-			}
-
-			aggregatedToolCalls = this.mergeToolCallDeltas(
-				aggregatedToolCalls,
-				toolCalls,
-				toolCallIndexOffset
-			);
-
-			if (aggregatedToolCalls.length === 0) {
-				return;
-			}
-
-			hasOpenToolCallBatch = true;
-
-			const serializedToolCalls = JSON.stringify(aggregatedToolCalls);
-
-			if (!serializedToolCalls) {
-				return;
-			}
-
-			hasReceivedData = true;
-
-			if (!abortSignal?.aborted) {
-				onToolCallChunk?.(serializedToolCalls);
-			}
-		};
 
 		try {
 			let chunk = '';
@@ -396,7 +325,6 @@ export class ChatService {
 
 							const content = parsed.choices[0]?.delta?.content;
 							const reasoningContent = parsed.choices[0]?.delta?.reasoning_content;
-							const toolCalls = parsed.choices[0]?.delta?.tool_calls;
 							const timings = parsed.timings;
 							const promptProgress = parsed.prompt_progress;
 
@@ -414,7 +342,6 @@ export class ChatService {
 							}
 
 							if (content) {
-								finalizeOpenToolCallBatch();
 								hasReceivedData = true;
 								aggregatedContent += content;
 								if (!abortSignal?.aborted) {
@@ -423,15 +350,12 @@ export class ChatService {
 							}
 
 							if (reasoningContent) {
-								finalizeOpenToolCallBatch();
 								hasReceivedData = true;
 								fullReasoningContent += reasoningContent;
 								if (!abortSignal?.aborted) {
 									onReasoningChunk?.(reasoningContent);
 								}
 							}
-
-							processToolCallDelta(toolCalls);
 						} catch (e) {
 							console.error('Error parsing JSON chunk:', e);
 						}
@@ -444,26 +368,12 @@ export class ChatService {
 			if (abortSignal?.aborted) return;
 
 			if (streamFinished) {
-				finalizeOpenToolCallBatch();
-
-				if (
-					!hasReceivedData &&
-					aggregatedContent.length === 0 &&
-					aggregatedToolCalls.length === 0
-				) {
+				if (!hasReceivedData && aggregatedContent.length === 0) {
 					const noResponseError = new Error('No response received from server. Please try again.');
 					throw noResponseError;
 				}
 
-				const finalToolCalls =
-					aggregatedToolCalls.length > 0 ? JSON.stringify(aggregatedToolCalls) : undefined;
-
-				onComplete?.(
-					aggregatedContent,
-					fullReasoningContent || undefined,
-					lastTimings,
-					finalToolCalls
-				);
+				onComplete?.(aggregatedContent, fullReasoningContent || undefined, lastTimings);
 			}
 		} catch (error) {
 			const err = error instanceof Error ? error : new Error('Stream error');
@@ -474,54 +384,6 @@ export class ChatService {
 		} finally {
 			reader.releaseLock();
 		}
-	}
-
-	private mergeToolCallDeltas(
-		existing: ApiChatCompletionToolCall[],
-		deltas: ApiChatCompletionToolCallDelta[],
-		indexOffset = 0
-	): ApiChatCompletionToolCall[] {
-		const result = existing.map((call) => ({
-			...call,
-			function: call.function ? { ...call.function } : undefined
-		}));
-
-		for (const delta of deltas) {
-			const index =
-				typeof delta.index === 'number' && delta.index >= 0
-					? delta.index + indexOffset
-					: result.length;
-
-			while (result.length <= index) {
-				result.push({ function: undefined });
-			}
-
-			const target = result[index]!;
-
-			if (delta.id) {
-				target.id = delta.id;
-			}
-
-			if (delta.type) {
-				target.type = delta.type;
-			}
-
-			if (delta.function) {
-				const fn = target.function ? { ...target.function } : {};
-
-				if (delta.function.name) {
-					fn.name = delta.function.name;
-				}
-
-				if (delta.function.arguments) {
-					fn.arguments = (fn.arguments ?? '') + delta.function.arguments;
-				}
-
-				target.function = fn;
-			}
-		}
-
-		return result;
 	}
 
 	/**
@@ -539,11 +401,9 @@ export class ChatService {
 		onComplete?: (
 			response: string,
 			reasoningContent?: string,
-			timings?: ChatMessageTimings,
-			toolCalls?: string
+			timings?: ChatMessageTimings
 		) => void,
 		onError?: (error: Error) => void,
-		onToolCallChunk?: (chunk: string) => void,
 		onModel?: (model: string) => void
 	): Promise<string> {
 		try {
@@ -563,31 +423,17 @@ export class ChatService {
 
 			const content = data.choices[0]?.message?.content || '';
 			const reasoningContent = data.choices[0]?.message?.reasoning_content;
-			const toolCalls = data.choices[0]?.message?.tool_calls;
 
 			if (reasoningContent) {
 				console.log('Full reasoning content:', reasoningContent);
 			}
 
-			let serializedToolCalls: string | undefined;
-
-			if (toolCalls && toolCalls.length > 0) {
-				const mergedToolCalls = this.mergeToolCallDeltas([], toolCalls);
-
-				if (mergedToolCalls.length > 0) {
-					serializedToolCalls = JSON.stringify(mergedToolCalls);
-					if (serializedToolCalls) {
-						onToolCallChunk?.(serializedToolCalls);
-					}
-				}
-			}
-
-			if (!content.trim() && !serializedToolCalls) {
+			if (!content.trim()) {
 				const noResponseError = new Error('No response received from server. Please try again.');
 				throw noResponseError;
 			}
 
-			onComplete?.(content, reasoningContent, undefined, serializedToolCalls);
+			onComplete?.(content, reasoningContent);
 
 			return content;
 		} catch (error) {

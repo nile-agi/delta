@@ -11,18 +11,45 @@
  */
 
 #include "delta_cli.h"
-#include "commands.h"
+#include "model_api_server.h"
 #include <cpp-httplib/httplib.h>
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <thread>
 #include <atomic>
 #include <memory>
-#include <chrono>
+#include <cstdlib>
+#include <sstream>
+#include <filesystem>
+#include <functional>
+#include <map>
+#include <mutex>
+#include <iomanip>
 
 using json = nlohmann::json;
 
 namespace delta {
+
+// Forward declaration for model switch callback
+static ModelSwitchCallback* g_model_switch_callback = nullptr;
+
+// Progress tracking structure
+struct DownloadProgress {
+    std::atomic<double> progress{0.0};
+    std::atomic<long long> current_bytes{0};
+    std::atomic<long long> total_bytes{0};
+    std::atomic<bool> completed{false};
+    std::atomic<bool> failed{false};
+    std::string error_message;
+    std::mutex mutex;
+};
+
+// Global progress map (model_name -> progress)
+static std::map<std::string, std::shared_ptr<DownloadProgress>> g_download_progress;
+static std::mutex g_progress_mutex;
+// Thread-local storage for current download progress
+thread_local std::shared_ptr<DownloadProgress> g_current_progress = nullptr;
+thread_local std::string g_current_model_name;
 
 class ModelAPIServer {
 private:
@@ -41,7 +68,7 @@ private:
         });
         
         // Handle OPTIONS (CORS preflight)
-        server_->Options(".*", [](const httplib::Request&, httplib::Response& res) {
+        server_->Options(".*", [](const httplib::Request&, httplib::Response&) {
             return;
         });
         
@@ -49,7 +76,7 @@ private:
         server_->Get("/api/models/available", [this](const httplib::Request&, httplib::Response& res) {
             try {
                 auto models = model_mgr_.get_friendly_model_list(true);
-                json result = json::array();
+                json models_array = json::array();
                 
                 for (const auto& model : models) {
                     json model_json = {
@@ -61,9 +88,10 @@ private:
                         {"size_bytes", model.size_bytes},
                         {"installed", model.installed}
                     };
-                    result.push_back(model_json);
+                    models_array.push_back(model_json);
                 }
                 
+                json result = {{"models", models_array}};
                 res.set_content(result.dump(), "application/json");
             } catch (const std::exception& e) {
                 json error = {{"error", {{"code", 500}, {"message", e.what()}}}};
@@ -76,7 +104,7 @@ private:
         server_->Get("/api/models/list", [this](const httplib::Request&, httplib::Response& res) {
             try {
                 auto models = model_mgr_.get_friendly_model_list(false);
-                json result = json::array();
+                json models_array = json::array();
                 
                 for (const auto& model : models) {
                     json model_json = {
@@ -87,7 +115,49 @@ private:
                         {"quantization", model.quantization},
                         {"size_bytes", model.size_bytes}
                     };
-                    result.push_back(model_json);
+                    models_array.push_back(model_json);
+                }
+                
+                json result = {{"models", models_array}};
+                res.set_content(result.dump(), "application/json");
+            } catch (const std::exception& e) {
+                json error = {{"error", {{"code", 500}, {"message", e.what()}}}};
+                res.status = 500;
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+        
+        // GET /api/models/download/progress/:model - Get download progress
+        server_->Get(R"(/api/models/download/progress/(.+))", [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                std::string model_name = req.matches[1];
+                
+                std::lock_guard<std::mutex> lock(g_progress_mutex);
+                auto it = g_download_progress.find(model_name);
+                
+                if (it == g_download_progress.end()) {
+                    json result = {
+                        {"progress", 0.0},
+                        {"current_bytes", 0},
+                        {"total_bytes", 0},
+                        {"completed", false},
+                        {"failed", false}
+                    };
+                    res.set_content(result.dump(), "application/json");
+                    return;
+                }
+                
+                auto& prog = it->second;
+                json result = {
+                    {"progress", prog->progress.load()},
+                    {"current_bytes", prog->current_bytes.load()},
+                    {"total_bytes", prog->total_bytes.load()},
+                    {"completed", prog->completed.load()},
+                    {"failed", prog->failed.load()}
+                };
+                
+                if (prog->failed.load()) {
+                    result["error_message"] = prog->error_message;
                 }
                 
                 res.set_content(result.dump(), "application/json");
@@ -98,7 +168,7 @@ private:
             }
         });
         
-        // POST /api/models/download - Download a model
+        // POST /api/models/download - Download a model (async)
         server_->Post("/api/models/download", [this](const httplib::Request& req, httplib::Response& res) {
             try {
                 json body = json::parse(req.body);
@@ -111,17 +181,98 @@ private:
                     return;
                 }
                 
-                // Download model (synchronous for now)
-                bool success = model_mgr_.pull_model(model_name);
-                
-                if (success) {
-                    json result = {{"success", true}, {"message", "Model downloaded successfully"}};
-                    res.set_content(result.dump(), "application/json");
-                } else {
-                    json error = {{"error", {{"code", 500}, {"message", "Failed to download model"}}}};
-                    res.status = 500;
-                    res.set_content(error.dump(), "application/json");
+                // Check if download is already in progress
+                {
+                    std::lock_guard<std::mutex> lock(g_progress_mutex);
+                    auto it = g_download_progress.find(model_name);
+                    if (it != g_download_progress.end() && !it->second->completed.load() && !it->second->failed.load()) {
+                        json error = {{"error", {{"code", 409}, {"message", "Download already in progress"}}}};
+                        res.status = 409;
+                        res.set_content(error.dump(), "application/json");
+                        return;
+                    }
                 }
+                
+                // Create progress tracker
+                auto progress = std::make_shared<DownloadProgress>();
+                {
+                    std::lock_guard<std::mutex> lock(g_progress_mutex);
+                    g_download_progress[model_name] = progress;
+                }
+                
+                // Start download in background thread
+                std::thread download_thread([this, model_name, progress]() {
+                    try {
+                        // Set thread-local variables for callback
+                        g_current_progress = progress;
+                        g_current_model_name = model_name;
+                        
+                        // Static progress callback function
+                        static auto progress_cb = [](double prog, long long current, long long total) {
+                            if (g_current_progress) {
+                                g_current_progress->progress.store(prog);
+                                g_current_progress->current_bytes.store(current);
+                                g_current_progress->total_bytes.store(total);
+                                
+                                // Terminal progress output
+                                double current_mb = current / (1024.0 * 1024.0);
+                                double total_mb = total / (1024.0 * 1024.0);
+                                
+                                int bar_width = 50;
+                                int pos = (int)(prog / 100.0 * bar_width);
+                                
+                                std::cout << "\r[Download " << g_current_model_name << "] [";
+                                for (int i = 0; i < bar_width; i++) {
+                                    if (i < pos) std::cout << "█";
+                                    else if (i == pos) std::cout << "▓";
+                                    else std::cout << "░";
+                                }
+                                std::cout << "] " << std::fixed << std::setprecision(1) << prog << "% ";
+                                std::cout << "(" << std::fixed << std::setprecision(1) << current_mb << " / ";
+                                std::cout << total_mb << " MB)";
+                                std::cout << std::flush;
+                            }
+                        };
+                        
+                        // Set up progress callback for terminal output
+                        model_mgr_.set_progress_callback(progress_cb);
+                        
+                        // Download model
+                        bool success = model_mgr_.pull_model(model_name);
+                        
+                        // Clear progress callback and thread-local
+                        model_mgr_.set_progress_callback(nullptr);
+                        g_current_progress = nullptr;
+                        
+                        if (success) {
+                            progress->completed.store(true);
+                            progress->progress.store(100.0);
+                            std::cout << std::endl;
+                            std::cout << "[Download " << model_name << "] ✓ Download completed successfully!" << std::endl;
+                        } else {
+                            progress->failed.store(true);
+                            progress->error_message = "Download failed";
+                            std::cout << std::endl;
+                            std::cout << "[Download " << model_name << "] ✗ Download failed" << std::endl;
+                        }
+                    } catch (const std::exception& e) {
+                        progress->failed.store(true);
+                        progress->error_message = e.what();
+                        model_mgr_.set_progress_callback(nullptr);
+                        g_current_progress = nullptr;
+                        std::cout << std::endl;
+                        std::cout << "[Download " << model_name << "] ✗ Error: " << e.what() << std::endl;
+                    }
+                });
+                download_thread.detach();
+                
+                // Return immediately
+                json result = {
+                    {"success", true},
+                    {"message", "Download started"},
+                    {"model", model_name}
+                };
+                res.set_content(result.dump(), "application/json");
             } catch (const json::parse_error& e) {
                 json error = {{"error", {{"code", 400}, {"message", "Invalid JSON in request body"}}}};
                 res.status = 400;
@@ -191,66 +342,50 @@ private:
                     return;
                 }
                 
-                // Get model's max context from registry
-                int ctx_size = 4096;  // Default fallback
-                std::string registry_name = model_name;
-                if (model_mgr_.is_in_registry(registry_name)) {
-                    auto entry = model_mgr_.get_registry_entry(registry_name);
+                // Get model's max context and alias from registry
+                int ctx_size = 4096; // Default
+                std::string model_alias = model_name;
+                if (model_mgr_.is_in_registry(model_name)) {
+                    auto entry = model_mgr_.get_registry_entry(model_name);
                     if (entry.max_context > 0) {
                         ctx_size = entry.max_context;
                     }
-                } else {
-                    // Try converting dash to colon format
-                    size_t last_dash = registry_name.find_last_of('-');
-                    if (last_dash != std::string::npos) {
-                        std::string colon_name = registry_name.substr(0, last_dash) + ":" + 
-                                                 registry_name.substr(last_dash + 1);
-                        if (model_mgr_.is_in_registry(colon_name)) {
-                            auto entry = model_mgr_.get_registry_entry(colon_name);
-                            if (entry.max_context > 0) {
-                                ctx_size = entry.max_context;
-                            }
-                        }
-                    }
-                }
-                
-                // Get model alias (name with colon) for web UI
-                std::string model_alias;
-                std::string found_name = model_mgr_.get_name_from_filename(model_path);
-                if (!found_name.empty()) {
-                    model_alias = found_name;
-                } else if (model_mgr_.is_in_registry(registry_name)) {
-                    auto entry = model_mgr_.get_registry_entry(registry_name);
                     if (!entry.name.empty()) {
                         model_alias = entry.name;
                     }
-                } else {
-                    // Try converting dash to colon format
-                    size_t last_dash = registry_name.find_last_of('-');
-                    if (last_dash != std::string::npos) {
-                        std::string colon_name = registry_name.substr(0, last_dash) + ":" + 
-                                                 registry_name.substr(last_dash + 1);
-                        if (model_mgr_.is_in_registry(colon_name)) {
-                            auto entry = model_mgr_.get_registry_entry(colon_name);
-                            if (!entry.name.empty()) {
-                                model_alias = entry.name;
-                            }
-                        }
-                    }
                 }
                 
-                // Restart the server with the new model
-                bool server_restarted = Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias);
+                // Try to actually switch the model if callback is set
+                bool model_loaded = false;
+                std::cerr << "[DEBUG] /api/models/use: model_name=" << model_name 
+                          << ", model_path=" << model_path 
+                          << ", ctx_size=" << ctx_size 
+                          << ", model_alias=" << model_alias << std::endl;
+                std::cerr << "[DEBUG] g_model_switch_callback is " << (g_model_switch_callback ? "set" : "null") << std::endl;
+                if (g_model_switch_callback) {
+                    try {
+                        std::cerr << "[DEBUG] Calling model switch callback..." << std::endl;
+                        model_loaded = (*g_model_switch_callback)(model_path, model_name, ctx_size, model_alias);
+                        std::cerr << "[DEBUG] Model switch callback returned: " << (model_loaded ? "true" : "false") << std::endl;
+                    } catch (const std::exception& e) {
+                        std::cerr << "[ERROR] Error switching model: " << e.what() << std::endl;
+                    }
+                } else {
+                    std::cerr << "[WARNING] Model switch callback is not set!" << std::endl;
+                }
                 
                 json result = {
                     {"success", true},
                     {"model_path", model_path},
+                    {"model_name", model_name},
                     {"model_alias", model_alias},
-                    {"server_restarted", server_restarted},
-                    {"message", server_restarted 
-                        ? "Model switched successfully. Server is restarting with the new model."
-                        : "Model switched successfully, but server restart failed. Please restart manually."}
+                    {"ctx_size", ctx_size},
+                    {"loaded", model_loaded},
+                    {"message", model_loaded 
+                        ? "Model loaded successfully! The server is now using " + model_alias + "."
+                        : "Model selected. The model path will be sent in API requests. Note: llama-server uses the model loaded at startup. To actually use this model, restart the server with: ./delta-server -m \"" + model_path + "\" --port 8080"}
                 };
+                
                 res.set_content(result.dump(), "application/json");
             } catch (const json::parse_error& e) {
                 json error = {{"error", {{"code", 400}, {"message", "Invalid JSON in request body"}}}};
@@ -302,6 +437,11 @@ public:
 
 // Global server instance
 static std::unique_ptr<ModelAPIServer> g_model_api_server;
+
+void set_model_switch_callback(ModelSwitchCallback callback) {
+    static ModelSwitchCallback stored_callback = callback;
+    g_model_switch_callback = &stored_callback;
+}
 
 void start_model_api_server(int port) {
     if (!g_model_api_server) {

@@ -18,6 +18,11 @@
 #include <cstdio>
 #include <memory>
 #include <vector>
+#include <mutex>
+#include <signal.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <unistd.h>
 #ifdef _WIN32
     #include <windows.h>
     #include <limits.h>
@@ -39,6 +44,10 @@ namespace delta {
 // Static member initialization
 std::map<std::string, CommandHandler> Commands::command_map_;
 bool Commands::initialized_ = false;
+pid_t Commands::llama_server_pid_ = 0;
+std::string Commands::current_model_path_ = "";
+int Commands::current_port_ = 8080;
+std::mutex Commands::server_mutex_;
 
 // Launch server automatically (public method)
 bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size, const std::string& model_alias) {
@@ -236,66 +245,52 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     
     // If not found, server will use default web UI (no --path flag)
     
-    // Build command: llama-server -m "model_path" --port 8080 -c 4096 [--path public_dir] [--alias model_alias]
-    std::stringstream cmd;
-    cmd << server_bin
-        << " -m \"" << model_path << "\""
-        << " --port " << port
-        << " -c " << ctx_size;
+    // Stop existing llama-server if running
+    stop_llama_server();
     
-    // Add --flash-attn flag for smaller contexts (auto mode)
-    // For large contexts, omit the flag to let server use defaults
-    // Some llama-server versions don't support --flash-attn off
-    if (ctx_size <= 16384) {
-        // For smaller contexts, let system decide automatically
-        cmd << " --flash-attn auto";
-    } else {
-        // Large context sizes: omit flash-attn flag to avoid GPU memory issues
-        // Also limit GPU layers for very large contexts to prevent memory exhaustion
-        if (ctx_size > 32768) {
-            cmd << " --gpu-layers 0";  // Disable GPU entirely for extremely large contexts
-        }
-    }
+    // Build command
+    std::string cmd_str = build_llama_server_cmd(server_bin, model_path, port, ctx_size, model_alias, public_path);
     
-    // Add --jinja flag for gemma3 models
-    // Check model_alias and model_path for gemma3 (case-insensitive)
-    std::string model_alias_lower = model_alias;
-    std::string model_path_lower = model_path;
-    std::transform(model_alias_lower.begin(), model_alias_lower.end(), model_alias_lower.begin(), ::tolower);
-    std::transform(model_path_lower.begin(), model_path_lower.end(), model_path_lower.begin(), ::tolower);
-    if (model_alias_lower.find("gemma3") != std::string::npos || model_path_lower.find("gemma3") != std::string::npos) {
-        cmd << " --jinja";
-    }
-    
-    // Add --alias flag to use short_name instead of filename in web UI
-    if (!model_alias.empty()) {
-        cmd << " --alias \"" << model_alias << "\"";
-    }
-    
-    // Add --path flag to use Delta web UI if found
-    if (!public_path.empty()) {
-        cmd << " --path \"" << public_path << "\"";
-    }
-    
-    // Debug: Print the command being executed (can be removed in production)
-    // std::cerr << "Executing: " << cmd.str() << std::endl;
-    
-    // Run in background
-    // Note: We redirect stderr to a temp file to capture errors for debugging
-#ifdef _WIN32
-    std::string err_file = "nul";
-    cmd << " 2>" << err_file;
-    // On Windows, use START to run in background
-    std::string full_cmd = "start /B " + cmd.str();
-    int result = std::system(full_cmd.c_str());
-#else
-    // Create a temporary error log file to capture startup errors
+    // Create error log file path
     std::string err_file = "/tmp/delta-server-err-" + std::to_string(port) + ".log";
-    // Remove old log file if it exists
     std::remove(err_file.c_str());
-    cmd << " 2>" << err_file << " &";
-    int result = std::system(cmd.str().c_str());
-#endif
+    
+    // Start llama-server using fork/exec to get PID
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child process: create new process group
+        setsid();
+        
+        // Redirect output to error log file
+        int devnull = open("/dev/null", O_WRONLY);
+        int err_fd = open(err_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (devnull >= 0) {
+            dup2(devnull, STDOUT_FILENO);
+            if (err_fd >= 0) {
+                dup2(err_fd, STDERR_FILENO);
+                close(err_fd);
+            } else {
+                dup2(devnull, STDERR_FILENO);
+            }
+            close(devnull);
+        }
+        close(STDIN_FILENO);
+        
+        // Execute llama-server
+        execl("/bin/sh", "sh", "-c", cmd_str.c_str(), (char*)NULL);
+        _exit(1);
+    } else if (pid > 0) {
+        // Parent process: store PID
+        std::lock_guard<std::mutex> lock(server_mutex_);
+        llama_server_pid_ = -pid; // Store negative for process group
+        current_model_path_ = model_path;
+        current_port_ = port;
+    } else {
+        UI::print_error("Failed to fork process for llama-server");
+        return false;
+    }
+    
+    int result = 0; // Fork succeeded
     
     // Wait for server to start and verify it's running
     // Give server time to initialize (especially for model loading)
@@ -390,10 +385,220 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     }
     
     // Start model management API server on port 8081
+    std::cerr << "[DEBUG] Starting model API server on port 8081" << std::endl;
     delta::start_model_api_server(8081);
+    
+    // Set up model switch callback to restart llama-server
+    // IMPORTANT: Always set the callback, even if the server was already running
+    std::cerr << "[DEBUG] Setting up model switch callback" << std::endl;
+    delta::set_model_switch_callback([](const std::string& model_path, const std::string& model_name, 
+                                         int ctx_size, const std::string& model_alias) -> bool {
+        std::cerr << "[DEBUG] Model switch callback invoked: model=" << model_name 
+                  << ", path=" << model_path << std::endl;
+        bool result = Commands::restart_llama_server(model_path, model_name, ctx_size, model_alias);
+        std::cerr << "[DEBUG] Model switch callback returning: " << (result ? "true" : "false") << std::endl;
+        return result;
+    });
+    std::cerr << "[DEBUG] Model switch callback set successfully" << std::endl;
+    
     UI::print_info("Model Management API: http://localhost:8081");
     
     return true;
+}
+
+// Helper to build llama-server command
+std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path, 
+                                              int port, int ctx_size, const std::string& model_alias, 
+                                              const std::string& public_path) {
+    std::stringstream cmd;
+    cmd << server_bin
+        << " -m \"" << model_path << "\""
+        << " --port " << port
+        << " -c " << ctx_size;
+    
+    // Add --flash-attn flag
+    if (ctx_size > 16384) {
+        cmd << " --flash-attn off";
+        if (ctx_size > 32768) {
+            cmd << " --gpu-layers 0";
+        }
+    } else {
+        cmd << " --flash-attn auto";
+    }
+    
+    // Add --jinja flag for gemma3 models
+    std::string model_alias_lower = model_alias;
+    std::string model_path_lower = model_path;
+    std::transform(model_alias_lower.begin(), model_alias_lower.end(), model_alias_lower.begin(), ::tolower);
+    std::transform(model_path_lower.begin(), model_path_lower.end(), model_path_lower.begin(), ::tolower);
+    if (model_alias_lower.find("gemma3") != std::string::npos || model_path_lower.find("gemma3") != std::string::npos) {
+        cmd << " --jinja";
+    }
+    
+    // Add --alias if provided
+    if (!model_alias.empty()) {
+        cmd << " --alias \"" << model_alias << "\"";
+    }
+    
+    // Add --path flag to use Delta web UI if found
+    if (!public_path.empty()) {
+        cmd << " --path \"" << public_path << "\"";
+    }
+    
+    return cmd.str();
+}
+
+void Commands::stop_llama_server() {
+    std::lock_guard<std::mutex> lock(server_mutex_);
+    if (llama_server_pid_ != 0) {
+        pid_t pid_to_kill = (llama_server_pid_ < 0) ? llama_server_pid_ : llama_server_pid_;
+        // Kill the llama-server process (or process group if negative)
+        kill(pid_to_kill, SIGTERM);
+        // Wait a bit for it to terminate
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        // Force kill if still running
+        int status;
+        pid_t actual_pid = (llama_server_pid_ < 0) ? -llama_server_pid_ : llama_server_pid_;
+        if (waitpid(actual_pid, &status, WNOHANG) == 0) {
+            // Process still running, force kill
+            kill(pid_to_kill, SIGKILL);
+            waitpid(actual_pid, &status, 0); // Wait for it to die
+        }
+        llama_server_pid_ = 0;
+        current_model_path_ = "";
+    }
+}
+
+bool Commands::restart_llama_server(const std::string& model_path, const std::string& model_name, 
+                                     int ctx_size, const std::string& model_alias) {
+    std::cerr << "[DEBUG] restart_llama_server called: model=" << model_name << ", path=" << model_path << std::endl;
+    
+    UI::print_info("🔄 Switching to model: " + model_name);
+    UI::print_info("   Path: " + model_path);
+    
+    // Stop current llama-server (check and stop with lock)
+    {
+        std::lock_guard<std::mutex> lock(server_mutex_);
+        if (llama_server_pid_ != 0) {
+            std::cerr << "[DEBUG] Stopping llama-server with PID: " << llama_server_pid_ << std::endl;
+            pid_t pid_to_kill = (llama_server_pid_ < 0) ? llama_server_pid_ : llama_server_pid_;
+            // Kill the llama-server process (or process group if negative)
+            kill(pid_to_kill, SIGTERM);
+            // Wait a bit for it to terminate
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            // Force kill if still running
+            int status;
+            pid_t actual_pid = (llama_server_pid_ < 0) ? -llama_server_pid_ : llama_server_pid_;
+            if (waitpid(actual_pid, &status, WNOHANG) == 0) {
+                // Process still running, force kill
+                kill(pid_to_kill, SIGKILL);
+                waitpid(actual_pid, &status, 0); // Wait for it to die
+            }
+            llama_server_pid_ = 0;
+            current_model_path_ = "";
+            UI::print_info("   Stopping current model...");
+        }
+    }
+    
+    // Wait a bit more to ensure port is free
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    
+    // Now acquire lock for the rest of the function
+    std::lock_guard<std::mutex> lock(server_mutex_);
+    
+    // Find llama-server binary (reuse logic from launch_server_auto)
+    std::vector<std::string> server_candidates;
+    std::string exe_dir = tools::FileOps::get_executable_dir();
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "llama-server"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../llama-server"));
+    server_candidates.push_back("/opt/homebrew/bin/llama-server");
+    server_candidates.push_back("/usr/local/bin/llama-server");
+    server_candidates.push_back("/usr/bin/llama-server");
+    server_candidates.push_back("llama-server");
+    
+    std::string server_bin;
+    for (const auto& candidate : server_candidates) {
+        if (tools::FileOps::file_exists(candidate)) {
+            server_bin = candidate;
+            break;
+        }
+    }
+    
+    if (server_bin.empty()) {
+        UI::print_error("llama-server not found");
+        return false;
+    }
+    
+    // Find web UI path (reuse logic from launch_server_auto)
+    std::string public_path;
+    std::vector<std::string> public_candidates = {
+        tools::FileOps::join_path(exe_dir, "../public"),
+        tools::FileOps::join_path(exe_dir, "../../public"),
+        "public",
+        "./public",
+        "/opt/homebrew/share/delta-cli/webui",
+        "/usr/local/share/delta-cli/webui"
+    };
+    
+    for (const auto& candidate : public_candidates) {
+        if (tools::FileOps::dir_exists(candidate)) {
+            std::string index_file = tools::FileOps::join_path(candidate, "index.html.gz");
+            if (tools::FileOps::file_exists(index_file) || 
+                tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
+                public_path = candidate;
+                break;
+            }
+        }
+    }
+    
+    // Build command
+    std::string cmd_str = build_llama_server_cmd(server_bin, model_path, current_port_, ctx_size, model_alias, public_path);
+    
+    // Start llama-server using fork/exec
+    std::cerr << "[DEBUG] Forking llama-server with command: " << cmd_str << std::endl;
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child process: create new process group
+        setsid();
+        
+        // Redirect output
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
+        }
+        close(STDIN_FILENO);
+        
+        // Execute llama-server
+        execl("/bin/sh", "sh", "-c", cmd_str.c_str(), (char*)NULL);
+        _exit(1);
+    } else if (pid > 0) {
+        // Parent process: store PID
+        llama_server_pid_ = -pid; // Store negative for process group
+        current_model_path_ = model_path;
+        std::cerr << "[DEBUG] llama-server started with PID: " << pid << " (stored as: " << llama_server_pid_ << ")" << std::endl;
+        
+        // Wait a moment for server to start
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        
+        // Check if process is still running
+        int status;
+        if (waitpid(pid, &status, WNOHANG) == 0) {
+            std::cerr << "[DEBUG] llama-server is running (waitpid returned 0)" << std::endl;
+            UI::print_info("   ✓ Model loaded successfully!");
+            return true;
+        } else {
+            std::cerr << "[DEBUG] llama-server failed to start (waitpid returned non-zero)" << std::endl;
+            UI::print_error("   ✗ Failed to start llama-server");
+            llama_server_pid_ = 0;
+            return false;
+        }
+    } else {
+        std::cerr << "[DEBUG] fork() failed" << std::endl;
+        UI::print_error("   ✗ Failed to fork process");
+        return false;
+    }
 }
 
 void Commands::init() {
@@ -658,17 +863,28 @@ bool Commands::handle_use(const std::vector<std::string>& args, InteractiveSessi
         model_alias = session.model_mgr->get_short_name_from_filename(filename);
     }
     
-    if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
-        UI::print_success("Delta Server started in background");
-        std::string url = "http://localhost:8080";
-        UI::print_info("Open: " + url);
-        // Open browser after a short delay to ensure server is ready
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        if (tools::Browser::open_url(url)) {
-            UI::print_info("Browser opened automatically");
+    // Restart llama-server with new model (if it's running)
+    if (llama_server_pid_ != 0) {
+        // Server is already running, restart it with new model
+        if (restart_llama_server(model_path, model_name, ctx_size, model_alias)) {
+            UI::print_success("Delta Server restarted with new model");
+        } else {
+            UI::print_error("Failed to restart server with new model");
         }
+    } else {
+        // Server not running, start it
+        if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
+            UI::print_success("Delta Server started in background");
+            std::string url = "http://localhost:8080";
+            UI::print_info("Open: " + url);
+            // Open browser after a short delay to ensure server is ready
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            if (tools::Browser::open_url(url)) {
+                UI::print_info("Browser opened automatically");
+            }
+        }
+        // If launch fails, don't show error - server is optional
     }
-    // If launch fails, don't show error - server is optional
     
     return true;
 }

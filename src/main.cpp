@@ -877,18 +877,18 @@ int main(int argc, char** argv) {
             << " --parallel " << max_parallel
             << " -c " << max_context;
         
-        // Add --flash-attn flag for smaller contexts (auto mode)
-        // For large contexts, omit the flag to let server use defaults
-        // Some llama-server versions don't support --flash-attn off
-        if (max_context <= 16384) {
-            // For smaller contexts, let system decide automatically
-            cmd << " --flash-attn auto";
-        } else {
-            // Large context sizes: omit flash-attn flag to avoid GPU memory issues
+        // Add --flash-attn flag for all models
+        // Use 'off' if context is very large (>16K) to prevent GPU memory issues, otherwise use 'auto'
+        if (max_context > 16384) {
+            // Large context sizes can cause GPU memory issues with Flash Attention
+            cmd << " --flash-attn off";
             // Also limit GPU layers for very large contexts to prevent memory exhaustion
             if (max_context > 32768) {
                 cmd << " --gpu-layers 0";  // Disable GPU entirely for extremely large contexts
             }
+        } else {
+            // For smaller contexts, let system decide automatically
+            cmd << " --flash-attn auto";
         }
         
         // Add --jinja flag for gemma3 models

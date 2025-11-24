@@ -1,6 +1,5 @@
 import { DatabaseStore } from '$lib/stores/database';
-import { chatService } from '$lib/services/chat';
-import { slotsService } from '$lib/services/slots';
+import { chatService, slotsService } from '$lib/services';
 import { config } from '$lib/stores/settings.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
 import { normalizeModelName } from '$lib/utils/model-names';

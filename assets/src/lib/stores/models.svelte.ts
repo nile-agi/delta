@@ -1,4 +1,4 @@
-import { ModelsService, type ModelInfo } from '$lib/services/models';
+import { ModelsService } from '$lib/services/models';
 import { persisted } from '$lib/stores/persisted.svelte';
 import { SELECTED_MODEL_LOCALSTORAGE_KEY } from '$lib/constants/localstorage-keys';
 import type { ModelOption } from '$lib/types/models';
@@ -15,7 +15,6 @@ class ModelsStore {
 	private _error = $state<string | null>(null);
 	private _selectedModelId = $state<string | null>(null);
 	private _selectedModelName = $state<string | null>(null);
-	private _displayNameMap = $state<Map<string, string>>(new Map());
 	private _persistedSelection = persisted<PersistedModelSelection | null>(
 		SELECTED_MODEL_LOCALSTORAGE_KEY,
 		null
@@ -69,52 +68,92 @@ class ModelsStore {
 		this._error = null;
 
 		try {
-			// Fetch installed models - this is what we want to show in the dropdown
-			const installedResponse = await ModelsService.listInstalled();
-			const installedModels = Array.isArray(installedResponse)
-				? installedResponse
-				: installedResponse.models || [];
+			// Fetch from both APIs: main API (currently loaded model) and model management API (all installed models)
+			const [mainResponse, installedModelsResponse] = await Promise.allSettled([
+				ModelsService.list(),
+				ModelsService.listInstalled().catch(() => null) // Gracefully handle if model API server is not running
+			]);
 
-			// Build display name map
-			const displayNameMap = new Map<string, string>();
-			for (const model of installedModels) {
-				// Map both name (e.g., "qwen3:0.6b") and display_name to display_name
-				displayNameMap.set(model.name, model.display_name);
-				displayNameMap.set(model.display_name, model.display_name);
+			// Get models from main API (currently loaded model)
+			const mainModels: ModelOption[] = [];
+			if (mainResponse.status === 'fulfilled') {
+				const response = mainResponse.value;
+				mainModels.push(
+					...response.data.map((item, index) => {
+						const details = response.models?.[index];
+						const rawCapabilities = Array.isArray(details?.capabilities)
+							? details?.capabilities
+							: [];
+						const displayNameSource =
+							details?.name && details.name.trim().length > 0 ? details.name : item.id;
+						const displayName = this.toDisplayName(displayNameSource);
+
+						return {
+							id: item.id,
+							name: displayName,
+							model: details?.model || item.id,
+							description: details?.description,
+							capabilities: rawCapabilities.filter((value): value is string => Boolean(value)),
+							details: details?.details,
+							meta: item.meta ?? null
+						} satisfies ModelOption;
+					})
+				);
 			}
-			this._displayNameMap = displayNameMap;
 
-			// Also get the currently loaded model from /v1/models to know which one is active
-			let currentModelId: string | null = null;
-			try {
-				const currentResponse = await ModelsService.list();
-				if (currentResponse.data && currentResponse.data.length > 0) {
-					currentModelId = currentResponse.data[0].id;
+			// Get all installed models from model management API
+			const installedModelsMap = new Map<string, ModelOption>();
+			if (
+				installedModelsResponse.status === 'fulfilled' &&
+				installedModelsResponse.value !== null
+			) {
+				// Handle both formats: {models: [...]} or [...] (for backward compatibility)
+				const responseData = installedModelsResponse.value;
+				const installed = Array.isArray(responseData)
+					? responseData
+					: responseData.models || [];
+				
+				if (!Array.isArray(installed)) {
+					console.error('Invalid response format from model API:', responseData);
+					throw new Error('Invalid response format from model management API');
 				}
-			} catch (e) {
-				console.warn('Failed to fetch current model from /v1/models:', e);
+				
+				for (const modelInfo of installed) {
+					// Use model name as ID (e.g., "qwen3:0.6b")
+					const modelId = modelInfo.name;
+					const displayName = modelInfo.display_name || this.toDisplayName(modelInfo.name);
+					
+					// Get model path - we'll fetch it when needed, but store the name for now
+					// The model name will be used to get the path when selected
+
+					installedModelsMap.set(modelId, {
+						id: modelId,
+						name: displayName,
+						model: modelInfo.name, // Store the model name/ID
+						description: modelInfo.description,
+						capabilities: [],
+						details: {
+							size: modelInfo.size_str,
+							quantization: modelInfo.quantization
+						},
+						meta: null
+					});
+				}
 			}
 
-			// Convert installed models to ModelOption format
-			const models: ModelOption[] = installedModels.map((model) => {
-				const modelId = model.name; // Use name (e.g., "qwen3:0.6b") as the ID
-				const displayName = model.display_name || model.name;
+			// Merge: add installed models, but keep main API models if they exist (they have more details)
+			for (const mainModel of mainModels) {
+				installedModelsMap.set(mainModel.id, mainModel);
+			}
 
-				return {
-					id: modelId,
-					name: displayName,
-					model: model.name, // Use name for switching
-					description: model.description || '',
-					capabilities: [],
-					details: null,
-					meta: null
-				} satisfies ModelOption;
-			});
+			const models = Array.from(installedModelsMap.values());
+
+			// Sort by name for consistent ordering
+			models.sort((a, b) => a.name.localeCompare(b.name));
 
 			this._models = models;
 
-			// Determine selection: prefer current model, then persisted, then first available
-			const selection = this.determineInitialSelection(models, currentModelId);
+			const selection = this.determineInitialSelection(models);
 
 			this._selectedModelId = selection.id;
 			this._selectedModelName = selection.model;
@@ -123,7 +162,6 @@ class ModelsStore {
 		} catch (error) {
 			this._models = [];
 			this._error = error instanceof Error ? error.message : 'Failed to load models';
-			console.error('Error fetching models:', error);
 
 			throw error;
 		} finally {
@@ -149,77 +187,44 @@ class ModelsStore {
 		this._error = null;
 
 		try {
-			// Get the model name (e.g., "qwen3:0.6b") from the option
-			// The option.model should be the model name, or we can use option.id
-			const modelName = option.model || option.id;
-			
-			// Call the API to switch models
+			// Get the model path from the backend API
+			// llama-server needs the full model path to switch models dynamically
 			try {
-				const result = await ModelsService.use(modelName);
+				const useResponse = await ModelsService.use(option.model);
+				// Store the model path - this is what llama-server needs in the request
+				const modelPath = useResponse.model_path || option.model;
 				
-				// If server is restarting, wait a bit and retry fetching models
-				if (result.server_restarted) {
-					// Wait for server to restart (give it 2 seconds)
-					await new Promise(resolve => setTimeout(resolve, 2000));
-					
-					// Retry fetching models with exponential backoff
-					let retries = 3;
-					let delay = 1000;
-					while (retries > 0) {
-						try {
-							await this.fetch(true);
-							break;
-						} catch (error) {
-							retries--;
-							if (retries > 0) {
-								await new Promise(resolve => setTimeout(resolve, delay));
-								delay *= 2; // Exponential backoff
-							} else {
-								console.warn('Failed to refresh models after server restart, but model switch was successful');
-							}
-						}
-					}
+				if (!modelPath || modelPath === option.model) {
+					// If we didn't get a path, try to construct it or use the name
+					// For now, we'll use the model name and let llama-server handle it
+					console.warn('Model path not available, using model name:', option.model);
+					this._selectedModelId = option.id;
+					this._selectedModelName = option.model;
+					this._persistedSelection.value = { id: option.id, model: option.model };
 				} else {
-					// Server didn't restart, just refresh normally
-					await this.fetch(true);
+					// Store the full path - this will be sent in requests
+					// Note: llama-server loads one model at startup, so the model field in requests
+					// is mainly for metadata. The actual model used is the one loaded at server startup.
+					this._selectedModelId = option.id;
+					this._selectedModelName = modelPath;
+					this._persistedSelection.value = { id: option.id, model: modelPath };
+					console.log('✓ Model selected:', option.name, 'Path:', modelPath);
+					console.warn('Note: llama-server uses the model loaded at startup. To switch models, restart the server with the new model.');
 				}
 			} catch (error) {
-				console.error('Failed to switch model via API:', error);
-				// Still update local state even if API call fails
-				// The server might restart, so we'll handle connection errors gracefully
+				// If API call fails, still update the selection with the model name
+				// The chat service will try to use it
+				console.warn('Failed to get model path from API, using model name:', error);
+				this._selectedModelId = option.id;
+				this._selectedModelName = option.model;
+				this._persistedSelection.value = { id: option.id, model: option.model };
 			}
-
-			this._selectedModelId = option.id;
-			this._selectedModelName = option.model;
-			this._persistedSelection.value = { id: option.id, model: option.model };
 		} finally {
 			this._updating = false;
 		}
 	}
 
 	private toDisplayName(id: string): string {
-		// If it's already a display name (from our map), use it
-		if (this._displayNameMap.has(id)) {
-			return this._displayNameMap.get(id)!;
-		}
-		
-		// If it looks like a filename (contains .gguf), try to extract a better name
-		if (id.includes('.gguf')) {
-			// Remove .gguf extension
-			let name = id.replace(/\.gguf$/, '');
-			// Try to convert common patterns:
-			// "Qwen3-1.7B-f16" -> "Qwen 3 1.7B"
-			// "qwen2.5-0.5b" -> "Qwen 2.5 0.5B"
-			name = name
-				.replace(/([a-z])(\d)/g, '$1 $2') // Add space before numbers
-				.replace(/(\d)([A-Z])/g, '$1 $2') // Add space between number and capital
-				.replace(/-([a-z])/g, (_, letter) => ` ${letter.toUpperCase()}`) // Convert dash to space and capitalize
-				.replace(/\b([a-z])/g, (_, letter) => letter.toUpperCase()); // Capitalize first letter of words
-			
-			return name;
-		}
-		
-		// Otherwise, just extract filename from path
 		const segments = id.split(/\\|\//);
 		const candidate = segments.pop();
 
@@ -228,59 +233,35 @@ class ModelsStore {
 
 	/**
 	 * Determines which model should be selected after fetching the models list.
-	 * Priority: current model from server > current selection > persisted selection > first available model > none
+	 * Priority: current selection > persisted selection > first available model > none
 	 */
-	private determineInitialSelection(models: ModelOption[], currentModelId: string | null = null): {
+	private determineInitialSelection(models: ModelOption[]): {
 		id: string | null;
 		model: string | null;
 	} {
 		const persisted = this._persistedSelection.value;
-		
-		// Priority 1: Current model from server (if it matches an installed model)
-		if (currentModelId) {
-			// Try to find by exact match
-			let match = models.find((m) => m.id === currentModelId || m.model === currentModelId);
-			
-			// If not found, try to match by name (handle different formats)
-			if (!match && currentModelId) {
-				// Try matching without .gguf extension or path
-				const cleanId = currentModelId.replace(/\.gguf$/, '').split(/[\/\\]/).pop() || currentModelId;
-				match = models.find((m) => 
-					m.id.includes(cleanId) || 
-					m.model.includes(cleanId) ||
-					cleanId.includes(m.id) ||
-					cleanId.includes(m.model)
-				);
-			}
-			
+		let nextSelectionId = this._selectedModelId ?? persisted?.id ?? null;
+		let nextSelectionName = this._selectedModelName ?? persisted?.model ?? null;
+
+		if (nextSelectionId) {
+			const match = models.find((m) => m.id === nextSelectionId);
+
 			if (match) {
-				return { id: match.id, model: match.model };
+				nextSelectionId = match.id;
+				nextSelectionName = match.model;
+			} else if (models[0]) {
+				nextSelectionId = models[0].id;
+				nextSelectionName = models[0].model;
+			} else {
+				nextSelectionId = null;
+				nextSelectionName = null;
 			}
+		} else if (models[0]) {
+			nextSelectionId = models[0].id;
+			nextSelectionName = models[0].model;
 		}
-		
-		// Priority 2: Current selection
-		if (this._selectedModelId) {
-			const match = models.find((m) => m.id === this._selectedModelId);
-			if (match) {
-				return { id: match.id, model: match.model };
-			}
-		}
-		
-		// Priority 3: Persisted selection
-		if (persisted?.id) {
-			const match = models.find((m) => m.id === persisted.id);
-			if (match) {
-				return { id: match.id, model: match.model };
-			}
-		}
-		
-		// Priority 4: First available model
-		if (models.length > 0) {
-			return { id: models[0].id, model: models[0].model };
-		}
-		
-		// Priority 5: None
-		return { id: null, model: null };
+
+		return { id: nextSelectionId, model: nextSelectionName };
 	}
 }
 

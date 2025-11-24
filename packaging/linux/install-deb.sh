@@ -31,20 +31,7 @@ echo ""
 
 # Install minimal dependencies (only for downloading)
 echo "📋 Installing minimal dependencies..."
-# Update package lists, but continue even if some repositories fail
-# (Some users may have broken repositories like TablePlus that return 404)
-set +e  # Temporarily disable exit on error
-apt-get update 2>&1 | tee /tmp/apt-update.log
-UPDATE_EXIT_CODE=${PIPESTATUS[0]}
-set -e  # Re-enable exit on error
-
-if [ $UPDATE_EXIT_CODE -eq 0 ]; then
-    echo "✅ Package lists updated successfully"
-else
-    echo "⚠️  Some repositories had errors (check /tmp/apt-update.log for details)"
-    echo "   Continuing anyway - the packages we need are usually in main repos"
-fi
-
+apt-get update
 apt-get install -y \
     curl \
     wget \

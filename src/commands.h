@@ -46,6 +46,12 @@ public:
     // Launch server automatically (for auto-start on delta launch)
     static bool launch_server_auto(const std::string& model_path, int port = 8080, int ctx_size = 4096, const std::string& model_alias = "");
     
+    // Restart llama-server with new model (for model switching)
+    static bool restart_llama_server(const std::string& model_path, const std::string& model_name, int ctx_size, const std::string& model_alias);
+    
+    // Stop llama-server
+    static void stop_llama_server();
+    
     // Command handlers
     static bool handle_download(const std::vector<std::string>& args, InteractiveSession& session);
     static bool handle_remove(const std::vector<std::string>& args, InteractiveSession& session);
@@ -64,6 +70,17 @@ public:
 private:
     static std::map<std::string, CommandHandler> command_map_;
     static bool initialized_;
+    
+    // Process management for llama-server
+    static pid_t llama_server_pid_;
+    static std::string current_model_path_;
+    static int current_port_;
+    static std::mutex server_mutex_;
+    
+    // Helper to build llama-server command
+    static std::string build_llama_server_cmd(const std::string& server_bin, const std::string& model_path, 
+                                               int port, int ctx_size, const std::string& model_alias, 
+                                               const std::string& public_path);
 };
 
 } // namespace delta
