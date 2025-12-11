@@ -831,10 +831,10 @@ void ModelManager::init_model_registry() {
     model_registry_["gemma3n:e2b"] = {
         "gemma3n:e2b",
         "gemma3n-e2b",
-        "ggml-org/gemma-3n-E2B-it-GGUF",
-        "gemma-3n-E2B-it-Q8_0.gguf",
-        "Q8_0",
-        4704LL * 1024 * 1024,     // ~4.79 GB
+        "unsloth/gemma-3n-E2B-it-GGUF",
+        "gemma-3n-E2B-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        3030LL * 1024 * 1024,     // ~3.03 GB
         "Enhanced 2B variant",
         "Gemma 3N E2B",
         32768                    // 32K native context
@@ -846,7 +846,7 @@ void ModelManager::init_model_registry() {
         "unsloth/gemma-3n-E4B-it-GGUF",
         "gemma-3n-E4B-it-Q4_K_M.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.54 GB
+        4540LL * 1024 * 1024,     // ~4.54 GB
         "Enhanced 4B variant",
         "Gemma 3N E4B",
         32768                    // 32K native context
@@ -1159,10 +1159,10 @@ void ModelManager::init_model_registry() {
         "unsloth/granite-4.0-350m-GGUF",
         "granite-4.0-350m-Q4_K_M.gguf",
         "Q4_K_M",
-        220LL * 1024 * 1024,      // ~220 MB
+        237LL * 1024 * 1024,      // ~237 MB
         "Ultra-compact Granite 4 model",
         "Granite 4 350M",
-        131072                      // 128K native context
+        32768                      // 32K native context
     };
     
     model_registry_["granite4:350m-h"] = {
@@ -1171,10 +1171,10 @@ void ModelManager::init_model_registry() {
         "unsloth/granite-4.0-h-350m-GGUF",
         "granite-4.0-h-350m-Q4_K_M.gguf",
         "Q4_K_M",
-        220LL * 1024 * 1024,      // ~220 MB
+        223LL * 1024 * 1024,      // ~223 MB
         "Ultra-compact Granite 4 model (HF format)",
         "Granite 4 350M-H",
-        131072                      // 128K native context
+        1048576                      // 1024K native context
     };
     
     model_registry_["granite4:1b"] = {
@@ -1183,7 +1183,7 @@ void ModelManager::init_model_registry() {
         "unsloth/granite-4.0-1b-GGUF",
         "granite-4.0-1b-Q4_K_M.gguf",
         "Q4_K_M",
-        729LL * 1024 * 1024,      // ~729 MB
+        1020LL * 1024 * 1024,      // ~1.02 GB
         "Compact Granite 4 model",
         "Granite 4 1B",
         131072                      // 128K native context
@@ -1195,10 +1195,10 @@ void ModelManager::init_model_registry() {
         "unsloth/granite-4.0-h-1b-GGUF",
         "granite-4.0-h-1b-Q4_K_M.gguf",
         "Q4_K_M",
-        729LL * 1024 * 1024,      // ~729 MB
+        901LL * 1024 * 1024,      // ~901 MB
         "Compact Granite 4 model (HF format)",
         "Granite 4 1B-H",
-        131072                      // 128K native context
+        1048576                      // 1024K native context
     };
     
     // model_registry_["granite4:3b"] = {
@@ -1219,7 +1219,7 @@ void ModelManager::init_model_registry() {
         "ibm-granite/granite-4.0-micro-GGUF",
         "granite-4.0-micro-Q4_K_M.gguf",
         "Q4_K_M",
-        100LL * 1024 * 1024,      // ~100 MB (estimated)
+        2100LL * 1024 * 1024,      // ~2.1 GB (estimated)
         "Tiny Granite 4 model",
         "Granite 4 Micro",
         131072                      // 128K native context
@@ -1237,16 +1237,16 @@ void ModelManager::init_model_registry() {
     //     131072                      // 128K native context
     // };
     
-    model_registry_["granite4:micro-h"] = {
-        "granite4:micro-h",
-        "granite4-micro-h",
-        "ibm-granite/granite-4.0-micro-GGUF",
-        "granite-4.0-micro-Q4_K_M.gguf",
+    model_registry_["granite4:h-micro"] = {
+        "granite4:h-micro",
+        "granite4-h-micro",
+        "ibm-granite/granite-4.0-h-micro-GGUF",
+        "granite-4.0-h-micro-Q4_K_M.gguf",
         "Q4_K_M",
-        100LL * 1024 * 1024,      // ~100 MB (estimated)
+        1940LL * 1024 * 1024,      // ~1.94 GB (estimated)
         "Tiny Granite 4 model (HF format)",
         "Granite 4 Micro-H",
-        131072                      // 128K native context
+        1048576                      // 1024K native context
     };
     
     // model_registry_["granite4:7b-a1b-h"] = {
@@ -1261,16 +1261,16 @@ void ModelManager::init_model_registry() {
     //     131072                      // 128K native context
     // };
     
-    model_registry_["granite4:tiny-h"] = {
-        "granite4:tiny-h",
-        "granite4-tiny-h",
+    model_registry_["granite4:h-tiny"] = {
+        "granite4:h-tiny",
+        "granite4-h-tiny",
         "unsloth/granite-4.0-h-tiny-GGUF",
         "granite-4.0-h-tiny-Q4_K_M.gguf",
         "Q4_K_M",
-        50LL * 1024 * 1024,       // ~50 MB (estimated)
+        4250LL * 1024 * 1024,       // ~4.25 GB (estimated)
         "Ultra-tiny Granite 4 model (HF format)",
         "Granite 4 Tiny-H",
-        131072                      // 128K native context
+        1048576                      // 1024K native context
     };
     
     // model_registry_["granite4:32b-a9b-h"] = {
@@ -1285,17 +1285,102 @@ void ModelManager::init_model_registry() {
     //     131072                      // 128K native context
     // };
     
-    model_registry_["granite4:small-h"] = {
-        "granite4:small-h",
-        "granite4-small-h",
-        "ibm-granite/granite-4.0-h-small-GGUF",
-        "granite-4.0-h-small-Q4_K_M.gguf",
+    // model_registry_["granite4:small-h"] = {
+    //     "granite4:small-h",
+    //     "granite4-small-h",
+    //     "ibm-granite/granite-4.0-h-small-GGUF",
+    //     "granite-4.0-h-small-Q4_K_M.gguf",
+    //     "Q4_K_M",
+    //     512LL * 1024 * 1024,      // ~512 MB (estimated)
+    //     "Small Granite 4 model (HF format)",
+    //     "Granite 4 Small-H",
+    //     131072                      // 128K native context
+    // };
+
+    model_registry_["mistral-3:3b"] = {
+        "mistral-3:3b",
+        "mistral-3-3b",
+        "mistralai/Ministral-3-3B-Instruct-2512-GGUF",
+        "Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
         "Q4_K_M",
-        512LL * 1024 * 1024,      // ~512 MB (estimated)
-        "Small Granite 4 model (HF format)",
-        "Granite 4 Small-H",
-        131072                      // 128K native context
+        2150LL * 1024 * 1024,       // 2.15 GB
+        "Edge Instruct model",
+        "mistral 3 3b",
+        262144
     };
+
+    model_registry_["mistral-3:8b"] = {
+        "mistral-3:8b",
+        "mistral-3-8b",
+        "mistralai/Ministral-3-8B-Instruct-2512-GGUF",
+        "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
+        "Q4_K_M",
+        5200LL * 1024 * 1024,       // 5.2 GB
+        "Edge Instruct model",
+        "mistral 3 8b",
+        262144
+    };
+
+    model_registry_["mistral-3:14b"] = {
+        "mistral-3:14b",
+        "mistral-3-14b",
+        "mistralai/Ministral-3-14B-Instruct-2512-GGUF",
+        "Ministral-3-14B-Instruct-2512-Q4_K_M.gguf",
+        "Q4_K_M",
+        8240LL * 1024 * 1024,       // 8.24 GB
+        "Edge Instruct model",
+        "mistral 3 14b",
+        262144
+    };
+
+    model_registry_["mistral-3R:3b"] = {
+        "mistral-3R:3b",
+        "mistral-3R-3b",
+        "mistralai/Ministral-3-3B-Reasoning-2512-GGUF",
+        "Ministral-3-3B-Reasoning-2512-Q4_K_M.gguf",
+        "Q4_K_M",
+        2150LL * 1024 * 1024,       // 2.15 GB
+        "Edge Reasoning model",
+        "mistral 3 Reasoning 3b",
+        262144
+    };
+
+    model_registry_["mistral-3R:8b"] = {
+        "mistral-3R:8b",
+        "mistral-3R-8b",
+        "mistralai/Ministral-3-8B-Reasoning-2512-GGUF",
+        "Ministral-3-8B-Reasoning-2512-Q4_K_M.gguf",
+        "Q4_K_M",
+        5200LL * 1024 * 1024,       // 5.2 GB
+        "Edge Reasoning model",
+        "mistral 3 Reasoning 8b",
+        262144
+    };
+
+    model_registry_["mistral-3R:14b"] = {
+        "mistral-3R:14b",
+        "mistral-3R-14b",
+        "mistralai/Ministral-3-14B-Reasoning-2512-GGUF",
+        "Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf",
+        "Q4_K_M",
+        8240LL * 1024 * 1024,       // 8.24 GB
+        "Edge Reasoning model",
+        "mistral 3 Reasoning 14b",
+        262144
+    };
+
+    model_registry_["mistral:7b"] = {
+        "mistral:7b",
+        "mistral-7b",
+        "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
+        "mistral-7b-instruct-v0.2.Q4_K_M.gguf",
+        "Q4_K_M",
+        4370LL * 1024 * 1024,       // 4.37 GB
+        "Edge Instruct model",
+        "mistral Instruct 7b",
+        32768
+    };
+
 }
 
 std::vector<ModelRegistry> ModelManager::get_registry_models() {
