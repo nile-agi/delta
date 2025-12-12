@@ -1,14 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(delta-cli VERSION 1.0.0 LANGUAGES C CXX)
 
-# ============================================================================
-# CRITICAL: Set GGML_METAL=OFF FIRST before anything else
-# This must be done before llama.cpp's CMakeLists.txt runs
-# ============================================================================
-# Force Metal OFF by default - will only be enabled if building on actual macOS
-# Do this BEFORE any platform detection to prevent llama.cpp from auto-detecting
-set(GGML_METAL OFF CACHE BOOL "Metal support - OFF by default" FORCE)
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -20,21 +12,9 @@ if(APPLE)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
 endif()
 
-# ============================================================================
-# Platform Detection and Configuration
-# ============================================================================
-# CRITICAL: Force GGML_METAL=OFF FIRST before any platform detection
-# This prevents llama.cpp from auto-detecting Apple and enabling Metal
-# ============================================================================
-
-# Force Metal OFF by default - will be enabled ONLY if building on actual macOS
-set(GGML_METAL OFF CACHE BOOL "Metal support - OFF by default, enabled only on macOS" FORCE)
-
-message(STATUS "Detected OS: ${CMAKE_SYSTEM_NAME}")
-message(STATUS "CMake host system: ${CMAKE_HOST_SYSTEM_NAME}")
-
-# Options for llama-cpp features (defaults - will be overridden by platform detection)
+# Options for llama-cpp features
 option(LLAMA_CUDA "Enable CUDA support" OFF)
+option(GGML_METAL "Enable Metal support (macOS)" ON) # Updated to use GGML_METAL instead of deprecated LLAMA_METAL
 option(LLAMA_VULKAN "Enable Vulkan support" OFF)
 option(LLAMA_HIPBLAS "Enable HIP/ROCm support" OFF)
 option(LLAMA_BLAS "Enable BLAS support" OFF)
@@ -42,52 +22,23 @@ option(USE_CURL "Enable HTTP requests for telemetry" ON)
 option(USE_CROW "Enable Crow HTTP library for server" OFF)
 option(BUILD_TESTS "Build test suite" ON)
 option(BUILD_SERVER "Build web dashboard server" ON)
-option(GGML_CCACHE "Enable ccache for faster compilation" OFF)
-option(GGML_OPENMP "Enable OpenMP support" OFF)
+option(GGML_CCACHE "Enable ccache for faster compilation" OFF) # Disable ccache warning
+option(GGML_OPENMP "Enable OpenMP support" OFF) # Disable OpenMP warnings
 
-# Detect platform and set platform-specific options dynamically
+# Detect platform
 if(APPLE)
-    # macOS/iOS platform
-    message(STATUS "Configuring for macOS/iOS")
-    set(GGML_METAL ON CACHE BOOL "Enable Metal support (macOS)" FORCE)
+    set(GGML_METAL ON) # Use GGML_METAL instead of deprecated LLAMA_METAL
     add_compile_definitions(TARGET_OS_MAC=1)
     if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         add_compile_definitions(TARGET_OS_IOS=1)
-        message(STATUS "iOS target detected")
     endif()
 elseif(ANDROID)
-    # Android platform
-    message(STATUS "Configuring for Android")
-    set(GGML_METAL OFF CACHE BOOL "Disable Metal on Android" FORCE)
     add_compile_definitions(__ANDROID__=1)
 elseif(WIN32)
-    # Windows platform
-    message(STATUS "Configuring for Windows")
-    set(GGML_METAL OFF CACHE BOOL "Disable Metal on Windows" FORCE)
     add_compile_definitions(_WIN32=1)
 elseif(UNIX)
-    # Linux/Unix platform - explicitly disable Metal
-    message(STATUS "Configuring for Linux/Unix")
-    set(GGML_METAL OFF CACHE BOOL "Disable Metal on Linux" FORCE)
     add_compile_definitions(__linux__=1)
-else()
-    # Unknown platform - disable Metal to be safe
-    message(WARNING "Unknown platform detected, disabling Metal support")
-    set(GGML_METAL OFF CACHE BOOL "Disable Metal on unknown platform" FORCE)
 endif()
-
-# Double-check: Force OFF for non-Apple platforms
-if(NOT APPLE)
-    set(GGML_METAL OFF CACHE BOOL "" FORCE)
-endif()
-
-# Print platform configuration summary
-message(STATUS "")
-message(STATUS "Platform Configuration:")
-message(STATUS "  OS: ${CMAKE_SYSTEM_NAME}")
-message(STATUS "  Is Apple: ${APPLE}")
-message(STATUS "  Metal support: ${GGML_METAL}")
-message(STATUS "")
 
 # Include llama.cpp
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/vendor/llama.cpp/CMakeLists.txt")
@@ -95,22 +46,7 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/vendor/llama.cpp/CMakeLists.txt")
         "llama.cpp not found in vendor/llama.cpp/. Please ensure the vendored copy is present.")
 endif()
 
-# CRITICAL: Set llama-cpp options BEFORE adding subdirectory
-# Force GGML_METAL based on platform - must be set in cache before llama.cpp reads it
-if(APPLE)
-    # Only enable Metal on actual Apple platforms
-    set(GGML_METAL ON CACHE BOOL "Enable Metal on Apple platforms" FORCE)
-    message(STATUS "Enabling Metal support for macOS/iOS")
-else()
-    # Force OFF for all non-Apple platforms (Linux, Windows, etc.)
-    # Double-check it's OFF (already set at top, but enforce again)
-    set(GGML_METAL OFF CACHE BOOL "Disable Metal on non-Apple platforms" FORCE)
-    message(STATUS "Disabling Metal support (not building on Apple platform)")
-endif()
-
-message(STATUS "Final GGML_METAL value: ${GGML_METAL} (for llama.cpp)")
-
-# Set other llama-cpp options
+# Set llama-cpp options before adding subdirectory
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER ON CACHE BOOL "" FORCE)
@@ -190,8 +126,7 @@ target_link_libraries(delta PRIVATE
 )
 
 # Link platform-specific libraries
-# Only link Metal on macOS (Apple platforms)
-if(GGML_METAL AND APPLE)
+if(GGML_METAL)
     target_link_libraries(delta PRIVATE ggml-metal)
 endif()
 
@@ -234,8 +169,7 @@ target_include_directories(delta-server PRIVATE
 )
 
 # Link libraries for delta-server
-# stdc++fs is needed on Linux, but not on macOS or Windows
-if(UNIX AND NOT APPLE)
+if(NOT APPLE)
     target_link_libraries(delta-server PRIVATE stdc++fs)
 endif()
 
