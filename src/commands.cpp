@@ -414,19 +414,17 @@ std::string Commands::build_llama_server_cmd(const std::string& server_bin, cons
     cmd << server_bin
         << " -m \"" << model_path << "\""
         << " --port " << port
-        << " -c " << ctx_size
-        << " --gpu-layers -1"
-        << " --flash-attn auto";
+        << " -c " << ctx_size;
     
     // Add --flash-attn flag
-    // if (ctx_size > 16384) {
-    //     cmd << " --flash-attn off";
-    //     if (ctx_size > 32768) {
-    //         cmd << " --gpu-layers -1";
-    //     }
-    // } else {
-    //     cmd << " --flash-attn auto";
-    // }
+    if (ctx_size > 16384) {
+        cmd << " --flash-attn off";
+        if (ctx_size > 32768) {
+            cmd << " --gpu-layers 0";
+        }
+    } else {
+        cmd << " --flash-attn auto";
+    }
     
     // Add --jinja flag for gemma3 models
     std::string model_alias_lower = model_alias;
