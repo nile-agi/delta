@@ -407,31 +407,45 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
 }
 
 // Helper to build llama-server command
-std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path, 
-                                              int port, int ctx_size, const std::string& model_alias, 
-                                              const std::string& public_path) {
+std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path, int port, int ctx_size, const std::string& model_alias, const std::string& public_path) {
     std::stringstream cmd;
     cmd << server_bin
         << " -m \"" << model_path << "\""
         << " --port " << port
         << " -c " << ctx_size;
     
+    // Safest defaults for all hardware (GPU offload + Flash Attention auto-enable)
+    cmd << " -ngl 999";                     // Full ofload attempt (graceful fallback to partial/CPU)
+    cmd << " --flash-attn auto";            // Enable where supported; safe fallback elsewhere
+
+
     // Add --flash-attn flag
-    if (ctx_size > 16384) {
-        cmd << " --flash-attn off";
-        if (ctx_size > 32768) {
-            cmd << " --gpu-layers 0";
-        }
-    } else {
-        cmd << " --flash-attn auto";
-    }
+    // if (ctx_size > 16384) {
+    //     cmd << " --flash-attn off";
+    //     if (ctx_size > 32768) {
+    //         cmd << " --gpu-layers 0";
+    //     }
+    // } else {
+    //     cmd << " --flash-attn auto";
+    // }
     
-    // Add --jinja flag for gemma3 models
+    // Enable Jinja for models that use complex chat templates (Gemma-3, man modern instruct models)
     std::string model_alias_lower = model_alias;
     std::string model_path_lower = model_path;
     std::transform(model_alias_lower.begin(), model_alias_lower.end(), model_alias_lower.begin(), ::tolower);
     std::transform(model_path_lower.begin(), model_path_lower.end(), model_path_lower.begin(), ::tolower);
-    if (model_alias_lower.find("gemma3") != std::string::npos || model_path_lower.find("gemma3") != std::string::npos) {
+    // if (model_alias_lower.find("gemma3") != std::string::npos || model_path_lower.find("gemma3") != std::string::npos) {
+    //     cmd << " --jinja";
+    // }
+
+    bool needs_jinja = (model_alias_lower.find("gemma") != std::string::npos ||
+                        model_alias_lower.find("phi") != std::string::npos ||     // Phi-3/4 often need it
+                        model_alias_lower.find("qwen") != std::string::npos ||    // Qwen series
+                        model_path_lower.find("gemma") != std::string::npos ||
+                        model_path_lower.find("phi") != std::string::npos ||
+                        model_path_lower.find("qwen") != std::string::npos);
+
+    if (needs_jinja) {
         cmd << " --jinja";
     }
     
