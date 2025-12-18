@@ -1381,6 +1381,54 @@ void ModelManager::init_model_registry() {
         32768
     };
 
+    model_registry_["Nemotron-3-Nano:30B-A3B"] = {
+        "Nemotron-3-Nano:30B-A3B",
+        "Nemotron-3-Nano-30B-A3B",
+        "unsloth/Nemotron-3-Nano-30B-A3B-GGUF",
+        "Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
+        "Q4_K_M",
+        24600 * 1024 * 1024,        // 24.6
+        "Reasoning and Non-Reasoning Task",
+        "Nemotron-3-Nano-30B-A3B",
+        1048576
+    };
+
+    model_registry_["Devstral-Small-2:24B"] = {
+        "Devstral-Small-2:24B",
+        "Devstral-Small-2-24B",
+        "unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF",
+        "Devstral-Small-2-24B-Instruct-2512-Q4_K_M.gguf",
+        "Q4_K_M",
+        14300 * 1024 * 1024,
+        "gentic LLM for software engineering tasks",
+        "Devstral-Small-2-24B",
+        393216
+    };
+
+    model_registry_["GML-4.6V-Flash"] = {
+        "GML-4.6V-Flash",
+        "GML-4.6V-Flash",
+        "ggml-org/GLM-4.6V-Flash-GGUF",
+        "GLM-4.6V-Flash-Q4_K_M.gguf",
+        "Q4_K_M",
+        6170 * 1024 * 1024,
+        "lightweight model optimized for local deployment and low-latency applications",
+        "GML-4.6V-Flash",
+        131072
+    };
+
+    model_registry_["AutoGLM-Phone:9B"] = {
+        "AutoGLM-Phone:9B",
+        "AutoGLM-Phone-9B",
+        "ggml-org/AutoGLM-Phone-9B-GGUF",
+        "AutoGLM-Phone-9B-Q4_K_M.gguf",
+        "Q4_K_M",
+        6170 * 1024 * 1024,
+        "lightweight model optimized for local deployment and low-latency applications",
+        "AutoGLM-Phone-9B",
+        65536
+    };
+
 }
 
 std::vector<ModelRegistry> ModelManager::get_registry_models() {
