@@ -17,9 +17,18 @@
 #if !defined(_WIN32) && !defined(_MSC_VER)
 #include <unistd.h>
 #else
+#include <direct.h>
+#include <stdlib.h>
+
 #ifndef PATH_MAX
 #define PATH_MAX MAX_PATH
 #endif
+
+// POSIX shim for Windows
+#define getcwd _getcwd
+inline char* realpath(const char* path, char* resolved_path) {
+    return _fullpath(resolved_path, path, PATH_MAX);
+}
 #endif
 #include <limits.h>
 #include <algorithm>
@@ -513,7 +522,7 @@ int main(int argc, char** argv) {
             }
         } else if (arg == "-T" || arg == "--temperature") {
             if (i + 1 < argc) {
-                config.temperature = std::atof(argv[++i]);
+                config.temperature = (float)std::atof(argv[++i]);
             }
         } else if (arg == "-c" || arg == "--ctx-size") {
             if (i + 1 < argc) {
