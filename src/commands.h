@@ -9,6 +9,21 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <mutex>
+
+#if defined(_WIN32) || defined(_MSC_VER)
+    #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+    #endif
+    #ifndef NOMINMAX
+    #define NOMINMAX
+    #endif
+    #include <windows.h>
+    typedef DWORD process_id_t;
+#else
+    #include <unistd.h>
+    typedef pid_t process_id_t;
+#endif
 
 namespace delta {
 
@@ -72,7 +87,7 @@ private:
     static bool initialized_;
     
     // Process management for llama-server
-    static pid_t llama_server_pid_;
+    static process_id_t llama_server_pid_;
     static std::string current_model_path_;
     static int current_port_;
     static std::mutex server_mutex_;

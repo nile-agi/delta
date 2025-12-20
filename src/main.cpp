@@ -14,7 +14,13 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
+#if !defined(_WIN32) && !defined(_MSC_VER)
 #include <unistd.h>
+#else
+#ifndef PATH_MAX
+#define PATH_MAX MAX_PATH
+#endif
+#endif
 #include <limits.h>
 #include <algorithm>
 #include <cctype>

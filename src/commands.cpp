@@ -19,16 +19,15 @@
 #include <memory>
 #include <vector>
 #include <mutex>
-#include <signal.h>
-#include <sys/wait.h>
-#include <fcntl.h>
-#include <unistd.h>
 #ifdef _WIN32
     #include <windows.h>
     #include <limits.h>
     #include <winsock2.h>
     #include <ws2tcpip.h>
 #else
+    #include <signal.h>
+    #include <sys/wait.h>
+    #include <fcntl.h>
     #include <unistd.h>
     #include <limits.h>
     #include <sys/socket.h>
@@ -44,7 +43,7 @@ namespace delta {
 // Static member initialization
 std::map<std::string, CommandHandler> Commands::command_map_;
 bool Commands::initialized_ = false;
-pid_t Commands::llama_server_pid_ = 0;
+process_id_t Commands::llama_server_pid_ = 0;
 std::string Commands::current_model_path_ = "";
 int Commands::current_port_ = 8080;
 std::mutex Commands::server_mutex_;
@@ -407,25 +406,15 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
 }
 
 // Helper to build llama-server command
-std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path, int port, int ctx_size, const std::string& model_alias, const std::string& public_path) {
+std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path, 
+                                              int port, int ctx_size, const std::string& model_alias, 
+                                              const std::string& public_path) {
     std::stringstream cmd;
     cmd << server_bin
         << " -m \"" << model_path << "\""
         << " --port " << port
         << " -c " << ctx_size;
-
     
-    // Safest defaults for all hardware (GPU offload + Flash Attention auto-enable)
-    // cmd << " -ngl 999";                     // Full ofload attempt (graceful fallback to partial/CPU)
-    // cmd << " --flash-attn auto";            // Enable where supported; safe fallback elsewhere
-
-
-    // Optional: KV cache quantization for very long contexts (helps VRAM on GPU setups)
-    // Uncomment if users frequently use >32k contexts and report OOM
-    // if (ctx_size > 32768) {
-    //     cmd << " -ctk q8_0 -ctv q8_0";   // Or q4_0 for more aggressive savings
-    // }
-
     // Add --flash-attn flag
     if (ctx_size > 16384) {
         cmd << " --flash-attn off";
@@ -436,23 +425,12 @@ std::string Commands::build_llama_server_cmd(const std::string& server_bin, cons
         cmd << " --flash-attn auto";
     }
     
-    // Enable Jinja for models that use complex chat templates (Gemma-3, man modern instruct models)
+    // Add --jinja flag for gemma3 models
     std::string model_alias_lower = model_alias;
     std::string model_path_lower = model_path;
     std::transform(model_alias_lower.begin(), model_alias_lower.end(), model_alias_lower.begin(), ::tolower);
     std::transform(model_path_lower.begin(), model_path_lower.end(), model_path_lower.begin(), ::tolower);
-    // if (model_alias_lower.find("gemma3") != std::string::npos || model_path_lower.find("gemma3") != std::string::npos) {
-    //     cmd << " --jinja";
-    // }
-
-    bool needs_jinja = (model_alias_lower.find("gemma") != std::string::npos ||
-                        model_alias_lower.find("phi") != std::string::npos ||     // Phi-3/4 often need it
-                        model_alias_lower.find("qwen") != std::string::npos ||    // Qwen series
-                        model_path_lower.find("gemma") != std::string::npos ||
-                        model_path_lower.find("phi") != std::string::npos ||
-                        model_path_lower.find("qwen") != std::string::npos);
-
-    if (needs_jinja) {
+    if (model_alias_lower.find("gemma3") != std::string::npos || model_path_lower.find("gemma3") != std::string::npos) {
         cmd << " --jinja";
     }
     
