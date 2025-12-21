@@ -14,21 +14,19 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
-#if !defined(_WIN32) && !defined(_MSC_VER)
-#include <unistd.h>
+// Cross-platform path shims
+#ifdef _WIN32
+    #include <direct.h>
+    #include <stdlib.h>
+    #define get_current_dir _getcwd
+    inline char* resolve_path(const char* path, char* resolved_path) {
+        return _fullpath(resolved_path, path, PATH_MAX);
+    }
 #else
-#include <direct.h>
-#include <stdlib.h>
-
-#ifndef PATH_MAX
-#define PATH_MAX MAX_PATH
-#endif
-
-// POSIX shim for Windows
-#define getcwd _getcwd
-inline char* realpath(const char* path, char* resolved_path) {
-    return _fullpath(resolved_path, path, PATH_MAX);
-}
+    #define get_current_dir getcwd
+    inline char* resolve_path(const char* path, char* resolved_path) {
+        return realpath(path, resolved_path);
+    }
 #endif
 #include <limits.h>
 #include <algorithm>
@@ -810,16 +808,16 @@ int main(int argc, char** argv) {
             char resolved_path[PATH_MAX];
             bool resolved = false;
             
-            if (realpath(public_path.c_str(), resolved_path) != nullptr) {
+            if (resolve_path(public_path.c_str(), resolved_path) != nullptr) {
                 public_path = std::string(resolved_path);
                 resolved = true;
             }
             
             if (!resolved) {
                 char cwd[PATH_MAX];
-                if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+                if (get_current_dir(cwd, sizeof(cwd)) != nullptr) {
                     std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
-                    if (realpath(full_path.c_str(), resolved_path) != nullptr) {
+                    if (resolve_path(full_path.c_str(), resolved_path) != nullptr) {
                         public_path = std::string(resolved_path);
                         resolved = true;
                     }
@@ -828,7 +826,7 @@ int main(int argc, char** argv) {
             
             if (!resolved) {
                 std::string exe_based_path = tools::FileOps::join_path(exe_dir, public_path);
-                if (realpath(exe_based_path.c_str(), resolved_path) != nullptr) {
+                if (resolve_path(exe_based_path.c_str(), resolved_path) != nullptr) {
                     public_path = std::string(resolved_path);
                     resolved = true;
                 }
@@ -836,7 +834,7 @@ int main(int argc, char** argv) {
             
             if (!resolved) {
                 std::string project_path = tools::FileOps::join_path(exe_grandparent, public_path);
-                if (realpath(project_path.c_str(), resolved_path) != nullptr) {
+                if (resolve_path(project_path.c_str(), resolved_path) != nullptr) {
                     public_path = std::string(resolved_path);
                 }
             }
