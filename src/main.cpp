@@ -1,6 +1,7 @@
 /**
  * Delta CLI - Offline AI Assistant
  * Main entry point for the CLI application
+ * (Force Sync Update)
  */
 
 #include "delta_cli.h"
@@ -14,6 +15,7 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
+
 // Cross-platform path shims
 #ifdef _WIN32
     #include <direct.h>
@@ -28,6 +30,7 @@
         return realpath(path, resolved_path);
     }
 #endif
+
 #include <limits.h>
 #include <algorithm>
 #include <cctype>
@@ -869,8 +872,8 @@ int main(int argc, char** argv) {
                                              registry_name_for_alias.substr(last_dash + 1);
                     if (model_mgr.is_in_registry(colon_name)) {
                         auto entry = model_mgr.get_registry_entry(colon_name);
-                        if (!entry.name.empty()) {
-                            model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
+                        if (entry.max_context > 0) {
+                            max_context = entry.max_context;
                         }
                     }
                 }
@@ -1033,7 +1036,7 @@ int main(int argc, char** argv) {
     if (!engine.load_model(config)) {
         UI::print_error("Failed to load model");
         return 1;
-        }
+    }
     }
     
     // Interactive mode
@@ -1072,4 +1075,3 @@ int main(int argc, char** argv) {
     
     return 0;
 }
-
