@@ -1,7 +1,6 @@
 /**
  * Delta CLI - Offline AI Assistant
  * Main entry point for the CLI application
- * (Force Sync Update)
  */
 
 #include "delta_cli.h"
@@ -15,22 +14,7 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
-
-// Cross-platform path shims
-#ifdef _WIN32
-    #include <direct.h>
-    #include <stdlib.h>
-    #define get_current_dir _getcwd
-    inline char* resolve_path(const char* path, char* resolved_path) {
-        return _fullpath(resolved_path, path, PATH_MAX);
-    }
-#else
-    #define get_current_dir getcwd
-    inline char* resolve_path(const char* path, char* resolved_path) {
-        return realpath(path, resolved_path);
-    }
-#endif
-
+#include <unistd.h>
 #include <limits.h>
 #include <algorithm>
 #include <cctype>
@@ -523,7 +507,7 @@ int main(int argc, char** argv) {
             }
         } else if (arg == "-T" || arg == "--temperature") {
             if (i + 1 < argc) {
-                config.temperature = (float)std::atof(argv[++i]);
+                config.temperature = std::atof(argv[++i]);
             }
         } else if (arg == "-c" || arg == "--ctx-size") {
             if (i + 1 < argc) {
@@ -811,16 +795,16 @@ int main(int argc, char** argv) {
             char resolved_path[PATH_MAX];
             bool resolved = false;
             
-            if (resolve_path(public_path.c_str(), resolved_path) != nullptr) {
+            if (realpath(public_path.c_str(), resolved_path) != nullptr) {
                 public_path = std::string(resolved_path);
                 resolved = true;
             }
             
             if (!resolved) {
                 char cwd[PATH_MAX];
-                if (get_current_dir(cwd, sizeof(cwd)) != nullptr) {
+                if (getcwd(cwd, sizeof(cwd)) != nullptr) {
                     std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
-                    if (resolve_path(full_path.c_str(), resolved_path) != nullptr) {
+                    if (realpath(full_path.c_str(), resolved_path) != nullptr) {
                         public_path = std::string(resolved_path);
                         resolved = true;
                     }
@@ -829,7 +813,7 @@ int main(int argc, char** argv) {
             
             if (!resolved) {
                 std::string exe_based_path = tools::FileOps::join_path(exe_dir, public_path);
-                if (resolve_path(exe_based_path.c_str(), resolved_path) != nullptr) {
+                if (realpath(exe_based_path.c_str(), resolved_path) != nullptr) {
                     public_path = std::string(resolved_path);
                     resolved = true;
                 }
@@ -837,7 +821,7 @@ int main(int argc, char** argv) {
             
             if (!resolved) {
                 std::string project_path = tools::FileOps::join_path(exe_grandparent, public_path);
-                if (resolve_path(project_path.c_str(), resolved_path) != nullptr) {
+                if (realpath(project_path.c_str(), resolved_path) != nullptr) {
                     public_path = std::string(resolved_path);
                 }
             }
@@ -872,8 +856,8 @@ int main(int argc, char** argv) {
                                              registry_name_for_alias.substr(last_dash + 1);
                     if (model_mgr.is_in_registry(colon_name)) {
                         auto entry = model_mgr.get_registry_entry(colon_name);
-                        if (entry.max_context > 0) {
-                            max_context = entry.max_context;
+                        if (!entry.name.empty()) {
+                            model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
                         }
                     }
                 }
@@ -1036,7 +1020,7 @@ int main(int argc, char** argv) {
     if (!engine.load_model(config)) {
         UI::print_error("Failed to load model");
         return 1;
-    }
+        }
     }
     
     // Interactive mode
