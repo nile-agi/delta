@@ -46,7 +46,7 @@ private:
     std::string draft_model_;
     std::string grammar_file_;
     
-    // Process management for llama-server
+    // Process management for delta-server
     std::thread llama_server_thread_;
     std::atomic<bool> llama_server_running_;
     std::atomic<bool> should_stop_;
@@ -61,11 +61,11 @@ public:
 
     bool find_llama_server() {
         std::vector<std::string> possible_paths = {
-            "llama-server",
-            "./llama-server",
-            "/opt/homebrew/bin/llama-server",
-            "/usr/local/bin/llama-server",
-            "/usr/bin/llama-server"
+            "delta-server",
+            "./delta-server",
+            "/opt/homebrew/bin/delta-server",
+            "/usr/local/bin/delta-server",
+            "/usr/bin/delta-server"
         };
 
         for (const auto& path : possible_paths) {
@@ -264,7 +264,7 @@ public:
         std::lock_guard<std::mutex> lock(llama_server_mutex_);
         if (llama_server_pid_ != 0) {
             pid_t pid_to_kill = (llama_server_pid_ < 0) ? llama_server_pid_ : llama_server_pid_;
-            // Kill the llama-server process (or process group if negative)
+            // Kill the delta-server process (or process group if negative)
             kill(pid_to_kill, SIGTERM);
             // Wait a bit for it to terminate
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -287,7 +287,7 @@ public:
         std::cout << "🔄 Switching to model: " << model_name << std::endl;
         std::cout << "   Path: " << new_model_path << std::endl;
         
-        // Stop current llama-server
+        // Stop current delta-server
         if (llama_server_running_ && llama_server_pid_ != 0) {
             std::cout << "   Stopping current model..." << std::endl;
             stop_llama_server();
@@ -302,13 +302,13 @@ public:
         // Build new command
         std::string cmd = build_llama_server_command(new_model_path, ctx_size, model_alias);
         
-        // Start llama-server in background using fork
+        // Start delta-server in background using fork
         pid_t pid = fork();
         if (pid == 0) {
             // Child process: create new process group
             setsid(); // Create new session and process group
             
-            // Execute llama-server
+            // Execute delta-server
             // Keep stdout/stderr for debugging, but could redirect to /dev/null if needed
             execl("/bin/sh", "sh", "-c", cmd.c_str(), (char*)NULL);
             _exit(1); // Should not reach here
@@ -334,7 +334,7 @@ public:
                     std::cout << "   ✓ Model loaded successfully!" << std::endl;
                     return true;
                 } else {
-                    std::cerr << "   ✗ Failed to start llama-server (exited with code " 
+                    std::cerr << "   ✗ Failed to start delta-server (exited with code " 
                               << (WIFEXITED(status) ? WEXITSTATUS(status) : -1) << ")" << std::endl;
                     llama_server_running_ = false;
                     llama_server_pid_ = 0;
@@ -349,10 +349,8 @@ public:
 
     int start_server() {
         if (!find_llama_server()) {
-            std::cerr << "Error: llama-server not found!" << std::endl;
-            std::cerr << "Please install llama-server:" << std::endl;
-            std::cerr << "  macOS: brew install llama.cpp" << std::endl;
-            std::cerr << "  Ubuntu: apt install llama.cpp-server" << std::endl;
+            std::cerr << "Error: delta-server not found!" << std::endl;
+            std::cerr << "Please ensure delta-server is built and installed with Delta CLI." << std::endl;
             return 1;
         }
 
@@ -394,15 +392,15 @@ public:
             return this->restart_llama_server(model_path, model_name, ctx_size, model_alias);
         });
         
-        // Start llama-server in background
-        std::cout << "🚀 Starting llama-server..." << std::endl;
+        // Start delta-server in background
+        std::cout << "🚀 Starting delta-server..." << std::endl;
         if (!restart_llama_server(model_path_, "", max_context_, "")) {
-            std::cerr << "Failed to start llama-server" << std::endl;
+            std::cerr << "Failed to start delta-server" << std::endl;
             delta::stop_model_api_server();
             return 1;
         }
         
-        // Wait for llama-server to exit (or be killed)
+        // Wait for delta-server to exit (or be killed)
         while (llama_server_running_) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             // Check if process is still running
@@ -416,7 +414,7 @@ public:
             }
         }
         
-        // Stop model API server when llama-server exits
+        // Stop model API server when delta-server exits
         delta::stop_model_api_server();
         
         return 0;
