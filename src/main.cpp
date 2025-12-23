@@ -803,7 +803,47 @@ int main(int argc, char** argv) {
         }
         
         // Convert relative path to absolute path
+#ifdef _WIN32
+        if (!public_path.empty() && !(public_path.length() >= 2 && public_path[1] == ':')) {
+#else
         if (!public_path.empty() && public_path[0] != '/') {
+#endif
+#ifdef _WIN32
+            char resolved_path[MAX_PATH];
+            bool resolved = false;
+            
+            // Try _fullpath (Windows equivalent of realpath)
+            if (_fullpath(resolved_path, public_path.c_str(), MAX_PATH) != nullptr) {
+                public_path = std::string(resolved_path);
+                resolved = true;
+            }
+            
+            if (!resolved) {
+                char cwd[MAX_PATH];
+                if (_getcwd(cwd, MAX_PATH) != nullptr) {
+                    std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
+                    if (_fullpath(resolved_path, full_path.c_str(), MAX_PATH) != nullptr) {
+                        public_path = std::string(resolved_path);
+                        resolved = true;
+                    }
+                }
+            }
+            
+            if (!resolved) {
+                std::string exe_based_path = tools::FileOps::join_path(exe_dir, public_path);
+                if (_fullpath(resolved_path, exe_based_path.c_str(), MAX_PATH) != nullptr) {
+                    public_path = std::string(resolved_path);
+                    resolved = true;
+                }
+            }
+            
+            if (!resolved) {
+                std::string project_path = tools::FileOps::join_path(exe_grandparent, public_path);
+                if (_fullpath(resolved_path, project_path.c_str(), MAX_PATH) != nullptr) {
+                    public_path = std::string(resolved_path);
+                }
+            }
+#else
             char resolved_path[PATH_MAX];
             bool resolved = false;
             
@@ -837,6 +877,7 @@ int main(int argc, char** argv) {
                     public_path = std::string(resolved_path);
                 }
             }
+#endif
         }
 
         // Get name (with colon) for model alias in web UI
