@@ -51,13 +51,25 @@ bool FileOps::write_file(const std::string& path, const std::string& content) {
 }
 
 bool FileOps::file_exists(const std::string& path) {
+#ifdef _WIN32
+    DWORD dwAttrib = GetFileAttributesA(path.c_str());
+    return (dwAttrib != INVALID_FILE_ATTRIBUTES && 
+            !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+#else
     struct stat buffer;
     return (stat(path.c_str(), &buffer) == 0) && S_ISREG(buffer.st_mode);
+#endif
 }
 
 bool FileOps::dir_exists(const std::string& path) {
+#ifdef _WIN32
+    DWORD dwAttrib = GetFileAttributesA(path.c_str());
+    return (dwAttrib != INVALID_FILE_ATTRIBUTES && 
+            (dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+#else
     struct stat buffer;
     return (stat(path.c_str(), &buffer) == 0) && S_ISDIR(buffer.st_mode);
+#endif
 }
 
 bool FileOps::create_dir(const std::string& path) {
