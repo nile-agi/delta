@@ -174,86 +174,165 @@
              std::string index_file = tools::FileOps::join_path(candidate, "index.html");
              if (tools::FileOps::file_exists(index_file_gz) || tools::FileOps::file_exists(index_file)) {
                  public_path = candidate;
-                 // Convert to absolute path for reliability
-                 if (!public_path.empty() && public_path[0] != '/') {
-                     char resolved[PATH_MAX];
-                     if (realpath(public_path.c_str(), resolved) != nullptr) {
-                         public_path = std::string(resolved);
-                     } else {
-                         // Try relative to current working directory
-                         char cwd[PATH_MAX];
-                         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
-                             std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
-                             if (realpath(full_path.c_str(), resolved) != nullptr) {
-                                 public_path = std::string(resolved);
-                             }
-                         }
-                     }
-                 }
+                // Convert to absolute path for reliability
+#ifdef _WIN32
+                if (!public_path.empty() && !(public_path.length() >= 2 && public_path[1] == ':')) {
+                    char resolved[MAX_PATH];
+                    if (_fullpath(resolved, public_path.c_str(), MAX_PATH) != nullptr) {
+                        public_path = std::string(resolved);
+                    } else {
+                        // Try relative to current working directory
+                        char cwd[MAX_PATH];
+                        if (_getcwd(cwd, MAX_PATH) != nullptr) {
+                            std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
+                            if (_fullpath(resolved, full_path.c_str(), MAX_PATH) != nullptr) {
+                                public_path = std::string(resolved);
+                            }
+                        }
+                    }
+                }
+#else
+                if (!public_path.empty() && public_path[0] != '/') {
+                    char resolved[PATH_MAX];
+                    if (realpath(public_path.c_str(), resolved) != nullptr) {
+                        public_path = std::string(resolved);
+                    } else {
+                        // Try relative to current working directory
+                        char cwd[PATH_MAX];
+                        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+                            std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
+                            if (realpath(full_path.c_str(), resolved) != nullptr) {
+                                public_path = std::string(resolved);
+                            }
+                        }
+                    }
+                }
+#endif
                  break;
              }
          }
      }
      
-     // Convert relative path to absolute path for delta-server
-     if (!public_path.empty() && public_path[0] != '/') {
-         // Try multiple strategies to get absolute path
-         char resolved_path[PATH_MAX];
-         bool resolved = false;
-         
-         // Strategy 1: Try realpath on the path directly (if it exists from current dir)
-         if (realpath(public_path.c_str(), resolved_path) != nullptr) {
-             public_path = std::string(resolved_path);
-             resolved = true;
-         }
-         
-         // Strategy 2: Try relative to current working directory
-         if (!resolved) {
-             char cwd[PATH_MAX];
-             if (getcwd(cwd, sizeof(cwd)) != nullptr) {
-                 std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
-                 if (realpath(full_path.c_str(), resolved_path) != nullptr) {
-                     public_path = std::string(resolved_path);
-                     resolved = true;
-                 }
-             }
-         }
-         
-         // Strategy 3: Try relative to executable directory
-         if (!resolved) {
-             std::string exe_based_path = tools::FileOps::join_path(exe_dir, public_path);
-             if (realpath(exe_based_path.c_str(), resolved_path) != nullptr) {
-                 public_path = std::string(resolved_path);
-                 resolved = true;
-             }
-         }
-         
-         // Strategy 4: Try relative to project root (exe_grandparent)
-         if (!resolved) {
-             std::string project_path = tools::FileOps::join_path(exe_grandparent, public_path);
-             if (realpath(project_path.c_str(), resolved_path) != nullptr) {
-                 public_path = std::string(resolved_path);
-                 resolved = true;
-             }
-         }
-         
-         // If all else fails, construct absolute path manually from exe_dir
-         if (!resolved) {
-             // Build absolute path from executable directory
-             std::string abs_path = tools::FileOps::join_path(exe_dir, public_path);
-             // Normalize the path (remove .. and .)
-             char normalized[PATH_MAX];
-             if (realpath(abs_path.c_str(), normalized) != nullptr) {
-                 public_path = std::string(normalized);
-             } else {
-                 // Last resort: use exe_grandparent
-                 abs_path = tools::FileOps::join_path(exe_grandparent, public_path);
-                 if (realpath(abs_path.c_str(), normalized) != nullptr) {
-                     public_path = std::string(normalized);
-                 }
-             }
-         }
-     }
+    // Convert relative path to absolute path for delta-server
+#ifdef _WIN32
+    if (!public_path.empty() && !(public_path.length() >= 2 && public_path[1] == ':')) {
+        // Try multiple strategies to get absolute path
+        char resolved_path[MAX_PATH];
+        bool resolved = false;
+        
+        // Strategy 1: Try _fullpath on the path directly (if it exists from current dir)
+        if (_fullpath(resolved_path, public_path.c_str(), MAX_PATH) != nullptr) {
+            public_path = std::string(resolved_path);
+            resolved = true;
+        }
+        
+        // Strategy 2: Try relative to current working directory
+        if (!resolved) {
+            char cwd[MAX_PATH];
+            if (_getcwd(cwd, MAX_PATH) != nullptr) {
+                std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
+                if (_fullpath(resolved_path, full_path.c_str(), MAX_PATH) != nullptr) {
+                    public_path = std::string(resolved_path);
+                    resolved = true;
+                }
+            }
+        }
+        
+        // Strategy 3: Try relative to executable directory
+        if (!resolved) {
+            std::string exe_based_path = tools::FileOps::join_path(exe_dir, public_path);
+            if (_fullpath(resolved_path, exe_based_path.c_str(), MAX_PATH) != nullptr) {
+                public_path = std::string(resolved_path);
+                resolved = true;
+            }
+        }
+        
+        // Strategy 4: Try relative to project root (exe_grandparent)
+        if (!resolved) {
+            std::string project_path = tools::FileOps::join_path(exe_grandparent, public_path);
+            if (_fullpath(resolved_path, project_path.c_str(), MAX_PATH) != nullptr) {
+                public_path = std::string(resolved_path);
+                resolved = true;
+            }
+        }
+        
+        // If all else fails, construct absolute path manually from exe_dir
+        if (!resolved) {
+            // Build absolute path from executable directory
+            std::string abs_path = tools::FileOps::join_path(exe_dir, public_path);
+            // Normalize the path (remove .. and .)
+            char normalized[MAX_PATH];
+            if (_fullpath(normalized, abs_path.c_str(), MAX_PATH) != nullptr) {
+                public_path = std::string(normalized);
+            } else {
+                // Last resort: use exe_grandparent
+                abs_path = tools::FileOps::join_path(exe_grandparent, public_path);
+                if (_fullpath(normalized, abs_path.c_str(), MAX_PATH) != nullptr) {
+                    public_path = std::string(normalized);
+                }
+            }
+        }
+    }
+#else
+    if (!public_path.empty() && public_path[0] != '/') {
+        // Try multiple strategies to get absolute path
+        char resolved_path[PATH_MAX];
+        bool resolved = false;
+        
+        // Strategy 1: Try realpath on the path directly (if it exists from current dir)
+        if (realpath(public_path.c_str(), resolved_path) != nullptr) {
+            public_path = std::string(resolved_path);
+            resolved = true;
+        }
+        
+        // Strategy 2: Try relative to current working directory
+        if (!resolved) {
+            char cwd[PATH_MAX];
+            if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+                std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
+                if (realpath(full_path.c_str(), resolved_path) != nullptr) {
+                    public_path = std::string(resolved_path);
+                    resolved = true;
+                }
+            }
+        }
+        
+        // Strategy 3: Try relative to executable directory
+        if (!resolved) {
+            std::string exe_based_path = tools::FileOps::join_path(exe_dir, public_path);
+            if (realpath(exe_based_path.c_str(), resolved_path) != nullptr) {
+                public_path = std::string(resolved_path);
+                resolved = true;
+            }
+        }
+        
+        // Strategy 4: Try relative to project root (exe_grandparent)
+        if (!resolved) {
+            std::string project_path = tools::FileOps::join_path(exe_grandparent, public_path);
+            if (realpath(project_path.c_str(), resolved_path) != nullptr) {
+                public_path = std::string(resolved_path);
+                resolved = true;
+            }
+        }
+        
+        // If all else fails, construct absolute path manually from exe_dir
+        if (!resolved) {
+            // Build absolute path from executable directory
+            std::string abs_path = tools::FileOps::join_path(exe_dir, public_path);
+            // Normalize the path (remove .. and .)
+            char normalized[PATH_MAX];
+            if (realpath(abs_path.c_str(), normalized) != nullptr) {
+                public_path = std::string(normalized);
+            } else {
+                // Last resort: use exe_grandparent
+                abs_path = tools::FileOps::join_path(exe_grandparent, public_path);
+                if (realpath(abs_path.c_str(), normalized) != nullptr) {
+                    public_path = std::string(normalized);
+                }
+            }
+        }
+    }
+#endif
      
      // If not found, server will use default web UI (no --path flag)
      
