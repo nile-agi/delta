@@ -16,23 +16,35 @@
 #include <thread>
 #include <chrono>
 #include <mutex>
-#include <signal.h>
-#include <sys/wait.h>
-#include <fcntl.h>
-#include <unistd.h>
 #ifdef _WIN32
 #include <windows.h>
 #include <shlwapi.h>
+#include <io.h>
+#include <direct.h>
+#include <process.h>
 #elif defined(__APPLE__)
 #include <mach-o/dyld.h>
 #include <libgen.h>
 #include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 #else
 #include <unistd.h>
 #include <libgen.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 #endif
 
 namespace delta {
+
+#ifdef _WIN32
+    typedef DWORD pid_t;
+    #define WNOHANG 1
+    #define WIFEXITED(status) ((status) != STILL_ACTIVE)
+    #define WEXITSTATUS(status) (status)
+#endif
 
 class DeltaServerWrapper {
 private:
@@ -50,14 +62,25 @@ private:
     std::thread llama_server_thread_;
     std::atomic<bool> llama_server_running_;
     std::atomic<bool> should_stop_;
+#ifdef _WIN32
+    HANDLE llama_server_process_;
+    DWORD llama_server_pid_;
+#else
     pid_t llama_server_pid_;
+#endif
     std::mutex llama_server_mutex_;
 
 public:
     DeltaServerWrapper() 
         : port_(8080), max_parallel_(4), max_context_(16384), 
           enable_embedding_(false), enable_reranking_(false),
-          llama_server_running_(false), should_stop_(false), llama_server_pid_(0) {}
+          llama_server_running_(false), should_stop_(false)
+#ifdef _WIN32
+          , llama_server_process_(NULL), llama_server_pid_(0)
+#else
+          , llama_server_pid_(0)
+#endif
+    {}
 
     bool find_llama_server() {
         std::vector<std::string> possible_paths = {
@@ -262,6 +285,16 @@ public:
     
     void stop_llama_server() {
         std::lock_guard<std::mutex> lock(llama_server_mutex_);
+#ifdef _WIN32
+        if (llama_server_process_ != NULL) {
+            // Terminate the process
+            TerminateProcess(llama_server_process_, 0);
+            CloseHandle(llama_server_process_);
+            llama_server_process_ = NULL;
+            llama_server_pid_ = 0;
+            llama_server_running_ = false;
+        }
+#else
         if (llama_server_pid_ != 0) {
             pid_t pid_to_kill = (llama_server_pid_ < 0) ? llama_server_pid_ : llama_server_pid_;
             // Kill the delta-server process (or process group if negative)
@@ -279,6 +312,7 @@ public:
             llama_server_pid_ = 0;
             llama_server_running_ = false;
         }
+#endif
     }
     
     bool restart_llama_server(const std::string& new_model_path, const std::string& model_name, int ctx_size, const std::string& model_alias) {
@@ -288,7 +322,11 @@ public:
         std::cout << "   Path: " << new_model_path << std::endl;
         
         // Stop current delta-server
+#ifdef _WIN32
+        if (llama_server_running_ && llama_server_process_ != NULL) {
+#else
         if (llama_server_running_ && llama_server_pid_ != 0) {
+#endif
             std::cout << "   Stopping current model..." << std::endl;
             stop_llama_server();
             // Wait a bit more to ensure port is free
@@ -302,6 +340,48 @@ public:
         // Build new command
         std::string cmd = build_llama_server_command(new_model_path, ctx_size, model_alias);
         
+#ifdef _WIN32
+        // Start delta-server on Windows using CreateProcess
+        STARTUPINFOA si = {0};
+        PROCESS_INFORMATION pi = {0};
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+        si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+        
+        std::vector<char> cmd_line(cmd.begin(), cmd.end());
+        cmd_line.push_back('\0');
+        
+        if (CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, 
+                          CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &si, &pi)) {
+            CloseHandle(pi.hThread);
+            llama_server_process_ = pi.hProcess;
+            llama_server_pid_ = pi.dwProcessId;
+            llama_server_running_ = true;
+            
+            // Wait a moment for server to start
+            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+            
+            // Check if process is still running
+            DWORD exit_code;
+            if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                std::cout << "   ✓ Model loaded successfully!" << std::endl;
+                return true;
+            } else {
+                std::cerr << "   ✗ Failed to start delta-server" << std::endl;
+                CloseHandle(pi.hProcess);
+                llama_server_process_ = NULL;
+                llama_server_pid_ = 0;
+                llama_server_running_ = false;
+                return false;
+            }
+        } else {
+            std::cerr << "   ✗ Failed to create process" << std::endl;
+            return false;
+        }
+#else
         // Start delta-server in background using fork
         pid_t pid = fork();
         if (pid == 0) {
@@ -345,6 +425,7 @@ public:
             std::cerr << "   ✗ Failed to fork process" << std::endl;
             return false;
         }
+#endif
     }
 
     int start_server() {
@@ -404,6 +485,19 @@ public:
         while (llama_server_running_) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             // Check if process is still running
+#ifdef _WIN32
+            if (llama_server_process_ != NULL) {
+                DWORD exit_code;
+                if (GetExitCodeProcess(llama_server_process_, &exit_code) && exit_code != STILL_ACTIVE) {
+                    // Process exited
+                    CloseHandle(llama_server_process_);
+                    llama_server_process_ = NULL;
+                    llama_server_pid_ = 0;
+                    llama_server_running_ = false;
+                    break;
+                }
+            }
+#else
             if (llama_server_pid_ > 0) {
                 int status;
                 if (waitpid(llama_server_pid_, &status, WNOHANG) != 0) {
@@ -412,6 +506,7 @@ public:
                     break;
                 }
             }
+#endif
         }
         
         // Stop model API server when delta-server exits

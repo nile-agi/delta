@@ -14,8 +14,20 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
-#include <unistd.h>
-#include <limits.h>
+#ifdef _WIN32
+    #include <windows.h>
+    #include <io.h>
+    #include <direct.h>
+    #ifndef PATH_MAX
+        #define PATH_MAX 260
+    #endif
+#else
+    #include <unistd.h>
+    #include <limits.h>
+    #ifndef PATH_MAX
+        #define PATH_MAX 4096
+    #endif
+#endif
 #include <algorithm>
 #include <cctype>
 
