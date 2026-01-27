@@ -72,7 +72,7 @@ private:
 
 public:
     DeltaServerWrapper() 
-        : port_(2276), max_parallel_(4), max_context_(16384), 
+        : port_(2275), max_parallel_(4), max_context_(16384), 
           enable_embedding_(false), enable_reranking_(false),
           llama_server_running_(false), should_stop_(false)
 #ifdef _WIN32
@@ -523,7 +523,7 @@ int main(int argc, char* argv[]) {
     
     // Parse command line arguments (simplified)
     std::string model_path;
-    int port = 2276;
+    int port = 2275;
     int max_parallel = 4;
     int max_context = 16384;
     bool enable_embedding = false;

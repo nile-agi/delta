@@ -383,7 +383,7 @@ private:
                     {"loaded", model_loaded},
                     {"message", model_loaded 
                         ? "Model loaded successfully! The server is now using " + model_alias + "."
-                        : "Model selected. The model path will be sent in API requests. Note: llama-server uses the model loaded at startup. To actually use this model, restart the server with: ./delta-server -m \"" + model_path + "\" --port 2276"}
+                        : "Model selected. The model path will be sent in API requests. Note: llama-server uses the model loaded at startup. To actually use this model, restart the server with: ./delta-server -m \"" + model_path + "\" --port 2275"}
                 };
                 
                 res.set_content(result.dump(), "application/json");

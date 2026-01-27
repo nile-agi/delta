@@ -76,7 +76,7 @@ echo "╔═══════════════════════�
 echo "║    ✅ DELTA CLI IS READY!                                     ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
-echo "🌐 Web UI: http://localhost:8080"
+echo "🌐 Web UI: http://localhost:2275"
 echo ""
 echo "📋 Verification:"
 echo "   Server path:"

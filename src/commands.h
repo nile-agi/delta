@@ -59,7 +59,7 @@ public:
     static bool process_command(const std::string& input, InteractiveSession& session);
     
     // Launch server automatically (for auto-start on delta launch)
-    static bool launch_server_auto(const std::string& model_path, int port = 2276, int ctx_size = 4096, const std::string& model_alias = "");
+    static bool launch_server_auto(const std::string& model_path, int port = 2275, int ctx_size = 4096, const std::string& model_alias = "");
     
     // Restart llama-server with new model (for model switching)
     static bool restart_llama_server(const std::string& model_path, const std::string& model_name, int ctx_size, const std::string& model_alias);
