@@ -43,7 +43,7 @@ std::string read_template() {
 }
 
 int main(int argc, char** argv) {
-    int port = 2275;
+    int port = 8080;
     
     if (argc > 1) {
         port = std::atoi(argv[1]);

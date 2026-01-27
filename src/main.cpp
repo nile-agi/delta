@@ -66,7 +66,7 @@ OPTIONS:
     --multimodal            Enable multimodal mode (images + text)
     --interactive           Start interactive chat mode
     --server                Start Delta Server (OpenAI-compatible API)
-        --port <N>              Server port (default: 2275)
+        --port <N>              Server port (default: 8080)
          --np <N>                Max parallel requests (default: 4)
          --c <N>                 Max context size (default: 16384)
          --embedding             Enable embedding endpoints
@@ -220,9 +220,9 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
         }
         
         // Try to launch server - if it fails, it's okay (server might not be built)
-        if (Commands::launch_server_auto(model_path, 2275, ctx_size, model_alias)) {
+        if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
             UI::print_success("Delta Server started in background");
-            std::string url = "http://localhost:2275";
+            std::string url = "http://localhost:8080";
             UI::print_info("Open: " + url);
             // Open browser after a short delay to ensure server is ready
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -418,7 +418,7 @@ int main(int argc, char** argv) {
     bool is_remove_command = false;
     bool no_args = (argc == 1);  // No arguments provided
     int max_tokens = 256;
-    int server_port = 2275;
+    int server_port = 8080;
     int max_parallel = 4;
     int max_context = 16384;
     bool max_context_explicit = false;  // Track if --c was explicitly set

@@ -49,16 +49,119 @@
  
  namespace delta {
  
- // Static member initialization
- std::map<std::string, CommandHandler> Commands::command_map_;
- bool Commands::initialized_ = false;
- process_id_t Commands::llama_server_pid_ = 0;
- std::string Commands::current_model_path_ = "";
- int Commands::current_port_ = 8080;
- std::mutex Commands::server_mutex_;
- 
- // Launch server automatically (public method)
- bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size, const std::string& model_alias) {
+// Static member initialization
+std::map<std::string, CommandHandler> Commands::command_map_;
+bool Commands::initialized_ = false;
+process_id_t Commands::llama_server_pid_ = 0;
+std::string Commands::current_model_path_ = "";
+int Commands::current_port_ = 8080;
+std::mutex Commands::server_mutex_;
+
+// Check if a port is available
+bool Commands::is_port_available(int port) {
+#ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        return false;
+    }
+    
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock == INVALID_SOCKET) {
+        WSACleanup();
+        return false;
+    }
+    
+    // Set SO_REUSEADDR to allow reuse of the port
+    int opt = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
+    
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    
+    // Try to bind to the port
+    bool available = (bind(sock, (sockaddr*)&addr, sizeof(addr)) == 0);
+    
+    closesocket(sock);
+    WSACleanup();
+    return available;
+#else
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        return false;
+    }
+    
+    // Set SO_REUSEADDR to allow reuse of the port
+    int opt = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    
+    // Try to bind to the port
+    bool available = (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0);
+    
+    close(sock);
+    return available;
+#endif
+}
+
+// Find an available port (tries default, then fallback ports)
+int Commands::find_available_port(int preferred_port) {
+    // List of ports to try (common web server ports that work everywhere)
+    std::vector<int> ports_to_try = {
+        preferred_port,  // Try preferred port first
+        8080,           // Standard HTTP alternative
+        3000,           // Common Node.js port
+        5000,           // Common Flask port
+        8000,           // Common Python HTTP server
+        9000,           // Common alternative
+        8081,           // Alternative to 8080
+        8888,           // Common alternative
+        2275            // Original port as last resort
+    };
+    
+    // Remove duplicates while preserving order
+    std::vector<int> unique_ports;
+    for (int port : ports_to_try) {
+        if (std::find(unique_ports.begin(), unique_ports.end(), port) == unique_ports.end()) {
+            unique_ports.push_back(port);
+        }
+    }
+    
+    // Try each port
+    for (int port : unique_ports) {
+        if (is_port_available(port)) {
+            return port;
+        }
+    }
+    
+    // If all common ports are taken, try random ports in the ephemeral range
+    // (49152-65535 on most systems, but we'll use 8000-9999 for safety)
+    for (int port = 8000; port <= 9999; port++) {
+        if (is_port_available(port)) {
+            return port;
+        }
+    }
+    
+    // Last resort: return preferred port anyway (will fail gracefully)
+    return preferred_port;
+}
+
+// Launch server automatically (public method)
+bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size, const std::string& model_alias) {
+    // Find an available port if the requested port is not available
+    if (!is_port_available(port)) {
+        UI::print_info("Port " + std::to_string(port) + " is not available, searching for an available port...");
+        int new_port = find_available_port(port);
+        if (new_port != port) {
+            UI::print_info("Using port " + std::to_string(new_port) + " instead");
+            port = new_port;
+        }
+    }
      // Find delta-server binary (built as part of Delta CLI)
      std::vector<std::string> server_candidates;
      std::string exe_dir = tools::FileOps::get_executable_dir();
@@ -525,6 +628,9 @@
          UI::print_info("Check error log: " + err_file);
          UI::print_info("The server may still be loading the model. Try accessing http://localhost:" + std::to_string(port) + " in a few seconds.");
          // Don't return false here - server might still be starting
+     } else {
+         UI::print_success("Delta Server started successfully on port " + std::to_string(port));
+         UI::print_info("Open: http://localhost:" + std::to_string(port));
      }
      
      // Start model management API server on port 8081
