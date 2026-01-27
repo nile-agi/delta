@@ -540,9 +540,16 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      
      // Wait for server to start and verify it's running
      // Give server time to initialize (especially for model loading)
+     // Models can take 30-60 seconds to load, so we wait up to 60 seconds
      bool server_listening = false;
-     for (int attempt = 0; attempt < 20; attempt++) {
+     UI::print_info("Waiting for server to start (this may take 30-60 seconds while loading the model)...");
+     for (int attempt = 0; attempt < 120; attempt++) {  // 120 * 500ms = 60 seconds
          std::this_thread::sleep_for(std::chrono::milliseconds(500));
+         
+         // Show progress every 10 seconds
+         if (attempt > 0 && attempt % 20 == 0) {
+             UI::print_info("Still waiting for server... (" + std::to_string(attempt / 2) + " seconds)");
+         }
          
          // Check if port is listening using socket connection
  #ifdef _WIN32
@@ -583,8 +590,11 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
          }
      }
      
-     // Check error log for any startup errors
- #ifndef _WIN32
+     
+     // Check error log for any startup errors BEFORE checking if listening
+     bool has_startup_error = false;
+     std::string error_message = "";
+#ifndef _WIN32
      std::ifstream err_log(err_file);
      if (err_log.is_open()) {
          std::string line;
@@ -598,7 +608,9 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                  if (line_lower.find("error") != std::string::npos ||
                      line_lower.find("failed") != std::string::npos ||
                      line_lower.find("fatal") != std::string::npos ||
-                     (line_lower.find("unknown") != std::string::npos && line_lower.find("option") != std::string::npos)) {
+                     (line_lower.find("unknown") != std::string::npos && line_lower.find("option") != std::string::npos) ||
+                     line_lower.find("cannot") != std::string::npos ||
+                     line_lower.find("unable") != std::string::npos) {
                      error_lines.push_back(line);
                  }
              }
@@ -606,6 +618,8 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
          err_log.close();
          
          if (!error_lines.empty()) {
+             has_startup_error = true;
+             error_message = error_lines[0];  // Show first error
              // Show errors - these indicate the server failed to start
              UI::print_error("Server startup errors detected:");
              for (size_t i = 0; i < error_lines.size() && i < 5; i++) {
@@ -613,25 +627,32 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
              }
              std::cerr << "\nFull error log: " << err_file << std::endl;
              std::cerr << "\nTip: If you see 'unknown option' errors, your delta-server build may not support all flags." << std::endl;
-             return false;
          }
      }
- #endif
+#endif
      
      if (result != 0) {
          UI::print_error("Failed to start server process");
          return false;
      }
      
-     if (!server_listening) {
-         UI::print_error("Server process started but port " + std::to_string(port) + " is not listening");
-         UI::print_info("Check error log: " + err_file);
-         UI::print_info("The server may still be loading the model. Try accessing http://localhost:" + std::to_string(port) + " in a few seconds.");
-         // Don't return false here - server might still be starting
-     } else {
-         UI::print_success("Delta Server started successfully on port " + std::to_string(port));
-         UI::print_info("Open: http://localhost:" + std::to_string(port));
+     if (has_startup_error) {
+         UI::print_error("Server failed to start due to errors. Check the error log above.");
+         return false;
      }
+     
+     if (!server_listening) {
+         UI::print_error("Server process started but port " + std::to_string(port) + " is not listening after 60 seconds");
+         UI::print_info("Check error log: " + err_file);
+         UI::print_info("The server may still be loading a large model. Try accessing http://localhost:" + std::to_string(port) + " manually.");
+         UI::print_info("You can check if the server is running with: ps aux | grep delta-server");
+         // Return false so browser doesn't open
+         return false;
+     }
+     
+     // Server is confirmed listening - proceed with setup
+     UI::print_success("Delta Server started successfully on port " + std::to_string(port));
+     UI::print_info("Open: http://localhost:" + std::to_string(port));
      
      // Start model management API server on port 8081
      std::cerr << "[DEBUG] Starting model API server on port 8081" << std::endl;
@@ -1212,17 +1233,18 @@ void Commands::stop_llama_server() {
          }
      } else {
          // Server not running, start it
+         // launch_server_auto now waits for server to be ready before returning
          if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
-             UI::print_success("Delta Server started in background");
-             std::string url = "http://localhost:8080";
-             UI::print_info("Open: " + url);
-             // Open browser after a short delay to ensure server is ready
-             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+             // Server is confirmed listening, get the actual port used
+             int actual_port = Commands::get_current_port();
+             std::string url = "http://localhost:" + std::to_string(actual_port);
+             std::this_thread::sleep_for(std::chrono::milliseconds(500));
              if (tools::Browser::open_url(url)) {
                  UI::print_info("Browser opened automatically");
              }
+         } else {
+             UI::print_error("Failed to start server. Check error messages above.");
          }
-         // If launch fails, don't show error - server is optional
      }
      
      return true;

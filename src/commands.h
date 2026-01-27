@@ -73,6 +73,9 @@ public:
     // Stop llama-server
     static void stop_llama_server();
     
+    // Get current server port
+    static int get_current_port() { return current_port_; }
+    
     // Command handlers
     static bool handle_download(const std::vector<std::string>& args, InteractiveSession& session);
     static bool handle_remove(const std::vector<std::string>& args, InteractiveSession& session);

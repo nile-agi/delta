@@ -220,15 +220,18 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
         }
         
         // Try to launch server - if it fails, it's okay (server might not be built)
+        // launch_server_auto now waits for server to be ready before returning
         if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
-            UI::print_success("Delta Server started in background");
-            std::string url = "http://localhost:8080";
-            UI::print_info("Open: " + url);
-            // Open browser after a short delay to ensure server is ready
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            // Server is confirmed listening, get the actual port used
+            int actual_port = Commands::get_current_port();
+            std::string url = "http://localhost:" + std::to_string(actual_port);
+            // Open browser now that server is confirmed ready
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
             if (tools::Browser::open_url(url)) {
                 UI::print_info("Browser opened automatically");
             }
+        } else {
+            UI::print_error("Server failed to start. Check the error messages above.");
         }
         // If launch fails, don't show error - server is optional
     } else {
