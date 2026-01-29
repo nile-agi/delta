@@ -129,30 +129,27 @@ public:
     }
 
     bool find_llama_server() {
-        std::string self_path = resolve_path(get_executable_path());
+        // Only search for the real llama.cpp HTTP server binary ('server').
+        // Do not include delta-server: we must not run ourselves or another wrapper (avoids recursion/chains).
         std::string exe_dir = get_executable_dir();
         std::vector<std::string> possible_paths;
         if (!exe_dir.empty()) {
 #ifdef _WIN32
             possible_paths.push_back(exe_dir + "\\server.exe");
-            possible_paths.push_back(exe_dir + "\\delta-server.exe");
+            possible_paths.push_back(exe_dir + "\\..\\server.exe");
 #else
             possible_paths.push_back(exe_dir + "/server");
-            possible_paths.push_back(exe_dir + "/delta-server");
+            possible_paths.push_back(exe_dir + "/../server");
 #endif
         }
         possible_paths.push_back("server");
         possible_paths.push_back("./server");
         possible_paths.push_back("/opt/homebrew/bin/server");
-        possible_paths.push_back("/opt/homebrew/bin/delta-server");
         possible_paths.push_back("/usr/local/bin/server");
-        possible_paths.push_back("/usr/local/bin/delta-server");
-        possible_paths.push_back("/usr/bin/delta-server");
+        possible_paths.push_back("/usr/bin/server");
 
         for (const auto& path : possible_paths) {
             if (!std::filesystem::exists(path)) continue;
-            std::string resolved = resolve_path(path);
-            if (!resolved.empty() && resolved == self_path) continue;
             llama_server_path_ = path;
             return true;
         }

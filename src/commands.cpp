@@ -78,6 +78,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     server_candidates.push_back("/opt/homebrew/bin/delta-server");
     server_candidates.push_back("/usr/local/bin/server");
     server_candidates.push_back("/usr/local/bin/delta-server");
+    server_candidates.push_back("/usr/bin/server");
     server_candidates.push_back("/usr/bin/delta-server");
 #ifdef _WIN32
     server_candidates.push_back("C:\\Program Files\\Delta CLI\\server.exe");
@@ -700,6 +701,7 @@ void Commands::stop_llama_server() {
      server_candidates.push_back("/opt/homebrew/bin/delta-server");
      server_candidates.push_back("/usr/local/bin/server");
      server_candidates.push_back("/usr/local/bin/delta-server");
+     server_candidates.push_back("/usr/bin/server");
      server_candidates.push_back("/usr/bin/delta-server");
 #ifdef _WIN32
      server_candidates.push_back("server.exe");
