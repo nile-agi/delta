@@ -682,23 +682,32 @@ void Commands::stop_llama_server() {
      // Now acquire lock for the rest of the function
      std::lock_guard<std::mutex> lock(server_mutex_);
      
-     // Find delta-server binary (reuse logic from launch_server_auto)
+     // Use same server binary as launch_server_auto (prefer "server", then delta-server)
      std::vector<std::string> server_candidates;
      std::string exe_dir = tools::FileOps::get_executable_dir();
 #ifdef _WIN32
+     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "server.exe"));
      server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server.exe"));
+     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../server.exe"));
      server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server.exe"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "bin/delta-server.exe"));
-     server_candidates.push_back("delta-server.exe");
 #else
+     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "server"));
      server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server"));
+     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../server"));
      server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server"));
+#endif
+     server_candidates.push_back("/opt/homebrew/bin/server");
      server_candidates.push_back("/opt/homebrew/bin/delta-server");
+     server_candidates.push_back("/usr/local/bin/server");
      server_candidates.push_back("/usr/local/bin/delta-server");
      server_candidates.push_back("/usr/bin/delta-server");
-     server_candidates.push_back("delta-server");
+#ifdef _WIN32
+     server_candidates.push_back("server.exe");
+#else
+     server_candidates.push_back("server");
 #endif
-     
+     server_candidates.push_back("delta-server");
+
      std::string server_bin;
      for (const auto& candidate : server_candidates) {
          if (tools::FileOps::file_exists(candidate)) {
@@ -706,9 +715,9 @@ void Commands::stop_llama_server() {
              break;
          }
      }
-     
+
      if (server_bin.empty()) {
-         UI::print_error("delta-server not found");
+         UI::print_error("Server binary not found for model switch");
          return false;
      }
      

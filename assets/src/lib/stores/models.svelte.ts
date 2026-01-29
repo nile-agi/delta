@@ -194,27 +194,16 @@ class ModelsStore {
 				// Store the model path - this is what llama-server needs in the request
 				const modelPath = useResponse.model_path || option.model;
 				
-				if (!modelPath || modelPath === option.model) {
-					// If we didn't get a path, try to construct it or use the name
-					// For now, we'll use the model name and let llama-server handle it
-					console.warn('Model path not available, using model name:', option.model);
-					this._selectedModelId = option.id;
-					this._selectedModelName = option.model;
-					this._persistedSelection.value = { id: option.id, model: option.model };
-				} else {
-					// Store the full path - this will be sent in requests
-					// Note: llama-server loads one model at startup, so the model field in requests
-					// is mainly for metadata. The actual model used is the one loaded at server startup.
-					this._selectedModelId = option.id;
-					this._selectedModelName = modelPath;
-					this._persistedSelection.value = { id: option.id, model: modelPath };
-					console.log('✓ Model selected:', option.name, 'Path:', modelPath);
-					console.warn('Note: llama-server uses the model loaded at startup. To switch models, restart the server with the new model.');
+				this._selectedModelId = option.id;
+				this._selectedModelName = modelPath || option.model;
+				this._persistedSelection.value = { id: option.id, model: modelPath || option.model };
+				if (useResponse.loaded) {
+					// Server restarted with new model (same as /use in terminal). Refetch so main API shows current model.
+					await this.fetch(true);
 				}
 			} catch (error) {
-				// If API call fails, still update the selection with the model name
-				// The chat service will try to use it
-				console.warn('Failed to get model path from API, using model name:', error);
+				console.warn('Failed to switch model:', error);
+				this._error = error instanceof Error ? error.message : String(error);
 				this._selectedModelId = option.id;
 				this._selectedModelName = option.model;
 				this._persistedSelection.value = { id: option.id, model: option.model };

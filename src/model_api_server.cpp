@@ -342,7 +342,7 @@ private:
                     return;
                 }
                 
-                // Get model's max context and alias from registry
+                // Get model's max context and alias from registry (match /use behavior)
                 int ctx_size = 4096; // Default
                 std::string model_alias = model_name;
                 if (model_mgr_.is_in_registry(model_name)) {
@@ -350,7 +350,9 @@ private:
                     if (entry.max_context > 0) {
                         ctx_size = entry.max_context;
                     }
-                    if (!entry.name.empty()) {
+                    if (!entry.short_name.empty()) {
+                        model_alias = entry.short_name;
+                    } else if (!entry.name.empty()) {
                         model_alias = entry.name;
                     }
                 }
