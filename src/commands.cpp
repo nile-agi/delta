@@ -116,32 +116,53 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
      std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
      
-     // Check for public/ directory first (development builds), then Homebrew share directory
-     // Priority: local public/ directory for development, then installed locations
-     std::vector<std::string> public_candidates = {
-         // Relative to executable (Delta web UI from public/) - PRIORITY for development
-         tools::FileOps::join_path(exe_dir, "../public"),
-         tools::FileOps::join_path(exe_dir, "../../public"),
-         tools::FileOps::join_path(exe_grandparent, "public"),
-         // Current directory (when running from project root)
-         "public",
-         "./public",
-         "../public",
-         // Homebrew installed location (for installed versions)
-         "/opt/homebrew/share/delta-cli/webui",
-         "/usr/local/share/delta-cli/webui",
-         tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"),
-         tools::FileOps::join_path(exe_dir, "../../../share/delta-cli/webui"),
-         // macOS app bundle Resources directory (for DMG installs)
-         // Executable is at Contents/MacOS/delta, web UI is at Contents/Resources/webui
-         tools::FileOps::join_path(exe_dir, "../Resources/webui"),
-         tools::FileOps::join_path(exe_dir, "../../Resources/webui"),
-         tools::FileOps::join_path(exe_dir, "../webui"),
-         tools::FileOps::join_path(exe_dir, "../../webui"),
-         "webui",
-         "./webui",
-         "../webui"
-     };
+     // CWD-based candidates first so "delta server" from project root or build/ finds public/
+     std::vector<std::string> public_candidates;
+#ifdef _WIN32
+     {
+         char cwd[MAX_PATH];
+         if (_getcwd(cwd, MAX_PATH) != nullptr) {
+             std::string cwd_str(cwd);
+             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "public"));
+             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "..\\public"));
+             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "webui"));
+             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "..\\webui"));
+         }
+     }
+#else
+     {
+         char cwd[PATH_MAX];
+         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+             std::string cwd_str(cwd);
+             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "public"));
+             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "../public"));
+             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "webui"));
+             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "../webui"));
+         }
+     }
+#endif
+     // Relative to executable (Delta web UI from public/)
+     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../public"));
+     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../public"));
+     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../../public"));
+     public_candidates.push_back(tools::FileOps::join_path(exe_grandparent, "public"));
+     // Current directory (when running from project root)
+     public_candidates.push_back("public");
+     public_candidates.push_back("./public");
+     public_candidates.push_back("../public");
+     // Homebrew / install locations
+     public_candidates.push_back("/opt/homebrew/share/delta-cli/webui");
+     public_candidates.push_back("/usr/local/share/delta-cli/webui");
+     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"));
+     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../../share/delta-cli/webui"));
+     // macOS app bundle
+     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../Resources/webui"));
+     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../Resources/webui"));
+     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../webui"));
+     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../webui"));
+     public_candidates.push_back("webui");
+     public_candidates.push_back("./webui");
+     public_candidates.push_back("../webui");
      
      for (const auto& candidate : public_candidates) {
          if (tools::FileOps::dir_exists(candidate)) {
@@ -307,10 +328,16 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                 }
             }
         }
-    }
+     }
 #endif
      
-     // If not found, server will use default web UI (no --path flag)
+     // Server must have a web UI path or it returns 404 for / and all static requests
+     if (public_path.empty()) {
+         UI::print_error("Web UI directory not found. Looked for public/ or share/delta-cli/webui.");
+         UI::print_info("Run from project root (where public/ exists) or install delta-cli so the web UI is in share/delta-cli/webui.");
+         UI::print_info("Build the web UI first: cd assets && npm install && npm run build");
+         return false;
+     }
      
      // Stop existing delta-server if running
      stop_llama_server();
@@ -535,7 +562,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      
      // Server is confirmed listening - proceed with setup
      UI::print_success("Delta Server started successfully on port " + std::to_string(port));
-     UI::print_info("Open: http://localhost:" + std::to_string(port));
+     UI::print_info("Open: http://localhost:" + std::to_string(port) + "/index.html");
      
      // Start model management API server on port 8081
      std::cerr << "[DEBUG] Starting model API server on port 8081" << std::endl;
@@ -1117,7 +1144,7 @@ void Commands::stop_llama_server() {
          if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
              // Server is confirmed listening, get the actual port used
              int actual_port = Commands::get_current_port();
-             std::string url = "http://localhost:" + std::to_string(actual_port);
+             std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
              std::this_thread::sleep_for(std::chrono::milliseconds(500));
              if (tools::Browser::open_url(url)) {
                  UI::print_info("Browser opened automatically");

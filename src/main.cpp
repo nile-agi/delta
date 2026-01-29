@@ -224,7 +224,7 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
         if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
             // Server is confirmed listening, get the actual port used
             int actual_port = Commands::get_current_port();
-            std::string url = "http://localhost:" + std::to_string(actual_port);
+            std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
             // Open browser now that server is confirmed ready
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             if (tools::Browser::open_url(url)) {
@@ -984,7 +984,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         UI::print_success("Delta Server started in background");
-        std::string url = "http://localhost:" + std::to_string(server_port);
+        std::string url = "http://localhost:" + std::to_string(server_port) + "/index.html";
         UI::print_info("Open: " + url);
         // Open browser after a short delay to ensure server is ready
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));

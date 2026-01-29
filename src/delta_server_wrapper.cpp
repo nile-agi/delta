@@ -196,6 +196,30 @@ public:
         // Find the Delta web UI directory (from public/ only, not llama.cpp web UI)
         std::vector<std::string> candidates;
         
+        // CWD-based candidates first so "delta-server" from project root or build/ finds public/
+#ifndef _WIN32
+        {
+            char cwd[PATH_MAX];
+            if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+                std::string cwd_str(cwd);
+                candidates.push_back(cwd_str + "/public");
+                candidates.push_back(cwd_str + "/../public");
+                candidates.push_back(cwd_str + "/webui");
+                candidates.push_back(cwd_str + "/../webui");
+            }
+        }
+#else
+        {
+            char cwd[MAX_PATH];
+            if (_getcwd(cwd, MAX_PATH) != nullptr) {
+                std::string cwd_str(cwd);
+                candidates.push_back(cwd_str + "\\public");
+                candidates.push_back(cwd_str + "\\..\\public");
+                candidates.push_back(cwd_str + "\\webui");
+                candidates.push_back(cwd_str + "\\..\\webui");
+            }
+        }
+#endif
         // Get current executable directory
         std::string exe_path;
 #ifdef _WIN32
@@ -238,6 +262,7 @@ public:
             // Check relative to executable (Delta web UI from public/)
             candidates.push_back(exe_path + "/../public");
             candidates.push_back(exe_path + "/../../public");
+            candidates.push_back(exe_path + "/../../../public");
             candidates.push_back(exe_path + "/../webui");
             candidates.push_back(exe_path + "/../../webui");
         }
