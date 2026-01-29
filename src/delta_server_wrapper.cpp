@@ -129,26 +129,34 @@ public:
     }
 
     bool find_llama_server() {
-        // Only search for the real llama.cpp HTTP server binary ('server').
+        // Only search for the real llama.cpp HTTP server binary ('server' or 'llama-server').
         // Do not include delta-server: we must not run ourselves or another wrapper (avoids recursion/chains).
-        // Resolve our own executable so we can reject symlinks/hardlinks that point to ourselves.
         std::string self_path = resolve_path(get_executable_path());
         std::string exe_dir = get_executable_dir();
         std::vector<std::string> possible_paths;
         if (!exe_dir.empty()) {
 #ifdef _WIN32
             possible_paths.push_back(exe_dir + "\\server.exe");
+            possible_paths.push_back(exe_dir + "\\llama-server.exe");
             possible_paths.push_back(exe_dir + "\\..\\server.exe");
+            possible_paths.push_back(exe_dir + "\\..\\llama-server.exe");
 #else
             possible_paths.push_back(exe_dir + "/server");
+            possible_paths.push_back(exe_dir + "/llama-server");
             possible_paths.push_back(exe_dir + "/../server");
+            possible_paths.push_back(exe_dir + "/../llama-server");
 #endif
         }
         possible_paths.push_back("server");
+        possible_paths.push_back("llama-server");
         possible_paths.push_back("./server");
+        possible_paths.push_back("./llama-server");
         possible_paths.push_back("/opt/homebrew/bin/server");
+        possible_paths.push_back("/opt/homebrew/bin/llama-server");
         possible_paths.push_back("/usr/local/bin/server");
+        possible_paths.push_back("/usr/local/bin/llama-server");
         possible_paths.push_back("/usr/bin/server");
+        possible_paths.push_back("/usr/bin/llama-server");
 
         for (const auto& path : possible_paths) {
             if (!std::filesystem::exists(path)) continue;
@@ -485,8 +493,10 @@ public:
     int start_server() {
         if (!find_llama_server()) {
             std::cerr << "Error: HTTP server binary ('server') not found." << std::endl;
-            std::cerr << "Delta-server cannot run itself. Reinstall delta-cli so the 'server' binary is installed," << std::endl;
-            std::cerr << "or build from source with LLAMA_BUILD_EXAMPLES=ON and install the server." << std::endl;
+            std::cerr << "The HTTP server binary ('server') was not found. Delta-server is a wrapper and needs the llama.cpp 'server' binary." << std::endl;
+            std::cerr << "  • From source: run 'make install' from your build directory so 'server' is installed alongside delta." << std::endl;
+            std::cerr << "  • Homebrew: run 'brew reinstall delta-cli' to install the server binary." << std::endl;
+            std::cerr << "  • Ensure vendor/llama.cpp is present (git submodule update --init vendor/llama.cpp) and rebuild with LLAMA_BUILD_SERVER=ON." << std::endl;
             return 1;
         }
 

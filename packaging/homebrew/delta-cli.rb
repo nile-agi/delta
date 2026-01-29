@@ -89,7 +89,11 @@ class DeltaCli < Formula
     bin.install "build/delta-server"
     # Install llama.cpp HTTP server so delta-server wrapper can run it (avoids recursion)
     server_path = nil
-    %w[build/bin/server build/server build/examples/server build/vendor/llama.cpp/bin/server].each do |p|
+    %w[
+      build/bin/server build/bin/llama-server
+      build/server build/llama-server
+      build/examples/server build/vendor/llama.cpp/bin/server
+    ].each do |p|
       if File.exist?(p)
         server_path = p
         break
@@ -99,7 +103,7 @@ class DeltaCli < Formula
       bin.install server_path => "server"
       ohai "Installed llama.cpp server as 'server'"
     else
-      opoo "llama.cpp server binary not found; run 'ls build/bin build 2>/dev/null' after build to locate it"
+      opoo "llama.cpp server binary not found; run 'make install' from build dir or ensure LLAMA_BUILD_SERVER=ON"
     end
 
     # Install web UI from public/ directory (built from assets/)

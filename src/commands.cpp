@@ -70,15 +70,20 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server.exe"));
 #else
     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "server"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "llama-server"));
     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server"));
     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../server"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../llama-server"));
     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server"));
 #endif
     server_candidates.push_back("/opt/homebrew/bin/server");
+    server_candidates.push_back("/opt/homebrew/bin/llama-server");
     server_candidates.push_back("/opt/homebrew/bin/delta-server");
     server_candidates.push_back("/usr/local/bin/server");
+    server_candidates.push_back("/usr/local/bin/llama-server");
     server_candidates.push_back("/usr/local/bin/delta-server");
     server_candidates.push_back("/usr/bin/server");
+    server_candidates.push_back("/usr/bin/llama-server");
     server_candidates.push_back("/usr/bin/delta-server");
 #ifdef _WIN32
     server_candidates.push_back("C:\\Program Files\\Delta CLI\\server.exe");
@@ -86,6 +91,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     server_candidates.push_back("server.exe");
 #else
     server_candidates.push_back("server");
+    server_candidates.push_back("llama-server");
 #endif
     server_candidates.push_back("delta-server");
 
@@ -99,7 +105,8 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      
      if (server_bin.empty()) {
          UI::print_error("HTTP server binary not found. Looked for 'server' and 'delta-server' in PATH and install locations.");
-         UI::print_info("Reinstall delta-cli or build from source so the server is installed.");
+         UI::print_info("From source: run 'make install' so the 'server' binary is installed. Homebrew: run 'brew reinstall delta-cli'.");
+         UI::print_info("Ensure vendor/llama.cpp exists (git submodule update --init vendor/llama.cpp) and rebuild.");
          return false;
      }
      
@@ -720,20 +727,27 @@ void Commands::stop_llama_server() {
      server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server.exe"));
 #else
      server_candidates.push_back(tools::FileOps::join_path(exe_dir, "server"));
+     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "llama-server"));
      server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server"));
      server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../server"));
+     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../llama-server"));
      server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server"));
 #endif
      server_candidates.push_back("/opt/homebrew/bin/server");
+     server_candidates.push_back("/opt/homebrew/bin/llama-server");
      server_candidates.push_back("/opt/homebrew/bin/delta-server");
      server_candidates.push_back("/usr/local/bin/server");
+     server_candidates.push_back("/usr/local/bin/llama-server");
      server_candidates.push_back("/usr/local/bin/delta-server");
      server_candidates.push_back("/usr/bin/server");
+     server_candidates.push_back("/usr/bin/llama-server");
      server_candidates.push_back("/usr/bin/delta-server");
 #ifdef _WIN32
      server_candidates.push_back("server.exe");
+     server_candidates.push_back("llama-server.exe");
 #else
      server_candidates.push_back("server");
+     server_candidates.push_back("llama-server");
 #endif
      server_candidates.push_back("delta-server");
 

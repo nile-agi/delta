@@ -20,6 +20,7 @@
 	let isHomeRoute = $derived(page.route.id === '/');
 	let isNewChatMode = $derived(page.url.searchParams.get('new_chat') === 'true');
 	let showSidebarByDefault = $derived(activeMessages().length > 0 || isLoading());
+	let currentConfig = $derived(config());
 	let sidebarOpen = $state(false);
 	let innerHeight = $state<number | undefined>();
 	let chatSidebar:
@@ -75,17 +76,17 @@
 	}
 
 	$effect(() => {
-		if (isHomeRoute && !isNewChatMode) {
-			// Auto-collapse sidebar when navigating to home route (but not in new chat mode)
+		const alwaysShow = currentConfig.alwaysShowSidebar === true;
+		const autoShowOnNewChat = currentConfig.autoShowSidebarOnNewChat !== false;
+		if (alwaysShow) {
+			sidebarOpen = true;
+		} else if (isHomeRoute && !isNewChatMode) {
 			sidebarOpen = false;
 		} else if (isHomeRoute && isNewChatMode) {
-			// Keep sidebar open in new chat mode
-			sidebarOpen = true;
+			sidebarOpen = autoShowOnNewChat;
 		} else if (isChatRoute) {
-			// On chat routes, show sidebar by default
 			sidebarOpen = true;
 		} else {
-			// Other routes follow default behavior
 			sidebarOpen = showSidebarByDefault;
 		}
 	});

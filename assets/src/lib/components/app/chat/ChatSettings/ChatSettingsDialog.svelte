@@ -8,6 +8,7 @@
 		Monitor,
 		Sun,
 		Moon,
+		Layout,
 		ChevronLeft,
 		ChevronRight,
 		Database
@@ -54,21 +55,6 @@
 					]
 				},
 				{
-					key: 'showMessageStats',
-					label: 'Show message generation statistics',
-					type: 'checkbox'
-				},
-				{
-					key: 'showTokensPerSecond',
-					label: 'Show tokens per second',
-					type: 'checkbox'
-				},
-				{
-					key: 'keepStatsVisible',
-					label: 'Keep stats visible after generation',
-					type: 'checkbox'
-				},
-				{
 					key: 'askForTitleConfirmation',
 					label: 'Ask for confirmation before changing conversation title',
 					type: 'checkbox'
@@ -87,10 +73,51 @@
 					key: 'showModelInfo',
 					label: 'Show model information',
 					type: 'checkbox'
+				}
+			]
+		},
+		{
+			title: 'Display',
+			icon: Layout,
+			fields: [
+				{
+					key: 'showMessageStats',
+					label: 'Show message generation statistics',
+					type: 'checkbox'
+				},
+				{
+					key: 'showThoughtInProgress',
+					label: 'Show thought in progress',
+					type: 'checkbox'
+				},
+				{
+					key: 'keepStatsVisible',
+					label: 'Keep stats visible after generation',
+					type: 'checkbox'
+				},
+				{
+					key: 'showMicrophoneOnEmptyInput',
+					label: 'Show microphone on empty input',
+					type: 'checkbox'
 				},
 				{
 					key: 'renderUserContentAsMarkdown',
 					label: 'Render user content as Markdown',
+					type: 'checkbox'
+				},
+				{
+					key: 'disableAutoScroll',
+					label: 'Disable automatic scroll',
+					type: 'checkbox'
+				},
+				{
+					key: 'alwaysShowSidebar',
+					label: 'Always show sidebar on desktop',
+					type: 'checkbox'
+				},
+				{
+					key: 'autoShowSidebarOnNewChat',
+					label: 'Auto-show sidebar on new chat',
 					type: 'checkbox'
 				}
 			]
@@ -207,8 +234,8 @@
 			icon: Brain,
 			fields: [
 				{
-					key: 'showThoughtInProgress',
-					label: 'Show thought in progress',
+					key: 'disableReasoningFormat',
+					label: 'Show raw LLM output',
 					type: 'checkbox'
 				}
 			]
@@ -225,11 +252,6 @@
 				{
 					key: 'modelSelectorEnabled',
 					label: 'Enable model selector',
-					type: 'checkbox'
-				},
-				{
-					key: 'disableReasoningFormat',
-					label: 'Show raw LLM output',
 					type: 'checkbox'
 				},
 				{

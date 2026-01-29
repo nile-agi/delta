@@ -14,6 +14,10 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> =
 	pdfAsImage: false,
 	showModelInfo: false,
 	renderUserContentAsMarkdown: false,
+	showMicrophoneOnEmptyInput: false,
+	disableAutoScroll: false,
+	alwaysShowSidebar: false,
+	autoShowSidebarOnNewChat: true,
 	modelSelectorEnabled: false,
 	// make sure these default values are in sync with `common.h`
 	samplers: 'top_k;typ_p;top_p;min_p;temperature',
@@ -90,6 +94,13 @@ export const SETTING_CONFIG_INFO: Record<string, string> = {
 	pdfAsImage: 'Parse PDF as image instead of text (requires vision-capable model).',
 	showModelInfo: 'Display the model name used to generate each message below the message content.',
 	renderUserContentAsMarkdown: 'Render user messages using markdown formatting in the chat.',
+	showMicrophoneOnEmptyInput:
+		'Show microphone button instead of send when textarea is empty for models with audio modality support.',
+	disableAutoScroll:
+		'Disable automatic scrolling while messages stream so you can control the viewport position manually.',
+	alwaysShowSidebar: 'Always keep the sidebar visible on desktop instead of auto-hiding it.',
+	autoShowSidebarOnNewChat:
+		'Automatically show sidebar when starting a new chat. Disable to keep the sidebar hidden until you click on it.',
 	modelSelectorEnabled:
 		'Enable the model selector in the chat input to choose the inference model. Sends the associated model field in API requests.',
 	pyInterpreterEnabled:

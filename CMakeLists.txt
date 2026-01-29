@@ -313,6 +313,17 @@ install(TARGETS delta delta-server
     RUNTIME DESTINATION bin
 )
 
+# Install llama.cpp HTTP server binary so delta-server (or CLI) can serve the web UI
+if(TARGET server)
+  install(TARGETS server RUNTIME DESTINATION bin)
+  message(STATUS "  Will install llama.cpp 'server' to bin")
+elseif(TARGET llama-server)
+  install(TARGETS llama-server RUNTIME DESTINATION bin)
+  message(STATUS "  Will install llama.cpp 'llama-server' to bin")
+else()
+  message(STATUS "  Note: llama.cpp server target not found; ensure LLAMA_BUILD_SERVER=ON and vendor/llama.cpp is present")
+endif()
+
 # Server functionality is provided by llama-server from llama-cpp
 
 # Install models directory structure
