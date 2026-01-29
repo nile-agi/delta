@@ -131,6 +131,8 @@ public:
     bool find_llama_server() {
         // Only search for the real llama.cpp HTTP server binary ('server').
         // Do not include delta-server: we must not run ourselves or another wrapper (avoids recursion/chains).
+        // Resolve our own executable so we can reject symlinks/hardlinks that point to ourselves.
+        std::string self_path = resolve_path(get_executable_path());
         std::string exe_dir = get_executable_dir();
         std::vector<std::string> possible_paths;
         if (!exe_dir.empty()) {
@@ -150,6 +152,8 @@ public:
 
         for (const auto& path : possible_paths) {
             if (!std::filesystem::exists(path)) continue;
+            std::string resolved = resolve_path(path);
+            if (!resolved.empty() && resolved == self_path) continue;  // symlink/hardlink to ourselves
             llama_server_path_ = path;
             return true;
         }
