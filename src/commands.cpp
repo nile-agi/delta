@@ -57,173 +57,38 @@ std::string Commands::current_model_path_ = "";
 int Commands::current_port_ = 8080;
 std::mutex Commands::server_mutex_;
 
-// Check if a port is available
-bool Commands::is_port_available(int port) {
-#ifdef _WIN32
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        return false;
-    }
-    
-    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == INVALID_SOCKET) {
-        WSACleanup();
-        return false;
-    }
-    
-    // Set SO_REUSEADDR to allow reuse of the port
-    int opt = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
-    
-    sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-    
-    // Try to bind to the port
-    bool available = (bind(sock, (sockaddr*)&addr, sizeof(addr)) == 0);
-    
-    closesocket(sock);
-    WSACleanup();
-    return available;
-#else
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
-        return false;
-    }
-    
-    // Set SO_REUSEADDR to allow reuse of the port
-    int opt = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    
-    // Try to bind to the port
-    bool available = (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0);
-    
-    close(sock);
-    return available;
-#endif
-}
-
-// Find an available port (tries default, then fallback ports)
-int Commands::find_available_port(int preferred_port) {
-    // List of ports to try (common web server ports that work everywhere)
-    std::vector<int> ports_to_try = {
-        preferred_port,  // Try preferred port first
-        8080,           // Standard HTTP alternative
-        3000,           // Common Node.js port
-        5000,           // Common Flask port
-        8000,           // Common Python HTTP server
-        9000,           // Common alternative
-        8081,           // Alternative to 8080
-        8888,           // Common alternative
-        2275            // Original port as last resort
-    };
-    
-    // Remove duplicates while preserving order
-    std::vector<int> unique_ports;
-    for (int port : ports_to_try) {
-        if (std::find(unique_ports.begin(), unique_ports.end(), port) == unique_ports.end()) {
-            unique_ports.push_back(port);
-        }
-    }
-    
-    // Try each port
-    for (int port : unique_ports) {
-        if (is_port_available(port)) {
-            return port;
-        }
-    }
-    
-    // If all common ports are taken, try random ports in the ephemeral range
-    // (49152-65535 on most systems, but we'll use 8000-9999 for safety)
-    for (int port = 8000; port <= 9999; port++) {
-        if (is_port_available(port)) {
-            return port;
-        }
-    }
-    
-    // Last resort: return preferred port anyway (will fail gracefully)
-    return preferred_port;
-}
-
 // Launch server automatically (public method)
 bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size, const std::string& model_alias) {
-    // Find an available port if the requested port is not available
-    if (!is_port_available(port)) {
-        UI::print_info("Port " + std::to_string(port) + " is not available, searching for an available port...");
-        int new_port = find_available_port(port);
-        if (new_port != port) {
-            UI::print_info("Using port " + std::to_string(new_port) + " instead");
-            port = new_port;
-        }
-    }
-     // Find delta-server binary (built as part of Delta CLI)
-     std::vector<std::string> server_candidates;
-     std::string exe_dir = tools::FileOps::get_executable_dir();
-     
-     // When delta is built, delta-server is in the same directory
-     // Check relative to executable (most common case for installed binaries)
- #ifdef _WIN32
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server.exe"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server.exe"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "bin/delta-server.exe"));
- #else
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "bin/delta-server"));
- #endif
-     
-     // Check if executable is in a build directory - delta-server should be in same dir
-     // For example: if delta is in build_macos/, delta-server is also in build_macos/
-     if (exe_dir.find("build_") != std::string::npos) {
- #ifdef _WIN32
-         server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server.exe"));
- #else
-         server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server"));
- #endif
-     }
-     
-     // Check build directories (if running from build_macos, build_linux, etc.)
-     // delta-server should be in the same build directory as delta
-     std::string build_dirs_server[] = {"build_macos", "build_linux", "build_windows", "build_android", "build_ios"};
-     for (const auto& build_dir : build_dirs_server) {
- #ifdef _WIN32
-         server_candidates.push_back(tools::FileOps::join_path(build_dir, "delta-server.exe"));
-         server_candidates.push_back(tools::FileOps::join_path(build_dir, "bin/delta-server.exe"));
-         std::string rel_path = tools::FileOps::join_path("..", build_dir);
-         server_candidates.push_back(tools::FileOps::join_path(rel_path, "delta-server.exe"));
- #else
-         server_candidates.push_back(tools::FileOps::join_path(build_dir, "delta-server"));
-         server_candidates.push_back(tools::FileOps::join_path(build_dir, "bin/delta-server"));
-         std::string rel_path = tools::FileOps::join_path("..", build_dir);
-         server_candidates.push_back(tools::FileOps::join_path(rel_path, "delta-server"));
- #endif
-     }
-     
-     // Check common installation locations (system-installed)
- #ifdef _WIN32
-     server_candidates.push_back("C:\\Program Files\\Delta CLI\\delta-server.exe");
-     server_candidates.push_back("C:\\Program Files (x86)\\Delta CLI\\delta-server.exe");
- #else
-     server_candidates.push_back("/opt/homebrew/bin/delta-server");  // Homebrew on Apple Silicon
-     server_candidates.push_back("/usr/local/bin/delta-server");      // Standard Linux/macOS install
-     server_candidates.push_back("/usr/bin/delta-server");
-     server_candidates.push_back(tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".local/bin/delta-server"));
- #endif
-     
-     // Check system PATH (if delta-server was installed)
- #ifdef _WIN32
-     server_candidates.push_back("delta-server.exe");
- #else
-     server_candidates.push_back("delta-server");
- #endif
-     
-     std::string server_bin;
+    port = 8080;  // Single port for macOS, Linux, Windows
+    // Prefer "server" (llama.cpp HTTP server); fallback to delta-server wrapper
+    std::vector<std::string> server_candidates;
+    std::string exe_dir = tools::FileOps::get_executable_dir();
+#ifdef _WIN32
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "server.exe"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server.exe"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../server.exe"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server.exe"));
+#else
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "server"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../server"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server"));
+#endif
+    server_candidates.push_back("/opt/homebrew/bin/server");
+    server_candidates.push_back("/opt/homebrew/bin/delta-server");
+    server_candidates.push_back("/usr/local/bin/server");
+    server_candidates.push_back("/usr/local/bin/delta-server");
+    server_candidates.push_back("/usr/bin/delta-server");
+#ifdef _WIN32
+    server_candidates.push_back("C:\\Program Files\\Delta CLI\\server.exe");
+    server_candidates.push_back("C:\\Program Files\\Delta CLI\\delta-server.exe");
+    server_candidates.push_back("server.exe");
+#else
+    server_candidates.push_back("server");
+#endif
+    server_candidates.push_back("delta-server");
+
+    std::string server_bin;
      for (const auto& candidate : server_candidates) {
          if (tools::FileOps::file_exists(candidate)) {
              server_bin = candidate;
@@ -232,10 +97,8 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      }
      
      if (server_bin.empty()) {
-         // delta-server not found anywhere
-         // Checked: build directories, system PATH, and common install locations
-         // This should not happen if delta was properly built and installed
-         // delta-server should be in the same directory as delta binary
+         UI::print_error("HTTP server binary not found. Looked for 'server' and 'delta-server' in PATH and install locations.");
+         UI::print_info("Reinstall delta-cli or build from source so the server is installed.");
          return false;
      }
      

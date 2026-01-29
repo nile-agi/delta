@@ -58,14 +58,8 @@ public:
     // Process slash command
     static bool process_command(const std::string& input, InteractiveSession& session);
     
-    // Launch server automatically (for auto-start on delta launch)
+    // Launch server automatically (for auto-start on delta launch). Uses port 8080 only.
     static bool launch_server_auto(const std::string& model_path, int port = 8080, int ctx_size = 4096, const std::string& model_alias = "");
-    
-    // Check if a port is available
-    static bool is_port_available(int port);
-    
-    // Find an available port (tries default, then fallback ports)
-    static int find_available_port(int preferred_port = 8080);
     
     // Restart llama-server with new model (for model switching)
     static bool restart_llama_server(const std::string& model_path, const std::string& model_name, int ctx_size, const std::string& model_alias);

@@ -89,7 +89,7 @@ class DeltaCli < Formula
     bin.install "build/delta-server"
     # Install llama.cpp HTTP server so delta-server wrapper can run it (avoids recursion)
     server_path = nil
-    %w[build/bin/server build/server build/vendor/llama.cpp/bin/server vendor/llama.cpp/build/bin/server].each do |p|
+    %w[build/bin/server build/server build/examples/server build/vendor/llama.cpp/bin/server].each do |p|
       if File.exist?(p)
         server_path = p
         break

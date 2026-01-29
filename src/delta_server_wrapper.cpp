@@ -82,7 +82,7 @@ public:
 #endif
     {}
 
-    std::string get_executable_dir() {
+    std::string get_executable_path() {
         std::string exe_path;
 #ifdef _WIN32
         char exe_buf[MAX_PATH];
@@ -106,15 +106,32 @@ public:
             exe_path = exe_buf;
         }
 #endif
+        return exe_path;
+    }
+
+    std::string get_executable_dir() {
+        std::string exe_path = get_executable_path();
         if (exe_path.empty()) return "";
         size_t last_slash = exe_path.find_last_of("/\\");
         return (last_slash != std::string::npos) ? exe_path.substr(0, last_slash) : "";
     }
 
+    static std::string resolve_path(const std::string& path) {
+        try {
+            std::filesystem::path p(path);
+            if (p.is_relative()) {
+                p = std::filesystem::absolute(p);
+            }
+            return std::filesystem::canonical(p).string();
+        } catch (...) {
+            return path;
+        }
+    }
+
     bool find_llama_server() {
+        std::string self_path = resolve_path(get_executable_path());
         std::string exe_dir = get_executable_dir();
         std::vector<std::string> possible_paths;
-        // Prefer "server" (llama.cpp HTTP server) in same directory to avoid recursion
         if (!exe_dir.empty()) {
 #ifdef _WIN32
             possible_paths.push_back(exe_dir + "\\server.exe");
@@ -126,8 +143,6 @@ public:
         }
         possible_paths.push_back("server");
         possible_paths.push_back("./server");
-        possible_paths.push_back("delta-server");
-        possible_paths.push_back("./delta-server");
         possible_paths.push_back("/opt/homebrew/bin/server");
         possible_paths.push_back("/opt/homebrew/bin/delta-server");
         possible_paths.push_back("/usr/local/bin/server");
@@ -135,10 +150,11 @@ public:
         possible_paths.push_back("/usr/bin/delta-server");
 
         for (const auto& path : possible_paths) {
-            if (std::filesystem::exists(path)) {
-                llama_server_path_ = path;
-                return true;
-            }
+            if (!std::filesystem::exists(path)) continue;
+            std::string resolved = resolve_path(path);
+            if (!resolved.empty() && resolved == self_path) continue;
+            llama_server_path_ = path;
+            return true;
         }
         return false;
     }
@@ -442,8 +458,9 @@ public:
 
     int start_server() {
         if (!find_llama_server()) {
-            std::cerr << "Error: delta-server not found!" << std::endl;
-            std::cerr << "Please ensure delta-server is built and installed with Delta CLI." << std::endl;
+            std::cerr << "Error: HTTP server binary ('server') not found." << std::endl;
+            std::cerr << "Delta-server cannot run itself. Reinstall delta-cli so the 'server' binary is installed," << std::endl;
+            std::cerr << "or build from source with LLAMA_BUILD_EXAMPLES=ON and install the server." << std::endl;
             return 1;
         }
 
