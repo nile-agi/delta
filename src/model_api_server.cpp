@@ -33,6 +33,11 @@ namespace delta {
 // Forward declaration for model switch callback
 static ModelSwitchCallback* g_model_switch_callback = nullptr;
 
+// Last known model path/alias (set when /api/models/use is called) for /api/props fallback
+static std::string g_props_fallback_model_path;
+static std::string g_props_fallback_model_alias;
+static std::mutex g_props_fallback_mutex;
+
 // Progress tracking structure
 struct DownloadProgress {
     std::atomic<double> progress{0.0};
@@ -70,6 +75,102 @@ private:
         // Handle OPTIONS (CORS preflight)
         server_->Options(".*", [](const httplib::Request&, httplib::Response&) {
             return;
+        });
+        
+        // GET /api/props - Server props for web UI (proxy to main server or return fallback when /props returns 404)
+        server_->Get("/api/props", [this](const httplib::Request&, httplib::Response& res) {
+            try {
+                httplib::Client cli("127.0.0.1", 8080);
+                cli.set_connection_timeout(2, 0);
+                cli.set_read_timeout(2, 0);
+                auto proxy_res = cli.Get("/props");
+                if (proxy_res && proxy_res->status == 200) {
+                    res.set_content(proxy_res->body, "application/json");
+                    return;
+                }
+            } catch (...) {
+                // Proxy failed (e.g. connection refused), use fallback
+            }
+            // Fallback: minimal props so UI loads when main server (8080) does not serve /props
+            std::string model_path;
+            std::string model_alias;
+            {
+                std::lock_guard<std::mutex> lock(g_props_fallback_mutex);
+                model_path = g_props_fallback_model_path;
+                model_alias = g_props_fallback_model_alias;
+            }
+            json params = {
+                {"n_predict", -1},
+                {"seed", -1},
+                {"temperature", 0.8},
+                {"dynatemp_range", 0.0},
+                {"dynatemp_exponent", 1.0},
+                {"top_k", 40},
+                {"top_p", 0.95},
+                {"min_p", 0.05},
+                {"top_n_sigma", 0.0},
+                {"xtc_probability", 0.0},
+                {"xtc_threshold", 0.0},
+                {"typ_p", 1.0},
+                {"repeat_last_n", 64},
+                {"repeat_penalty", 1.1},
+                {"presence_penalty", 0.0},
+                {"frequency_penalty", 0.0},
+                {"dry_multiplier", 1.0},
+                {"dry_base", 1.0},
+                {"dry_allowed_length", 0},
+                {"dry_penalty_last_n", 0},
+                {"dry_sequence_breakers", json::array()},
+                {"mirostat", 0},
+                {"mirostat_tau", 5.0},
+                {"mirostat_eta", 0.1},
+                {"stop", json::array()},
+                {"max_tokens", 512},
+                {"n_keep", 0},
+                {"n_discard", 0},
+                {"ignore_eos", false},
+                {"stream", true},
+                {"logit_bias", json::array()},
+                {"n_probs", 0},
+                {"min_keep", 0},
+                {"grammar", ""},
+                {"grammar_lazy", false},
+                {"grammar_triggers", json::array()},
+                {"preserved_tokens", json::array()},
+                {"chat_format", ""},
+                {"reasoning_format", ""},
+                {"reasoning_in_content", false},
+                {"thinking_forced_open", false},
+                {"samplers", json::array()},
+                {"speculative.n_max", 0},
+                {"speculative.n_min", 0},
+                {"speculative.p_min", 0.0},
+                {"timings_per_token", false},
+                {"post_sampling_probs", false},
+                {"lora", json::array()}
+            };
+            json default_gen = {
+                {"id", 0},
+                {"id_task", 0},
+                {"n_ctx", 4096},
+                {"speculative", false},
+                {"is_processing", false},
+                {"params", params},
+                {"prompt", ""},
+                {"next_token", {{"has_next_token", false}, {"has_new_line", false}, {"n_remain", 0}, {"n_decoded", 0}, {"stopping_word", ""}}}
+            };
+            json fallback = {
+                {"default_generation_settings", default_gen},
+                {"total_slots", 1},
+                {"model_path", model_path},
+                {"model_alias", model_alias},
+                {"modalities", {{"vision", false}, {"audio", false}}},
+                {"chat_template", ""},
+                {"bos_token", ""},
+                {"eos_token", ""},
+                {"build_info", "delta-cli"}
+            };
+            res.set_content(fallback.dump(), "application/json");
         });
         
         // GET /api/models/available - List all available models
@@ -364,6 +465,11 @@ private:
                           << ", ctx_size=" << ctx_size 
                           << ", model_alias=" << model_alias << std::endl;
                 std::cerr << "[DEBUG] g_model_switch_callback is " << (g_model_switch_callback ? "set" : "null") << std::endl;
+                {
+                    std::lock_guard<std::mutex> lock(g_props_fallback_mutex);
+                    g_props_fallback_model_path = model_path;
+                    g_props_fallback_model_alias = model_alias;
+                }
                 if (g_model_switch_callback) {
                     try {
                         std::cerr << "[DEBUG] Calling model switch callback..." << std::endl;

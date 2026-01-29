@@ -556,26 +556,30 @@ export class ChatService {
 	}
 
 	/**
-	 * Get server properties - static method for API compatibility
+	 * Get server properties - static method for API compatibility.
+	 * Tries same-origin ./props first (main server on 8080); if 404, falls back to model API /api/props (8081).
 	 */
 	static async getServerProps(): Promise<ApiLlamaCppServerProps> {
+		const currentConfig = config();
+		const apiKey = currentConfig.apiKey?.toString().trim();
+		const headers: HeadersInit = {
+			'Content-Type': 'application/json',
+			...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+		};
+
 		try {
-			const currentConfig = config();
-			const apiKey = currentConfig.apiKey?.toString().trim();
-
-			const response = await fetch(`./props`, {
-				headers: {
-					'Content-Type': 'application/json',
-					...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
-				}
-			});
-
-			if (!response.ok) {
-				throw new Error(`Failed to fetch server props: ${response.status}`);
+			const response = await fetch(`./props`, { headers });
+			if (response.ok) {
+				return await response.json();
 			}
-
-			const data = await response.json();
-			return data;
+			// When main server (8080) does not serve /props it returns 404 "File Not Found" - use fallback
+			if (response.status === 404) {
+				const fallback = await fetch('http://localhost:8081/api/props', { headers });
+				if (fallback.ok) {
+					return await fallback.json();
+				}
+			}
+			throw new Error(`Failed to fetch server props: ${response.status}`);
 		} catch (error) {
 			console.error('Error fetching server props:', error);
 			throw error;
