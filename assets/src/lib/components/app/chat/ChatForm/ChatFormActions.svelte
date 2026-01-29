@@ -13,6 +13,9 @@
 		disabled?: boolean;
 		isLoading?: boolean;
 		isRecording?: boolean;
+		recordingSupported?: boolean;
+		showMicrophoneOnEmptyInput?: boolean;
+		isEmpty?: boolean;
 		onFileUpload?: (fileType?: FileTypeCategory) => void;
 		onMicClick?: () => void;
 		onStop?: () => void;
@@ -24,12 +27,18 @@
 		disabled = false,
 		isLoading = false,
 		isRecording = false,
+		recordingSupported = false,
+		showMicrophoneOnEmptyInput = false,
+		isEmpty = true,
 		onFileUpload,
 		onMicClick,
 		onStop
 	}: Props = $props();
 
 	let currentConfig = $derived(config());
+	let showSendButton = $derived(
+		canSend || !(isEmpty && showMicrophoneOnEmptyInput && recordingSupported)
+	);
 </script>
 
 <div class="flex w-full items-center gap-2 {className}">
@@ -51,13 +60,15 @@
 	{:else}
 		<ChatFormActionRecord {disabled} {isLoading} {isRecording} {onMicClick} />
 
-		<Button
-			type="submit"
-			disabled={!canSend || disabled || isLoading}
-			class="h-8 w-8 rounded-full p-0"
-		>
-			<span class="sr-only">Send</span>
-			<ArrowUp class="h-12 w-12" />
-		</Button>
+		{#if showSendButton}
+			<Button
+				type="submit"
+				disabled={!canSend || disabled || isLoading}
+				class="h-8 w-8 rounded-full p-0"
+			>
+				<span class="sr-only">Send</span>
+				<ArrowUp class="h-12 w-12" />
+			</Button>
+		{/if}
 	{/if}
 </div>

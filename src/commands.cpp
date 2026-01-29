@@ -601,6 +601,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      std::stringstream cmd;
      cmd << server_bin
          << " -m \"" << model_path << "\""
+         << " --host 0.0.0.0"
          << " --port " << port
          << " -c " << ctx_size;
      

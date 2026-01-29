@@ -1,5 +1,6 @@
 import { config } from '$lib/stores/settings.svelte';
 import { selectedModelName } from '$lib/stores/models.svelte';
+import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
 import { slotsService } from './slots';
 /**
  * ChatService - Low-level API communication layer for Delta server interactions
@@ -574,7 +575,7 @@ export class ChatService {
 			}
 			// When main server (8080) does not serve /props it returns 404 "File Not Found" - use fallback
 			if (response.status === 404) {
-				const fallback = await fetch('http://localhost:8081/api/props', { headers });
+				const fallback = await fetch(`${getModelApiBaseUrl()}/api/props`, { headers });
 				if (fallback.ok) {
 					return await fallback.json();
 				}

@@ -1,6 +1,7 @@
 import { base } from '$app/paths';
 import { config } from '$lib/stores/settings.svelte';
 import type { ApiModelListResponse } from '$lib/types/api';
+import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
 
 export interface ModelInfo {
 	name: string;
@@ -46,7 +47,7 @@ export class ModelsService {
 	 * List all available models (both installed and available to download)
 	 */
 	static async listAvailable(): Promise<ModelListResponse> {
-		const response = await fetch('http://localhost:8081/api/models/available', {
+		const response = await fetch(`${getModelApiBaseUrl()}/api/models/available`, {
 			method: 'GET',
 			headers: {
 				'Content-Type': 'application/json'
@@ -69,7 +70,7 @@ export class ModelsService {
 	 * List only installed models
 	 */
 	static async listInstalled(): Promise<ModelListResponse> {
-		const response = await fetch('http://localhost:8081/api/models/list', {
+		const response = await fetch(`${getModelApiBaseUrl()}/api/models/list`, {
 			method: 'GET',
 			headers: {
 				'Content-Type': 'application/json'
@@ -100,7 +101,7 @@ export class ModelsService {
 		error_message?: string;
 	}> {
 		try {
-			const url = `http://localhost:8081/api/models/download/progress/${encodeURIComponent(modelName)}`;
+			const url = `${getModelApiBaseUrl()}/api/models/download/progress/${encodeURIComponent(modelName)}`;
 			console.log('[ModelsService] Fetching progress from:', url);
 			const response = await fetch(url, {
 				method: 'GET',
@@ -127,7 +128,7 @@ export class ModelsService {
 	 * Download a model (returns immediately, use getDownloadProgress to track)
 	 */
 	static async download(modelName: string): Promise<ModelOperationResponse> {
-		const response = await fetch('http://localhost:8081/api/models/download', {
+		const response = await fetch(`${getModelApiBaseUrl()}/api/models/download`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json'
@@ -149,7 +150,7 @@ export class ModelsService {
 	 * Remove a model
 	 */
 	static async remove(modelName: string): Promise<ModelOperationResponse> {
-		const response = await fetch(`http://localhost:8081/api/models/${encodeURIComponent(modelName)}`, {
+		const response = await fetch(`${getModelApiBaseUrl()}/api/models/${encodeURIComponent(modelName)}`, {
 			method: 'DELETE',
 			headers: {
 				'Content-Type': 'application/json'
@@ -170,7 +171,7 @@ export class ModelsService {
 	 * Switch to a model (returns model path, but server restart is required)
 	 */
 	static async use(modelName: string): Promise<ModelOperationResponse> {
-		const response = await fetch('http://localhost:8081/api/models/use', {
+		const response = await fetch(`${getModelApiBaseUrl()}/api/models/use`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json'

@@ -248,8 +248,11 @@
 		<ChatFormActions
 			canSend={message.trim().length > 0 || uploadedFiles.length > 0}
 			{disabled}
+			isEmpty={!message.trim() && uploadedFiles.length === 0}
 			{isLoading}
 			{isRecording}
+			recordingSupported={recordingSupported}
+			showMicrophoneOnEmptyInput={Boolean(currentConfig.showMicrophoneOnEmptyInput)}
 			onFileUpload={handleFileUpload}
 			onMicClick={handleMicClick}
 			onStop={handleStop}

@@ -19,6 +19,7 @@
 		AUTO_SCROLL_INTERVAL,
 		INITIAL_SCROLL_DELAY
 	} from '$lib/constants/auto-scroll';
+	import { config } from '$lib/stores/settings.svelte';
 	import {
 		activeMessages,
 		activeConversation,
@@ -47,7 +48,11 @@
 
 	let { showCenteredEmpty = false } = $props();
 
+	let currentConfig = $derived(config());
 	let autoScrollEnabled = $state(true);
+	let effectiveAutoScroll = $derived(
+		!currentConfig.disableAutoScroll && autoScrollEnabled
+	);
 	let chatScrollContainer: HTMLDivElement | undefined = $state();
 	let dragCounter = $state(0);
 	let isDragOver = $state(false);
@@ -193,11 +198,11 @@
 
 		const extras = result?.extras;
 
-		// Enable autoscroll for user-initiated message sending
+		// Enable autoscroll for user-initiated message sending (unless disabled in settings)
 		userScrolledUp = false;
 		autoScrollEnabled = true;
 		await sendMessage(message, extras);
-		scrollChatToBottom();
+		if (!currentConfig.disableAutoScroll) scrollChatToBottom();
 
 		return true;
 	}
@@ -248,15 +253,19 @@
 	}
 
 	afterNavigate(() => {
-		setTimeout(() => scrollChatToBottom('instant'), INITIAL_SCROLL_DELAY);
+		if (!currentConfig.disableAutoScroll) {
+			setTimeout(() => scrollChatToBottom('instant'), INITIAL_SCROLL_DELAY);
+		}
 	});
 
 	onMount(() => {
-		setTimeout(() => scrollChatToBottom('instant'), INITIAL_SCROLL_DELAY);
+		if (!currentConfig.disableAutoScroll) {
+			setTimeout(() => scrollChatToBottom('instant'), INITIAL_SCROLL_DELAY);
+		}
 	});
 
 	$effect(() => {
-		if (isCurrentConversationLoading && autoScrollEnabled) {
+		if (isCurrentConversationLoading && effectiveAutoScroll) {
 			scrollInterval = setInterval(scrollChatToBottom, AUTO_SCROLL_INTERVAL);
 		} else if (scrollInterval) {
 			clearInterval(scrollInterval);
@@ -291,7 +300,7 @@
 			onUserAction={() => {
 				userScrolledUp = false;
 				autoScrollEnabled = true;
-				scrollChatToBottom();
+				if (!currentConfig.disableAutoScroll) scrollChatToBottom();
 			}}
 		/>
 

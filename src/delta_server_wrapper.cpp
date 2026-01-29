@@ -325,6 +325,7 @@ public:
     std::string build_llama_server_command(const std::string& model_path, int ctx_size, const std::string& model_alias) {
         std::string cmd = llama_server_path_;
         cmd += " -m \"" + model_path + "\"";
+        cmd += " --host 0.0.0.0";
         cmd += " --port " + std::to_string(port_);
         cmd += " -c " + std::to_string(ctx_size);
         // Minimal flags for compatibility; avoid --flash-attn/--jinja which some builds don't support
