@@ -1,4 +1,13 @@
 cmake_minimum_required(VERSION 3.14)
+
+# On macOS, use system Apple Clang to avoid libc++ ABI mismatch when Homebrew LLVM is in PATH
+# (undefined symbol std::__1::__hash_memory when mixing Homebrew LLVM with system libc++).
+# If you previously built with Homebrew LLVM, do a clean build: rm -rf build_macos && mkdir build_macos && cd build_macos && cmake .. && make -j
+if(APPLE)
+    set(CMAKE_C_COMPILER "/usr/bin/clang" CACHE FILEPATH "" FORCE)
+    set(CMAKE_CXX_COMPILER "/usr/bin/clang++" CACHE FILEPATH "" FORCE)
+endif()
+
 project(delta-cli VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -48,9 +57,10 @@ endif()
 
 # Set llama-cpp options before adding subdirectory
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_EXAMPLES ON CACHE BOOL "" FORCE)   # Required so server example is built
+set(LLAMA_BUILD_EXAMPLES ON CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TOOLS ON CACHE BOOL "" FORCE)      # Required so tools/server (llama-server) is built
 set(LLAMA_BUILD_SERVER ON CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE) # Enable common utils for chat templates
+set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)     # Enable common utils for chat templates
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(GGML_METAL ${GGML_METAL} CACHE BOOL "" FORCE) # Pass GGML_METAL to llama-cpp
 set(GGML_CCACHE ${GGML_CCACHE} CACHE BOOL "" FORCE) # Pass GGML_CCACHE to llama-cpp

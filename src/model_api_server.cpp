@@ -78,7 +78,7 @@ private:
         });
         
         // GET /api/props - Server props for web UI (proxy to main server or return fallback when /props returns 404)
-        server_->Get("/api/props", [this](const httplib::Request&, httplib::Response& res) {
+        server_->Get("/api/props", [](const httplib::Request&, httplib::Response& res) {
             try {
                 httplib::Client cli("127.0.0.1", 8080);
                 cli.set_connection_timeout(2, 0);
