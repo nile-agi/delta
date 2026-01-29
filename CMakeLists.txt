@@ -48,7 +48,7 @@ endif()
 
 # Set llama-cpp options before adding subdirectory
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_EXAMPLES ON CACHE BOOL "" FORCE)   # Required so server example is built
 set(LLAMA_BUILD_SERVER ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE) # Enable common utils for chat templates
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)

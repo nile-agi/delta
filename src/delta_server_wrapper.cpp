@@ -82,14 +82,57 @@ public:
 #endif
     {}
 
+    std::string get_executable_dir() {
+        std::string exe_path;
+#ifdef _WIN32
+        char exe_buf[MAX_PATH];
+        if (GetModuleFileNameA(NULL, exe_buf, MAX_PATH)) {
+            exe_path = exe_buf;
+        }
+#elif defined(__APPLE__)
+        char exe_buf[PATH_MAX];
+        uint32_t size = sizeof(exe_buf);
+        if (_NSGetExecutablePath(exe_buf, &size) == 0) {
+            char resolved[PATH_MAX];
+            if (realpath(exe_buf, resolved) != nullptr) {
+                exe_path = resolved;
+            }
+        }
+#else
+        char exe_buf[PATH_MAX];
+        ssize_t len = readlink("/proc/self/exe", exe_buf, sizeof(exe_buf) - 1);
+        if (len != -1) {
+            exe_buf[len] = '\0';
+            exe_path = exe_buf;
+        }
+#endif
+        if (exe_path.empty()) return "";
+        size_t last_slash = exe_path.find_last_of("/\\");
+        return (last_slash != std::string::npos) ? exe_path.substr(0, last_slash) : "";
+    }
+
     bool find_llama_server() {
-        std::vector<std::string> possible_paths = {
-            "delta-server",
-            "./delta-server",
-            "/opt/homebrew/bin/delta-server",
-            "/usr/local/bin/delta-server",
-            "/usr/bin/delta-server"
-        };
+        std::string exe_dir = get_executable_dir();
+        std::vector<std::string> possible_paths;
+        // Prefer "server" (llama.cpp HTTP server) in same directory to avoid recursion
+        if (!exe_dir.empty()) {
+#ifdef _WIN32
+            possible_paths.push_back(exe_dir + "\\server.exe");
+            possible_paths.push_back(exe_dir + "\\delta-server.exe");
+#else
+            possible_paths.push_back(exe_dir + "/server");
+            possible_paths.push_back(exe_dir + "/delta-server");
+#endif
+        }
+        possible_paths.push_back("server");
+        possible_paths.push_back("./server");
+        possible_paths.push_back("delta-server");
+        possible_paths.push_back("./delta-server");
+        possible_paths.push_back("/opt/homebrew/bin/server");
+        possible_paths.push_back("/opt/homebrew/bin/delta-server");
+        possible_paths.push_back("/usr/local/bin/server");
+        possible_paths.push_back("/usr/local/bin/delta-server");
+        possible_paths.push_back("/usr/bin/delta-server");
 
         for (const auto& path : possible_paths) {
             if (std::filesystem::exists(path)) {
@@ -233,53 +276,22 @@ public:
         std::string cmd = llama_server_path_;
         cmd += " -m \"" + model_path + "\"";
         cmd += " --port " + std::to_string(port_);
-        cmd += " --parallel " + std::to_string(max_parallel_);
         cmd += " -c " + std::to_string(ctx_size);
-        
-        // Add --flash-attn flag
+        // Minimal flags for compatibility; avoid --flash-attn/--jinja which some builds don't support
         if (ctx_size > 16384) {
-            cmd += " --flash-attn off";
-            if (ctx_size > 32768) {
-                cmd += " --gpu-layers 0";
-            }
-        } else {
-            cmd += " --flash-attn auto";
+            cmd += " --gpu-layers 0";
         }
-        
-        // Add --jinja flag for gemma3 models
-        std::string model_path_lower = model_path;
-        std::transform(model_path_lower.begin(), model_path_lower.end(), model_path_lower.begin(), ::tolower);
-        if (model_path_lower.find("gemma3") != std::string::npos) {
-            cmd += " --jinja";
-        }
-        
-        // Add --alias if provided
         if (!model_alias.empty()) {
             cmd += " --alias \"" + model_alias + "\"";
         }
-        
-        // Add --path flag to use Delta web UI if found
         std::string webui_path = find_webui_path();
         if (!webui_path.empty()) {
             cmd += " --path \"" + webui_path + "\"";
         }
-        
-        if (enable_embedding_) {
-            cmd += " --embedding";
-        }
-        
-        if (enable_reranking_) {
-            cmd += " --reranking";
-        }
-        
-        if (!draft_model_.empty()) {
-            cmd += " --md \"" + draft_model_ + "\"";
-        }
-        
-        if (!grammar_file_.empty()) {
-            cmd += " --grammar-file \"" + grammar_file_ + "\"";
-        }
-        
+        if (enable_embedding_) cmd += " --embedding";
+        if (enable_reranking_) cmd += " --reranking";
+        if (!draft_model_.empty()) cmd += " --md \"" + draft_model_ + "\"";
+        if (!grammar_file_.empty()) cmd += " --grammar-file \"" + grammar_file_ + "\"";
         return cmd;
     }
     

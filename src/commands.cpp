@@ -643,10 +643,29 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      
      if (!server_listening) {
          UI::print_error("Server process started but port " + std::to_string(port) + " is not listening after 60 seconds");
-         UI::print_info("Check error log: " + err_file);
-         UI::print_info("The server may still be loading a large model. Try accessing http://localhost:" + std::to_string(port) + " manually.");
-         UI::print_info("You can check if the server is running with: ps aux | grep delta-server");
-         // Return false so browser doesn't open
+         UI::print_info("Error log: " + err_file);
+         // Dump error log contents so user can see what went wrong
+#ifndef _WIN32
+         std::ifstream err_read(err_file);
+         if (err_read.is_open()) {
+             std::string line;
+             std::vector<std::string> lines;
+             while (std::getline(err_read, line)) {
+                 lines.push_back(line);
+             }
+             err_read.close();
+             if (!lines.empty()) {
+                 UI::print_info("--- Last 40 lines of server log ---");
+                 size_t start = (lines.size() > 40) ? (lines.size() - 40) : 0;
+                 for (size_t i = start; i < lines.size(); i++) {
+                     std::cerr << "  " << lines[i] << std::endl;
+                 }
+                 UI::print_info("--- End of server log ---");
+             }
+         }
+#endif
+         UI::print_info("You can run the server manually to see errors: delta-server -m <model-path> --port " + std::to_string(port));
+         UI::print_info("Or check if the server is running: ps aux | grep delta-server");
          return false;
      }
      
@@ -677,6 +696,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
  }
  
  // Helper to build delta-server command
+ // Uses minimal flags for maximum compatibility; some builds may not support --flash-attn or --jinja
  std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path, 
                                                int port, int ctx_size, const std::string& model_alias, 
                                                const std::string& public_path) {
@@ -686,33 +706,19 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
          << " --port " << port
          << " -c " << ctx_size;
      
-     // Add --flash-attn flag
-     if (ctx_size > 16384) {
-         cmd << " --flash-attn off";
-         if (ctx_size > 32768) {
-             cmd << " --gpu-layers 0";
-         }
-     } else {
-         cmd << " --flash-attn auto";
+     // Add --path flag to use Delta web UI if found (required for UI to load)
+     if (!public_path.empty()) {
+         cmd << " --path \"" << public_path << "\"";
      }
      
-     // Add --jinja flag for gemma3 models
-     std::string model_alias_lower = model_alias;
-     std::string model_path_lower = model_path;
-     std::transform(model_alias_lower.begin(), model_alias_lower.end(), model_alias_lower.begin(), ::tolower);
-     std::transform(model_path_lower.begin(), model_path_lower.end(), model_path_lower.begin(), ::tolower);
-     if (model_alias_lower.find("gemma3") != std::string::npos || model_path_lower.find("gemma3") != std::string::npos) {
-         cmd << " --jinja";
+     // Optional flags - some llama.cpp builds support these
+     if (ctx_size > 16384) {
+         cmd << " --gpu-layers 0";
      }
      
      // Add --alias if provided
      if (!model_alias.empty()) {
          cmd << " --alias \"" << model_alias << "\"";
-     }
-     
-     // Add --path flag to use Delta web UI if found
-     if (!public_path.empty()) {
-         cmd << " --path \"" << public_path << "\"";
      }
      
      return cmd.str();

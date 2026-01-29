@@ -87,6 +87,20 @@ class DeltaCli < Formula
     # Install binaries
     bin.install "build/delta"
     bin.install "build/delta-server"
+    # Install llama.cpp HTTP server so delta-server wrapper can run it (avoids recursion)
+    server_path = nil
+    %w[build/bin/server build/server build/vendor/llama.cpp/bin/server vendor/llama.cpp/build/bin/server].each do |p|
+      if File.exist?(p)
+        server_path = p
+        break
+      end
+    end
+    if server_path
+      bin.install server_path => "server"
+      ohai "Installed llama.cpp server as 'server'"
+    else
+      opoo "llama.cpp server binary not found; run 'ls build/bin build 2>/dev/null' after build to locate it"
+    end
 
     # Install web UI from public/ directory (built from assets/)
     if Dir.exist?("public") && (File.exist?("public/index.html") || File.exist?("public/index.html.gz"))
