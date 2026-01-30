@@ -3,13 +3,31 @@
 	import { useProcessingState } from '$lib/hooks/use-processing-state.svelte';
 	import { isLoading } from '$lib/stores/chat.svelte';
 	import { fade } from 'svelte/transition';
-	import { Check, X, Gauge, Clock, WholeWord, ChartNoAxesColumn } from '@lucide/svelte';
+	import {
+		Check,
+		X,
+		Box,
+		ChevronDown,
+		FileText,
+		Sparkles,
+		Copy,
+		Gauge,
+		Clock,
+		WholeWord
+	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { INPUT_CLASSES } from '$lib/constants/input-classes';
 	import ChatMessageActions from './ChatMessageActions.svelte';
 	import Label from '$lib/components/ui/label/label.svelte';
 	import { config } from '$lib/stores/settings.svelte';
+	import {
+		modelOptions,
+		selectedModelId,
+		selectModel
+	} from '$lib/stores/models.svelte';
+	import { copyToClipboard } from '$lib/utils/copy';
 
 	interface Props {
 		class?: string;
@@ -72,6 +90,46 @@
 
 	const processingState = useProcessingState();
 	let currentConfig = $derived(config());
+	let options = $derived(modelOptions());
+	let activeModelId = $derived(selectedModelId());
+
+	let statsView = $state<'reading' | 'generation'>('generation');
+
+	function getModelDisplayName(): string {
+		const modelId = message.model;
+		if (modelId) {
+			const opt = options.find((m) => m.id === modelId || m.model === modelId);
+			return opt?.name ?? modelId.split(/[/\\]/).pop()?.replace(/\.gguf$/i, '') ?? modelId;
+		}
+		if (activeModelId) {
+			const opt = options.find((m) => m.id === activeModelId);
+			return opt?.name ?? activeModelId;
+		}
+		return 'Unknown model';
+	}
+
+	async function handleModelSelect(optionId: string) {
+		const current = message.model ?? activeModelId;
+		if (optionId === current) return;
+		try {
+			await selectModel(optionId);
+			onRegenerate();
+		} catch (e) {
+			console.error('Failed to switch model:', e);
+		}
+	}
+
+	async function copyStat(value: string, label: string) {
+		await copyToClipboard(value, `${label} copied`);
+	}
+
+	let t = $derived(message.timings);
+	let promptTokens = $derived(t?.prompt_n ?? 0);
+	let promptMs = $derived(t?.prompt_ms ?? 0);
+	let promptSpeed = $derived(promptMs > 0 ? (promptTokens / promptMs) * 1000 : 0);
+	let genTokens = $derived(t?.predicted_n ?? 0);
+	let genMs = $derived(t?.predicted_ms ?? 0);
+	let genSpeed = $derived(genMs > 0 ? (genTokens / genMs) * 1000 : 0);
 </script>
 
 <div
@@ -160,37 +218,129 @@
 		</div>
 	{/if}
 
-	<div class="info my-6 grid gap-4">
-		{#if currentConfig.showMessageStats && message.timings && message.timings.predicted_n && message.timings.predicted_ms}
-			{@const tokensPerSecond = (message.timings.predicted_n / message.timings.predicted_ms) * 1000}
-			<span class="inline-flex items-center gap-2 text-xs text-muted-foreground">
-				<span class="inline-flex items-center gap-1">
-					<ChartNoAxesColumn class="h-3.5 w-3.5" />
+	<div class="info my-6 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+		<!-- Model name with selection/switch (always visible below assistant response) -->
+		{#if message.role === 'assistant'}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger
+					class="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2.5 py-1.5 font-medium text-foreground hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-ring"
+				>
+					<Box class="h-3.5 w-3.5 shrink-0" />
+					<span class="max-w-[180px] truncate">{getModelDisplayName()}</span>
+					<ChevronDown class="h-3.5 w-3.5 shrink-0" />
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="start" class="max-h-[min(60vh,320px)] overflow-y-auto">
+					{#each options as option (option.id)}
+						<DropdownMenu.Item
+							onclick={() => handleModelSelect(option.id)}
+							class="cursor-pointer"
+						>
+							<span class="truncate">{option.name}</span>
+						</DropdownMenu.Item>
+					{/each}
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		{/if}
 
-					<span>Statistics:</span>
-				</span>
-
-				<div class="inline-flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-					<span
-						class="inline-flex items-center gap-1 rounded-sm bg-muted-foreground/15 px-1.5 py-0.75"
+		<!-- Message generation statistics: Reading vs Generation toggle and copyable stats -->
+		{#if currentConfig.showMessageStats && message.timings && message.role === 'assistant'}
+			<div class="flex flex-wrap items-center gap-3">
+				<div class="flex items-center gap-1 rounded-md border border-border/50 bg-muted/20 p-0.5">
+					<button
+						type="button"
+						class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition {statsView ===
+						'reading'
+							? 'bg-background text-foreground shadow-sm'
+							: 'text-muted-foreground hover:text-foreground'}"
+						title="Reading (prompt processing)"
+						onclick={() => (statsView = 'reading')}
 					>
-						<Gauge class="h-3 w-3" />
-						{tokensPerSecond.toFixed(2)} tokens/s
-					</span>
-					<span
-						class="inline-flex items-center gap-1 rounded-sm bg-muted-foreground/15 px-1.5 py-0.75"
+						<FileText class="h-3.5 w-3.5" />
+						Reading (prompt processing)
+					</button>
+					<button
+						type="button"
+						class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition {statsView ===
+						'generation'
+							? 'bg-background text-foreground shadow-sm'
+							: 'text-muted-foreground hover:text-foreground'}"
+						title="Generation (token output)"
+						onclick={() => (statsView = 'generation')}
 					>
-						<WholeWord class="h-3 w-3" />
-						{message.timings.predicted_n} tokens
-					</span>
-					<span
-						class="inline-flex items-center gap-1 rounded-sm bg-muted-foreground/15 px-1.5 py-0.75"
-					>
-						<Clock class="h-3 w-3" />
-						{(message.timings.predicted_ms / 1000).toFixed(2)}s
-					</span>
+						<Sparkles class="h-3.5 w-3.5" />
+						Generation (token output)
+					</button>
 				</div>
-			</span>
+
+				{#if statsView === 'reading'}
+					<div class="inline-flex flex-wrap items-center gap-2">
+						<button
+							type="button"
+							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
+							title="Copy prompt tokens"
+							onclick={() => copyStat(String(promptTokens), 'Prompt tokens')}
+						>
+							<WholeWord class="h-3 w-3" />
+							<span>{promptTokens} tokens</span>
+							<Copy class="h-3 w-3 opacity-70" />
+						</button>
+						<button
+							type="button"
+							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
+							title="Copy prompt processing time"
+							onclick={() => copyStat(`${(promptMs / 1000).toFixed(2)}s`, 'Prompt processing time')}
+						>
+							<Clock class="h-3 w-3" />
+							<span>{(promptMs / 1000).toFixed(2)}s</span>
+							<Copy class="h-3 w-3 opacity-70" />
+						</button>
+						<button
+							type="button"
+							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
+							title="Copy prompt processing speed"
+							onclick={() =>
+								copyStat(`${promptSpeed.toFixed(2)} tokens/s`, 'Prompt processing speed')}
+						>
+							<Gauge class="h-3 w-3" />
+							<span>{promptSpeed.toFixed(2)} tokens/s</span>
+							<Copy class="h-3 w-3 opacity-70" />
+						</button>
+					</div>
+				{:else}
+					<div class="inline-flex flex-wrap items-center gap-2">
+						<button
+							type="button"
+							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
+							title="Copy generated tokens"
+							onclick={() => copyStat(String(genTokens), 'Generated tokens')}
+						>
+							<WholeWord class="h-3 w-3" />
+							<span>{genTokens} tokens</span>
+							<Copy class="h-3 w-3 opacity-70" />
+						</button>
+						<button
+							type="button"
+							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
+							title="Copy generation time"
+							onclick={() => copyStat(`${(genMs / 1000).toFixed(2)}s`, 'Generation time')}
+						>
+							<Clock class="h-3 w-3" />
+							<span>{(genMs / 1000).toFixed(2)}s</span>
+							<Copy class="h-3 w-3 opacity-70" />
+						</button>
+						<button
+							type="button"
+							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
+							title="Copy generation speed"
+							onclick={() => copyStat(`${genSpeed.toFixed(2)} tokens/s`, 'Generation speed')}
+						>
+							<Gauge class="h-3 w-3" />
+							<span>{genSpeed.toFixed(2)} tokens/s</span>
+							<Copy class="h-3 w-3 opacity-70" />
+						</button>
+					</div>
+				{/if}
+			</div>
 		{/if}
 	</div>
 
