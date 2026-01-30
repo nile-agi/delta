@@ -72,7 +72,7 @@ private:
 
 public:
     DeltaServerWrapper() 
-        : port_(8080), max_parallel_(4), max_context_(16384), 
+        : port_(8080), max_parallel_(4), max_context_(0), 
           enable_embedding_(false), enable_reranking_(false),
           llama_server_running_(false), should_stop_(false)
 #ifdef _WIN32
@@ -327,7 +327,9 @@ public:
         cmd += " -m \"" + model_path + "\"";
         cmd += " --host 0.0.0.0";
         cmd += " --port " + std::to_string(port_);
-        cmd += " -c " + std::to_string(ctx_size);
+        if (ctx_size > 0) {
+            cmd += " -c " + std::to_string(ctx_size);
+        }
         // Minimal flags for compatibility; avoid --flash-attn/--jinja which some builds don't support
         if (ctx_size > 16384) {
             cmd += " --gpu-layers 0";
@@ -520,7 +522,7 @@ public:
         std::cout << "📡 Server: http://localhost:" << port_ << std::endl;
         std::cout << "🤖 Model: " << model_path_ << std::endl;
         std::cout << "⚡ Parallel: " << max_parallel_ << std::endl;
-        std::cout << "🧠 Context: " << max_context_ << std::endl;
+        std::cout << "🧠 Context: " << (max_context_ > 0 ? std::to_string(max_context_) : "(model default)") << std::endl;
         std::cout << "🌐 Web UI: http://localhost:" << port_ << std::endl;
         std::cout << "📡 API: http://localhost:" << port_ << "/v1/chat/completions" << std::endl;
         std::cout << "🔧 Model Management API: http://localhost:8081" << std::endl;
@@ -591,7 +593,7 @@ int main(int argc, char* argv[]) {
     std::string model_path;
     int port = 8080;
     int max_parallel = 4;
-    int max_context = 16384;
+    int max_context = 0;  // 0 = llama-server uses model default
     bool enable_embedding = false;
     bool enable_reranking = false;
     std::string draft_model;

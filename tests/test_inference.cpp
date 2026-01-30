@@ -23,7 +23,7 @@ TEST_CASE("InferenceEngine initialization", "[inference]") {
 TEST_CASE("InferenceConfig defaults", "[inference]") {
     SECTION("Default configuration values") {
         InferenceConfig config;
-        REQUIRE(config.n_ctx == 2048);
+        REQUIRE(config.n_ctx == 4096);
         REQUIRE(config.n_batch == 512);
         REQUIRE(config.n_threads == 4);
         REQUIRE(config.n_gpu_layers == 0);

@@ -152,7 +152,7 @@ private:
             json default_gen = {
                 {"id", 0},
                 {"id_task", 0},
-                {"n_ctx", 4096},
+                {"n_ctx", 0},
                 {"speculative", false},
                 {"is_processing", false},
                 {"params", params},
@@ -443,14 +443,11 @@ private:
                     return;
                 }
                 
-                // Get model's max context and alias from registry (match /use behavior)
-                int ctx_size = 4096; // Default
+                // Get model's max context from registry (0 = llama-server uses model default) and alias
+                int ctx_size = model_mgr_.get_max_context_for_model(model_name);
                 std::string model_alias = model_name;
                 if (model_mgr_.is_in_registry(model_name)) {
                     auto entry = model_mgr_.get_registry_entry(model_name);
-                    if (entry.max_context > 0) {
-                        ctx_size = entry.max_context;
-                    }
                     if (!entry.short_name.empty()) {
                         model_alias = entry.short_name;
                     } else if (!entry.name.empty()) {

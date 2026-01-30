@@ -254,15 +254,15 @@ void ModelManager::init_model_registry() {
     // max_context: Maximum usable context size for llama-server (-c parameter)
     
     // ===== QWEN 3 SERIES (Latest generation) =====
-    model_registry_["qwen3:0.6b"] = {
+    model_registry_["tinygemma3"] = {
         "tinygemma3",
         "qwen3-0.6b",
         "ggml-org/tinygemma3-GGUF",
         "tinygemma3-Q8_0.gguf",
         "Q8_0",
         4720LL * 1024 * 1024,      // ~47.2 MB
-        "Ultra-compact multilingual model",
-        "Qwen 3 0.6B",
+        "Ultra-compact multilingual model (TinyGemma3)",
+        "TinyGemma 3",
         131072                     // 128K native context
     };
 
@@ -1449,6 +1449,23 @@ ModelRegistry ModelManager::get_registry_entry(const std::string& model_name) {
 
 bool ModelManager::is_in_registry(const std::string& model_name) {
     return model_registry_.find(model_name) != model_registry_.end();
+}
+
+int ModelManager::get_max_context_for_model(const std::string& model_name) {
+    if (model_name.empty()) return 0;
+    if (is_in_registry(model_name)) {
+        int ctx = get_registry_entry(model_name).max_context;
+        return ctx > 0 ? ctx : 0;
+    }
+    size_t last_dash = model_name.find_last_of('-');
+    if (last_dash != std::string::npos) {
+        std::string colon_name = model_name.substr(0, last_dash) + ":" + model_name.substr(last_dash + 1);
+        if (is_in_registry(colon_name)) {
+            int ctx = get_registry_entry(colon_name).max_context;
+            return ctx > 0 ? ctx : 0;
+        }
+    }
+    return 0;
 }
 
 void ModelManager::set_progress_callback(ProgressCallback callback) {

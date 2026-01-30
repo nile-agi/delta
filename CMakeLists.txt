@@ -30,7 +30,6 @@ option(LLAMA_BLAS "Enable BLAS support" OFF)
 option(USE_CURL "Enable HTTP requests for telemetry" ON)
 option(USE_CROW "Enable Crow HTTP library for server" OFF)
 option(BUILD_TESTS "Build test suite" ON)
-option(BUILD_SERVER "Build web dashboard server" ON)
 option(GGML_CCACHE "Enable ccache for faster compilation" OFF) # Disable ccache warning
 option(GGML_OPENMP "Enable OpenMP support" OFF) # Disable OpenMP warnings
 
@@ -392,7 +391,6 @@ message(STATUS "  HIP/ROCm support: ${LLAMA_HIPBLAS}")
 message(STATUS "  BLAS support: ${LLAMA_BLAS}")
 message(STATUS "  HTTP telemetry: ${USE_CURL}")
 message(STATUS "  Build tests: ${BUILD_TESTS}")
-message(STATUS "  Build server: ${BUILD_SERVER}")
 message(STATUS "  CCache: ${GGML_CCACHE}")
 message(STATUS "  OpenMP: ${GGML_OPENMP}")
 message(STATUS "")

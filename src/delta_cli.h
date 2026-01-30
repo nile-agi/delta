@@ -157,6 +157,9 @@ public:
     // Check if model exists in registry
     bool is_in_registry(const std::string& model_name);
     
+    // Get max context size for llama-server (-c). Returns registry max_context or 0 (use model default).
+    int get_max_context_for_model(const std::string& model_name);
+    
     // Resolve short name to full GGUF filename
     std::string resolve_model_name(const std::string& input_name);
     
@@ -225,7 +228,7 @@ private:
 // ============================================================================
 struct InferenceConfig {
     std::string model_path;
-    int n_ctx = 4096;           // context size
+    int n_ctx = 0;           // context size
     int n_batch = 512;          // batch size
     int n_threads = 4;          // CPU threads
     int n_gpu_layers = 0;       // GPU layers (0 = CPU only)

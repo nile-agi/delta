@@ -595,25 +595,27 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
  
  // Helper to build delta-server command
  // Uses minimal flags for maximum compatibility; some builds may not support --flash-attn or --jinja
- std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path, 
-                                               int port, int ctx_size, const std::string& model_alias, 
-                                               const std::string& public_path) {
-     std::stringstream cmd;
-     cmd << server_bin
-         << " -m \"" << model_path << "\""
-         << " --host 0.0.0.0"
-         << " --port " << port
-         << " -c " << ctx_size;
-     
-     // Add --path flag to use Delta web UI if found (required for UI to load)
-     if (!public_path.empty()) {
-         cmd << " --path \"" << public_path << "\"";
-     }
-     
-     // Optional flags - some llama.cpp builds support these
-     if (ctx_size > 16384) {
-         cmd << " --gpu-layers 0";
-     }
+std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path, 
+                                              int port, int ctx_size, const std::string& model_alias, 
+                                              const std::string& public_path) {
+    std::stringstream cmd;
+    cmd << server_bin
+        << " -m \"" << model_path << "\""
+        << " --host 0.0.0.0"
+        << " --port " << port;
+    if (ctx_size > 0) {
+        cmd << " -c " << ctx_size;
+    }
+    
+    // Add --path flag to use Delta web UI if found (required for UI to load)
+    if (!public_path.empty()) {
+        cmd << " --path \"" << public_path << "\"";
+    }
+    
+    // Optional flags - some llama.cpp builds support these
+    if (ctx_size > 16384) {
+        cmd << " --gpu-layers 0";
+    }
      
      // Add --alias if provided
      if (!model_alias.empty()) {
@@ -1082,34 +1084,11 @@ void Commands::stop_llama_server() {
      UI::print_info("✓ Model loaded successfully!");
      UI::print_info("Current model: " + session.current_model);
      
-     // Automatically launch web UI server with the new model
-     // Get model's max context from registry (use model's max_context as default)
-     int ctx_size = 4096;  // Default fallback
-     // Try to get max context from registry
-     std::string registry_name = model_name;
-     if (session.model_mgr->is_in_registry(registry_name)) {
-         auto entry = session.model_mgr->get_registry_entry(registry_name);
-         if (entry.max_context > 0) {
-             ctx_size = entry.max_context;
-         }
-     } else {
-         // Try converting dash to colon format
-         size_t last_dash = registry_name.find_last_of('-');
-         if (last_dash != std::string::npos) {
-             std::string colon_name = registry_name.substr(0, last_dash) + ":" + 
-                                      registry_name.substr(last_dash + 1);
-             if (session.model_mgr->is_in_registry(colon_name)) {
-                 auto entry = session.model_mgr->get_registry_entry(colon_name);
-                 if (entry.max_context > 0) {
-                     ctx_size = entry.max_context;
-                 }
-             }
-         }
-     }
-     // Fallback to config.n_ctx if model not in registry and config.n_ctx is set
-     if (ctx_size <= 0 && session.config->n_ctx > 0) {
-         ctx_size = session.config->n_ctx;
-     }
+// Automatically launch web UI server with the new model
+    int ctx_size = session.model_mgr->get_max_context_for_model(model_name);
+    if (ctx_size <= 0 && session.config->n_ctx > 0) {
+        ctx_size = session.config->n_ctx;
+    }
      
      // Get short_name for model alias in web UI
      std::string model_alias;
