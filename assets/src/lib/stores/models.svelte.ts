@@ -12,6 +12,7 @@ class ModelsStore {
 	private _models = $state<ModelOption[]>([]);
 	private _loading = $state(false);
 	private _updating = $state(false);
+	private _loadingModelId = $state<string | null>(null);
 	private _error = $state<string | null>(null);
 	private _selectedModelId = $state<string | null>(null);
 	private _selectedModelName = $state<string | null>(null);
@@ -38,6 +39,10 @@ class ModelsStore {
 
 	get updating(): boolean {
 		return this._updating;
+	}
+
+	get loadingModelId(): string | null {
+		return this._loadingModelId;
 	}
 
 	get error(): string | null {
@@ -184,6 +189,7 @@ class ModelsStore {
 		}
 
 		this._updating = true;
+		this._loadingModelId = modelId;
 		this._error = null;
 
 		try {
@@ -210,6 +216,7 @@ class ModelsStore {
 			}
 		} finally {
 			this._updating = false;
+			this._loadingModelId = null;
 		}
 	}
 
@@ -221,8 +228,18 @@ class ModelsStore {
 	}
 
 	/**
+	 * Unloads the current model (clears selection). User must select a model again to send messages.
+	 */
+	unload(): void {
+		this._selectedModelId = null;
+		this._selectedModelName = null;
+		this._persistedSelection.value = null;
+	}
+
+	/**
 	 * Determines which model should be selected after fetching the models list.
-	 * Priority: current selection > persisted selection > first available model > none
+	 * Only restores persisted selection; does not auto-select first model on launch.
+	 * Priority: current selection > persisted selection (if still in list) > none
 	 */
 	private determineInitialSelection(models: ModelOption[]): {
 		id: string | null;
@@ -234,20 +251,13 @@ class ModelsStore {
 
 		if (nextSelectionId) {
 			const match = models.find((m) => m.id === nextSelectionId);
-
 			if (match) {
 				nextSelectionId = match.id;
 				nextSelectionName = match.model;
-			} else if (models[0]) {
-				nextSelectionId = models[0].id;
-				nextSelectionName = models[0].model;
 			} else {
 				nextSelectionId = null;
 				nextSelectionName = null;
 			}
-		} else if (models[0]) {
-			nextSelectionId = models[0].id;
-			nextSelectionName = models[0].model;
 		}
 
 		return { id: nextSelectionId, model: nextSelectionName };
@@ -259,6 +269,7 @@ export const modelsStore = new ModelsStore();
 export const modelOptions = () => modelsStore.models;
 export const modelsLoading = () => modelsStore.loading;
 export const modelsUpdating = () => modelsStore.updating;
+export const loadingModelId = () => modelsStore.loadingModelId;
 export const modelsError = () => modelsStore.error;
 export const selectedModelId = () => modelsStore.selectedModelId;
 export const selectedModelName = () => modelsStore.selectedModelName;
@@ -266,3 +277,4 @@ export const selectedModelOption = () => modelsStore.selectedModel;
 
 export const fetchModels = modelsStore.fetch.bind(modelsStore);
 export const selectModel = modelsStore.select.bind(modelsStore);
+export const unloadModel = modelsStore.unload.bind(modelsStore);

@@ -9,6 +9,7 @@
 	} from '$lib/components/app';
 	import { INPUT_CLASSES } from '$lib/constants/input-classes';
 	import { config } from '$lib/stores/settings.svelte';
+	import { selectedModelId } from '$lib/stores/models.svelte';
 	import { FileTypeCategory, MimeTypeApplication } from '$lib/enums/files';
 	import {
 		AudioRecorder,
@@ -62,6 +63,12 @@
 	let previousIsLoading = $state(isLoading);
 	let recordingSupported = $state(false);
 	let textareaRef: ChatFormTextarea | undefined = $state(undefined);
+	let openModelDropdownTrigger = $state(0);
+	let hasModel = $derived(!!selectedModelId());
+
+	function requestOpenModelDropdown() {
+		openModelDropdownTrigger++;
+	}
 
 	function getAcceptStringForFileType(fileType: FileTypeCategory): string {
 		switch (fileType) {
@@ -99,9 +106,17 @@
 
 	async function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter' && !event.shiftKey && !isIMEComposing(event)) {
+			const canSend = message.trim().length > 0 || uploadedFiles.length > 0;
+			if (canSend && !hasModel) {
+				event.preventDefault();
+				requestOpenModelDropdown();
+				return;
+			}
+
 			event.preventDefault();
 
 			if ((!message.trim() && uploadedFiles.length === 0) || disabled || isLoading) return;
+			if (!hasModel) return;
 
 			const messageToSend = message.trim();
 			const filesToSend = [...uploadedFiles];
@@ -185,7 +200,13 @@
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
+		const canSend = message.trim().length > 0 || uploadedFiles.length > 0;
+		if (canSend && !hasModel) {
+			requestOpenModelDropdown();
+			return;
+		}
 		if ((!message.trim() && uploadedFiles.length === 0) || disabled || isLoading) return;
+		if (!hasModel) return;
 
 		const messageToSend = message.trim();
 		const filesToSend = [...uploadedFiles];
@@ -248,11 +269,14 @@
 		<ChatFormActions
 			canSend={message.trim().length > 0 || uploadedFiles.length > 0}
 			{disabled}
+			{hasModel}
 			isEmpty={!message.trim() && uploadedFiles.length === 0}
 			{isLoading}
 			{isRecording}
 			recordingSupported={recordingSupported}
 			showMicrophoneOnEmptyInput={Boolean(currentConfig.showMicrophoneOnEmptyInput)}
+			openModelDropdownTrigger={openModelDropdownTrigger}
+			onRequestOpenModelDropdown={requestOpenModelDropdown}
 			onFileUpload={handleFileUpload}
 			onMicClick={handleMicClick}
 			onStop={handleStop}

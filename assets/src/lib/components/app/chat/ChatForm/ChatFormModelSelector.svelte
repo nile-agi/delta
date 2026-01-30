@@ -1,28 +1,33 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { ChevronDown, Loader2, Box, Search, X } from '@lucide/svelte';
+	import { ChevronDown, Loader2, Box, Search, X, Power } from '@lucide/svelte';
 	import { cn } from '$lib/components/ui/utils';
 	import { portalToBody } from '$lib/utils/portal-to-body';
 	import {
 		fetchModels,
+		loadingModelId,
 		modelOptions,
 		modelsError,
 		modelsLoading,
 		modelsUpdating,
 		selectModel,
-		selectedModelId
+		selectedModelId,
+		unloadModel
 	} from '$lib/stores/models.svelte';
 	import type { ModelOption } from '$lib/types/models';
 
 	interface Props {
 		class?: string;
+		/** When this number increments, the dropdown opens (e.g. when user presses Enter with no model). */
+		openTrigger?: number;
 	}
 
-	let { class: className = '' }: Props = $props();
+	let { class: className = '', openTrigger = 0 }: Props = $props();
 
 	let options = $derived(modelOptions());
 	let loading = $derived(modelsLoading());
 	let updating = $derived(modelsUpdating());
+	let loadingId = $derived(loadingModelId());
 	let error = $derived(modelsError());
 	let activeId = $derived(selectedModelId());
 
@@ -145,9 +150,19 @@
 		}
 	}
 
+	let lastOpenTrigger = $state(0);
+
 	$effect(() => {
 		if (loading || updating) {
 			closeMenu();
+		}
+	});
+
+	$effect(() => {
+		const trigger = openTrigger;
+		if (trigger > lastOpenTrigger && options.length > 0 && !loading && !updating) {
+			lastOpenTrigger = trigger;
+			void openMenu();
 		}
 	});
 
@@ -158,6 +173,13 @@
 
 		queueMicrotask(() => updateMenuPosition());
 	});
+
+	function handleUnloadModel(event: MouseEvent) {
+		event.preventDefault();
+		event.stopPropagation();
+		unloadModel();
+		closeMenu();
+	}
 
 	function updateMenuPosition() {
 		if (!isOpen || !triggerButton || !menuRef) return;
@@ -266,8 +288,7 @@
 		if (activeId) {
 			return options.find((option) => option.id === activeId);
 		}
-
-		return options[0];
+		return undefined;
 	}
 </script>
 
@@ -362,24 +383,55 @@
 							: undefined}
 					>
 						{#each filteredOptions as option (option.id)}
-							<button
-								type="button"
+							{@const isSelected = option.id === selectedOption?.id}
+							{@const isLoadingThis = option.id === loadingId && updating}
+							<div
 								class={cn(
-									'flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition hover:bg-muted focus:bg-muted focus:outline-none',
-									option.id === selectedOption?.id ? 'bg-accent text-accent-foreground' : ''
+									'flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition',
+									isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
 								)}
-								role="option"
-								aria-selected={option.id === selectedOption?.id}
-								onclick={() => handleOptionSelect(option.id)}
 							>
-								<span class="block w-full truncate font-medium" title={option.name}>
-									{option.name}
-								</span>
-
-								{#if option.description}
-									<span class="text-xs text-muted-foreground">{option.description}</span>
+								<button
+									type="button"
+									class="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left focus:bg-muted focus:outline-none"
+									role="option"
+									aria-selected={isSelected}
+									onclick={() => handleOptionSelect(option.id)}
+									disabled={isLoadingThis}
+								>
+									<span class="block w-full truncate font-medium" title={option.name}>
+										{option.name}
+									</span>
+									{#if option.description}
+										<span class="text-xs text-muted-foreground">{option.description}</span>
+									{/if}
+									{#if isLoadingThis}
+										<span class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+											<Loader2 class="h-3.5 w-3.5 animate-spin" />
+											Loading model...
+										</span>
+									{/if}
+								</button>
+								{#if isSelected && !updating}
+									<button
+										type="button"
+										class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-destructive hover:bg-destructive/15 focus:outline-none focus:ring-2 focus:ring-ring"
+										title="Unload model"
+										aria-label="Unload model"
+										onclick={handleUnloadModel}
+									>
+										<Power class="h-4 w-4" />
+									</button>
+								{:else if isLoadingThis}
+									<span class="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground" title="Loading model...">
+										<Loader2 class="h-4 w-4 animate-spin" />
+									</span>
+								{:else}
+									<span class="flex h-8 w-8 shrink-0 items-center justify-center" aria-hidden="true">
+										<span class="h-2 w-2 rounded-full bg-muted-foreground/50"></span>
+									</span>
 								{/if}
-							</button>
+							</div>
 						{/each}
 						{#if filteredOptions.length === 0}
 							<p class="px-3 py-4 text-center text-sm text-muted-foreground">No models match your search.</p>

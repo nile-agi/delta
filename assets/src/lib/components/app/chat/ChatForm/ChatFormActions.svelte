@@ -10,11 +10,14 @@
 		canSend?: boolean;
 		class?: string;
 		disabled?: boolean;
+		hasModel?: boolean;
 		isLoading?: boolean;
 		isRecording?: boolean;
 		recordingSupported?: boolean;
 		showMicrophoneOnEmptyInput?: boolean;
 		isEmpty?: boolean;
+		openModelDropdownTrigger?: number;
+		onRequestOpenModelDropdown?: () => void;
 		onFileUpload?: (fileType?: FileTypeCategory) => void;
 		onMicClick?: () => void;
 		onStop?: () => void;
@@ -24,11 +27,14 @@
 		canSend = false,
 		class: className = '',
 		disabled = false,
+		hasModel = true,
 		isLoading = false,
 		isRecording = false,
 		recordingSupported = false,
 		showMicrophoneOnEmptyInput = false,
 		isEmpty = true,
+		openModelDropdownTrigger = 0,
+		onRequestOpenModelDropdown,
 		onFileUpload,
 		onMicClick,
 		onStop
@@ -37,12 +43,14 @@
 	let showSendButton = $derived(
 		canSend || !(isEmpty && showMicrophoneOnEmptyInput && recordingSupported)
 	);
+	let sendDisabled = $derived(!canSend || disabled || isLoading);
+	let sendBlockedNoModel = $derived(canSend && !hasModel);
 </script>
 
 <div class="flex w-full items-center gap-2 {className}">
 	<ChatFormActionFileAttachments class="mr-auto" {disabled} {onFileUpload} />
 
-	<ChatFormModelSelector class="shrink-0" />
+	<ChatFormModelSelector class="shrink-0" openTrigger={openModelDropdownTrigger} />
 
 	{#if isLoading}
 		<Button
@@ -57,14 +65,26 @@
 		<ChatFormActionRecord {disabled} {isLoading} {isRecording} {onMicClick} />
 
 		{#if showSendButton}
-			<Button
-				type="submit"
-				disabled={!canSend || disabled || isLoading}
-				class="h-8 w-8 rounded-full p-0"
-			>
-				<span class="sr-only">Send</span>
-				<ArrowUp class="h-12 w-12" />
-			</Button>
+			{#if sendBlockedNoModel}
+				<Button
+					type="button"
+					class="h-8 w-8 rounded-full p-0"
+					title="Please select a model first"
+					onclick={onRequestOpenModelDropdown}
+				>
+					<span class="sr-only">Please select a model first</span>
+					<ArrowUp class="h-12 w-12" />
+				</Button>
+			{:else}
+				<Button
+					type="submit"
+					disabled={sendDisabled}
+					class="h-8 w-8 rounded-full p-0"
+				>
+					<span class="sr-only">Send</span>
+					<ArrowUp class="h-12 w-12" />
+				</Button>
+			{/if}
 		{/if}
 	{/if}
 </div>
