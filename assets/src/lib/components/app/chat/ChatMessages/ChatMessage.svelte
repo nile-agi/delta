@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getDeletionInfo } from '$lib/stores/chat.svelte';
+	import { config } from '$lib/stores/settings.svelte';
 	import { copyToClipboard } from '$lib/utils/copy';
 	import { isIMEComposing } from '$lib/utils/is-ime-composing';
 	import ChatMessageAssistant from './ChatMessageAssistant.svelte';
@@ -18,6 +19,7 @@
 		) => void;
 		onNavigateToSibling?: (siblingId: string) => void;
 		onRegenerateWithBranching?: (message: DatabaseMessage) => void;
+		onContinueWithMessage?: (message: DatabaseMessage) => void;
 		siblingInfo?: ChatMessageSiblingInfo | null;
 	}
 
@@ -30,6 +32,7 @@
 		onEditWithReplacement,
 		onNavigateToSibling,
 		onRegenerateWithBranching,
+		onContinueWithMessage,
 		siblingInfo = null
 	}: Props = $props();
 
@@ -60,7 +63,22 @@
 	}
 
 	async function handleCopy() {
-		await copyToClipboard(message.content, 'Message copied to clipboard');
+		let text = message.content;
+		const currentConfig = config();
+		if (currentConfig.copyTextAttachmentsAsPlainText && message.extra?.length) {
+			const textParts: string[] = [message.content].filter(Boolean);
+			for (const item of message.extra) {
+				if (item.type === 'textFile' && 'content' in item) {
+					textParts.push(item.content);
+				} else if (item.type === 'context' && 'content' in item) {
+					textParts.push(item.content);
+				} else if (item.type === 'pdfFile' && 'content' in item) {
+					textParts.push(item.content);
+				}
+			}
+			text = textParts.join('\n\n');
+		}
+		await copyToClipboard(text, 'Message copied to clipboard');
 		onCopy?.(message);
 	}
 
@@ -164,6 +182,7 @@
 		onEditedContentChange={handleEditedContentChange}
 		{onNavigateToSibling}
 		onRegenerate={handleRegenerate}
+		onContinue={onContinueWithMessage ? () => onContinueWithMessage(message) : undefined}
 		onSaveEdit={handleSaveEdit}
 		onShowDeleteDialogChange={handleShowDeleteDialogChange}
 		{shouldBranchAfterEdit}

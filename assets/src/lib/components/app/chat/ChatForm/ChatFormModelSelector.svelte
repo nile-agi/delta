@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
-	import { ChevronDown, Loader2 } from '@lucide/svelte';
+	import { ChevronDown, Loader2, Box, Search, X } from '@lucide/svelte';
 	import { cn } from '$lib/components/ui/utils';
 	import { portalToBody } from '$lib/utils/portal-to-body';
 	import {
@@ -28,9 +28,20 @@
 
 	let isMounted = $state(false);
 	let isOpen = $state(false);
+	let searchQuery = $state('');
 	let container: HTMLDivElement | null = null;
 	let triggerButton = $state<HTMLButtonElement | null>(null);
 	let menuRef = $state<HTMLDivElement | null>(null);
+
+	let filteredOptions = $derived(
+		searchQuery.trim()
+			? options.filter(
+					(opt) =>
+						opt.name.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
+						(opt.description?.toLowerCase().includes(searchQuery.toLowerCase().trim()) ?? false)
+				)
+			: options
+	);
 	let menuPosition = $state<{
 		top: number;
 		left: number;
@@ -101,6 +112,7 @@
 	async function openMenu() {
 		if (loading || updating) return;
 
+		searchQuery = '';
 		isOpen = true;
 		await tick();
 		updateMenuPosition();
@@ -281,7 +293,7 @@
 			<button
 				type="button"
 				class={cn(
-					'flex w-full items-center justify-end gap-2 rounded-md px-2 py-1 text-sm text-muted-foreground transition hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
+					'flex w-full items-center justify-end gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
 					isOpen ? 'text-foreground' : ''
 				)}
 				aria-haspopup="listbox"
@@ -290,16 +302,17 @@
 				bind:this={triggerButton}
 				disabled={loading || updating}
 			>
+				<Box class="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 				<span class="max-w-[160px] truncate text-right font-medium">
 					{selectedOption?.name || 'Select model'}
 				</span>
 
 				{#if updating}
-					<Loader2 class="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+					<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
 				{:else}
 					<ChevronDown
 						class={cn(
-							'h-4 w-4 text-muted-foreground transition-transform',
+							'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
 							isOpen ? 'rotate-180 text-foreground' : ''
 						)}
 					/>
@@ -311,7 +324,7 @@
 					bind:this={menuRef}
 					use:portalToBody
 					class={cn(
-						'fixed z-[1000] overflow-hidden rounded-md border bg-popover shadow-lg transition-opacity',
+						'fixed z-[1000] flex flex-col overflow-hidden rounded-md border bg-popover shadow-lg transition-opacity',
 						menuPosition ? 'opacity-100' : 'pointer-events-none opacity-0'
 					)}
 					role="listbox"
@@ -320,13 +333,35 @@
 					style:width={menuPosition ? `${menuPosition.width}px` : undefined}
 					data-placement={menuPosition?.placement ?? 'bottom'}
 				>
+					<div class="border-b border-border/50 p-2">
+						<div class="relative flex items-center">
+							<Search class="absolute left-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+							<input
+								type="text"
+								class="h-9 w-full rounded-md border bg-background py-1.5 pl-8 pr-8 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+								placeholder="Search models..."
+								bind:value={searchQuery}
+								onkeydown={(e) => e.stopPropagation()}
+							/>
+							{#if searchQuery}
+								<button
+									type="button"
+									class="absolute right-2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+									aria-label="Clear search"
+									onclick={() => (searchQuery = '')}
+								>
+									<X class="h-4 w-4" />
+								</button>
+							{/if}
+						</div>
+					</div>
 					<div
 						class="overflow-y-auto py-1"
 						style:max-height={menuPosition && menuPosition.maxHeight > 0
 							? `${menuPosition.maxHeight}px`
 							: undefined}
 					>
-						{#each options as option (option.id)}
+						{#each filteredOptions as option (option.id)}
 							<button
 								type="button"
 								class={cn(
@@ -346,6 +381,9 @@
 								{/if}
 							</button>
 						{/each}
+						{#if filteredOptions.length === 0}
+							<p class="px-3 py-4 text-center text-sm text-muted-foreground">No models match your search.</p>
+						{/if}
 					</div>
 				</div>
 			{/if}

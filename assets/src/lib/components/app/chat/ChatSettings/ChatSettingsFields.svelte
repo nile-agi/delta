@@ -198,24 +198,16 @@
 				</p>
 			{/if}
 		{:else if field.type === 'checkbox'}
-			{@const isDisabled = field.key === 'pdfAsImage' && !supportsVision()}
-
 			<div class="flex items-start space-x-3">
 				<Checkbox
 					id={field.key}
 					checked={Boolean(localConfig[field.key])}
-					disabled={isDisabled}
 					onCheckedChange={(checked) => onConfigChange(field.key, checked)}
 					class="mt-1"
 				/>
 
 				<div class="space-y-1">
-					<label
-						for={field.key}
-						class="cursor-pointer text-sm leading-none font-medium {isDisabled
-							? 'text-muted-foreground'
-							: ''}"
-					>
+					<label for={field.key} class="cursor-pointer text-sm leading-none font-medium">
 						{field.label}
 					</label>
 
@@ -225,8 +217,7 @@
 						</p>
 					{:else if field.key === 'pdfAsImage' && !supportsVision()}
 						<p class="text-xs text-muted-foreground">
-							PDF-to-image processing requires a vision-capable model. PDFs will be processed as
-							text.
+							For non-vision models, PDFs will be processed as text automatically.
 						</p>
 					{/if}
 				</div>

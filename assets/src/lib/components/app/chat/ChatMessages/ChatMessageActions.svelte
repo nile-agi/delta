@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Edit, Copy, RefreshCw, Trash2 } from '@lucide/svelte';
+	import { Edit, Copy, RefreshCw, Trash2, Play } from '@lucide/svelte';
 	import { ActionButton, ConfirmationDialog } from '$lib/components/app';
 	import ChatMessageBranchingControls from './ChatMessageBranchingControls.svelte';
 
@@ -18,6 +18,7 @@
 		onCopy: () => void;
 		onEdit?: () => void;
 		onRegenerate?: () => void;
+		onContinue?: () => void;
 		onDelete: () => void;
 		onConfirmDelete: () => void;
 		onNavigateToSibling?: (siblingId: string) => void;
@@ -35,6 +36,7 @@
 		onNavigateToSibling,
 		onShowDeleteDialogChange,
 		onRegenerate,
+		onContinue,
 		role,
 		siblingInfo = null,
 		showDeleteDialog
@@ -67,6 +69,9 @@
 
 			{#if role === 'assistant' && onRegenerate}
 				<ActionButton icon={RefreshCw} tooltip="Regenerate" onclick={onRegenerate} />
+			{/if}
+			{#if role === 'assistant' && onContinue}
+				<ActionButton icon={Play} tooltip="Continue" onclick={onContinue} />
 			{/if}
 
 			<ActionButton icon={Trash2} tooltip="Delete" onclick={onDelete} />

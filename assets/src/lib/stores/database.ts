@@ -174,6 +174,16 @@ export class DatabaseStore {
 	}
 
 	/**
+	 * Permanently deletes all conversations and their messages. This action cannot be undone.
+	 */
+	static async deleteAllConversations(): Promise<void> {
+		await db.transaction('rw', [db.conversations, db.messages], async () => {
+			await db.messages.clear();
+			await db.conversations.clear();
+		});
+	}
+
+	/**
 	 * Deletes a message and removes it from its parent's children array.
 	 *
 	 * @param messageId - ID of the message to delete

@@ -351,20 +351,21 @@ class ChatStore {
 	 * @param assistantMessage - The assistant message to stream content into
 	 * @param onComplete - Optional callback when streaming completes
 	 * @param onError - Optional callback when an error occurs
+	 * @param options - Optional initial content for "continue" (append to existing message)
 	 */
 	private async streamChatCompletion(
 		allMessages: DatabaseMessage[],
 		assistantMessage: DatabaseMessage,
 		onComplete?: (content: string) => Promise<void>,
-		onError?: (error: Error) => void
+		onError?: (error: Error) => void,
+		options?: { initialContent?: string; initialThinking?: string }
 	): Promise<void> {
-		let streamedContent = '';
-		let streamedReasoningContent = '';
+		let streamedContent = options?.initialContent ?? '';
+		let streamedReasoningContent = options?.initialThinking ?? '';
 
 		let resolvedModel: string | null = null;
 		let modelPersisted = false;
-		const currentConfig = config();
-		const preferServerPropsModel = !currentConfig.modelSelectorEnabled;
+		const preferServerPropsModel = false;
 		let serverPropsRefreshed = false;
 		let updateModelFromServerProps: ((persistImmediately?: boolean) => void) | null = null;
 
@@ -964,6 +965,48 @@ class ChatStore {
 		} catch (error) {
 			if (this.isAbortError(error)) return;
 			console.error('Failed to regenerate message:', error);
+		}
+	}
+
+	/**
+	 * Continues an assistant message (appends more generated content).
+	 * Currently works only with non-reasoning models.
+	 * @param messageId - The ID of the assistant message to continue
+	 */
+	async continueMessage(messageId: string): Promise<void> {
+		if (!this.activeConversation || this.isLoading) return;
+
+		try {
+			const path = await DatabaseStore.getConversationPath(this.activeConversation.id);
+			const messageIndex = path.findIndex((m) => m.id === messageId);
+			if (messageIndex === -1 || path[messageIndex].role !== 'assistant') {
+				console.error('Message not found or not an assistant message');
+				return;
+			}
+
+			const assistantMessage = path[messageIndex];
+			const conversationContext = path.slice(0, messageIndex + 1);
+
+			this.setConversationLoading(this.activeConversation.id, true);
+			this.clearConversationStreaming(this.activeConversation.id);
+
+			try {
+				await this.streamChatCompletion(
+					conversationContext,
+					assistantMessage,
+					undefined,
+					undefined,
+					{
+						initialContent: assistantMessage.content,
+						initialThinking: assistantMessage.thinking ?? ''
+					}
+				);
+			} finally {
+				this.setConversationLoading(this.activeConversation.id, false);
+			}
+		} catch (error) {
+			if (this.isAbortError(error)) return;
+			console.error('Failed to continue message:', error);
 		}
 	}
 
@@ -1713,6 +1756,7 @@ export const editAssistantMessage = chatStore.editAssistantMessage.bind(chatStor
 export const editMessageWithBranching = chatStore.editMessageWithBranching.bind(chatStore);
 export const regenerateMessageWithBranching =
 	chatStore.regenerateMessageWithBranching.bind(chatStore);
+export const continueMessage = chatStore.continueMessage.bind(chatStore);
 export const deleteMessage = chatStore.deleteMessage.bind(chatStore);
 export const getDeletionInfo = chatStore.getDeletionInfo.bind(chatStore);
 export const updateConversationName = chatStore.updateConversationName.bind(chatStore);

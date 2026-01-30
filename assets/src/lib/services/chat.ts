@@ -123,14 +123,13 @@ export class ChatService {
 			stream
 		};
 
-		const modelSelectorEnabled = Boolean(currentConfig.modelSelectorEnabled);
-		const activeModel = modelSelectorEnabled ? selectedModelName() : null;
-
-		if (modelSelectorEnabled && activeModel) {
+		const activeModel = selectedModelName();
+		if (activeModel) {
 			requestBody.model = activeModel;
 		}
 
 		requestBody.reasoning_format = currentConfig.disableReasoningFormat ? 'none' : 'auto';
+		if (currentConfig.backendSampling) requestBody.backend_sampling = true;
 
 		if (temperature !== undefined) requestBody.temperature = temperature;
 		if (max_tokens !== undefined) {

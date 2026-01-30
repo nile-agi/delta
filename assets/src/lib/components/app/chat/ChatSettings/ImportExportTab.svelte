@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Download, Upload } from '@lucide/svelte';
+	import { Download, Upload, Trash2 } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ConversationSelectionDialog from './ConversationSelectionDialog.svelte';
 	import { DatabaseStore } from '$lib/stores/database';
@@ -14,11 +14,32 @@
 
 	let showExportDialog = $state(false);
 	let showImportDialog = $state(false);
+	let isDeletingAll = $state(false);
 	let availableConversations = $state<DatabaseConversation[]>([]);
 	let messageCountMap = $state<Map<string, number>>(new Map());
 	let fullImportData = $state<Array<{ conv: DatabaseConversation; messages: DatabaseMessage[] }>>(
 		[]
 	);
+
+	async function handleDeleteAllConfirm() {
+		if (
+			!confirm(
+				'Permanently delete all conversations and their messages? This action cannot be undone. Consider exporting first if you want a backup.'
+			)
+		) {
+			return;
+		}
+		try {
+			isDeletingAll = true;
+			await DatabaseStore.deleteAllConversations();
+			await chatStore.loadConversations();
+		} catch (err) {
+			console.error('Failed to delete all conversations:', err);
+			alert('Failed to delete all conversations');
+		} finally {
+			isDeletingAll = false;
+		}
+	}
 
 	async function handleExportClick() {
 		try {
@@ -232,6 +253,23 @@
 					</ul>
 				</div>
 			{/if}
+		</div>
+
+		<div class="grid border-t border-border/30 pt-4">
+			<h4 class="mb-2 text-sm font-medium text-destructive">Delete All Conversations</h4>
+			<p class="mb-4 text-sm text-destructive">
+				Permanently delete all conversations and their messages. This action cannot be undone.
+				Consider exporting your conversations first if you want to keep a backup.
+			</p>
+			<Button
+				variant="destructive"
+				class="gap-2"
+				onclick={handleDeleteAllConfirm}
+				disabled={isDeletingAll}
+			>
+				<Trash2 class="h-4 w-4" />
+				{isDeletingAll ? 'Deleting…' : 'Delete all conversations'}
+			</Button>
 		</div>
 	</div>
 </div>

@@ -4,7 +4,6 @@
 	import ChatFormActionFileAttachments from './ChatFormActionFileAttachments.svelte';
 	import ChatFormActionRecord from './ChatFormActionRecord.svelte';
 	import ChatFormModelSelector from './ChatFormModelSelector.svelte';
-	import { config } from '$lib/stores/settings.svelte';
 	import type { FileTypeCategory } from '$lib/enums/files';
 
 	interface Props {
@@ -35,7 +34,6 @@
 		onStop
 	}: Props = $props();
 
-	let currentConfig = $derived(config());
 	let showSendButton = $derived(
 		canSend || !(isEmpty && showMicrophoneOnEmptyInput && recordingSupported)
 	);
@@ -44,9 +42,7 @@
 <div class="flex w-full items-center gap-2 {className}">
 	<ChatFormActionFileAttachments class="mr-auto" {disabled} {onFileUpload} />
 
-	{#if currentConfig.modelSelectorEnabled}
-		<ChatFormModelSelector class="shrink-0" />
-	{/if}
+	<ChatFormModelSelector class="shrink-0" />
 
 	{#if isLoading}
 		<Button

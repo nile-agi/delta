@@ -3,7 +3,6 @@
 		Settings,
 		Funnel,
 		AlertTriangle,
-		Brain,
 		Code,
 		Monitor,
 		Sun,
@@ -65,13 +64,18 @@
 					type: 'input'
 				},
 				{
-					key: 'pdfAsImage',
-					label: 'Parse PDF as image',
+					key: 'copyTextAttachmentsAsPlainText',
+					label: 'Copy text attachments as plain text',
 					type: 'checkbox'
 				},
 				{
-					key: 'showModelInfo',
-					label: 'Show model information',
+					key: 'enableContinueButton',
+					label: 'Enable "Continue" button',
+					type: 'checkbox'
+				},
+				{
+					key: 'pdfAsImage',
+					label: 'Parse PDF as image',
 					type: 'checkbox'
 				}
 			]
@@ -126,6 +130,11 @@
 			title: 'Sampling',
 			icon: Funnel,
 			fields: [
+				{
+					key: 'backendSampling',
+					label: 'Backend sampling',
+					type: 'checkbox'
+				},
 				{
 					key: 'temperature',
 					label: 'Temperature',
@@ -230,17 +239,6 @@
 			]
 		},
 		{
-			title: 'Reasoning',
-			icon: Brain,
-			fields: [
-				{
-					key: 'disableReasoningFormat',
-					label: 'Show raw LLM output',
-					type: 'checkbox'
-				}
-			]
-		},
-		{
 			title: 'Import/Export',
 			icon: Database,
 			fields: []
@@ -250,8 +248,13 @@
 			icon: Code,
 			fields: [
 				{
-					key: 'modelSelectorEnabled',
-					label: 'Enable model selector',
+					key: 'showToolCallLabels',
+					label: 'Show tool call labels',
+					type: 'checkbox'
+				},
+				{
+					key: 'disableReasoningFormat',
+					label: 'Show raw LLM output',
 					type: 'checkbox'
 				},
 				{
@@ -515,8 +518,8 @@
 								<div class="border-t border-border/30 pt-6 mt-6">
 									<h4 class="mb-4 text-sm font-semibold">Model Management</h4>
 									<p class="mb-4 text-sm text-muted-foreground">
-										Manage your installed models and download new ones. Enable the model selector above to
-										choose models in the chat interface.
+										Manage your installed models and download new ones. Use the model selector in the chat
+										input to choose models in the chat interface.
 									</p>
 									<!-- Model Management Component -->
 									<div class="model-management-container" style="min-height: 200px;">

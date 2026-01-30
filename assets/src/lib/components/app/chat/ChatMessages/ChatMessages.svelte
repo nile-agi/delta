@@ -3,6 +3,7 @@
 	import { DatabaseStore } from '$lib/stores/database';
 	import {
 		activeConversation,
+		continueMessage,
 		deleteMessage,
 		navigateToSibling,
 		editMessageWithBranching,
@@ -93,6 +94,13 @@
 
 		refreshAllMessages();
 	}
+
+	async function handleContinueMessage(message: DatabaseMessage) {
+		onUserAction?.();
+		await continueMessage(message.id);
+		refreshAllMessages();
+	}
+
 	async function handleDeleteMessage(message: DatabaseMessage) {
 		await deleteMessage(message.id);
 
@@ -111,6 +119,7 @@
 			onEditWithBranching={handleEditWithBranching}
 			onEditWithReplacement={handleEditWithReplacement}
 			onRegenerateWithBranching={handleRegenerateWithBranching}
+			onContinueWithMessage={handleContinueMessage}
 		/>
 	{/each}
 </div>

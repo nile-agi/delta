@@ -51,6 +51,13 @@ export type DatabaseMessageExtra =
 	| DatabaseMessageExtraPdfFile
 	| DatabaseMessageExtraLegacyContext;
 
+/** Harmony-compatible tool call (delta.tool_calls) */
+export interface DatabaseMessageToolCall {
+	name?: string;
+	arguments?: string;
+	[id: string]: unknown;
+}
+
 export interface DatabaseMessage {
 	id: string;
 	convId: string;
@@ -64,6 +71,7 @@ export interface DatabaseMessage {
 	extra?: DatabaseMessageExtra[];
 	timings?: ChatMessageTimings;
 	model?: string;
+	tool_calls?: DatabaseMessageToolCall[];
 }
 
 /**
