@@ -411,7 +411,6 @@ public:
         
         // Build new command
         std::string cmd = build_llama_server_command(new_model_path, ctx_size, model_alias);
-        std::cout << "   Command: " << cmd << std::endl;
         
 #ifdef _WIN32
         // Start delta-server on Windows using CreateProcess
