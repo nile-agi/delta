@@ -209,7 +209,6 @@ private:
                 
                 for (const auto& model : models) {
                     json model_json = {
-                        {"id", model.name},
                         {"name", model.name},
                         {"display_name", model.display_name},
                         {"description", model.description},

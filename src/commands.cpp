@@ -586,16 +586,19 @@ std::string Commands::build_llama_server_cmd(const std::string& server_bin, cons
     }
     cmd << " --host 0.0.0.0"
         << " --port " << port;
-    // -c 0 = use model default context; -c N = override
-    cmd << " -c " << (ctx_size > 0 ? ctx_size : 0);
+    if (ctx_size > 0) {
+        cmd << " -c " << ctx_size;
+    }
     
     // Add --path flag to use Delta web UI if found (required for UI to load)
     if (!public_path.empty()) {
         cmd << " --path \"" << public_path << "\"";
     }
     
-    // Use GPU when available (-1 = all layers on GPU); no GPU → server falls back to CPU
-    cmd << " --gpu-layers -1";
+    // Optional flags - some llama.cpp builds support these
+    if (ctx_size > 16384) {
+        cmd << " --gpu-layers 0";
+    }
      
      // Add --alias if provided
      if (!model_alias.empty()) {

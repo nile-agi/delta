@@ -849,18 +849,20 @@ int main(int argc, char** argv) {
         }
         cmd << " --port " << server_port
             << " --parallel " << max_parallel;
-        // -c 0 = use model default context; -c N = override
-        cmd << " -c " << (server_ctx > 0 ? server_ctx : 0);
+        if (server_ctx > 0) {
+            cmd << " -c " << server_ctx;
+        }
         
         // Add --flash-attn flag for single-model only (router mode uses server defaults)
         if (!use_router_mode) {
             if (server_ctx > 16384) {
                 cmd << " --flash-attn off";
+                if (server_ctx > 32768) {
+                    cmd << " --gpu-layers 0";
+                }
             } else {
                 cmd << " --flash-attn auto";
             }
-            // Use GPU when available (-1 = all layers on GPU); no GPU → server falls back to CPU
-            cmd << " --gpu-layers -1";
         }
         
         // Add --jinja flag for gemma3 models (single-model only)
