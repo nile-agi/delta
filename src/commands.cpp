@@ -769,8 +769,8 @@ void Commands::stop_llama_server() {
          }
      }
      
-     // Build command
-     std::string cmd_str = build_llama_server_cmd(server_bin, model_path, current_port_, ctx_size, model_alias, public_path);
+     // Build command: single-model (-m path), not router mode, so the selected model is loaded.
+     std::string cmd_str = build_llama_server_cmd(server_bin, model_path, current_port_, ctx_size, model_alias, public_path, "");
      
      // Start delta-server
 #ifdef _WIN32

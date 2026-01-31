@@ -455,7 +455,8 @@ private:
                     }
                 }
                 
-                // Try to actually switch the model if callback is set
+                // Load the model via llama-server every time user selects/switches (same as terminal /use).
+                // Callback stops current server and starts a new one with -m model_path.
                 bool model_loaded = false;
                 {
                     std::lock_guard<std::mutex> lock(g_props_fallback_mutex);
