@@ -327,8 +327,8 @@
 				<span class="max-w-[160px] truncate text-right font-medium">
 					{selectedOption?.name || 'Select model'}
 				</span>
-				{#if selectedOption && !updating}
-					<span class="h-2 w-2 shrink-0 rounded-full bg-emerald-500 dark:bg-emerald-400" aria-hidden="true" title="Model loaded"></span>
+				{#if (selectedOption || activeId) && !updating}
+					<span class="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500 dark:bg-emerald-400" aria-hidden="true" title="Model loaded"></span>
 				{/if}
 				{#if updating}
 					<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
@@ -417,6 +417,9 @@
 									{/if}
 								</button>
 								{#if isSelected && !updating}
+									<span class="flex h-8 w-8 shrink-0 items-center justify-center" aria-hidden="true" title="Loaded">
+										<span class="h-2.5 w-2.5 rounded-full bg-emerald-500 dark:bg-emerald-400"></span>
+									</span>
 									<button
 										type="button"
 										class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-destructive hover:bg-destructive/15 focus:outline-none focus:ring-2 focus:ring-ring"
