@@ -3,8 +3,6 @@
  */
 
  #include "commands.h"
- #include "update.h"
- #include "history.h"
  #include "model_api_server.h"
  #include <iostream>
  #include <sstream>
@@ -16,7 +14,6 @@
  #include <algorithm>
  #include <cctype>
  #include <cstdio>
- #include <memory>
  #include <vector>
  #include <mutex>
 #ifdef _WIN32
@@ -104,9 +101,10 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      }
      
      if (server_bin.empty()) {
-         UI::print_error("HTTP server binary not found. Looked for 'server' and 'delta-server' in PATH and install locations.");
-         UI::print_info("From source: run 'make install' so the 'server' binary is installed. Homebrew: run 'brew reinstall delta-cli'.");
-         UI::print_info("Ensure vendor/llama.cpp exists (git submodule update --init vendor/llama.cpp) and rebuild.");
+         UI::print_error("HTTP server binary not found. Looked for 'server', 'llama-server', 'delta-server' in:");
+         UI::print_info("  " + exe_dir + ", PATH, /opt/homebrew/bin, /usr/local/bin, /usr/bin");
+         UI::print_info("From source: run from project root, build with CMake, then run ./build/delta (server is built alongside delta).");
+         UI::print_info("Install: ensure vendor/llama.cpp is present (git submodule update --init vendor/llama.cpp), then make install.");
          return false;
      }
      
@@ -350,10 +348,11 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      // Stop existing delta-server if running
      stop_llama_server();
      
-     // Build command (router mode when models_dir set and model_path empty)
-     std::string cmd_str = build_llama_server_cmd(server_bin, model_path, port, ctx_size, model_alias, public_path, models_dir);
-     
-    // Create error log file path
+    // Build command (router mode when models_dir set and model_path empty)
+    std::string cmd_str = build_llama_server_cmd(server_bin, model_path, port, ctx_size, model_alias, public_path, models_dir);
+    UI::print_info("   Command: " + cmd_str);
+    
+   // Create error log file path
 #ifdef _WIN32
     char temp_path[MAX_PATH];
     GetTempPathA(MAX_PATH, temp_path);
@@ -365,25 +364,33 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     
     // Start delta-server
 #ifdef _WIN32
-    // Windows: Use CreateProcess
+    // Windows: Use CreateProcess; redirect stderr to log file so we can read errors if port never listens
+    HANDLE err_handle = CreateFileA(err_file.c_str(), GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                                   CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, NULL);
+    if (err_handle == INVALID_HANDLE_VALUE) {
+        err_handle = GetStdHandle(STD_ERROR_HANDLE);
+    }
+    SetHandleInformation(err_handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
     STARTUPINFOA si = {0};
     PROCESS_INFORMATION pi = {0};
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESTDHANDLES;
     si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-    
-    // CreateProcess requires a mutable string
+    si.hStdError = err_handle;
     std::vector<char> cmd_line(cmd_str.begin(), cmd_str.end());
     cmd_line.push_back('\0');
-    
-    if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, 
+    if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE,
                        CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &si, &pi)) {
+        if (err_handle != INVALID_HANDLE_VALUE && err_handle != GetStdHandle(STD_ERROR_HANDLE)) {
+            CloseHandle(err_handle);
+        }
         UI::print_error("Failed to create process for delta-server (Error: " + std::to_string(GetLastError()) + ")");
         return false;
     }
-    
+    if (err_handle != INVALID_HANDLE_VALUE && err_handle != GetStdHandle(STD_ERROR_HANDLE)) {
+        CloseHandle(err_handle);
+    }
     CloseHandle(pi.hThread);
     
     // Store PID
@@ -536,6 +543,8 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      
      if (!server_listening) {
          UI::print_error("Server process started but port " + std::to_string(port) + " is not listening after 60 seconds");
+         UI::print_info("Run this command in a terminal to see errors:");
+         UI::print_info("  " + cmd_str);
          UI::print_info("Error log: " + err_file);
          // Dump error log contents so user can see what went wrong
 #ifndef _WIN32
@@ -556,9 +565,26 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                  UI::print_info("--- End of server log ---");
              }
          }
+#else
+         std::ifstream err_read(err_file);
+         if (err_read.is_open()) {
+             std::string line;
+             std::vector<std::string> lines;
+             while (std::getline(err_read, line)) {
+                 lines.push_back(line);
+             }
+             err_read.close();
+             if (!lines.empty()) {
+                 UI::print_info("--- Last 40 lines of server log ---");
+                 size_t start = (lines.size() > 40) ? (lines.size() - 40) : 0;
+                 for (size_t i = start; i < lines.size(); i++) {
+                     std::cerr << "  " << lines[i] << std::endl;
+                 }
+                 UI::print_info("--- End of server log ---");
+             }
+         }
 #endif
-         UI::print_info("You can run the server manually to see errors: delta-server -m <model-path> --port " + std::to_string(port));
-         UI::print_info("Or check if the server is running: ps aux | grep delta-server");
+         UI::print_info("If connection refused: server may have exited. Run the command above to see errors.");
          return false;
      }
      

@@ -14,6 +14,7 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
+#include <vector>
 #ifdef _WIN32
     #include <windows.h>
     #include <io.h>
@@ -893,18 +894,36 @@ int main(int argc, char** argv) {
             cmd << " --path \"" << public_path << "\"";
         }
 
-        // Run server in background and silence stdout/stderr
-        cmd << " >/dev/null 2>&1 &";
-        int rc = std::system(cmd.str().c_str());
+        std::string cmd_str = cmd.str();
+        UI::print_info("Command: " + cmd_str);
+
+#ifdef _WIN32
+        // Windows: run server in background with CreateProcess
+        STARTUPINFOA si = {0};
+        PROCESS_INFORMATION pi = {0};
+        si.cb = sizeof(si);
+        std::vector<char> cmd_line(cmd_str.begin(), cmd_str.end());
+        cmd_line.push_back('\0');
+        if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, FALSE,
+                            CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &si, &pi)) {
+            UI::print_error("Failed to start server process (Error: " + std::to_string(GetLastError()) + ")");
+            return 1;
+        }
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+#else
+        // macOS/Linux: run server in background
+        cmd_str += " >/dev/null 2>&1 &";
+        int rc = std::system(cmd_str.c_str());
         if (rc == -1) {
             UI::print_error("Failed to start server process");
             return 1;
         }
+#endif
         UI::print_success(use_router_mode ? "Delta Server started in background (router mode)" : "Delta Server started in background");
         std::string url = "http://localhost:" + std::to_string(server_port) + "/index.html";
         UI::print_info("Open: " + url);
-        // Open browser after a short delay to ensure server is ready
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         tools::Browser::open_url(url);
         return 0;
     }

@@ -385,6 +385,14 @@ If you have another `delta` command (like llvm's delta or git-delta):
 **Linux/Windows:**
 - Installation directory is added to PATH first
 
+### Connection Refused (localhost:8080 or 0.0.0.0:8080)
+
+If the browser shows "This site can't be reached" or "ERR_CONNECTION_REFUSED":
+
+1. **Run `delta` from a terminal** – Delta prints the exact server command it runs. If the server fails to start, it will print: *"Run this command in a terminal to see errors"* and show the full command. Copy and run that command in a new terminal to see the server’s error output.
+2. **Server binary** – Delta needs a `server`, `llama-server`, or `delta-server` binary (built from llama.cpp). If you see *"HTTP server binary not found"*, build from the project root so the server is built alongside `delta`, or run `make install` so both are installed.
+3. **Run from project root when developing** – From source, run `delta` from the directory that contains `public/` and your build folder (e.g. `./build/delta` or `./build_macos/delta`), so the web UI and server are found.
+
 ### Server Won't Start
 
 1. Check if a model is installed:
