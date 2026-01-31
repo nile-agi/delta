@@ -327,7 +327,9 @@
 				<span class="max-w-[160px] truncate text-right font-medium">
 					{selectedOption?.name || 'Select model'}
 				</span>
-
+				{#if selectedOption && !updating}
+					<span class="h-2 w-2 shrink-0 rounded-full bg-emerald-500 dark:bg-emerald-400" aria-hidden="true" title="Model loaded"></span>
+				{/if}
 				{#if updating}
 					<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
 				{:else}
@@ -388,7 +390,9 @@
 							<div
 								class={cn(
 									'flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition',
-									isSelected ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
+									isSelected
+										? 'bg-emerald-500/10 text-foreground dark:bg-emerald-500/20'
+										: 'hover:bg-muted'
 								)}
 							>
 								<button
@@ -427,7 +431,7 @@
 										<Loader2 class="h-4 w-4 animate-spin" />
 									</span>
 								{:else}
-									<span class="flex h-8 w-8 shrink-0 items-center justify-center" aria-hidden="true">
+									<span class="flex h-8 w-8 shrink-0 items-center justify-center" aria-hidden="true" title="Available">
 										<span class="h-2 w-2 rounded-full bg-muted-foreground/50"></span>
 									</span>
 								{/if}
