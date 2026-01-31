@@ -1,5 +1,8 @@
 import { config } from '$lib/stores/settings.svelte';
-import { selectedModelName } from '$lib/stores/models.svelte';
+import {
+	selectedModelName,
+	selectedModelOption
+} from '$lib/stores/models.svelte';
 import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
 import { slotsService } from './slots';
 /**
@@ -123,7 +126,9 @@ export class ChatService {
 			stream
 		};
 
-		const activeModel = selectedModelName();
+		// Use the loaded/selected model for this request (must match selector so response uses same model)
+		const activeModel =
+			(selectedModelName() || selectedModelOption()?.model) ?? null;
 		if (activeModel) {
 			requestBody.model = activeModel;
 		}
