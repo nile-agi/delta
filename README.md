@@ -232,17 +232,20 @@ delta --model qwen2.5:0.5b --gpu-layers -1 "Your question"
 ### 5. Start Web Server
 
 ```bash
-# Start web UI server
+# Start web UI server (router mode: scans ~/.delta-cli/models for .gguf files)
 delta server
 
-# Or with specific model
+# Or with a specific models directory
+delta server --models-dir ~/my-ggufs/
+
+# Or with a specific model (single-model mode)
 delta server -m qwen2.5:0.5b
 
 # Or with custom port
 delta server --port 8081
 ```
 
-Then open **http://localhost:8080** in your browser to use the web interface.
+Then open **http://localhost:8080** in your browser to use the web interface. In **router mode** (no `-m`), the server discovers all GGUF files in the models directory and the Web UI shows a model selector; use `-m <model>` for single-model mode.
 
 ---
 
@@ -294,6 +297,7 @@ OPTIONS:
         --port <N>          Server port (default: 8080)
         --np <N>            Max parallel requests (default: 4)
         --c <N>             Max context size (default: 16384)
+        --models-dir <DIR>  Router mode: scan directory for .gguf (default when no -m: ~/.delta-cli/models)
     --check-updates         Check for new versions
     --update                Update to latest version
     --no-color              Disable colored output
@@ -335,9 +339,14 @@ delta --model qwen2.5-0.5b "Explain quantum computing"
 delta --model llama3.1-8b --gpu-layers -1 "Write a poem"
 delta --model mistral-7b --interactive
 
-# Start server
+# Start server (router mode: multiple models from ~/.delta-cli/models)
 delta server
-delta --server -m llama3.2:1b --port 8080
+
+# Start server with custom models directory
+delta server --models-dir ~/models/gguf
+
+# Start server with a specific model (single-model mode)
+delta server -m llama3.2:1b --port 8080
 
 # Check for updates
 delta --check-updates

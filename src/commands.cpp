@@ -58,7 +58,7 @@ int Commands::current_port_ = 8080;
 std::mutex Commands::server_mutex_;
 
 // Launch server automatically (public method)
-bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size, const std::string& model_alias) {
+bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size, const std::string& model_alias, const std::string& models_dir) {
     port = 8080;  // Single port for macOS, Linux, Windows
     // Prefer "server" (llama.cpp HTTP server); fallback to delta-server wrapper
     std::vector<std::string> server_candidates;
@@ -110,8 +110,9 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
          return false;
      }
      
-     // Verify model path exists
-     if (!tools::FileOps::file_exists(model_path)) {
+     // Router mode: models_dir set and no model path. Otherwise require valid model path.
+     bool router_mode = !models_dir.empty() && model_path.empty();
+     if (!router_mode && !tools::FileOps::file_exists(model_path)) {
          // Model path is invalid
          return false;
      }
@@ -349,8 +350,8 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      // Stop existing delta-server if running
      stop_llama_server();
      
-     // Build command
-     std::string cmd_str = build_llama_server_cmd(server_bin, model_path, port, ctx_size, model_alias, public_path);
+     // Build command (router mode when models_dir set and model_path empty)
+     std::string cmd_str = build_llama_server_cmd(server_bin, model_path, port, ctx_size, model_alias, public_path, models_dir);
      
     // Create error log file path
 #ifdef _WIN32
@@ -595,13 +596,18 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
  
  // Helper to build delta-server command
  // Uses minimal flags for maximum compatibility; some builds may not support --flash-attn or --jinja
-std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path, 
-                                              int port, int ctx_size, const std::string& model_alias, 
-                                              const std::string& public_path) {
+ // If model_path empty and models_dir non-empty, router mode: no -m, use --models-dir
+std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path,
+                                              int port, int ctx_size, const std::string& model_alias,
+                                              const std::string& public_path, const std::string& models_dir) {
     std::stringstream cmd;
-    cmd << server_bin
-        << " -m \"" << model_path << "\""
-        << " --host 0.0.0.0"
+    cmd << server_bin;
+    if (!models_dir.empty() && model_path.empty()) {
+        cmd << " --models-dir \"" << models_dir << "\"";
+    } else if (!model_path.empty()) {
+        cmd << " -m \"" << model_path << "\"";
+    }
+    cmd << " --host 0.0.0.0"
         << " --port " << port;
     if (ctx_size > 0) {
         cmd << " -c " << ctx_size;

@@ -69,6 +69,7 @@ OPTIONS:
         --port <N>              Server port (default: 8080)
          --np <N>                Max parallel requests (default: 4)
          --c <N>                 Max context size (default: from model registry, or model native)
+         --models-dir <DIR>      Router mode: scan directory for .gguf (no -m; default: ~/.delta-cli/models)
          --embedding             Enable embedding endpoints
          --reranking             Enable reranking endpoints
          --md <model>            Draft model for speculative decoding
@@ -402,6 +403,7 @@ int main(int argc, char** argv) {
     int max_parallel = 4;
     int max_context = 0;  // 0 = use model default from registry when launching server
     bool max_context_explicit = false;  // Track if --c was explicitly set
+    std::string models_dir = "";  // Router mode: scan this dir for .gguf (no -m)
     // Server-only flags (parsed for compatibility; unused in CLI mode)
     bool enable_embedding = false;
     bool enable_reranking = false;
@@ -481,6 +483,8 @@ int main(int argc, char** argv) {
             draft_model = argv[++i];
         } else if (arg == "--grammar-file" && i + 1 < argc) {
             grammar_file = argv[++i];
+        } else if (arg == "--models-dir" && i + 1 < argc) {
+            models_dir = argv[++i];
         } else if (arg == "--check-updates") {
             check_updates = true;
         } else if (arg == "--update") {
@@ -626,26 +630,61 @@ int main(int argc, char** argv) {
         return 0;
     }
     
-    // Handle server mode: spawn bundled delta-server with resolved model
+    // Handle server mode: spawn bundled delta-server (single-model with -m, or router mode with --models-dir)
     if (start_server) {
-        // Resolve model if not provided via -m/--model
-        if (model_name.empty()) {
-            model_name = model_mgr.get_auto_selected_model();
-        }
-        if (!model_mgr.is_model_installed(model_name)) {
-            UI::print_error("Model not found: " + model_name);
-            UI::print_info("Use 'delta pull " + model_name + "' to download it");
-            return 1;
-        }
-        std::string model_path = model_mgr.get_model_path(model_name);
-        if (model_path.empty()) {
-            UI::print_error("Could not resolve model path for: " + model_name);
-            return 1;
-        }
+        bool use_router_mode = false;
+        std::string model_path;
+        std::string model_alias;
+        int server_ctx = max_context;
 
-        // Get model's max context from registry if not explicitly set (0 = llama-server uses model default)
-        if (!max_context_explicit) {
-            max_context = model_mgr.get_max_context_for_model(model_name);
+        if (model_name.empty()) {
+            // No -m: router mode with --models-dir (user-provided or default)
+            if (models_dir.empty()) {
+                models_dir = tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli");
+                models_dir = tools::FileOps::join_path(models_dir, "models");
+            }
+            use_router_mode = true;
+        } else if (!models_dir.empty()) {
+            // User passed both -m and --models-dir: prefer single-model (-m)
+            use_router_mode = false;
+        }
+        if (!use_router_mode) {
+            // Single-model: resolve model
+            if (model_name.empty()) {
+                model_name = model_mgr.get_auto_selected_model();
+            }
+            if (!model_mgr.is_model_installed(model_name)) {
+                UI::print_error("Model not found: " + model_name);
+                UI::print_info("Use 'delta pull " + model_name + "' to download it");
+                return 1;
+            }
+            model_path = model_mgr.get_model_path(model_name);
+            if (model_path.empty()) {
+                UI::print_error("Could not resolve model path for: " + model_name);
+                return 1;
+            }
+            if (!max_context_explicit) {
+                server_ctx = model_mgr.get_max_context_for_model(model_name);
+            }
+            // Resolve model alias for web UI
+            std::string filename = model_path;
+            size_t last_slash = filename.find_last_of("/\\");
+            if (last_slash != std::string::npos) {
+                filename = filename.substr(last_slash + 1);
+            }
+            std::string found_name = model_mgr.get_name_from_filename(filename);
+            if (!found_name.empty()) {
+                model_alias = found_name;
+            } else {
+                std::string registry_name_for_alias = model_name;
+                if (model_mgr.is_in_registry(registry_name_for_alias)) {
+                    auto entry = model_mgr.get_registry_entry(registry_name_for_alias);
+                    if (!entry.name.empty()) model_alias = entry.name;
+                }
+                if (model_alias.empty()) {
+                    model_alias = model_mgr.get_short_name_from_filename(filename);
+                }
+            }
         }
 
         // Find delta-server binary with comprehensive cross-platform search
@@ -835,84 +874,45 @@ int main(int argc, char** argv) {
 #endif
         }
 
-        // Get name (with colon) for model alias in web UI
-        // Priority: 1) Lookup by filename from model_path (most reliable), 2) Lookup by model_name
-        std::string model_alias;
-        
-        // First, try to get name from filename (most reliable since model_path is always correct)
-        std::string filename = model_path;
-        size_t last_slash = filename.find_last_of("/\\");
-        if (last_slash != std::string::npos) {
-            filename = filename.substr(last_slash + 1);
-        }
-        std::string found_name = model_mgr.get_name_from_filename(filename);
-        if (!found_name.empty()) {
-            model_alias = found_name;  // Use name (e.g., "qwen3:0.6b") from filename lookup
+        // Build command (router mode: --models-dir only; single-model: -m model_path)
+        std::stringstream cmd;
+        cmd << server_bin;
+        if (use_router_mode) {
+            cmd << " --models-dir \"" << models_dir << "\"";
         } else {
-            // Fallback: try to lookup by model_name (might be short_name or registry name)
-            std::string registry_name_for_alias = model_name;
-            if (model_mgr.is_in_registry(registry_name_for_alias)) {
-                auto entry = model_mgr.get_registry_entry(registry_name_for_alias);
-                if (!entry.name.empty()) {
-                    model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
+            cmd << " -m \"" << model_path << "\"";
+        }
+        cmd << " --port " << server_port
+            << " --parallel " << max_parallel;
+        if (server_ctx > 0) {
+            cmd << " -c " << server_ctx;
+        }
+        
+        // Add --flash-attn flag for single-model only (router mode uses server defaults)
+        if (!use_router_mode) {
+            if (server_ctx > 16384) {
+                cmd << " --flash-attn off";
+                if (server_ctx > 32768) {
+                    cmd << " --gpu-layers 0";
                 }
             } else {
-                // Try converting dash to colon format (e.g., "qwen3-0.6b" -> "qwen3:0.6b")
-                size_t last_dash = registry_name_for_alias.find_last_of('-');
-                if (last_dash != std::string::npos) {
-                    std::string colon_name = registry_name_for_alias.substr(0, last_dash) + ":" + 
-                                             registry_name_for_alias.substr(last_dash + 1);
-                    if (model_mgr.is_in_registry(colon_name)) {
-                        auto entry = model_mgr.get_registry_entry(colon_name);
-                        if (!entry.name.empty()) {
-                            model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
-                        }
-                    }
-                }
-            }
-            
-            // Last resort: use short_name from filename
-            if (model_alias.empty()) {
-                model_alias = model_mgr.get_short_name_from_filename(filename);
+                cmd << " --flash-attn auto";
             }
         }
         
-        // Build command
-        std::stringstream cmd;
-        cmd << server_bin
-            << " -m \"" << model_path << "\""
-            << " --port " << server_port
-            << " --parallel " << max_parallel;
-        if (max_context > 0) {
-            cmd << " -c " << max_context;
-        }
-        
-        // Add --flash-attn flag for all models
-        // Use 'off' if context is very large (>16K) to prevent GPU memory issues, otherwise use 'auto'
-        if (max_context > 16384) {
-            // Large context sizes can cause GPU memory issues with Flash Attention
-            cmd << " --flash-attn off";
-            // Also limit GPU layers for very large contexts to prevent memory exhaustion
-            if (max_context > 32768) {
-                cmd << " --gpu-layers 0";  // Disable GPU entirely for extremely large contexts
-            }
-        } else {
-            // For smaller contexts, let system decide automatically
-            cmd << " --flash-attn auto";
-        }
-        
-        // Add --jinja flag for gemma3 models
-        // Check model_name, model_alias, and model_path for gemma3 (case-insensitive)
+        // Add --jinja flag for gemma3 models (single-model only)
+        if (!use_router_mode) {
         std::string model_name_lower = model_name;
         std::string model_alias_lower = model_alias;
         std::string model_path_lower = model_path;
         std::transform(model_name_lower.begin(), model_name_lower.end(), model_name_lower.begin(), ::tolower);
         std::transform(model_alias_lower.begin(), model_alias_lower.end(), model_alias_lower.begin(), ::tolower);
         std::transform(model_path_lower.begin(), model_path_lower.end(), model_path_lower.begin(), ::tolower);
-        if (model_name_lower.find("gemma3") != std::string::npos || 
-            model_alias_lower.find("gemma3") != std::string::npos || 
+        if (model_name_lower.find("gemma3") != std::string::npos ||
+            model_alias_lower.find("gemma3") != std::string::npos ||
             model_path_lower.find("gemma3") != std::string::npos) {
             cmd << " --jinja";
+        }
         }
         
         if (enable_embedding) cmd << " --embedding";
@@ -920,8 +920,8 @@ int main(int argc, char** argv) {
         if (!draft_model.empty()) cmd << " --md \"" << draft_model << "\"";
         if (!grammar_file.empty()) cmd << " --grammar-file \"" << grammar_file << "\"";
         
-        // Add --alias flag to use short_name instead of filename in web UI
-        if (!model_alias.empty()) {
+        // Add --alias flag to use short_name instead of filename in web UI (single-model only)
+        if (!use_router_mode && !model_alias.empty()) {
             cmd << " --alias \"" << model_alias << "\"";
         }
         
@@ -937,7 +937,7 @@ int main(int argc, char** argv) {
             UI::print_error("Failed to start server process");
             return 1;
         }
-        UI::print_success("Delta Server started in background");
+        UI::print_success(use_router_mode ? "Delta Server started in background (router mode)" : "Delta Server started in background");
         std::string url = "http://localhost:" + std::to_string(server_port) + "/index.html";
         UI::print_info("Open: " + url);
         // Open browser after a short delay to ensure server is ready

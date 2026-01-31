@@ -50,6 +50,7 @@ class DeltaServerWrapper {
 private:
     std::string llama_server_path_;
     std::string model_path_;
+    std::string models_dir_;  // Router mode: directory to scan for .gguf (no -m)
     int port_;
     int max_parallel_;
     int max_context_;
@@ -170,6 +171,10 @@ public:
 
     void set_model_path(const std::string& path) {
         model_path_ = path;
+    }
+
+    void set_models_dir(const std::string& dir) {
+        models_dir_ = dir;
     }
 
     void set_port(int port) {
@@ -324,7 +329,12 @@ public:
     
     std::string build_llama_server_command(const std::string& model_path, int ctx_size, const std::string& model_alias) {
         std::string cmd = llama_server_path_;
-        cmd += " -m \"" + model_path + "\"";
+        // Router mode: no -m, use --models-dir so llama-server scans for .gguf files
+        if (!models_dir_.empty() && model_path.empty()) {
+            cmd += " --models-dir \"" + models_dir_ + "\"";
+        } else if (!model_path.empty()) {
+            cmd += " -m \"" + model_path + "\"";
+        }
         cmd += " --host 0.0.0.0";
         cmd += " --port " + std::to_string(port_);
         if (ctx_size > 0) {
@@ -503,8 +513,9 @@ public:
             return 1;
         }
 
-        if (model_path_.empty()) {
-            std::cerr << "Error: No model specified!" << std::endl;
+        // Either single model (-m) or router mode (--models-dir) is required
+        if (model_path_.empty() && models_dir_.empty()) {
+            std::cerr << "Error: No model specified! Use -m <path> or --models-dir <directory>." << std::endl;
             return 1;
         }
 
@@ -520,7 +531,11 @@ public:
 
         std::cout << "🚀 Starting Delta CLI Server..." << std::endl;
         std::cout << "📡 Server: http://localhost:" << port_ << std::endl;
-        std::cout << "🤖 Model: " << model_path_ << std::endl;
+        if (!models_dir_.empty()) {
+            std::cout << "📂 Models dir (router mode): " << models_dir_ << std::endl;
+        } else {
+            std::cout << "🤖 Model: " << model_path_ << std::endl;
+        }
         std::cout << "⚡ Parallel: " << max_parallel_ << std::endl;
         std::cout << "🧠 Context: " << (max_context_ > 0 ? std::to_string(max_context_) : "(model default)") << std::endl;
         std::cout << "🌐 Web UI: http://localhost:" << port_ << std::endl;
@@ -541,9 +556,13 @@ public:
             return this->restart_llama_server(model_path, model_name, ctx_size, model_alias);
         });
         
-        // Start delta-server in background
+        // Start delta-server in background (single-model or router mode)
         std::cout << "🚀 Starting delta-server..." << std::endl;
-        if (!restart_llama_server(model_path_, "", max_context_, "")) {
+        std::string path_to_load = model_path_;
+        if (path_to_load.empty() && !models_dir_.empty()) {
+            path_to_load = "";  // Router mode: no model path
+        }
+        if (!restart_llama_server(path_to_load, "", max_context_, "")) {
             std::cerr << "Failed to start delta-server" << std::endl;
             delta::stop_model_api_server();
             return 1;
@@ -591,6 +610,7 @@ int main(int argc, char* argv[]) {
     
     // Parse command line arguments (simplified)
     std::string model_path;
+    std::string models_dir;  // Router mode: scan this dir for .gguf (no -m)
     int port = 8080;
     int max_parallel = 4;
     int max_context = 0;  // 0 = llama-server uses model default
@@ -603,6 +623,8 @@ int main(int argc, char* argv[]) {
         std::string arg = argv[i];
         if (arg == "-m" && i + 1 < argc) {
             model_path = argv[++i];
+        } else if (arg == "--models-dir" && i + 1 < argc) {
+            models_dir = argv[++i];
         } else if (arg == "--port" && i + 1 < argc) {
             port = std::stoi(argv[++i]);
         } else if (arg == "--parallel" && i + 1 < argc) {
@@ -621,6 +643,7 @@ int main(int argc, char* argv[]) {
     }
 
     wrapper.set_model_path(model_path);
+    wrapper.set_models_dir(models_dir);
     wrapper.set_port(port);
     wrapper.set_max_parallel(max_parallel);
     wrapper.set_max_context(max_context);

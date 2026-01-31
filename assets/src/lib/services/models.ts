@@ -26,21 +26,46 @@ export interface ModelOperationResponse {
 }
 
 export class ModelsService {
+	/**
+	 * List models from main server (llama-server).
+	 * Uses /v1/models (OpenAI compat). When server is in router mode, this returns multiple models.
+	 * Fallback: if /v1/models returns empty data, try /models (llama.cpp router endpoint) and normalize.
+	 */
 	static async list(): Promise<ApiModelListResponse> {
 		const currentConfig = config();
 		const apiKey = currentConfig.apiKey?.toString().trim();
+		const headers: HeadersInit = {
+			...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+		};
 
-		const response = await fetch(`${base}/v1/models`, {
-			headers: {
-				...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
-			}
-		});
-
+		const response = await fetch(`${base}/v1/models`, { headers });
 		if (!response.ok) {
 			throw new Error(`Failed to fetch model list (status ${response.status})`);
 		}
-
-		return response.json() as Promise<ApiModelListResponse>;
+		const data = (await response.json()) as ApiModelListResponse;
+		// Router mode: if v1/models returned empty, try /models (llama.cpp router endpoint)
+		if (data.data && data.data.length === 0) {
+			try {
+				const modelsRes = await fetch(`${base}/models`, { headers });
+				if (modelsRes.ok) {
+					const raw = (await modelsRes.json()) as unknown;
+					const items = Array.isArray(raw)
+						? raw
+						: (raw as { items?: unknown[] })?.items ?? (raw as { models?: unknown[] })?.models ?? [];
+					if (items.length > 0) {
+						data.data = items.map((m: { id?: string; name?: string; path?: string }, i: number) => ({
+							id: m.id ?? m.name ?? m.path ?? `model-${i}`,
+							object: 'model',
+							created: 0,
+							owned_by: ''
+						}));
+					}
+				}
+			} catch {
+				// Ignore /models fallback errors
+			}
+		}
+		return data;
 	}
 
 	/**
