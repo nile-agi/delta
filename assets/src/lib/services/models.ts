@@ -21,6 +21,9 @@ export interface ModelOperationResponse {
 	success: boolean;
 	message?: string;
 	model_path?: string;
+	model_name?: string;
+	/** Alias/short name used by llama-server in router mode for chat requests. */
+	model_alias?: string;
 	/** True when the server was restarted with the new model (same as /use in terminal). */
 	loaded?: boolean;
 }

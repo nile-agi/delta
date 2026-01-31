@@ -158,10 +158,21 @@ class ModelsStore {
 
 			this._models = models;
 
-			// Always open in "Select model" mode: no pre-selection so user chooses in Web UI.
-			this._selectedModelId = null;
-			this._selectedModelName = null;
-			this._persistedSelection.value = null;
+			// On initial load (not force-refresh): open in "Select model" mode so user chooses in Web UI.
+			// On force-refresh (e.g. after model switch): preserve current selection so it stays loaded.
+			if (!force) {
+				this._selectedModelId = null;
+				this._selectedModelName = null;
+				this._persistedSelection.value = null;
+			} else {
+				// Keep selection valid if the selected model is still in the new list
+				const stillPresent = this._models.some((m) => m.id === this._selectedModelId);
+				if (!stillPresent) {
+					this._selectedModelId = null;
+					this._selectedModelName = null;
+					this._persistedSelection.value = null;
+				}
+			}
 		} catch (error) {
 			this._models = [];
 			this._error = error instanceof Error ? error.message : 'Failed to load models';
@@ -195,12 +206,13 @@ class ModelsStore {
 			// llama-server needs the full model path to switch models dynamically
 			try {
 				const useResponse = await ModelsService.use(option.model);
-				// Store the model path - this is what llama-server needs in the request
-				const modelPath = useResponse.model_path || option.model;
-				
+				// Prefer model_alias for chat requests (router mode); fallback to model_path or option.model
+				const modelForRequests =
+					useResponse.model_alias ?? useResponse.model_name ?? useResponse.model_path ?? option.model;
+
 				this._selectedModelId = option.id;
-				this._selectedModelName = modelPath || option.model;
-				this._persistedSelection.value = { id: option.id, model: modelPath || option.model };
+				this._selectedModelName = modelForRequests;
+				this._persistedSelection.value = { id: option.id, model: modelForRequests };
 				if (useResponse.loaded) {
 					// Server restarted with new model (same as /use in terminal). Refetch so main API shows current model.
 					await this.fetch(true);
@@ -208,6 +220,7 @@ class ModelsStore {
 			} catch (error) {
 				console.warn('Failed to switch model:', error);
 				this._error = error instanceof Error ? error.message : String(error);
+				// Still set selection so chat can use this model (e.g. router mode loads on demand)
 				this._selectedModelId = option.id;
 				this._selectedModelName = option.model;
 				this._persistedSelection.value = { id: option.id, model: option.model };
@@ -232,33 +245,6 @@ class ModelsStore {
 		this._selectedModelId = null;
 		this._selectedModelName = null;
 		this._persistedSelection.value = null;
-	}
-
-	/**
-	 * Determines which model should be selected after fetching the models list.
-	 * Only restores persisted selection; does not auto-select first model on launch.
-	 * Priority: current selection > persisted selection (if still in list) > none
-	 */
-	private determineInitialSelection(models: ModelOption[]): {
-		id: string | null;
-		model: string | null;
-	} {
-		const persisted = this._persistedSelection.value;
-		let nextSelectionId = this._selectedModelId ?? persisted?.id ?? null;
-		let nextSelectionName = this._selectedModelName ?? persisted?.model ?? null;
-
-		if (nextSelectionId) {
-			const match = models.find((m) => m.id === nextSelectionId);
-			if (match) {
-				nextSelectionId = match.id;
-				nextSelectionName = match.model;
-			} else {
-				nextSelectionId = null;
-				nextSelectionName = null;
-			}
-		}
-
-		return { id: nextSelectionId, model: nextSelectionName };
 	}
 }
 
