@@ -158,12 +158,10 @@ class ModelsStore {
 
 			this._models = models;
 
-			const selection = this.determineInitialSelection(models);
-
-			this._selectedModelId = selection.id;
-			this._selectedModelName = selection.model;
-			this._persistedSelection.value =
-				selection.id && selection.model ? { id: selection.id, model: selection.model } : null;
+			// Always open in "Select model" mode: no pre-selection so user chooses in Web UI.
+			this._selectedModelId = null;
+			this._selectedModelName = null;
+			this._persistedSelection.value = null;
 		} catch (error) {
 			this._models = [];
 			this._error = error instanceof Error ? error.message : 'Failed to load models';

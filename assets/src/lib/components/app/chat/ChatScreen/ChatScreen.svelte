@@ -9,7 +9,6 @@
 		EmptyFileAlertDialog,
 		ChatErrorDialog,
 		ServerErrorSplash,
-		ServerInfo,
 		ServerLoadingSplash,
 		ConfirmationDialog
 	} from '$lib/components/app';
@@ -347,10 +346,6 @@
 				<h1 class="mb-2 text-3xl font-semibold tracking-tight">Delta</h1>
 
 				<p class="text-lg text-muted-foreground">How can I help you today?</p>
-			</div>
-
-			<div class="mb-6 flex justify-center" in:fly={{ y: 10, duration: 300, delay: 200 }}>
-				<ServerInfo />
 			</div>
 
 			{#if serverWarning()}

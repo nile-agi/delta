@@ -1,12 +1,12 @@
 {
   "node_modules/@sveltejs/kit/src/runtime/client/bundle.js": {
-    "file": "_app/immutable/bundle.0MKO6fkc.js",
+    "file": "_app/immutable/bundle.CPHu6joM.js",
     "name": "bundle",
     "src": "node_modules/@sveltejs/kit/src/runtime/client/bundle.js",
     "isEntry": true
   },
   "style.css": {
-    "file": "_app/immutable/assets/style.8ZJd0Uhs.css",
+    "file": "_app/immutable/assets/style.Cc1t58vR.css",
     "src": "style.css"
   }
 }
