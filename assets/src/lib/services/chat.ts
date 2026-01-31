@@ -126,9 +126,11 @@ export class ChatService {
 			stream
 		};
 
-		// Use the loaded/selected model for this request (must match selector so response uses same model)
+		// Use the selected model's backend id so the server routes to the correct model (not gemma3-270m).
+		// Prefer option.model (canonical backend id from /api/models/list) so we never send display name.
+		const selectedOption = selectedModelOption();
 		const activeModel =
-			(selectedModelName() || selectedModelOption()?.model) ?? null;
+			(selectedOption?.model ?? selectedModelName()) ?? null;
 		if (activeModel) {
 			requestBody.model = activeModel;
 		}
