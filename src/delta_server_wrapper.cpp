@@ -337,13 +337,10 @@ public:
         }
         cmd += " --host 0.0.0.0";
         cmd += " --port " + std::to_string(port_);
-        if (ctx_size > 0) {
-            cmd += " -c " + std::to_string(ctx_size);
-        }
-        // Minimal flags for compatibility; avoid --flash-attn/--jinja which some builds don't support
-        if (ctx_size > 16384) {
-            cmd += " --gpu-layers 0";
-        }
+        // -c 0 = use model default context; -c N = override
+        cmd += " -c " + std::to_string(ctx_size > 0 ? ctx_size : 0);
+        // Use GPU when available (-1 = all layers on GPU); no GPU → server falls back to CPU
+        cmd += " --gpu-layers -1";
         if (!model_alias.empty()) {
             cmd += " --alias \"" + model_alias + "\"";
         }
