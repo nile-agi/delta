@@ -766,10 +766,11 @@ void Commands::stop_llama_server() {
          }
      }
      
-     // Build command: single-model (-m path), not router mode, so the selected model is loaded.
-     std::string cmd_str = build_llama_server_cmd(server_bin, model_path, current_port_, ctx_size, model_alias, public_path, "");
-     
-     // Start delta-server
+    // Build command: single-model (-m path), not router mode, so the selected model is loaded.
+    std::string cmd_str = build_llama_server_cmd(server_bin, model_path, current_port_, ctx_size, model_alias, public_path, "");
+    UI::print_info("   Command: " + cmd_str);
+    
+    // Start delta-server
 #ifdef _WIN32
     // Windows: Use CreateProcess
     STARTUPINFOA si = {0};
