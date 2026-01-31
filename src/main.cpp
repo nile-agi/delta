@@ -145,71 +145,47 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     
     UI::init();
     
-    // Automatically launch web UI server with default model
-    std::string model_path = model_mgr.get_model_path(current_model);
-    if (!model_path.empty()) {
-        int ctx_size = model_mgr.get_max_context_for_model(current_model);
-        if (ctx_size <= 0 && config.n_ctx > 0) {
-            ctx_size = config.n_ctx;
-        }
-        
-        // Get name (with colon) for model alias in web UI
-        // Priority: 1) Lookup by current_model, 2) Lookup by filename from model_path
-        std::string model_alias;
-        
-        // First, try to get name from filename (most reliable since model_path is always correct)
-        std::string filename = model_path;
-        size_t last_slash = filename.find_last_of("/\\");
-        if (last_slash != std::string::npos) {
-            filename = filename.substr(last_slash + 1);
-        }
-        std::string found_name = model_mgr.get_name_from_filename(filename);
-        if (!found_name.empty()) {
-            model_alias = found_name;  // Use name (e.g., "qwen3:0.6b") from filename lookup
-        } else {
-            // Fallback: try to lookup by current_model (might be short_name or registry name)
-            std::string registry_name_for_alias = current_model;
-            if (model_mgr.is_in_registry(registry_name_for_alias)) {
-                auto entry = model_mgr.get_registry_entry(registry_name_for_alias);
-                if (!entry.name.empty()) {
-                    model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
-                }
-            } else {
-                // Try converting dash to colon format (e.g., "qwen3-0.6b" -> "qwen3:0.6b")
-                size_t last_dash = registry_name_for_alias.find_last_of('-');
-                if (last_dash != std::string::npos) {
-                    std::string colon_name = registry_name_for_alias.substr(0, last_dash) + ":" + 
-                                             registry_name_for_alias.substr(last_dash + 1);
-                    if (model_mgr.is_in_registry(colon_name)) {
-                        auto entry = model_mgr.get_registry_entry(colon_name);
-                        if (!entry.name.empty()) {
-                            model_alias = entry.name;  // Use name (e.g., "qwen3:0.6b") instead of short_name
-                        }
-                    }
-                }
-            }
-            
-            // Last resort: use short_name from filename
-            if (model_alias.empty()) {
-                model_alias = model_mgr.get_short_name_from_filename(filename);
-            }
-        }
-        
-        // Try to launch server - if it fails, it's okay (server might not be built)
-        // launch_server_auto now waits for server to be ready before returning
-        if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
-            // Server is confirmed listening, get the actual port used
+    // Launch web UI server: router mode (no model) when current_model empty; else single-model.
+    if (current_model.empty()) {
+        // Router mode: server scans ~/.delta-cli/models; user selects model in Web UI.
+        std::string models_dir = tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli");
+        models_dir = tools::FileOps::join_path(models_dir, "models");
+        if (Commands::launch_server_auto("", 8080, 0, "", models_dir)) {
             int actual_port = Commands::get_current_port();
             std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
-            // Open browser now that server is confirmed ready
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             tools::Browser::open_url(url);
         } else {
             UI::print_error("Server failed to start. Check the error messages above.");
         }
-        // If launch fails, don't show error - server is optional
     } else {
-        // Model not found - can't start server
+        std::string model_path = model_mgr.get_model_path(current_model);
+        if (!model_path.empty()) {
+            int ctx_size = model_mgr.get_max_context_for_model(current_model);
+            if (ctx_size <= 0 && config.n_ctx > 0) ctx_size = config.n_ctx;
+            std::string model_alias;
+            std::string filename = model_path;
+            size_t last_slash = filename.find_last_of("/\\");
+            if (last_slash != std::string::npos) filename = filename.substr(last_slash + 1);
+            std::string found_name = model_mgr.get_name_from_filename(filename);
+            if (!found_name.empty()) {
+                model_alias = found_name;
+            } else {
+                if (model_mgr.is_in_registry(current_model)) {
+                    auto entry = model_mgr.get_registry_entry(current_model);
+                    if (!entry.name.empty()) model_alias = entry.name;
+                }
+                if (model_alias.empty()) model_alias = model_mgr.get_short_name_from_filename(filename);
+            }
+            if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
+                int actual_port = Commands::get_current_port();
+                std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                tools::Browser::open_url(url);
+            } else {
+                UI::print_error("Server failed to start. Check the error messages above.");
+            }
+        }
     }
     
     // Show session info only if not default (to avoid duplicate messages)
@@ -935,21 +911,22 @@ int main(int argc, char** argv) {
         return 0;
     }
     
-    // Find and load model
+    // No-args launch: start server in router mode (no model pre-loaded). User selects model in Web UI.
+    if (no_args) {
+        InferenceEngine engine;
+        interactive_mode(engine, config, model_mgr, "");
+        return 0;
+    }
+    
+    // Find and load model (only when user passed -m, a prompt, or --interactive)
     if (model_name.empty()) {
         // Try to get an auto-selected model
         model_name = model_mgr.get_auto_selected_model();
         
         // Check if any model is actually installed
         if (!model_mgr.is_model_installed(model_name)) {
-            // No models installed - try to download default model
-            if (no_args) {
-                UI::print_info("No models installed. Downloading default model...");
-                std::cout << std::endl;
-            } else {
-                UI::print_info("No models installed. Attempting to download default model...");
-                std::cout << std::endl;
-            }
+            UI::print_info("No models installed. Attempting to download default model...");
+            std::cout << std::endl;
             
             // Set progress callback for download
             model_mgr.set_progress_callback(download_progress_callback);
@@ -986,10 +963,7 @@ int main(int argc, char** argv) {
             // Use the default model that was just downloaded
             model_name = model_mgr.get_default_model_short_name();
         }
-        
-        if (!no_args) {
-            UI::print_info("Auto-selecting model: " + model_name);
-        }
+        UI::print_info("Auto-selecting model: " + model_name);
     }
     
     std::string model_path = model_mgr.get_model_path(model_name);
@@ -1001,46 +975,26 @@ int main(int argc, char** argv) {
     
     config.model_path = model_path;
     
-    // Initialize inference engine
     InferenceEngine engine;
-    
-    // For no-args case: don't load model, only allow commands
-    // For other cases: load model normally
-    if (no_args) {
-        // Don't load model - interactive mode will only allow commands
-        // Model will be loaded when user uses /use command
-    } else {
-        if (!interactive && !prompt.empty()) {
+    if (!interactive && !prompt.empty()) {
         UI::print_info("Loading model: " + model_name);
     }
-    
     if (!engine.load_model(config)) {
         UI::print_error("Failed to load model");
         return 1;
-        }
     }
     
-    // Interactive mode
-    if (interactive || prompt.empty() || no_args) {
-        // For no-args case, start interactive mode directly without extra output
-        if (no_args) {
-            // Interactive mode will handle its own initialization
-        } else if (prompt.empty()) {
-            std::cout << std::endl;
-        }
+    if (interactive || prompt.empty()) {
+        if (prompt.empty()) std::cout << std::endl;
         interactive_mode(engine, config, model_mgr, model_name);
         return 0;
     }
     
     // Single prompt mode
-    if (!no_args) {
-        UI::print_banner();
-        std::cout << "\n";
-        UI::print_info("Generating response...");
-        std::cout << "\n";
-    }
-    
-    
+    UI::print_banner();
+    std::cout << "\n";
+    UI::print_info("Generating response...");
+    std::cout << "\n";
     try {
         std::string response = engine.generate(prompt, max_tokens, true);
         std::cout << "\n" << std::endl;
