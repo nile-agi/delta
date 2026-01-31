@@ -144,8 +144,6 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     session.no_color = false;
     
     UI::init();
-    UI::print_info("Interactive mode - Type 'exit' or 'quit' to end session");
-    UI::print_info("Type '/help' for available commands");
     
     // Automatically launch web UI server with default model
     std::string model_path = model_mgr.get_model_path(current_model);
@@ -205,9 +203,7 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
             // Open browser now that server is confirmed ready
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            if (tools::Browser::open_url(url)) {
-                UI::print_info("Browser opened automatically");
-            }
+            tools::Browser::open_url(url);
         } else {
             UI::print_error("Server failed to start. Check the error messages above.");
         }
@@ -269,9 +265,6 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
         
         // Check if model is loaded before processing text input
         if (!engine.is_loaded()) {
-            // No model loaded - show helpful message
-            UI::print_info("Interactive mode - Type 'exit' or 'quit' to end session");
-            UI::print_info("Type '/help' for available commands");
             continue;
         }
         
@@ -610,11 +603,7 @@ int main(int argc, char** argv) {
     // Initialize UI
     UI::init();
     
-    // Handle no-args case: Display banner first, then start interactive mode
-    if (no_args) {
-        UI::print_banner();
-        std::cout << std::endl;
-    }
+    // Handle no-args case: start interactive mode (no banner for quiet launch)
     
     // Handle first-time authentication
     Auth auth;
@@ -942,9 +931,7 @@ int main(int argc, char** argv) {
         UI::print_info("Open: " + url);
         // Open browser after a short delay to ensure server is ready
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        if (tools::Browser::open_url(url)) {
-            UI::print_info("Browser opened automatically");
-        }
+        tools::Browser::open_url(url);
         return 0;
     }
     

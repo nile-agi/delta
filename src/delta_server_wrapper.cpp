@@ -540,7 +540,6 @@ public:
         std::cout << "🧠 Context: " << (max_context_ > 0 ? std::to_string(max_context_) : "(model default)") << std::endl;
         std::cout << "🌐 Web UI: http://localhost:" << port_ << std::endl;
         std::cout << "📡 API: http://localhost:" << port_ << "/v1/chat/completions" << std::endl;
-        std::cout << "🔧 Model Management API: http://localhost:8081" << std::endl;
         std::cout << std::endl;
         std::cout << "Press Ctrl+C to stop the server" << std::endl;
         std::cout << std::endl;

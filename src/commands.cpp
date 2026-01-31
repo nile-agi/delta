@@ -441,14 +441,8 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      // Give server time to initialize (especially for model loading)
      // Models can take 30-60 seconds to load, so we wait up to 60 seconds
      bool server_listening = false;
-     UI::print_info("Waiting for server to start (this may take 30-60 seconds while loading the model)...");
      for (int attempt = 0; attempt < 120; attempt++) {  // 120 * 500ms = 60 seconds
          std::this_thread::sleep_for(std::chrono::milliseconds(500));
-         
-         // Show progress every 10 seconds
-         if (attempt > 0 && attempt % 20 == 0) {
-             UI::print_info("Still waiting for server... (" + std::to_string(attempt / 2) + " seconds)");
-         }
          
          // Check if port is listening using socket connection
  #ifdef _WIN32
@@ -569,28 +563,11 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      }
      
      // Server is confirmed listening - proceed with setup
-     UI::print_success("Delta Server started successfully on port " + std::to_string(port));
-     UI::print_info("Open: http://localhost:" + std::to_string(port) + "/index.html");
-     
-     // Start model management API server on port 8081
-     std::cerr << "[DEBUG] Starting model API server on port 8081" << std::endl;
      delta::start_model_api_server(8081);
-     
-     // Set up model switch callback to restart delta-server
-     // IMPORTANT: Always set the callback, even if the server was already running
-     std::cerr << "[DEBUG] Setting up model switch callback" << std::endl;
-     delta::set_model_switch_callback([](const std::string& model_path, const std::string& model_name, 
+     delta::set_model_switch_callback([](const std::string& model_path, const std::string& model_name,
                                           int ctx_size, const std::string& model_alias) -> bool {
-         std::cerr << "[DEBUG] Model switch callback invoked: model=" << model_name 
-                   << ", path=" << model_path << std::endl;
-         bool result = Commands::restart_llama_server(model_path, model_name, ctx_size, model_alias);
-         std::cerr << "[DEBUG] Model switch callback returning: " << (result ? "true" : "false") << std::endl;
-         return result;
+         return Commands::restart_llama_server(model_path, model_name, ctx_size, model_alias);
      });
-     std::cerr << "[DEBUG] Model switch callback set successfully" << std::endl;
-     
-     UI::print_info("Model Management API: http://localhost:8081");
-     
      return true;
  }
  
@@ -675,8 +652,6 @@ void Commands::stop_llama_server() {
  
  bool Commands::restart_llama_server(const std::string& model_path, const std::string& model_name, 
                                       int ctx_size, const std::string& model_alias) {
-     std::cerr << "[DEBUG] restart_llama_server called: model=" << model_name << ", path=" << model_path << std::endl;
-     
      UI::print_info("🔄 Switching to model: " + model_name);
      UI::print_info("   Path: " + model_path);
      
@@ -684,7 +659,6 @@ void Commands::stop_llama_server() {
      {
          std::lock_guard<std::mutex> lock(server_mutex_);
          if (llama_server_pid_ != 0) {
-             std::cerr << "[DEBUG] Stopping delta-server with PID: " << llama_server_pid_ << std::endl;
 #ifdef _WIN32
              // Windows: Use TerminateProcess
              HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, llama_server_pid_);
@@ -800,9 +774,8 @@ void Commands::stop_llama_server() {
      
      // Start delta-server
 #ifdef _WIN32
-     // Windows: Use CreateProcess
-     std::cerr << "[DEBUG] Creating delta-server process with command: " << cmd_str << std::endl;
-     STARTUPINFOA si = {0};
+    // Windows: Use CreateProcess
+    STARTUPINFOA si = {0};
      PROCESS_INFORMATION pi = {0};
      si.cb = sizeof(si);
      si.dwFlags = STARTF_USESTDHANDLES;
@@ -815,7 +788,6 @@ void Commands::stop_llama_server() {
      
      if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, 
                         CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &si, &pi)) {
-         std::cerr << "[DEBUG] CreateProcess failed (Error: " << GetLastError() << ")" << std::endl;
          UI::print_error("   ✗ Failed to create process");
          return false;
      }
@@ -823,7 +795,6 @@ void Commands::stop_llama_server() {
      CloseHandle(pi.hThread);
      llama_server_pid_ = pi.dwProcessId;
      current_model_path_ = model_path;
-     std::cerr << "[DEBUG] delta-server started with PID: " << llama_server_pid_ << std::endl;
      
      // Wait a moment for server to start
      std::this_thread::sleep_for(std::chrono::milliseconds(2000));
@@ -831,12 +802,10 @@ void Commands::stop_llama_server() {
      // Check if process is still running
      DWORD exit_code;
      if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
-         std::cerr << "[DEBUG] delta-server is running" << std::endl;
          UI::print_info("   ✓ Model loaded successfully!");
          CloseHandle(pi.hProcess);
          return true;
      } else {
-         std::cerr << "[DEBUG] delta-server failed to start (exited with code " << exit_code << ")" << std::endl;
          UI::print_error("   ✗ Failed to start delta-server");
          CloseHandle(pi.hProcess);
          llama_server_pid_ = 0;
@@ -844,7 +813,6 @@ void Commands::stop_llama_server() {
      }
 #else
      // Unix: Use fork/exec
-     std::cerr << "[DEBUG] Forking delta-server with command: " << cmd_str << std::endl;
      pid_t pid = fork();
      if (pid == 0) {
          // Child process: create new process group
@@ -866,7 +834,6 @@ void Commands::stop_llama_server() {
          // Parent process: store PID
          llama_server_pid_ = -pid; // Store negative for process group
          current_model_path_ = model_path;
-         std::cerr << "[DEBUG] delta-server started with PID: " << pid << " (stored as: " << llama_server_pid_ << ")" << std::endl;
          
          // Wait a moment for server to start
          std::this_thread::sleep_for(std::chrono::milliseconds(2000));
@@ -874,17 +841,14 @@ void Commands::stop_llama_server() {
          // Check if process is still running
          int status;
          if (waitpid(pid, &status, WNOHANG) == 0) {
-             std::cerr << "[DEBUG] delta-server is running (waitpid returned 0)" << std::endl;
              UI::print_info("   ✓ Model loaded successfully!");
              return true;
          } else {
-             std::cerr << "[DEBUG] delta-server failed to start (waitpid returned non-zero)" << std::endl;
              UI::print_error("   ✗ Failed to start delta-server");
              llama_server_pid_ = 0;
              return false;
          }
      } else {
-         std::cerr << "[DEBUG] fork() failed" << std::endl;
          UI::print_error("   ✗ Failed to fork process");
          return false;
      }
@@ -1142,13 +1106,10 @@ void Commands::stop_llama_server() {
          // Server not running, start it
          // launch_server_auto now waits for server to be ready before returning
          if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
-             // Server is confirmed listening, get the actual port used
              int actual_port = Commands::get_current_port();
              std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
              std::this_thread::sleep_for(std::chrono::milliseconds(500));
-             if (tools::Browser::open_url(url)) {
-                 UI::print_info("Browser opened automatically");
-             }
+             tools::Browser::open_url(url);
          } else {
              UI::print_error("Failed to start server. Check error messages above.");
          }

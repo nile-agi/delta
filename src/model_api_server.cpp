@@ -457,11 +457,6 @@ private:
                 
                 // Try to actually switch the model if callback is set
                 bool model_loaded = false;
-                std::cerr << "[DEBUG] /api/models/use: model_name=" << model_name 
-                          << ", model_path=" << model_path 
-                          << ", ctx_size=" << ctx_size 
-                          << ", model_alias=" << model_alias << std::endl;
-                std::cerr << "[DEBUG] g_model_switch_callback is " << (g_model_switch_callback ? "set" : "null") << std::endl;
                 {
                     std::lock_guard<std::mutex> lock(g_props_fallback_mutex);
                     g_props_fallback_model_path = model_path;
@@ -469,14 +464,10 @@ private:
                 }
                 if (g_model_switch_callback) {
                     try {
-                        std::cerr << "[DEBUG] Calling model switch callback..." << std::endl;
                         model_loaded = (*g_model_switch_callback)(model_path, model_name, ctx_size, model_alias);
-                        std::cerr << "[DEBUG] Model switch callback returned: " << (model_loaded ? "true" : "false") << std::endl;
                     } catch (const std::exception& e) {
                         std::cerr << "[ERROR] Error switching model: " << e.what() << std::endl;
                     }
-                } else {
-                    std::cerr << "[WARNING] Model switch callback is not set!" << std::endl;
                 }
                 
                 json result = {
@@ -510,7 +501,6 @@ private:
             return;
         }
         
-        std::cout << "Model Management API server running on http://0.0.0.0:" << port_ << " (accessible from this machine and the network)" << std::endl;
         server_->listen_after_bind();
     }
     
