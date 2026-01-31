@@ -202,8 +202,8 @@ class ModelsStore {
 		this._error = null;
 
 		try {
-			// Load the model via llama-server every time user selects/switches (same as terminal /use).
-			// Backend stops current server and starts a new one with -m model_path.
+			// Get the model path from the backend API
+			// llama-server needs the full model path to switch models dynamically
 			try {
 				const useResponse = await ModelsService.use(option.model);
 				// Prefer model_alias for chat requests (router mode); fallback to model_path or option.model
