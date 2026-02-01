@@ -10,7 +10,8 @@
 		Layout,
 		ChevronLeft,
 		ChevronRight,
-		Database
+		Database,
+		Package
 	} from '@lucide/svelte';
 	import { ChatSettingsFooter, ChatSettingsFields } from '$lib/components/app';
 	import ImportExportTab from './ImportExportTab.svelte';
@@ -244,18 +245,27 @@
 			fields: []
 		},
 		{
+			title: 'Model Management',
+			icon: Package,
+			fields: []
+		},
+		{
 			title: 'Developer',
 			icon: Code,
 			fields: [
 				{
 					key: 'showToolCallLabels',
 					label: 'Show tool call labels',
-					type: 'checkbox'
+					type: 'checkbox',
+					help:
+						'Display tool call labels and payloads from Harmony-compatible delta.tool_calls data below assistant messages.'
 				},
 				{
 					key: 'disableReasoningFormat',
 					label: 'Show raw LLM output',
-					type: 'checkbox'
+					type: 'checkbox',
+					help:
+						'Show raw LLM output without backend parsing and frontend Markdown rendering to inspect streaming across different models.'
 				},
 				{
 					key: 'custom',
@@ -507,6 +517,16 @@
 
 						{#if currentSection.title === 'Import/Export'}
 							<ImportExportTab />
+						{:else if currentSection.title === 'Model Management'}
+							<div class="space-y-6">
+								<p class="text-sm text-muted-foreground">
+									Manage your installed models and download new ones. Use the model selector in the chat
+									input to choose models in the chat interface.
+								</p>
+								<div class="model-management-container" style="min-height: 200px;">
+									<ModelManagementTab />
+								</div>
+							</div>
 						{:else if currentSection.title === 'Developer'}
 							<div class="space-y-6">
 								<ChatSettingsFields
@@ -515,17 +535,6 @@
 									onConfigChange={handleConfigChange}
 									onThemeChange={handleThemeChange}
 								/>
-								<div class="border-t border-border/30 pt-6 mt-6">
-									<h4 class="mb-4 text-sm font-semibold">Model Management</h4>
-									<p class="mb-4 text-sm text-muted-foreground">
-										Manage your installed models and download new ones. Use the model selector in the chat
-										input to choose models in the chat interface.
-									</p>
-									<!-- Model Management Component -->
-									<div class="model-management-container" style="min-height: 200px;">
-										<ModelManagementTab />
-									</div>
-								</div>
 							</div>
 						{:else}
 							<div class="space-y-6">
