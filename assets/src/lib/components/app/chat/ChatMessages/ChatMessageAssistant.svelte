@@ -92,7 +92,14 @@
 		const modelId = message.model;
 		if (modelId) {
 			const opt = options.find((m) => m.id === modelId || m.model === modelId);
-			return opt?.name ?? modelId.split(/[/\\]/).pop()?.replace(/\.gguf$/i, '') ?? modelId;
+			return (
+				opt?.name ??
+				modelId
+					.split(/[/\\]/)
+					.pop()
+					?.replace(/\.gguf$/i, '') ??
+				modelId
+			);
 		}
 		if (activeModelId) {
 			const opt = options.find((m) => m.id === activeModelId);
