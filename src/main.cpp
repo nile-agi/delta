@@ -24,6 +24,8 @@
 #else
     #include <unistd.h>
     #include <limits.h>
+    #include <csignal>
+    #include <signal.h>
     #ifndef PATH_MAX
         #define PATH_MAX 4096
     #endif
@@ -32,6 +34,15 @@
 #include <cctype>
 
 using namespace delta;
+
+#ifndef _WIN32
+// Flag set by signal handler so interactive loop can exit and stop llama-server
+static volatile sig_atomic_t g_exit_requested = 0;
+
+static void exit_signal_handler(int) {
+    g_exit_requested = 1;
+}
+#endif
 
 // Command handlers
 void print_help() {
@@ -199,10 +210,34 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     // Do not accumulate or inject prior turns into prompts; rely on clean llama context per turn
     std::vector<std::string> history;
     
+#ifndef _WIN32
+    // Register signal handlers so closing terminal or Ctrl+C stops llama-server
+    struct sigaction sa;
+    sa.sa_handler = exit_signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;  // No SA_RESTART so get_input() can return on signal
+    sigaction(SIGTERM, &sa, nullptr);
+    sigaction(SIGHUP, &sa, nullptr);
+    sigaction(SIGINT, &sa, nullptr);
+#endif
+    
     while (true) {
+#ifndef _WIN32
+        if (g_exit_requested) {
+            UI::print_info("Exiting (signal received). Stopping server...");
+            history_mgr.save_current_session();
+            break;
+        }
+#endif
         UI::print_prompt();
         std::string input = UI::get_input();
-        
+#ifndef _WIN32
+        if (g_exit_requested) {
+            UI::print_info("Exiting (signal received). Stopping server...");
+            history_mgr.save_current_session();
+            break;
+        }
+#endif
         // Check if input stream is exhausted (e.g., when piping input)
         if (std::cin.eof()) {
             UI::print_info("Input stream ended. Exiting interactive mode.");
@@ -274,6 +309,9 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             UI::print_error(std::string("Error generating response: ") + e.what());
         }
     }
+    
+    // Unload model and stop llama-server when leaving interactive mode (exit, quit, eof, or signal)
+    Commands::stop_llama_server();
 }
 
 void list_models(ModelManager& model_mgr, bool show_available = false) {

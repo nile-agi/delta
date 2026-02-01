@@ -568,6 +568,9 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                                           int ctx_size, const std::string& model_alias) -> bool {
          return Commands::restart_llama_server(model_path, model_name, ctx_size, model_alias);
      });
+     delta::set_model_unload_callback([]() {
+         Commands::stop_llama_server();
+     });
      return true;
  }
  

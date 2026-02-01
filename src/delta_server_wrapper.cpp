@@ -39,6 +39,18 @@
 
 namespace delta {
 
+class DeltaServerWrapper;
+
+#ifndef _WIN32
+// Signal handler sets this so the run loop can stop llama-server and exit
+static volatile sig_atomic_t g_wrapper_stop_requested = 0;
+static DeltaServerWrapper* g_wrapper_instance = nullptr;
+
+static void wrapper_signal_handler(int) {
+    g_wrapper_stop_requested = 1;
+}
+#endif
+
 #ifdef _WIN32
     typedef DWORD pid_t;
     #define WNOHANG 1
@@ -554,6 +566,10 @@ public:
         delta::set_model_switch_callback([this](const std::string& model_path, const std::string& model_name, int ctx_size, const std::string& model_alias) -> bool {
             return this->restart_llama_server(model_path, model_name, ctx_size, model_alias);
         });
+        // Set up model unload callback (stop llama-server when user clicks Unload)
+        delta::set_model_unload_callback([this]() {
+            this->stop_llama_server();
+        });
         
         // Start delta-server in background (single-model or router mode)
         std::cout << "🚀 Starting delta-server..." << std::endl;
@@ -567,8 +583,27 @@ public:
             return 1;
         }
         
+#ifndef _WIN32
+        g_wrapper_instance = this;
+        g_wrapper_stop_requested = 0;
+        struct sigaction sa;
+        sa.sa_handler = wrapper_signal_handler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        sigaction(SIGTERM, &sa, nullptr);
+        sigaction(SIGHUP, &sa, nullptr);
+        sigaction(SIGINT, &sa, nullptr);
+#endif
+        
         // Wait for delta-server to exit (or be killed)
         while (llama_server_running_) {
+#ifndef _WIN32
+            if (g_wrapper_stop_requested) {
+                std::cout << "Stopping server (signal received)..." << std::endl;
+                stop_llama_server();
+                break;
+            }
+#endif
             std::this_thread::sleep_for(std::chrono::seconds(1));
             // Check if process is still running
 #ifdef _WIN32
@@ -595,6 +630,9 @@ public:
 #endif
         }
         
+#ifndef _WIN32
+        g_wrapper_instance = nullptr;
+#endif
         // Stop model API server when delta-server exits
         delta::stop_model_api_server();
         

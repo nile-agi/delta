@@ -3,6 +3,7 @@
 	import { ChevronDown, Loader2, Box, Search, X, Power } from '@lucide/svelte';
 	import { cn } from '$lib/components/ui/utils';
 	import { portalToBody } from '$lib/utils/portal-to-body';
+	import { ModelsService } from '$lib/services/models';
 	import {
 		fetchModels,
 		loadingModelId,
@@ -174,10 +175,16 @@
 		queueMicrotask(() => updateMenuPosition());
 	});
 
-	function handleUnloadModel(event: MouseEvent) {
+	async function handleUnloadModel(event: MouseEvent) {
 		event.preventDefault();
 		event.stopPropagation();
-		unloadModel();
+		try {
+			await ModelsService.unload();
+			unloadModel();
+		} catch (e) {
+			console.error('Failed to unload model / stop server:', e);
+			unloadModel();
+		}
 		closeMenu();
 	}
 

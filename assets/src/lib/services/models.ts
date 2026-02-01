@@ -216,4 +216,25 @@ export class ModelsService {
 
 		return response.json() as Promise<ModelOperationResponse>;
 	}
+
+	/**
+	 * Unload model and stop llama-server (releases model in background)
+	 */
+	static async unload(): Promise<ModelOperationResponse> {
+		const response = await fetch(`${getModelApiBaseUrl()}/api/models/unload`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			}
+		});
+
+		if (!response.ok) {
+			const error = await response.json().catch(() => ({}));
+			throw new Error(
+				error.error?.message || `Failed to unload model (status ${response.status})`
+			);
+		}
+
+		return response.json() as Promise<ModelOperationResponse>;
+	}
 }

@@ -32,6 +32,8 @@ namespace delta {
 
 // Forward declaration for model switch callback
 static ModelSwitchCallback* g_model_switch_callback = nullptr;
+// Callback for unloading model / stopping llama-server
+static ModelUnloadCallback* g_model_unload_callback = nullptr;
 
 // Last known model path/alias (set when /api/models/use is called) for /api/props fallback
 static std::string g_props_fallback_model_path;
@@ -493,6 +495,24 @@ private:
                 res.set_content(error.dump(), "application/json");
             }
         });
+        
+        // POST /api/models/unload - Unload model and stop llama-server
+        server_->Post("/api/models/unload", [](const httplib::Request&, httplib::Response& res) {
+            try {
+                if (g_model_unload_callback) {
+                    (*g_model_unload_callback)();
+                }
+                json result = {
+                    {"success", true},
+                    {"message", "Model unloaded and server stopped."}
+                };
+                res.set_content(result.dump(), "application/json");
+            } catch (const std::exception& e) {
+                json error = {{"error", {{"code", 500}, {"message", e.what()}}}};
+                res.status = 500;
+                res.set_content(error.dump(), "application/json");
+            }
+        });
     }
     
     void server_loop() {
@@ -536,6 +556,11 @@ static std::unique_ptr<ModelAPIServer> g_model_api_server;
 void set_model_switch_callback(ModelSwitchCallback callback) {
     static ModelSwitchCallback stored_callback = callback;
     g_model_switch_callback = &stored_callback;
+}
+
+void set_model_unload_callback(ModelUnloadCallback callback) {
+    static ModelUnloadCallback stored_callback = callback;
+    g_model_unload_callback = &stored_callback;
 }
 
 void start_model_api_server(int port) {
