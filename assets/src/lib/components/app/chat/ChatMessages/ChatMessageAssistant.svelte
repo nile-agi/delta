@@ -22,11 +22,7 @@
 	import ChatMessageActions from './ChatMessageActions.svelte';
 	import Label from '$lib/components/ui/label/label.svelte';
 	import { config } from '$lib/stores/settings.svelte';
-	import {
-		modelOptions,
-		selectedModelId,
-		selectModel
-	} from '$lib/stores/models.svelte';
+	import { modelOptions, selectedModelId, selectModel } from '$lib/stores/models.svelte';
 	import { copyToClipboard } from '$lib/utils/copy';
 
 	interface Props {
@@ -99,7 +95,14 @@
 		const modelId = message.model;
 		if (modelId) {
 			const opt = options.find((m) => m.id === modelId || m.model === modelId);
-			return opt?.name ?? modelId.split(/[/\\]/).pop()?.replace(/\.gguf$/i, '') ?? modelId;
+			return (
+				opt?.name ??
+				modelId
+					.split(/[/\\]/)
+					.pop()
+					?.replace(/\.gguf$/i, '') ??
+				modelId
+			);
 		}
 		if (activeModelId) {
 			const opt = options.find((m) => m.id === activeModelId);
@@ -211,7 +214,8 @@
 						<div class="font-medium">{toolCall.name}</div>
 					{/if}
 					{#if toolCall.arguments}
-						<pre class="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words text-muted-foreground">{toolCall.arguments}</pre>
+						<pre
+							class="mt-1 max-h-32 overflow-auto break-words whitespace-pre-wrap text-muted-foreground">{toolCall.arguments}</pre>
 					{/if}
 				</div>
 			{/each}
@@ -223,7 +227,7 @@
 		{#if message.role === 'assistant'}
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger
-					class="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2.5 py-1.5 font-medium text-foreground hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-ring"
+					class="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2.5 py-1.5 font-medium text-foreground hover:bg-muted/50 focus:ring-2 focus:ring-ring focus:outline-none"
 				>
 					<Box class="h-3.5 w-3.5 shrink-0" />
 					<span class="max-w-[180px] truncate">{getModelDisplayName()}</span>
@@ -231,10 +235,7 @@
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="start" class="max-h-[min(60vh,320px)] overflow-y-auto">
 					{#each options as option (option.id)}
-						<DropdownMenu.Item
-							onclick={() => handleModelSelect(option.id)}
-							class="cursor-pointer"
-						>
+						<DropdownMenu.Item onclick={() => handleModelSelect(option.id)} class="cursor-pointer">
 							<span class="truncate">{option.name}</span>
 						</DropdownMenu.Item>
 					{/each}
@@ -311,7 +312,7 @@
 						<button
 							type="button"
 							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-							title="Copy generated tokens"
+							title="Generated tokens"
 							onclick={() => copyStat(String(genTokens), 'Generated tokens')}
 						>
 							<WholeWord class="h-3 w-3" />
@@ -321,7 +322,7 @@
 						<button
 							type="button"
 							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-							title="Copy generation time"
+							title="Generation time"
 							onclick={() => copyStat(`${(genMs / 1000).toFixed(2)}s`, 'Generation time')}
 						>
 							<Clock class="h-3 w-3" />
@@ -331,7 +332,7 @@
 						<button
 							type="button"
 							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-							title="Copy generation speed"
+							title="Generation speed"
 							onclick={() => copyStat(`${genSpeed.toFixed(2)} tokens/s`, 'Generation speed')}
 						>
 							<Gauge class="h-3 w-3" />
