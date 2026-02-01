@@ -1,25 +1,18 @@
 <script lang="ts">
-	import { ChatMessageThinkingBlock, MarkdownContent } from '$lib/components/app';
+	import {
+		ChatMessageThinkingBlock,
+		MarkdownContent
+	} from '$lib/components/app';
 	import { useProcessingState } from '$lib/hooks/use-processing-state.svelte';
 	import { isLoading } from '$lib/stores/chat.svelte';
 	import { fade } from 'svelte/transition';
-	import {
-		Check,
-		X,
-		Box,
-		ChevronDown,
-		BookOpen,
-		Sparkles,
-		Copy,
-		Gauge,
-		Clock,
-		WholeWord
-	} from '@lucide/svelte';
+	import { Check, X, Box, ChevronDown, Wrench } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { INPUT_CLASSES } from '$lib/constants/input-classes';
 	import ChatMessageActions from './ChatMessageActions.svelte';
+	import ChatMessageStatistics from './ChatMessageStatistics.svelte';
 	import Label from '$lib/components/ui/label/label.svelte';
 	import { config } from '$lib/stores/settings.svelte';
 	import {
@@ -27,7 +20,9 @@
 		selectedModelId,
 		selectModel
 	} from '$lib/stores/models.svelte';
+	import type { DatabaseMessageToolCall } from '$lib/types/database';
 	import { copyToClipboard } from '$lib/utils/copy';
+	import autoResizeTextarea from '$lib/utils/autoresize-textarea';
 
 	interface Props {
 		class?: string;
@@ -93,8 +88,6 @@
 	let options = $derived(modelOptions());
 	let activeModelId = $derived(selectedModelId());
 
-	let statsView = $state<'reading' | 'generation'>('generation');
-
 	function getModelDisplayName(): string {
 		const modelId = message.model;
 		if (modelId) {
@@ -119,17 +112,32 @@
 		}
 	}
 
-	async function copyStat(value: string, label: string) {
-		await copyToClipboard(value, `${label} copied`);
+	function formatToolCallBadge(toolCall: DatabaseMessageToolCall, index: number) {
+		const callNumber = index + 1;
+		const functionName = toolCall.name?.trim();
+		const label = functionName || `Call #${callNumber}`;
+		const payload: Record<string, unknown> = {};
+		if (toolCall.name) payload.name = toolCall.name;
+		if (toolCall.arguments) {
+			try {
+				payload.arguments = JSON.parse(toolCall.arguments);
+			} catch {
+				payload.arguments = toolCall.arguments;
+			}
+		}
+		const copyValue = JSON.stringify(
+			Object.keys(payload).length > 0 ? payload : { name: toolCall.name, arguments: toolCall.arguments },
+			null,
+			2
+		);
+		return { label, copyValue };
+	}
+
+	function handleCopyToolCall(payload: string) {
+		void copyToClipboard(payload, 'Tool call copied to clipboard');
 	}
 
 	let t = $derived(message.timings);
-	let promptTokens = $derived(t?.prompt_n ?? 0);
-	let promptMs = $derived(t?.prompt_ms ?? 0);
-	let promptSpeed = $derived(promptMs > 0 ? (promptTokens / promptMs) * 1000 : 0);
-	let genTokens = $derived(t?.predicted_n ?? 0);
-	let genMs = $derived(t?.predicted_ms ?? 0);
-	let genSpeed = $derived(genMs > 0 ? (genTokens / genMs) * 1000 : 0);
 </script>
 
 <div
@@ -162,7 +170,10 @@
 				bind:value={editedContent}
 				class="min-h-[50vh] w-full resize-y rounded-2xl px-3 py-2 text-sm {INPUT_CLASSES}"
 				onkeydown={onEditKeydown}
-				oninput={(e) => onEditedContentChange?.(e.currentTarget.value)}
+				oninput={(e) => {
+					autoResizeTextarea(e.currentTarget);
+					onEditedContentChange?.(e.currentTarget.value);
+				}}
 				placeholder="Edit assistant message..."
 			></textarea>
 
@@ -202,145 +213,59 @@
 		</div>
 	{/if}
 
-	{#if currentConfig.showToolCallLabels && message.tool_calls?.length}
-		<div class="mt-4 space-y-2 rounded-lg border border-border/50 bg-muted/20 p-3 text-xs">
-			<span class="font-medium text-muted-foreground">Tool calls</span>
-			{#each message.tool_calls as toolCall (toolCall.name ?? toolCall)}
-				<div class="rounded border border-border/30 bg-background/50 p-2 font-mono">
-					{#if toolCall.name}
-						<div class="font-medium">{toolCall.name}</div>
-					{/if}
-					{#if toolCall.arguments}
-						<pre class="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words text-muted-foreground">{toolCall.arguments}</pre>
-					{/if}
-				</div>
-			{/each}
-		</div>
-	{/if}
-
-	<div class="info my-6 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-		<!-- Model name with selection/switch (always visible below assistant response) -->
+	<div class="info my-6 grid gap-4 tabular-nums text-xs text-muted-foreground">
 		{#if message.role === 'assistant'}
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger
-					class="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2.5 py-1.5 font-medium text-foreground hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-ring"
-				>
-					<Box class="h-3.5 w-3.5 shrink-0" />
-					<span class="max-w-[180px] truncate">{getModelDisplayName()}</span>
-					<ChevronDown class="h-3.5 w-3.5 shrink-0" />
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="start" class="max-h-[min(60vh,320px)] overflow-y-auto">
-					{#each options as option (option.id)}
-						<DropdownMenu.Item
-							onclick={() => handleModelSelect(option.id)}
-							class="cursor-pointer"
-						>
-							<span class="truncate">{option.name}</span>
-						</DropdownMenu.Item>
-					{/each}
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
-		{/if}
-
-		<!-- Message generation statistics: Reading vs Generation toggle and copyable stats -->
-		{#if currentConfig.showMessageStats && message.timings && message.role === 'assistant'}
-			<div class="flex flex-wrap items-center gap-3">
-				<div class="flex items-center gap-1 rounded-md border border-border/50 bg-muted/20 p-0.5">
-					<button
-						type="button"
-						class="inline-flex items-center justify-center rounded px-2 py-1.5 transition {statsView ===
-						'reading'
-							? 'bg-background text-foreground shadow-sm'
-							: 'text-muted-foreground hover:text-foreground'}"
-						title="Reading (prompt processing)"
-						aria-label="Reading (prompt processing)"
-						onclick={() => (statsView = 'reading')}
+			<div class="inline-flex flex-wrap items-start gap-2">
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger
+						class="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2.5 py-1.5 font-medium text-foreground hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-ring"
 					>
-						<BookOpen class="h-3.5 w-3.5 shrink-0" />
-					</button>
-					<button
-						type="button"
-						class="inline-flex items-center justify-center rounded px-2 py-1.5 transition {statsView ===
-						'generation'
-							? 'bg-background text-foreground shadow-sm'
-							: 'text-muted-foreground hover:text-foreground'}"
-						title="Generation (token output)"
-						aria-label="Generation (token output)"
-						onclick={() => (statsView = 'generation')}
-					>
-						<Sparkles class="h-3.5 w-3.5 shrink-0" />
-					</button>
-				</div>
+						<Box class="h-3.5 w-3.5 shrink-0" />
+						<span class="max-w-[180px] truncate">{getModelDisplayName()}</span>
+						<ChevronDown class="h-3.5 w-3.5 shrink-0" />
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="start" class="max-h-[min(60vh,320px)] overflow-y-auto">
+						{#each options as option (option.id)}
+							<DropdownMenu.Item
+								onclick={() => handleModelSelect(option.id)}
+								class="cursor-pointer"
+							>
+								<span class="truncate">{option.name}</span>
+							</DropdownMenu.Item>
+						{/each}
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
 
-				{#if statsView === 'reading'}
-					<div class="inline-flex flex-wrap items-center gap-2">
-						<button
-							type="button"
-							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-							title="Copy prompt tokens"
-							onclick={() => copyStat(String(promptTokens), 'Prompt tokens')}
-						>
-							<WholeWord class="h-3 w-3" />
-							<span>{promptTokens} tokens</span>
-							<Copy class="h-3 w-3 opacity-70" />
-						</button>
-						<button
-							type="button"
-							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-							title="Copy prompt processing time"
-							onclick={() => copyStat(`${(promptMs / 1000).toFixed(2)}s`, 'Prompt processing time')}
-						>
-							<Clock class="h-3 w-3" />
-							<span>{(promptMs / 1000).toFixed(2)}s</span>
-							<Copy class="h-3 w-3 opacity-70" />
-						</button>
-						<button
-							type="button"
-							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-							title="Copy prompt processing speed"
-							onclick={() =>
-								copyStat(`${promptSpeed.toFixed(2)} tokens/s`, 'Prompt processing speed')}
-						>
-							<Gauge class="h-3 w-3" />
-							<span>{promptSpeed.toFixed(2)} tokens/s</span>
-							<Copy class="h-3 w-3 opacity-70" />
-						</button>
-					</div>
-				{:else}
-					<div class="inline-flex flex-wrap items-center gap-2">
-						<button
-							type="button"
-							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-							title="Copy generated tokens"
-							onclick={() => copyStat(String(genTokens), 'Generated tokens')}
-						>
-							<WholeWord class="h-3 w-3" />
-							<span>{genTokens} tokens</span>
-							<Copy class="h-3 w-3 opacity-70" />
-						</button>
-						<button
-							type="button"
-							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-							title="Copy generation time"
-							onclick={() => copyStat(`${(genMs / 1000).toFixed(2)}s`, 'Generation time')}
-						>
-							<Clock class="h-3 w-3" />
-							<span>{(genMs / 1000).toFixed(2)}s</span>
-							<Copy class="h-3 w-3 opacity-70" />
-						</button>
-						<button
-							type="button"
-							class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-							title="Copy generation speed"
-							onclick={() => copyStat(`${genSpeed.toFixed(2)} tokens/s`, 'Generation speed')}
-						>
-							<Gauge class="h-3 w-3" />
-							<span>{genSpeed.toFixed(2)} tokens/s</span>
-							<Copy class="h-3 w-3 opacity-70" />
-						</button>
-					</div>
+				{#if currentConfig.showMessageStats && t}
+					<ChatMessageStatistics
+						promptTokens={t.prompt_n ?? 0}
+						promptMs={t.prompt_ms ?? 0}
+						predictedTokens={t.predicted_n ?? 0}
+						predictedMs={t.predicted_ms ?? 0}
+					/>
 				{/if}
 			</div>
+		{/if}
+
+		{#if currentConfig.showToolCallLabels && message.tool_calls && message.tool_calls.length > 0}
+			<span class="inline-flex flex-wrap items-center gap-2">
+				<span class="inline-flex items-center gap-1">
+					<Wrench class="h-3.5 w-3.5" />
+					<span>Tool calls:</span>
+				</span>
+				{#each message.tool_calls as toolCall, index (toolCall.name ?? String(index))}
+					{@const badge = formatToolCallBadge(toolCall, index)}
+					<button
+						type="button"
+						class="tool-call-badge inline-flex cursor-pointer items-center gap-1 rounded-sm bg-muted-foreground/15 px-1.5 py-0.75 hover:bg-muted-foreground/25"
+						title={badge.copyValue}
+						aria-label="Copy tool call {badge.label}"
+						onclick={() => handleCopyToolCall(badge.copyValue)}
+					>
+						<span class="max-w-[12rem] truncate">{badge.label}</span>
+					</button>
+				{/each}
+			</span>
 		{/if}
 	</div>
 
@@ -355,7 +280,7 @@
 			{onCopy}
 			{onEdit}
 			{onRegenerate}
-			onContinue={currentConfig.enableContinueButton ? onContinue : undefined}
+			onContinue={currentConfig.enableContinueButton && !thinkingContent ? onContinue : undefined}
 			{onDelete}
 			{onConfirmDelete}
 			{onNavigateToSibling}
@@ -409,5 +334,12 @@
 		line-height: 1.6;
 		white-space: pre-wrap;
 		word-break: break-word;
+	}
+
+	.tool-call-badge {
+		max-width: 12rem;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 </style>
