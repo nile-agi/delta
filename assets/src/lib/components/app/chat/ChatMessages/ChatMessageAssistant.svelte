@@ -8,7 +8,7 @@
 		X,
 		Box,
 		ChevronDown,
-		FileText,
+		BookOpen,
 		Sparkles,
 		Copy,
 		Gauge,
@@ -248,27 +248,27 @@
 				<div class="flex items-center gap-1 rounded-md border border-border/50 bg-muted/20 p-0.5">
 					<button
 						type="button"
-						class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition {statsView ===
+						class="inline-flex items-center justify-center rounded px-2 py-1.5 transition {statsView ===
 						'reading'
 							? 'bg-background text-foreground shadow-sm'
 							: 'text-muted-foreground hover:text-foreground'}"
 						title="Reading (prompt processing)"
+						aria-label="Reading (prompt processing)"
 						onclick={() => (statsView = 'reading')}
 					>
-						<FileText class="h-3.5 w-3.5" />
-						Reading (prompt processing)
+						<BookOpen class="h-3.5 w-3.5 shrink-0" />
 					</button>
 					<button
 						type="button"
-						class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition {statsView ===
+						class="inline-flex items-center justify-center rounded px-2 py-1.5 transition {statsView ===
 						'generation'
 							? 'bg-background text-foreground shadow-sm'
 							: 'text-muted-foreground hover:text-foreground'}"
 						title="Generation (token output)"
+						aria-label="Generation (token output)"
 						onclick={() => (statsView = 'generation')}
 					>
-						<Sparkles class="h-3.5 w-3.5" />
-						Generation (token output)
+						<Sparkles class="h-3.5 w-3.5 shrink-0" />
 					</button>
 				</div>
 
