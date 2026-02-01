@@ -30,30 +30,30 @@
 
 ## What is Delta CLI?
 
-Delta CLI is an **open-source, offline-first AI assistant** that runs large language models (LLMs) directly on your device. Built on top of [llama.cpp](https://github.com/ggerganov/llama.cpp), Delta CLI provides a simple command-line interface to interact with AI models without requiring internet connectivity or cloud services.
+Delta CLI is an **open-source, offline-first and local first AI assistant** that runs large language models (LLMs) directly on your device. Built on top of [llama.cpp](https://github.com/ggerganov/llama.cpp), Delta CLI provides a simple webUI to interact with AI models without requiring internet connectivity or cloud services.
 
 ### Key Features
 
 - 🔒 **100% Offline**: Works completely offline after initial model download
 - ⚡ **High Performance**: Full GPU acceleration (CUDA, Metal, Vulkan, ROCm)
 - 🌐 **Cross-Platform**: Runs on Windows, macOS, and Linux
-- 🎨 **Beautiful Terminal UI**: Retro-green interface with custom styling
-- 📦 **Easy Model Management**: One-command downloads from Hugging Face
+<!-- - 🎨 **Beautiful Terminal UI**: Retro-green interface with custom styling
+- 📦 **Easy Model Management**: One-command downloads from Hugging Face -->
 - 🚀 **Zero-Setup**: Auto-downloads default model on first run
 - 🔧 **llama.cpp Integration**: Access to all llama.cpp features and optimizations
-- 🌐 **Web UI**: Built-in web interface with custom Delta branding (built from `assets/` directory)
+- 🌐 **Web UI**: Built-in web interface, help user to simply interat with models(built from `assets/` directory)
 
 ### What Problem Does Delta Solve?
 
 **Privacy & Security:**
-- No data leaves your device - all processing happens locally
-- No API keys required - no need to sign up for cloud services
+- No data leaves your device - all processing happens locally, i.e **Local First**
+- Works offline - perfect for areas with poor internet connectivity
 - Complete control - your conversations and data stay private
 
-**Cost & Accessibility:**
+<!-- **Cost & Accessibility:**
 - No subscription fees - run AI models without recurring costs
 - No usage limits - use as much as you want, whenever you want
-- Works offline - perfect for areas with poor internet connectivity
+- Works offline - perfect for areas with poor internet connectivity -->
 
 **Flexibility & Control:**
 - Choose your model - use any compatible GGUF model
@@ -72,7 +72,9 @@ Delta CLI is an **open-source, offline-first AI assistant** that runs large lang
 
 ## Installation
 
-### Quick Installation (One Command)
+- Contact us via **hi@nileagi.com** or **+255 6552 09591**
+
+<!-- ### Quick Installation (One Command)
 
 Each platform has a dedicated installation method that handles everything automatically:
 
@@ -176,8 +178,8 @@ Professional offline AI assistant
 | **Winget** | ✅ | ❌ | ❌ | ⚡ Fast | ❌ No | ❌ No |
 | **Homebrew** | ❌ | ✅ | ✅ | 🐢 Slow (builds) | ✅ Yes (automatic) | ✅ Yes (automatic) |
 | **Install Script** | ✅ | ✅ | ✅ | ⚡ Fast | ❌ No | ❌ No |
-
-**All methods are automatic - users don't need git knowledge!**
+ -->
+<!-- **All methods are automatic - users don't need git knowledge!** -->
 
 ---
 
@@ -191,13 +193,15 @@ delta
 ```
 
 **What happens:**
-1. Shows banner and welcome message
+
+- delta WebUI opens automatically.
+<!-- 1. Shows banner and welcome message
 2. Auto-downloads default model (`qwen2.5:0.5b`, ~400MB) if not installed
 3. Loads model automatically
 4. Starts interactive mode
-5. You're ready to chat!
+5. You're ready to chat! -->
 
-### 2. Start Chatting
+<!-- ### 2. Start Chatting
 
 Once in interactive mode, simply type your questions:
 
@@ -301,7 +305,7 @@ OPTIONS:
     --check-updates         Check for new versions
     --update                Update to latest version
     --no-color              Disable colored output
-```
+``` -->
 
 ### Interactive Commands
 
@@ -320,7 +324,7 @@ exit, quit               # Exit interactive mode
 
 Any other slash command will respond with: `ℹ Type /help to see available commands`.
 
-### Examples
+<!-- ### Examples
 
 ```bash
 # Download a model
@@ -424,9 +428,9 @@ delta pull qwen2.5:0.5b
 
 **Note:** If Node.js/npm is not available during build, CMake will skip building the web UI and fall back to the original llama.cpp web UI (if available). The custom Delta web UI (with favicon, model name improvements, etc.) requires Node.js to build.
 
----
+--- -->
 
-## Uninstallation
+<!-- ## Uninstallation
 
 ### macOS
 
@@ -521,8 +525,9 @@ Remove-Item -Recurse -Force "$env:APPDATA\delta-cli" -ErrorAction SilentlyContin
 Remove-Item "$env:USERPROFILE\Desktop\Delta CLI.lnk" -ErrorAction SilentlyContinue
 # Remove from PATH via System Properties > Environment Variables
 ```
+-->
 
----
+--- 
 
 ## Supported Platforms
 
@@ -533,7 +538,7 @@ Delta CLI runs on **3 major platforms**:
   - Homebrew installation support
   - Full feature support
 
-- ✅ **Linux** (x86_64, ARM, ARM64)
+<!-- - ✅ **Linux** (x86_64, ARM, ARM64)
   - Multiple distribution support
   - CUDA/Vulkan GPU acceleration
   - Package manager integration
@@ -541,13 +546,13 @@ Delta CLI runs on **3 major platforms**:
 - ✅ **Windows** (x64)
   - Visual Studio support
   - CUDA acceleration
-  - PowerShell installation
+  - PowerShell installation -->
 
 ---
 
 ## Open Source & Built on llama.cpp
 
-### Open Source License
+<!-- ### Open Source License
 
 Delta CLI is released under the **MIT License**, which means:
 - ✅ Free to use for any purpose
@@ -555,7 +560,7 @@ Delta CLI is released under the **MIT License**, which means:
 - ✅ Commercial use allowed
 - ✅ No warranty provided
 
-See [LICENSE](LICENSE) for full details.
+See [LICENSE](LICENSE) for full details. -->
 
 ### Built on llama.cpp
 
@@ -581,7 +586,7 @@ Delta CLI is built on top of [llama.cpp](https://github.com/ggerganov/llama.cpp)
 
 ---
 
-## Contributing
+<!-- ## Contributing
 
 Contributions are welcome! Delta CLI is open source and community-driven.
 
@@ -590,7 +595,7 @@ Contributions are welcome! Delta CLI is open source and community-driven.
 3. Make your changes
 4. Submit a pull request
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines. -->
 
 ---
 
