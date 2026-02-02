@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { Trash2, Copy, Loader2, CheckCircle2, Info } from '@lucide/svelte';
+	import { slide } from 'svelte/transition';
 	import { Button } from '$lib/components/ui/button';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { ModelInfo } from '$lib/services/models';
 	import {
-		modelsCatalog,
 		findModelByName,
 		getContextOptionsForModel,
-		estimateMemoryGB
+		estimateMemoryGB,
+		getFamilyIconForModelName
 	} from '$lib/data/models_catalog';
 
 	const STORAGE_KEY_PREFIX = 'delta_model_ctx_';
@@ -68,34 +69,17 @@
 		onContextChange?.(model.name, ctx);
 	}
 
-	/**
-	 * Get family icon for the model
-	 * Fixed: Use $derived.by() instead of $derived(() => ...) to avoid returning a function
-	 */
-	const familyIcon = $derived.by(() => {
-		// First try to find the model in catalog to get exact icon
-		const catalogModel = findModelByName(model.name);
-		if (catalogModel) {
-			// Find which family this model belongs to
-			for (const family of modelsCatalog) {
-				if (family.models.some((m) => m.name === model.name)) {
-					return family.icon;
-				}
-			}
-		}
-		
-		// Fallback: determine icon based on model name patterns
-		const nameLower = model.name.toLowerCase();
-		if (nameLower.includes('gemma')) return '◇';
-		if (nameLower.includes('qwen')) return '∇';
-		if (nameLower.includes('ministral') || nameLower.includes('mistral')) return 'M';
-		if (nameLower.includes('glm')) return 'Z';
-		if (nameLower.includes('devstral')) return 'D';
-		if (nameLower.includes('nemotron')) return 'N';
-		if (nameLower.includes('gpt')) return 'G';
-		
-		// Default icon
-		return '●';
+	/** Family icon from shared util (LlamaBarn: ◇ ∇ M etc.) */
+	const familyIcon = $derived(getFamilyIconForModelName(model.name));
+
+	/** LlamaBarn-style tags: ∞ (large ctx), Q (quantized), ○○ (Thinking) */
+	const modelTags = $derived.by(() => {
+		const tags: string[] = [];
+		const name = (model.display_name || model.name);
+		if (name.includes('∞') || (catalogModel?.context_size && catalogModel.context_size >= 128_000)) tags.push('∞');
+		if (model.quantization) tags.push('Q');
+		if (name.toLowerCase().includes('thinking')) tags.push('○○');
+		return tags;
 	});
 
 	/**
@@ -162,10 +146,13 @@
 			{familyIcon}
 		</div>
 
-		<!-- Model Info - Center -->
+		<!-- Model Info - Center: name, optional tags (∞ Q ○○), selected check -->
 		<div class="flex-1 min-w-0">
-			<div class="flex items-center gap-2 mb-1">
+			<div class="flex items-center gap-2 mb-1 flex-wrap">
 				<h4 class="font-semibold text-sm text-[#e0e0ff] truncate">{model.display_name || model.name}</h4>
+				{#each modelTags as tag}
+					<span class="text-xs text-[#d0d8ff]/70 font-normal" aria-hidden="true">{tag}</span>
+				{/each}
 				{#if selected}
 					<CheckCircle2 class="h-4 w-4 text-[#4cc9f0] flex-shrink-0" />
 				{/if}
@@ -235,85 +222,96 @@
 	</div>
 
 	<!--
-		Context length subsection (LlamaBarn-style): shown when this model is selected.
-		Dark-theme adaptation: #001f3f/#1a2b44 bg, #e0e0ff/#d0d8ff text, #333 radio borders,
-		#4cc9f0 accent; options grayed out with tooltip when estimated mem > system RAM.
-		Stop propagation so clicking radios does not toggle row selection.
+		Context length subsection (LlamaBarn-style): expandable when row is selected.
+		Smooth slide transition; dark theme (#1a2b44, #e0e0ff/#d0d8ff, #444 radios, #4cc9f0 accent).
+		Filter: options with mem > system RAM are grayed out; if none viable, show "No compatible context lengths".
 	-->
-	{#if selected && contextOptions.length > 0}
+	{#if selected}
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
-			class="context-length-section px-4 pb-3 pt-0 pl-14 text-[#d0d8ff]/80"
+			class="context-length-wrapper overflow-hidden"
 			onclick={(e) => e.stopPropagation()}
 			onkeydown={(e) => e.stopPropagation()}
 			role="group"
 			aria-label="Context length"
+			transition:slide={{ duration: 200 }}
 		>
-			<div class="flex items-center gap-2 mb-2">
-				<span class="text-sm font-medium text-[#e0e0ff]">Context length</span>
-				<Tooltip.Provider>
-					<Tooltip.Root>
-						<Tooltip.Trigger>
-							<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#1a2b44] text-[#d0d8ff]/60 hover:text-[#4cc9f0] cursor-help" aria-label="Info">
-								<Info class="h-3.5 w-3.5" />
-							</span>
-						</Tooltip.Trigger>
-						<Tooltip.Content>
-							<p>Maximum context (tokens). Higher values use more memory (KV cache).</p>
-						</Tooltip.Content>
-					</Tooltip.Root>
-				</Tooltip.Provider>
-			</div>
-			<!-- LlamaBarn-style: "Xk ctx on Y.Y GB mem", one decimal; gray out if mem > system RAM -->
-			<div class="flex flex-col gap-1.5">
-				{#each contextOptions as ctx}
-					{@const memGB = estimateMemoryGB(fileSizeGB, ctx)}
-					{@const memStr = (typeof memGB === 'number' && !Number.isNaN(memGB)) ? memGB.toFixed(1) : '—'}
-					{@const ctxLabel = ctx >= 1000 ? `${ctx / 1000}k` : String(ctx)}
-					{@const disabled = systemRAMGB != null && memGB > systemRAMGB}
-					{#if disabled}
+			<div class="context-length-section px-4 pb-3 pt-0 pl-14 text-[#d0d8ff]/80">
+				{#if contextOptions.length > 0}
+					{@const optionsWithMem = contextOptions.map((ctx) => ({ ctx, memGB: estimateMemoryGB(fileSizeGB, ctx) }))}
+					{@const allDisabled = systemRAMGB != null && optionsWithMem.every((o) => o.memGB > systemRAMGB)}
+					<div class="flex items-center gap-2 mb-2">
+						<span class="text-sm font-medium text-[#e0e0ff]">Context length</span>
 						<Tooltip.Provider>
 							<Tooltip.Root>
 								<Tooltip.Trigger>
+									<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#1a2b44] text-[#d0d8ff]/60 hover:text-[#4cc9f0] cursor-help" aria-label="Info">
+										<Info class="h-3.5 w-3.5" />
+									</span>
+								</Tooltip.Trigger>
+								<Tooltip.Content>
+									<p>Maximum context (tokens). Higher values use more memory (KV cache).</p>
+								</Tooltip.Content>
+							</Tooltip.Root>
+						</Tooltip.Provider>
+					</div>
+					{#if allDisabled}
+						<p class="text-sm text-[#d0d8ff]/70 italic">No compatible context lengths (need more RAM).</p>
+					{:else}
+						<!-- LlamaBarn-style: "Xk ctx on Y.Y GB mem", one decimal; gray out if mem > system RAM -->
+						<div class="flex flex-col gap-1.5">
+							{#each optionsWithMem as { ctx, memGB }}
+								{@const memStr = (typeof memGB === 'number' && !Number.isNaN(memGB)) ? memGB.toFixed(1) : '—'}
+								{@const ctxLabel = ctx >= 1000 ? `${ctx / 1000}k` : String(ctx)}
+								{@const disabled = systemRAMGB != null && memGB > systemRAMGB}
+								{#if disabled}
+									<Tooltip.Provider>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<label
+													class="flex items-center gap-2 cursor-not-allowed rounded px-2 py-1 opacity-60"
+												>
+													<input
+														type="radio"
+														name="ctx-{model.name}"
+														value={ctx}
+														checked={false}
+														disabled
+														class="context-radio h-4 w-4 border-[#444] bg-[#11243a]"
+													/>
+													<span class="text-sm text-[#d0d8ff]/90">
+														{ctxLabel} ctx on <span class="font-semibold text-[#e0e0ff]">{memStr} GB mem</span>
+													</span>
+												</label>
+											</Tooltip.Trigger>
+											<Tooltip.Content>
+												<p>Requires {memStr} GB+ RAM (system: {systemRAMGB} GB)</p>
+											</Tooltip.Content>
+										</Tooltip.Root>
+									</Tooltip.Provider>
+								{:else}
 									<label
-										class="flex items-center gap-2 cursor-not-allowed rounded px-2 py-1 opacity-60"
+										class="flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-[#11243a]/80 transition-colors"
 									>
 										<input
 											type="radio"
 											name="ctx-{model.name}"
 											value={ctx}
-											checked={false}
-											disabled
-											class="context-radio h-4 w-4 border-[#333] bg-[#11243a] text-[#4cc9f0]"
+											checked={selectedCtx === ctx}
+											onchange={() => setContext(ctx)}
+											class="context-radio h-4 w-4 border-[#444] bg-[#11243a] text-[#4cc9f0] focus:ring-2 focus:ring-[#4cc9f0]/30 focus:ring-offset-0"
 										/>
 										<span class="text-sm text-[#d0d8ff]/90">
 											{ctxLabel} ctx on <span class="font-semibold text-[#e0e0ff]">{memStr} GB mem</span>
 										</span>
 									</label>
-								</Tooltip.Trigger>
-								<Tooltip.Content>
-									<p>Requires {memStr} GB+ RAM (system: {systemRAMGB} GB)</p>
-								</Tooltip.Content>
-							</Tooltip.Root>
-						</Tooltip.Provider>
-					{:else}
-						<label
-							class="flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-[#11243a]/80 transition-colors"
-						>
-							<input
-								type="radio"
-								name="ctx-{model.name}"
-								value={ctx}
-								checked={selectedCtx === ctx}
-								onchange={() => setContext(ctx)}
-								class="context-radio h-4 w-4 border-[#333] bg-[#11243a] text-[#4cc9f0] focus:ring-2 focus:ring-[#4cc9f0]/30 focus:ring-offset-0"
-							/>
-							<span class="text-sm text-[#d0d8ff]/90">
-								{ctxLabel} ctx on <span class="font-semibold text-[#e0e0ff]">{memStr} GB mem</span>
-							</span>
-						</label>
+								{/if}
+							{/each}
+						</div>
 					{/if}
-				{/each}
+				{:else}
+					<p class="text-sm text-[#d0d8ff]/70 italic">Context length options unavailable for this model.</p>
+				{/if}
 			</div>
 		</div>
 	{/if}
