@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ModelsService, type ModelInfo } from '$lib/services/models';
 	import { modelsCatalog, getSmallestCompatibleModel } from '$lib/data/models_catalog';
+	import { selectModel, modelOptions, selectedModelName as getSelectedModelName } from '$lib/stores/models.svelte';
 	import FamilyAccordion from './FamilyAccordion.svelte';
 	import InstalledModelRow from './InstalledModelRow.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -31,7 +32,9 @@
 	let removingModel = $state<string | null>(null);
 	let confirmDeleteModel = $state<string | null>(null);
 	let autoDownloadAttempted = $state(false);
-	let selectedModelName = $state<string | null>(null);
+	
+	// Sync selected model from models store (reactive)
+	const selectedModelName = $derived(getSelectedModelName());
 
 	// Get installed model names as a Set for quick lookup
 	const installedModelNames = $derived(new Set(installedModels.map((m) => m.name)));
@@ -172,10 +175,33 @@
 		}
 	}
 
-	function handleModelSelect(modelName: string) {
-		selectedModelName = modelName;
-		// TODO: Integrate with model selector for chat
-		// This could call a store method to set the active model
+	async function handleModelSelect(modelName: string) {
+		// Find the model in the models store by name
+		const availableModels = modelOptions();
+		const modelOption = availableModels.find(
+			(m) => m.model === modelName || m.name === modelName || m.id === modelName
+		);
+		
+		if (modelOption) {
+			try {
+				await selectModel(modelOption.id);
+				toast.success(`Selected model: ${modelOption.name}`);
+			} catch (error) {
+				console.error('Failed to select model:', error);
+				toast.error(`Failed to select model: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		} else {
+			// Model might not be in the store yet, try to use it directly
+			try {
+				await ModelsService.use(modelName);
+				toast.success(`Selected model: ${modelName}`);
+				// Refresh models list to sync with store
+				await loadInstalledModels();
+			} catch (error) {
+				console.error('Failed to select model:', error);
+				toast.error(`Failed to select model: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		}
 	}
 
 	async function autoDownloadSmallestCompatible() {
