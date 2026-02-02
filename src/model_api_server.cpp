@@ -25,6 +25,15 @@
 #include <map>
 #include <mutex>
 #include <iomanip>
+#ifdef _WIN32
+#include <windows.h>
+#include <sysinfoapi.h>
+#elif defined(__APPLE__)
+#include <sys/sysctl.h>
+#include <sys/types.h>
+#else
+#include <sys/sysinfo.h>
+#endif
 
 using json = nlohmann::json;
 
@@ -505,6 +514,46 @@ private:
                 json result = {
                     {"success", true},
                     {"message", "Model unloaded and server stopped."}
+                };
+                res.set_content(result.dump(), "application/json");
+            } catch (const std::exception& e) {
+                json error = {{"error", {{"code", 500}, {"message", e.what()}}}};
+                res.status = 500;
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+        
+        // GET /api/system/ram - Get system RAM in GB
+        server_->Get("/api/system/ram", [](const httplib::Request&, httplib::Response& res) {
+            try {
+                long long total_ram_bytes = 0;
+                
+#ifdef _WIN32
+                MEMORYSTATUSEX memInfo;
+                memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+                if (GlobalMemoryStatusEx(&memInfo)) {
+                    total_ram_bytes = memInfo.ullTotalPhys;
+                }
+#elif defined(__APPLE__)
+                int64_t memsize = 0;
+                size_t len = sizeof(memsize);
+                int mib[2] = {CTL_HW, HW_MEMSIZE};
+                if (sysctl(mib, 2, &memsize, &len, NULL, 0) == 0) {
+                    total_ram_bytes = memsize;
+                }
+#else
+                struct sysinfo info;
+                if (sysinfo(&info) == 0) {
+                    total_ram_bytes = info.totalram * info.mem_unit;
+                }
+#endif
+                
+                // Convert bytes to GB (round up)
+                long long total_ram_gb = (total_ram_bytes + (1024LL * 1024 * 1024 - 1)) / (1024LL * 1024 * 1024);
+                
+                json result = {
+                    {"total_ram_gb", total_ram_gb},
+                    {"total_ram_bytes", total_ram_bytes}
                 };
                 res.set_content(result.dump(), "application/json");
             } catch (const std::exception& e) {

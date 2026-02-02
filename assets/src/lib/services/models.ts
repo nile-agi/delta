@@ -237,4 +237,32 @@ export class ModelsService {
 
 		return response.json() as Promise<ModelOperationResponse>;
 	}
+
+	/**
+	 * Get system RAM information
+	 */
+	static async getSystemRAM(): Promise<{ total_ram_gb: number; total_ram_bytes: number }> {
+		const response = await fetch(`${getModelApiBaseUrl()}/api/system/ram`, {
+			method: 'GET',
+			headers: {
+				'Content-Type': 'application/json'
+			}
+		});
+
+		if (!response.ok) {
+			// Fallback: try browser API if available
+			if (typeof navigator !== 'undefined' && 'deviceMemory' in navigator) {
+				const deviceMemory = (navigator as any).deviceMemory;
+				if (deviceMemory) {
+					return {
+						total_ram_gb: deviceMemory,
+						total_ram_bytes: deviceMemory * 1024 * 1024 * 1024
+					};
+				}
+			}
+			throw new Error(`Failed to get system RAM (status ${response.status})`);
+		}
+
+		return response.json();
+	}
 }
