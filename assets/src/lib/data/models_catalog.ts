@@ -351,6 +351,42 @@ export function findModelByName(name: string): ModelCatalogModel | undefined {
 }
 
 /**
+ * Get family icon for a model by name (shared between Catalog and Installed).
+ * LlamaBarn-style: ◇ Gemma, ∇ Qwen, M Ministral/Mistral, etc.
+ */
+export function getFamilyIconForModelName(name: string): string {
+	const catalogModel = findModelByName(name);
+	if (catalogModel) {
+		for (const family of modelsCatalog) {
+			if (family.models.some((m) => m.name === name)) return family.icon;
+		}
+	}
+	const lower = name.toLowerCase();
+	if (lower.includes('gemma')) return '◇';
+	if (lower.includes('qwen')) return '∇';
+	if (lower.includes('ministral') || lower.includes('mistral')) return 'M';
+	if (lower.includes('glm')) return 'Z';
+	if (lower.includes('devstral')) return 'D';
+	if (lower.includes('nemotron')) return 'N';
+	if (lower.includes('gpt')) return 'G';
+	return '●';
+}
+
+/**
+ * Parse params in billions from model name (e.g. "270M" → 0.27, "4B" → 4).
+ * Used for optional KV-cache-style mem estimates; returns null if unparseable.
+ */
+export function parseParamsBillionsFromModelName(name: string): number | null {
+	const m = name.match(/(\d+(?:\.\d+)?)\s*([MmBb])/i);
+	if (!m) return null;
+	const num = parseFloat(m[1]);
+	const unit = m[2].toUpperCase();
+	if (unit === 'M') return num / 1000;
+	if (unit === 'B') return num;
+	return null;
+}
+
+/**
  * Get smallest compatible model based on available RAM
  */
 export function getSmallestCompatibleModel(availableRAMGB: number): ModelCatalogModel | null {
@@ -384,12 +420,14 @@ export function getContextOptionsForModel(maxContextTokens?: number): number[] {
  * Estimate memory (GB) for a model at a given context length.
  * LlamaBarn-style: "Xk ctx on Y.Y GB mem" with small increases for larger ctx.
  *
- * Formula:
+ * Formula (matches LlamaBarn screenshots):
  * - base_mem: small models (<1 GB file) use 1.5× file size (e.g. 0.2 → 0.3 GB);
- *   larger models use 1.24× (model + overhead, e.g. 2.5 → 3.1 GB).
- * - KV cache: grows with context; coefficient scales by file size so small models
- *   get ~+0.1 GB for 32k (e.g. 0.3→0.4) and larger get ~+0.6 GB (e.g. 3.1→3.7).
+ *   larger models use 1.24× (model + quant overhead, e.g. 2.5 → 3.1 GB).
+ * - KV cache: grows with context; log2 scaling so doubling ctx adds ~fixed extra.
  *   kvExtra = log2(ctx/4096) * k * fileSizeGB with k=0.165 for small, 0.08 for large.
+ *   Result: small +0.0–0.1 GB per doubling; larger +0.2–0.6 GB (e.g. Gemma 4B 3.1→3.7).
+ * Filtering: getContextOptionsForModel caps by model max_ctx; UI grays out options
+ * where estimateMemoryGB(...) > system RAM and shows tooltip "Requires X.X GB+".
  * Rounded to 1 decimal for display.
  */
 export function estimateMemoryGB(fileSizeGB: number, contextTokens: number): number {
