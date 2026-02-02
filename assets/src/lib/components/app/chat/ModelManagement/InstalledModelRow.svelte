@@ -83,22 +83,25 @@
 	});
 
 	/**
-	 * Format context size from model info
-	 * Try to extract from description or use a reasonable default
+	 * Format context size for display in the main row.
+	 * Prefer the user's selected context (selectedCtx) when available so the row shows
+	 * the active choice (e.g. "16k ctx"); otherwise use catalog default.
 	 */
-	function getContextSize(): string {
-		// Try to find context from catalog model
-		const catalogModel = findModelByName(model.name);
-		if (catalogModel && catalogModel.context_size) {
-			const ctx = catalogModel.context_size;
-			if (ctx >= 1000000) {
-				return `${(ctx / 1000000).toFixed(1)}M ctx`;
-			} else if (ctx >= 1000) {
-				return `${(ctx / 1000).toFixed(0)}k ctx`;
-			}
+	function getContextSizeDisplay(): string {
+		// Show user's selected context when we have options (LlamaBarn: row shows current selection)
+		if (contextOptions.length > 0 && contextOptions.includes(selectedCtx)) {
+			if (selectedCtx >= 1000000) return `${(selectedCtx / 1000000).toFixed(1)}M ctx`;
+			if (selectedCtx >= 1000) return `${(selectedCtx / 1000).toFixed(0)}k ctx`;
+			return `${selectedCtx} ctx`;
+		}
+		// Fallback: catalog model default
+		const cat = findModelByName(model.name);
+		if (cat?.context_size) {
+			const ctx = cat.context_size;
+			if (ctx >= 1000000) return `${(ctx / 1000000).toFixed(1)}M ctx`;
+			if (ctx >= 1000) return `${(ctx / 1000).toFixed(0)}k ctx`;
 			return `${ctx} ctx`;
 		}
-		// Default fallback
 		return '32k ctx';
 	}
 
@@ -161,16 +164,16 @@
 				{#if model.size_str}
 					<span>{model.size_str}</span>
 				{/if}
-				{#if model.size_str && (model.quantization || getContextSize())}
-					<span class="text-[#d0d8ff]/40">•</span>
+				{#if model.size_str && (model.quantization || getContextSizeDisplay())}
+					<span class="text-[#d0d8ff]/40">|</span>
 				{/if}
 				{#if model.quantization}
 					<span>{model.quantization}</span>
 				{/if}
-				{#if model.quantization && getContextSize()}
-					<span class="text-[#d0d8ff]/40">•</span>
+				{#if model.quantization && getContextSizeDisplay()}
+					<span class="text-[#d0d8ff]/40">|</span>
 				{/if}
-				<span>{getContextSize()}</span>
+				<span>{getContextSizeDisplay()}</span>
 			</div>
 		</div>
 
