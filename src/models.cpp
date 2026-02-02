@@ -19,10 +19,12 @@ const std::string ModelManager::DEFAULT_MODEL_NAME = "qwen3:0.6b";
 
 ModelManager::ModelManager() : progress_callback_(nullptr) {
     std::string home = tools::FileOps::get_home_dir();
-    models_dir_ = tools::FileOps::join_path(home, ".delta-cli");
-    models_dir_ = tools::FileOps::join_path(models_dir_, "models");
+    std::string base_dir = tools::FileOps::join_path(home, ".delta-cli");
+    models_dir_ = tools::FileOps::join_path(base_dir, "models");
+    context_overrides_path_ = tools::FileOps::join_path(base_dir, "model_context_overrides.json");
     ensure_models_dir();
     init_model_registry();
+    load_context_overrides();
 }
 
 ModelManager::~ModelManager() {
@@ -1453,19 +1455,76 @@ bool ModelManager::is_in_registry(const std::string& model_name) {
 
 int ModelManager::get_max_context_for_model(const std::string& model_name) {
     if (model_name.empty()) return 0;
+    // Resolve to registry name (colon form) for override lookup
+    std::string key = model_name;
     if (is_in_registry(model_name)) {
-        int ctx = get_registry_entry(model_name).max_context;
-        return ctx > 0 ? ctx : 0;
-    }
-    size_t last_dash = model_name.find_last_of('-');
-    if (last_dash != std::string::npos) {
-        std::string colon_name = model_name.substr(0, last_dash) + ":" + model_name.substr(last_dash + 1);
-        if (is_in_registry(colon_name)) {
-            int ctx = get_registry_entry(colon_name).max_context;
-            return ctx > 0 ? ctx : 0;
+        key = model_name;
+    } else {
+        size_t last_dash = model_name.find_last_of('-');
+        if (last_dash != std::string::npos) {
+            std::string colon_name = model_name.substr(0, last_dash) + ":" + model_name.substr(last_dash + 1);
+            if (is_in_registry(colon_name)) key = colon_name;
         }
     }
+    // User override takes precedence
+    auto it = context_overrides_.find(key);
+    if (it != context_overrides_.end() && it->second > 0)
+        return it->second;
+    // Fall back to registry
+    if (is_in_registry(key)) {
+        int ctx = get_registry_entry(key).max_context;
+        return ctx > 0 ? ctx : 0;
+    }
     return 0;
+}
+
+void ModelManager::set_max_context_override(const std::string& model_name, int ctx) {
+    if (model_name.empty()) return;
+    std::string key = model_name;
+    if (is_in_registry(model_name)) {
+        key = model_name;
+    } else {
+        size_t last_dash = model_name.find_last_of('-');
+        if (last_dash != std::string::npos) {
+            std::string colon_name = model_name.substr(0, last_dash) + ":" + model_name.substr(last_dash + 1);
+            if (is_in_registry(colon_name)) key = colon_name;
+        }
+    }
+    if (ctx <= 0) {
+        context_overrides_.erase(key);
+    } else {
+        context_overrides_[key] = ctx;
+    }
+    save_context_overrides();
+}
+
+void ModelManager::load_context_overrides() {
+    context_overrides_.clear();
+    std::ifstream f(context_overrides_path_);
+    if (!f) return;
+    std::string line;
+    while (std::getline(f, line)) {
+        size_t tab = line.find('\t');
+        if (tab == std::string::npos) continue;
+        std::string name = line.substr(0, tab);
+        int ctx = 0;
+        try { ctx = std::stoi(line.substr(tab + 1)); } catch (...) { continue; }
+        if (!name.empty() && ctx > 0)
+            context_overrides_[name] = ctx;
+    }
+}
+
+void ModelManager::save_context_overrides() {
+    size_t pos = context_overrides_path_.find_last_of("/\\");
+    if (pos != std::string::npos) {
+        std::string base_dir = context_overrides_path_.substr(0, pos);
+        if (!base_dir.empty() && !tools::FileOps::dir_exists(base_dir))
+            tools::FileOps::create_dir(base_dir);
+    }
+    std::ofstream f(context_overrides_path_);
+    if (!f) return;
+    for (const auto& p : context_overrides_)
+        f << p.first << '\t' << p.second << '\n';
 }
 
 void ModelManager::set_progress_callback(ProgressCallback callback) {

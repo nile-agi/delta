@@ -368,6 +368,33 @@ export function getSmallestCompatibleModel(availableRAMGB: number): ModelCatalog
 }
 
 /**
+ * Standard context length options (tokens) for UI radio buttons.
+ * LlamaBarn-style: 4k, 8k, 16k, 32k (cap by model max if provided).
+ */
+export const CONTEXT_OPTIONS = [4096, 8192, 16384, 32768] as const;
+
+export function getContextOptionsForModel(maxContextTokens?: number): number[] {
+	if (maxContextTokens == null || maxContextTokens <= 0) {
+		return [...CONTEXT_OPTIONS];
+	}
+	return CONTEXT_OPTIONS.filter((ctx) => ctx <= maxContextTokens);
+}
+
+/**
+ * Estimate memory (GB) for a model at a given context length.
+ * Formula: base_mem = file_size_gb * 1.24 (model + overhead); KV cache grows with ctx.
+ * mem_gb = base + log2(ctx/4096) * 0.08 * size_gb (matches LlamaBarn-style small increases).
+ * Rounded to 1 decimal. Style: dark-theme equivalent of LlamaBarn "Xk ctx on Y.Y GB mem".
+ */
+export function estimateMemoryGB(fileSizeGB: number, contextTokens: number): number {
+	const base = fileSizeGB * 1.24;
+	if (contextTokens <= 4096) return Math.round(base * 10) / 10;
+	const log2Factor = Math.log2(contextTokens / 4096);
+	const kvExtra = log2Factor * 0.08 * fileSizeGB;
+	return Math.round((base + kvExtra) * 10) / 10;
+}
+
+/**
  * Get quantization suggestions for a model if base exceeds RAM
  */
 export function getQuantizationSuggestions(

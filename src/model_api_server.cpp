@@ -431,6 +431,7 @@ private:
             try {
                 json body = json::parse(req.body);
                 std::string model_name = body.value("model", "");
+                int ctx_override = body.value("ctx_size", 0);
                 
                 if (model_name.empty()) {
                     json error = {{"error", {{"code", 400}, {"message", "Model name is required"}}}};
@@ -454,7 +455,11 @@ private:
                     return;
                 }
                 
-                // Get model's max context from registry (0 = llama-server uses model default) and alias
+                // Optional context size from UI: persist override then get effective ctx for this load
+                if (ctx_override > 0) {
+                    model_mgr_.set_max_context_override(model_name, ctx_override);
+                }
+                // Get model's max context (user override, else registry, 0 = model default)
                 int ctx_size = model_mgr_.get_max_context_for_model(model_name);
                 std::string model_alias = model_name;
                 if (model_mgr_.is_in_registry(model_name)) {

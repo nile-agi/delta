@@ -196,15 +196,20 @@ export class ModelsService {
 	}
 
 	/**
-	 * Switch to a model (returns model path, but server restart is required)
+	 * Switch to a model (returns model path, but server restart is required).
+	 * Optional ctxSize: user's context length choice; persisted on backend and used for -c when loading.
 	 */
-	static async use(modelName: string): Promise<ModelOperationResponse> {
+	static async use(modelName: string, ctxSize?: number): Promise<ModelOperationResponse> {
+		const body: { model: string; ctx_size?: number } = { model: modelName };
+		if (ctxSize != null && ctxSize > 0) {
+			body.ctx_size = ctxSize;
+		}
 		const response = await fetch(`${getModelApiBaseUrl()}/api/models/use`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json'
 			},
-			body: JSON.stringify({ model: modelName })
+			body: JSON.stringify(body)
 		});
 
 		if (!response.ok) {

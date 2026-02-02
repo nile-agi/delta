@@ -175,31 +175,56 @@
 		}
 	}
 
+	/** Get persisted context size for a model (from localStorage, used when selecting model). */
+	function getStoredContextForModel(modelName: string): number | undefined {
+		if (typeof window === 'undefined') return undefined;
+		const raw = localStorage.getItem('delta_model_ctx_' + modelName);
+		if (!raw) return undefined;
+		const n = parseInt(raw, 10);
+		return Number.isNaN(n) ? undefined : n;
+	}
+
 	async function handleModelSelect(modelName: string) {
+		const ctxSize = getStoredContextForModel(modelName);
 		// Find the model in the models store by name
 		const availableModels = modelOptions();
 		const modelOption = availableModels.find(
 			(m) => m.model === modelName || m.name === modelName || m.id === modelName
 		);
-		
+
 		if (modelOption) {
 			try {
 				await selectModel(modelOption.id);
+				// Apply context override on backend so next load uses it
+				if (ctxSize != null && ctxSize > 0) {
+					await ModelsService.use(modelName, ctxSize);
+				}
 				toast.success(`Selected model: ${modelOption.name}`);
 			} catch (error) {
 				console.error('Failed to select model:', error);
 				toast.error(`Failed to select model: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		} else {
-			// Model might not be in the store yet, try to use it directly
 			try {
-				await ModelsService.use(modelName);
+				await ModelsService.use(modelName, ctxSize);
 				toast.success(`Selected model: ${modelName}`);
-				// Refresh models list to sync with store
 				await loadInstalledModels();
 			} catch (error) {
 				console.error('Failed to select model:', error);
 				toast.error(`Failed to select model: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		}
+	}
+
+	async function handleContextChange(modelName: string, ctx: number) {
+		// If this model is currently selected, update backend so server uses new context
+		if (selectedModelName === modelName) {
+			try {
+				await ModelsService.use(modelName, ctx);
+				toast.success(`Context set to ${ctx >= 1000 ? ctx / 1000 + 'k' : ctx} for ${modelName}`);
+			} catch (error) {
+				console.error('Failed to set context:', error);
+				toast.error(`Failed to set context: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
 	}
@@ -348,8 +373,10 @@
 						{model}
 						onRemove={handleRemove}
 						onSelect={handleModelSelect}
+						onContextChange={handleContextChange}
 						removing={removingModel === model.name}
 						selected={selectedModelName === model.name}
+						systemRAMGB={systemRAMGB}
 					/>
 				{/each}
 			</div>
