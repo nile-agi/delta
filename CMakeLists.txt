@@ -250,6 +250,8 @@ endif()
 
 # Build Web UI from assets/ directory
 # This builds the custom Delta web UI (SvelteKit) and outputs to public/
+# Option: -DFORCE_BUILD_WEBUI=ON to always rebuild (use after editing assets/ so install uses your changes)
+option(FORCE_BUILD_WEBUI "Always run npm run build for web UI (ignores timestamp)" OFF)
 message(STATUS "")
 message(STATUS "Building Web UI from assets/...")
 
@@ -263,11 +265,14 @@ if(NPM_EXECUTABLE)
         message(STATUS "  assets/ directory found")
         
         # Check if public/index.html exists and if it's older than assets/package.json
+        # Skip timestamp check if FORCE_BUILD_WEBUI is ON (so your local changes get installed)
         set(PUBLIC_INDEX "${CMAKE_SOURCE_DIR}/public/index.html")
         set(ASSETS_PACKAGE_JSON "${CMAKE_SOURCE_DIR}/assets/package.json")
         
         set(SHOULD_BUILD_WEBUI TRUE)
-        if(EXISTS "${PUBLIC_INDEX}")
+        if(FORCE_BUILD_WEBUI)
+            message(STATUS "  FORCE_BUILD_WEBUI=ON, rebuilding web UI")
+        elseif(EXISTS "${PUBLIC_INDEX}")
             file(TIMESTAMP "${PUBLIC_INDEX}" INDEX_TIME)
             file(TIMESTAMP "${ASSETS_PACKAGE_JSON}" PACKAGE_TIME)
             if(INDEX_TIME GREATER_EQUAL PACKAGE_TIME)
