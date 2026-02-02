@@ -382,15 +382,23 @@ export function getContextOptionsForModel(maxContextTokens?: number): number[] {
 
 /**
  * Estimate memory (GB) for a model at a given context length.
- * Formula: base_mem = file_size_gb * 1.24 (model + overhead); KV cache grows with ctx.
- * mem_gb = base + log2(ctx/4096) * 0.08 * size_gb (matches LlamaBarn-style small increases).
- * Rounded to 1 decimal. Style: dark-theme equivalent of LlamaBarn "Xk ctx on Y.Y GB mem".
+ * LlamaBarn-style: "Xk ctx on Y.Y GB mem" with small increases for larger ctx.
+ *
+ * Formula:
+ * - base_mem: small models (<1 GB file) use 1.5× file size (e.g. 0.2 → 0.3 GB);
+ *   larger models use 1.24× (model + overhead, e.g. 2.5 → 3.1 GB).
+ * - KV cache: grows with context; coefficient scales by file size so small models
+ *   get ~+0.1 GB for 32k (e.g. 0.3→0.4) and larger get ~+0.6 GB (e.g. 3.1→3.7).
+ *   kvExtra = log2(ctx/4096) * k * fileSizeGB with k=0.165 for small, 0.08 for large.
+ * Rounded to 1 decimal for display.
  */
 export function estimateMemoryGB(fileSizeGB: number, contextTokens: number): number {
-	const base = fileSizeGB * 1.24;
+	const isSmall = fileSizeGB < 1;
+	const base = fileSizeGB * (isSmall ? 1.5 : 1.24);
 	if (contextTokens <= 4096) return Math.round(base * 10) / 10;
 	const log2Factor = Math.log2(contextTokens / 4096);
-	const kvExtra = log2Factor * 0.08 * fileSizeGB;
+	const kvCoeff = isSmall ? 0.165 : 0.08;
+	const kvExtra = log2Factor * kvCoeff * fileSizeGB;
 	return Math.round((base + kvExtra) * 10) / 10;
 }
 

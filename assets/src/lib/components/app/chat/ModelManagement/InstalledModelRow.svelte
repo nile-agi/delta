@@ -234,7 +234,12 @@
 		</div>
 	</div>
 
-	<!-- Context length subsection (LlamaBarn-style): only when selected. Stop propagation so clicking radios doesn't select the row. -->
+	<!--
+		Context length subsection (LlamaBarn-style): shown when this model is selected.
+		Dark-theme adaptation: #001f3f/#1a2b44 bg, #e0e0ff/#d0d8ff text, #333 radio borders,
+		#4cc9f0 accent; options grayed out with tooltip when estimated mem > system RAM.
+		Stop propagation so clicking radios does not toggle row selection.
+	-->
 	{#if selected && contextOptions.length > 0}
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
@@ -249,7 +254,7 @@
 				<Tooltip.Provider>
 					<Tooltip.Root>
 						<Tooltip.Trigger>
-							<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#1a2b44] text-[#d0d8ff]/60 hover:text-[#4cc9f0]">
+							<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#1a2b44] text-[#d0d8ff]/60 hover:text-[#4cc9f0] cursor-help" aria-label="Info">
 								<Info class="h-3.5 w-3.5" />
 							</span>
 						</Tooltip.Trigger>
@@ -259,9 +264,11 @@
 					</Tooltip.Root>
 				</Tooltip.Provider>
 			</div>
+			<!-- LlamaBarn-style: "Xk ctx on Y.Y GB mem", one decimal; gray out if mem > system RAM -->
 			<div class="flex flex-col gap-1.5">
 				{#each contextOptions as ctx}
 					{@const memGB = estimateMemoryGB(fileSizeGB, ctx)}
+					{@const memStr = (typeof memGB === 'number' && !Number.isNaN(memGB)) ? memGB.toFixed(1) : '—'}
 					{@const ctxLabel = ctx >= 1000 ? `${ctx / 1000}k` : String(ctx)}
 					{@const disabled = systemRAMGB != null && memGB > systemRAMGB}
 					{#if disabled}
@@ -277,21 +284,21 @@
 											value={ctx}
 											checked={false}
 											disabled
-											class="h-4 w-4 border-[#1a2b44] bg-[#11243a]"
+											class="context-radio h-4 w-4 border-[#333] bg-[#11243a] text-[#4cc9f0]"
 										/>
 										<span class="text-sm text-[#d0d8ff]/90">
-											{ctxLabel} ctx on <span class="font-semibold text-[#e0e0ff]">{memGB} GB mem</span>
+											{ctxLabel} ctx on <span class="font-semibold text-[#e0e0ff]">{memStr} GB mem</span>
 										</span>
 									</label>
 								</Tooltip.Trigger>
 								<Tooltip.Content>
-									<p>Requires {memGB} GB+ RAM (system: {systemRAMGB} GB)</p>
+									<p>Requires {memStr} GB+ RAM (system: {systemRAMGB} GB)</p>
 								</Tooltip.Content>
 							</Tooltip.Root>
 						</Tooltip.Provider>
 					{:else}
 						<label
-							class="flex items-center gap-2 cursor-pointer rounded px-2 py-1 hover:bg-[#11243a]/80"
+							class="flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-[#11243a]/80 transition-colors"
 						>
 							<input
 								type="radio"
@@ -299,10 +306,10 @@
 								value={ctx}
 								checked={selectedCtx === ctx}
 								onchange={() => setContext(ctx)}
-								class="h-4 w-4 border-[#1a2b44] bg-[#11243a] text-[#4cc9f0] focus:ring-[#4cc9f0]/30"
+								class="context-radio h-4 w-4 border-[#333] bg-[#11243a] text-[#4cc9f0] focus:ring-2 focus:ring-[#4cc9f0]/30 focus:ring-offset-0"
 							/>
 							<span class="text-sm text-[#d0d8ff]/90">
-								{ctxLabel} ctx on <span class="font-semibold text-[#e0e0ff]">{memGB} GB mem</span>
+								{ctxLabel} ctx on <span class="font-semibold text-[#e0e0ff]">{memStr} GB mem</span>
 							</span>
 						</label>
 					{/if}
@@ -324,5 +331,10 @@
 	.installed-model-row:focus {
 		outline: none;
 		box-shadow: 0 0 0 2px rgba(76, 201, 240, 0.3);
+	}
+
+	/* Dark-theme radios: visible border, cyan accent when selected (LlamaBarn-style adapted) */
+	.context-length-section :global(input[type="radio"]) {
+		accent-color: #4cc9f0;
 	}
 </style>
