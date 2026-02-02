@@ -32,9 +32,20 @@
 	let removingModel = $state<string | null>(null);
 	let confirmDeleteModel = $state<string | null>(null);
 	let autoDownloadAttempted = $state(false);
-	
+	/** Which installed model row is expanded (shows context length). Default first so feature is visible without clicking. */
+	let expandedModelName = $state<string | null>(null);
+
 	// Sync selected model from models store (reactive)
 	const selectedModelName = $derived(getSelectedModelName());
+
+	// Default-expand first installed model when viewing Installed tab so context length section is visible immediately
+	$effect(() => {
+		if (viewMode !== 'installed' || filteredInstalledModels.length === 0) return;
+		const first = filteredInstalledModels[0]?.name;
+		if (first && (expandedModelName === null || !filteredInstalledModels.some((m) => m.name === expandedModelName))) {
+			expandedModelName = first;
+		}
+	});
 
 	// Get installed model names as a Set for quick lookup
 	const installedModelNames = $derived(new Set(installedModels.map((m) => m.name)));
@@ -185,6 +196,7 @@
 	}
 
 	async function handleModelSelect(modelName: string) {
+		expandedModelName = modelName; // Expand this row so context length section is visible
 		const ctxSize = getStoredContextForModel(modelName);
 		// Find the model in the models store by name
 		const availableModels = modelOptions();
@@ -376,6 +388,7 @@
 						onContextChange={handleContextChange}
 						removing={removingModel === model.name}
 						selected={selectedModelName === model.name}
+						expanded={expandedModelName === model.name}
 						systemRAMGB={systemRAMGB}
 					/>
 				{/each}

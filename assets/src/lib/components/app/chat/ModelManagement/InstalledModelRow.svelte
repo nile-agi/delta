@@ -20,6 +20,8 @@
 		onContextChange?: (modelName: string, ctx: number) => void;
 		removing?: boolean;
 		selected?: boolean;
+		/** When true, show context length section (so first model can be expanded by default) */
+		expanded?: boolean;
 		systemRAMGB?: number | null;
 	}
 
@@ -30,8 +32,12 @@
 		onContextChange,
 		removing = false,
 		selected = false,
+		expanded = false,
 		systemRAMGB = null
 	}: Props = $props();
+
+	/** Show context length block when row is selected for chat OR expanded (clicked / default first) */
+	const showContextLength = $derived(selected || expanded);
 
 	/** File size in GB for memory estimation (from size_bytes or catalog). */
 	const fileSizeGB = $derived.by(() => {
@@ -127,7 +133,7 @@
 	- When selected: "Context length (i)" subsection with radio options and mem estimates
 -->
 <div
-	class="installed-model-row group flex flex-col rounded-lg transition-all duration-200 {selected
+	class="installed-model-row group flex flex-col rounded-lg transition-all duration-200 {showContextLength
 		? 'bg-[#1a2b44] border border-[#4cc9f0]/40 shadow-lg shadow-[#4cc9f0]/10'
 		: 'bg-[#11243a] border border-[#1a2b44]/50 hover:bg-[#1a2b44] hover:border-[#4cc9f0]/20'}"
 >
@@ -229,7 +235,7 @@
 		Smooth slide transition; dark theme (#1a2b44, #e0e0ff/#d0d8ff, #444 radios, #4cc9f0 accent).
 		Filter: options with mem > system RAM are grayed out; if none viable, show "No compatible context lengths".
 	-->
-	{#if selected}
+	{#if showContextLength}
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			class="context-length-wrapper overflow-hidden"

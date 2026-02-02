@@ -2,6 +2,10 @@
 
 This guide shows you how to build and install Delta CLI directly from your local project folder.
 
+> **Reinstalling and not seeing web UI changes?** (e.g. context length selection in Model Management)  
+> See **[REINSTALL.md](REINSTALL.md)** — you must reinstall using the script so the built web UI from this repo is installed:  
+> `./scripts/build-webui-and-install.sh`
+
 ## Prerequisites
 
 - **macOS**: Xcode Command Line Tools, Homebrew (for dependencies)
