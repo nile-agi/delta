@@ -162,6 +162,58 @@ cmake --build . --config Release -j
 ../build_macos/delta --version
 ```
 
+## Keeping your web UI changes after reinstall
+
+If you edit the web UI in `assets/` (e.g. Model Management, settings), those changes are only used when the **built** `public/` directory is installed with Delta. Reinstalling Delta in these ways does **not** use your local changes:
+
+- **`brew reinstall delta-cli`** – Uses the formula’s source or bottle (upstream), not your clone.
+- **Installing from a pre-built tarball** – The tarball contains whatever web UI was bundled at release time.
+
+To install Delta so it uses **your** built web UI from this repo:
+
+### Option A: Script (recommended)
+
+From the repo root (with Node.js and npm installed):
+
+```bash
+./scripts/build-webui-and-install.sh
+```
+
+This will:
+
+1. Build the web UI from `assets/` into `public/`
+2. Configure and build the C++ app in `build/`
+3. Install binaries and the web UI to `/usr/local` (or pass a prefix, e.g. `./scripts/build-webui-and-install.sh /opt/homebrew`)
+
+After this, `delta` and `delta-server` will serve the web UI from your build.
+
+### Option B: Manual steps
+
+1. **Build the web UI** (required so your changes are in `public/`):
+
+   ```bash
+   cd assets
+   npm install
+   npm run build
+   cd ..
+   ```
+
+2. **Build and install** as in Manual Installation above (create build dir, `cmake ..`, `cmake --build .`, then `sudo cmake --install .`).  
+   CMake will install the existing `public/` to `share/delta-cli/webui`.
+
+### Option C: Force CMake to rebuild the web UI
+
+If you already have a `public/` from an older build and run `cmake` again, it may skip building the web UI. To force a fresh build:
+
+```bash
+cd build_macos   # or your build dir
+cmake .. -DFORCE_BUILD_WEBUI=ON
+cmake --build . --config Release -j
+sudo cmake --install .
+```
+
+---
+
 ## Troubleshooting
 
 ### "CMake not found"

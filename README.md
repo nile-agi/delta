@@ -428,6 +428,8 @@ delta pull qwen2.5:0.5b
 
 **Note:** If Node.js/npm is not available during build, CMake will skip building the web UI and fall back to the original llama.cpp web UI (if available). The custom Delta web UI (with favicon, model name improvements, etc.) requires Node.js to build.
 
+**Reinstalling and custom web UI:** If you changed the web UI in `assets/` and then reinstall Delta (e.g. `brew reinstall delta-cli`), the app will use the **upstream** web UI, not your changes. To install Delta so it uses your built web UI, build and install from your local clone; see [INSTALL_LOCAL.md](INSTALL_LOCAL.md#keeping-your-web-ui-changes-after-reinstall) → "Keeping your web UI changes after reinstall" (e.g. run `./scripts/build-webui-and-install.sh` from the repo root).
+
 --- -->
 
 <!-- ## Uninstallation
