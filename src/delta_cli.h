@@ -157,8 +157,11 @@ public:
     // Check if model exists in registry
     bool is_in_registry(const std::string& model_name);
     
-    // Get max context size for llama-server (-c). Returns registry max_context or 0 (use model default).
+    // Get max context size for llama-server (-c). Returns user override, else registry max_context, or 0 (use model default).
     int get_max_context_for_model(const std::string& model_name);
+
+    // Set user's context size override for a model (persisted to ~/.delta-cli/model_context_overrides.json).
+    void set_max_context_override(const std::string& model_name, int ctx);
     
     // Resolve short name to full GGUF filename
     std::string resolve_model_name(const std::string& input_name);
@@ -213,6 +216,12 @@ private:
     void ensure_models_dir();
     void init_model_registry();
     std::map<std::string, ModelRegistry> model_registry_;
+
+    // Per-model context overrides (user choice from UI), persisted to file
+    std::map<std::string, int> context_overrides_;
+    std::string context_overrides_path_;
+    void load_context_overrides();
+    void save_context_overrides();
     
     // HTTP download helper using libcurl
     bool download_file(const std::string& url, 
