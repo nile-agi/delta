@@ -138,8 +138,7 @@ class ModelsStore {
 						description: modelInfo.description,
 						capabilities: [],
 						details: {
-							size: modelInfo.size_str,
-							quantization: modelInfo.quantization
+							quantization_level: modelInfo.quantization
 						},
 						meta: null
 					});

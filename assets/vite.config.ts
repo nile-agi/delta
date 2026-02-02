@@ -121,7 +121,6 @@ export default defineConfig({
 					$use-woff: false;
 					$use-ttf: false;
 				`,
-				api: 'modern-compiler',
 				silenceDeprecations: ['import', 'global-builtin', 'legacy-js-api']
 			}
 		}
