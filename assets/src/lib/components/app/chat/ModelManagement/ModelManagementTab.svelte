@@ -2,11 +2,10 @@
 	import { ModelsService, type ModelInfo } from '$lib/services/models';
 	import { modelsCatalog, getSmallestCompatibleModel } from '$lib/data/models_catalog';
 	import FamilyAccordion from './FamilyAccordion.svelte';
+	import InstalledModelRow from './InstalledModelRow.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import { Search, RefreshCw, Loader2, Download, CheckCircle2, Trash2 } from '@lucide/svelte';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
+	import { Search, RefreshCw, Loader2 } from '@lucide/svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { onMount, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -32,6 +31,7 @@
 	let removingModel = $state<string | null>(null);
 	let confirmDeleteModel = $state<string | null>(null);
 	let autoDownloadAttempted = $state(false);
+	let selectedModelName = $state<string | null>(null);
 
 	// Get installed model names as a Set for quick lookup
 	const installedModelNames = $derived(new Set(installedModels.map((m) => m.name)));
@@ -172,6 +172,12 @@
 		}
 	}
 
+	function handleModelSelect(modelName: string) {
+		selectedModelName = modelName;
+		// TODO: Integrate with model selector for chat
+		// This could call a store method to set the active model
+	}
+
 	async function autoDownloadSmallestCompatible() {
 		if (autoDownloadAttempted || systemRAMGB === null || installedModels.length > 0) {
 			return;
@@ -209,145 +215,131 @@
 	});
 </script>
 
-<div class="model-management-container space-y-6" style="background: #001F3F; color: white;">
-	<!-- Header with search and view toggle -->
-	<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-		<div class="flex items-center gap-2">
-			<Button
-				variant={viewMode === 'installed' ? 'default' : 'outline'}
-				size="sm"
-				onclick={() => {
-					viewMode = 'installed';
-					searchQuery = '';
-				}}
-			>
-				Installed ({installedModels.length})
-			</Button>
-			<Button
-				variant={viewMode === 'catalog' ? 'default' : 'outline'}
-				size="sm"
-				onclick={() => {
-					viewMode = 'catalog';
-					searchQuery = '';
-				}}
-			>
-				Catalog
-			</Button>
-		</div>
+<!-- 
+	LlamaBarn-style Model Management Panel
+	- Deep navy background (#0a1421 / #001f3f)
+	- Clean card styling with proper spacing
+	- Pill-shaped tabs
+	- Prominent system RAM display
+-->
+<div class="model-management-container">
+	<!-- Top Bar: Tabs, Search, RAM Display -->
+	<div class="flex flex-col gap-4 mb-6">
+		<!-- Tabs and Search Row -->
+		<div class="flex items-center justify-between gap-4">
+			<!-- Pill-shaped Tabs -->
+			<div class="flex items-center gap-2 bg-[#0a1421] p-1 rounded-full border border-[#1a2b44]/50">
+				<button
+					class="px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 {viewMode ===
+					'installed'
+						? 'bg-[#4cc9f0] text-white shadow-lg shadow-[#4cc9f0]/20'
+						: 'text-[#d0d8ff]/60 hover:text-[#e0e0ff]'}"
+					onclick={() => {
+						viewMode = 'installed';
+						searchQuery = '';
+					}}
+					type="button"
+				>
+					Installed ({installedModels.length})
+				</button>
+				<button
+					class="px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 {viewMode ===
+					'catalog'
+						? 'bg-[#4cc9f0] text-white shadow-lg shadow-[#4cc9f0]/20'
+						: 'text-[#d0d8ff]/60 hover:text-[#e0e0ff]'}"
+					onclick={() => {
+						viewMode = 'catalog';
+						searchQuery = '';
+					}}
+					type="button"
+				>
+					Catalog
+				</button>
+			</div>
 
-		<div class="flex items-center gap-2">
-			<div class="relative flex-1 md:flex-initial md:w-64">
-				<Search class="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+			<!-- Search Bar -->
+			<div class="relative flex-1 max-w-md">
+				<Search class="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[#d0d8ff]/50" />
 				<Input
 					type="text"
 					placeholder="Search models..."
 					bind:value={searchQuery}
-					class="pl-9 bg-background/50 border-border/30 text-foreground"
+					class="pl-9 bg-[#11243a] border-[#1a2b44] text-[#e0e0ff] placeholder:text-[#d0d8ff]/40 rounded-lg focus:border-[#4cc9f0]/50 focus:ring-1 focus:ring-[#4cc9f0]/20"
 				/>
 			</div>
-			<Button variant="outline" size="sm" onclick={loadInstalledModels} disabled={loadingInstalled}>
-				<RefreshCw class="h-4 w-4 mr-2 {loadingInstalled ? 'animate-spin' : ''}" />
-				Refresh
+
+			<!-- Refresh Button -->
+			<Button
+				variant="ghost"
+				size="sm"
+				class="text-[#d0d8ff]/60 hover:text-[#4cc9f0] hover:bg-[#1a2b44]"
+				onclick={loadInstalledModels}
+				disabled={loadingInstalled}
+			>
+				<RefreshCw class="h-4 w-4 {loadingInstalled ? 'animate-spin' : ''}" />
 			</Button>
 		</div>
-	</div>
 
-	<!-- System RAM Info -->
-	{#if systemRAMGB !== null}
-		<div class="text-sm text-muted-foreground">
-			System RAM: <span class="font-semibold text-foreground">{systemRAMGB} GB</span>
+		<!-- System RAM Display (Prominent, Right-aligned) -->
+		<div class="flex items-center justify-end">
+			{#if systemRAMGB !== null}
+				<div class="text-sm text-[#d0d8ff]/70">
+					System RAM: <span class="font-bold text-[#4cc9f0]">{systemRAMGB} GB</span>
+				</div>
+			{:else if loadingRAM}
+				<div class="flex items-center gap-2 text-sm text-[#d0d8ff]/50">
+					<Loader2 class="h-4 w-4 animate-spin" />
+					Detecting system RAM...
+				</div>
+			{/if}
 		</div>
-	{:else if loadingRAM}
-		<div class="flex items-center gap-2 text-sm text-muted-foreground">
-			<Loader2 class="h-4 w-4 animate-spin" />
-			Detecting system RAM...
-		</div>
-	{/if}
+	</div>
 
 	<!-- Installed Models View -->
 	{#if viewMode === 'installed'}
 		{#if loadingInstalled && installedModels.length === 0}
-			<div class="flex items-center justify-center py-12">
-				<Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
+			<div class="flex items-center justify-center py-16">
+				<Loader2 class="h-8 w-8 animate-spin text-[#4cc9f0]" />
 			</div>
 		{:else if filteredInstalledModels.length === 0}
-			<Card class="bg-card/30 border-border/30">
-				<CardContent class="pt-6">
-					<div class="text-center py-8">
-						<p class="text-muted-foreground mb-2">
-							{#if searchQuery}
-								No installed models match your search.
-							{:else}
-								No models installed.
-							{/if}
-						</p>
-						{#if !searchQuery}
-							<p class="text-sm text-muted-foreground">
-								Switch to the "Catalog" tab to download models.
-							</p>
-						{/if}
-					</div>
-				</CardContent>
-			</Card>
+			<div class="text-center py-16 text-[#d0d8ff]/50">
+				<p class="mb-2">
+					{#if searchQuery}
+						No installed models match your search.
+					{:else}
+						No models installed.
+					{/if}
+				</p>
+				{#if !searchQuery}
+					<p class="text-sm">Switch to the "Catalog" tab to download models.</p>
+				{/if}
+			</div>
 		{:else}
-			<div class="space-y-3">
+			<!-- Installed Models List - LlamaBarn style horizontal cards -->
+			<div class="space-y-2">
 				{#each filteredInstalledModels as model (model.name)}
-					<Card class="bg-card/50 border-border/30">
-						<CardHeader>
-							<div class="flex items-start justify-between">
-								<div class="flex-1">
-									<CardTitle class="text-base">{model.display_name}</CardTitle>
-									<CardDescription class="mt-1">{model.description}</CardDescription>
-								</div>
-								<Badge variant="secondary">
-									<CheckCircle2 class="h-3 w-3 mr-1" />
-									Installed
-								</Badge>
-							</div>
-						</CardHeader>
-						<CardContent>
-							<div class="flex items-center justify-between">
-								<div class="text-sm text-muted-foreground">
-									<span class="font-medium">Size:</span> {model.size_str} •{' '}
-									<span class="font-medium">Quantization:</span> {model.quantization}
-								</div>
-								<Button
-									variant="destructive"
-									size="sm"
-									onclick={() => (confirmDeleteModel = model.name)}
-									disabled={removingModel === model.name}
-								>
-									{#if removingModel === model.name}
-										<Loader2 class="h-4 w-4 animate-spin" />
-									{:else}
-										<Trash2 class="h-4 w-4" />
-									{/if}
-								</Button>
-							</div>
-						</CardContent>
-					</Card>
+					<InstalledModelRow
+						{model}
+						onRemove={handleRemove}
+						onSelect={handleModelSelect}
+						removing={removingModel === model.name}
+						selected={selectedModelName === model.name}
+					/>
 				{/each}
 			</div>
 		{/if}
 	<!-- Catalog View -->
 	{:else}
 		{#if systemRAMGB === null && !loadingRAM}
-			<Card class="bg-card/30 border-border/30">
-				<CardContent class="pt-6">
-					<div class="text-center py-8 text-muted-foreground">
-						<p>Unable to detect system RAM. Hardware-aware filtering disabled.</p>
-					</div>
-				</CardContent>
-			</Card>
+			<div class="text-center py-16 text-[#d0d8ff]/50">
+				<p>Unable to detect system RAM. Hardware-aware filtering disabled.</p>
+			</div>
 		{:else if filteredFamilies.length === 0}
-			<Card class="bg-card/30 border-border/30">
-				<CardContent class="pt-6">
-					<div class="text-center py-8 text-muted-foreground">
-						<p>No model families match your search.</p>
-					</div>
-				</CardContent>
-			</Card>
+			<div class="text-center py-16 text-[#d0d8ff]/50">
+				<p>No model families match your search.</p>
+			</div>
 		{:else}
+			<!-- Model Families with Accordions -->
 			<div class="space-y-4">
 				{#each filteredFamilies as family (family.id)}
 					<FamilyAccordion
@@ -392,17 +384,35 @@
 </AlertDialog.Root>
 
 <style>
+	/* 
+		LlamaBarn-inspired dark theme
+		- Deep navy background (#0a1421) for main container
+		- Slightly lighter cards (#11243a / #1a2b44)
+		- White/light gray text (#e0e0ff / #d0d8ff)
+		- Cyan accent (#4cc9f0) for highlights
+	*/
 	.model-management-container {
 		min-height: 400px;
-		padding: 1rem;
-		border-radius: 0.5rem;
+		padding: 1.5rem;
+		background: #0a1421;
+		border-radius: 0.75rem;
+		color: #e0e0ff;
 	}
 
+	/* Ensure inputs use proper colors */
 	:global(.model-management-container input) {
-		color: white;
+		color: #e0e0ff;
+		background-color: #11243a;
+		border-color: #1a2b44;
 	}
 
 	:global(.model-management-container input::placeholder) {
-		color: rgba(255, 255, 255, 0.5);
+		color: rgba(208, 216, 255, 0.4);
+	}
+
+	:global(.model-management-container input:focus) {
+		border-color: rgba(76, 201, 240, 0.5);
+		outline: none;
+		box-shadow: 0 0 0 1px rgba(76, 201, 240, 0.2);
 	}
 </style>
