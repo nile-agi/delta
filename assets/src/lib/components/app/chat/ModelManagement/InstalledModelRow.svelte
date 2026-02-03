@@ -1,8 +1,7 @@
 <script lang="ts">
-	import { Trash2, Copy, Loader2, ChevronDown } from '@lucide/svelte';
+	import { Trash2, Copy, Loader2, ChevronDown, ChevronRight, Info } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import type { ModelInfo } from '$lib/services/models';
 	import {
 		findModelByName,
@@ -10,6 +9,7 @@
 		estimateMemoryGB,
 		getFamilyIconForModelName
 	} from '$lib/data/models_catalog';
+	import { fly } from 'svelte/transition';
 
 	const STORAGE_KEY_PREFIX = 'delta_model_ctx_';
 
@@ -22,6 +22,13 @@
 	}
 
 	let { model, onRemove, onContextChange, removing = false, systemRAMGB = null }: Props = $props();
+
+	/** Same accordion pattern as Catalog: click row to expand/collapse context length section */
+	let isExpanded = $state(false);
+
+	function toggleExpanded() {
+		isExpanded = !isExpanded;
+	}
 
 	/** File size in GB for memory estimation (from size_bytes or catalog). */
 	const fileSizeGB = $derived.by(() => {
@@ -106,18 +113,26 @@
 	);
 </script>
 
-<!-- Installed model row: no model loading here (use chat model selector). Context length in dropdown; click model field to open, click again or choose option to close. -->
+<!-- Same accordion pattern as Catalog (FamilyAccordion): click row to expand/collapse; expanded section shows context length options inline with radio buttons -->
 <div
-	class="installed-model-row group flex flex-col rounded-lg border border-[#1a2b44]/50 bg-[#11243a] transition-all duration-200 hover:border-[#4cc9f0]/20 hover:bg-[#1a2b44]"
+	class="installed-model-row group flex flex-col overflow-hidden rounded-lg border border-[#1a2b44]/50 bg-[#11243a] transition-all duration-200 hover:border-[#4cc9f0]/20 hover:bg-[#1a2b44]"
 >
+	<!-- Clickable header row (like Catalog family header): toggles context length section -->
 	<div class="flex min-h-0 items-center gap-4 px-4 py-3">
-		<!-- Model field: icon + name, size, quantization (context dropdown is a separate button so it opens reliably) -->
-		<div class="flex min-w-0 flex-1 items-center gap-4">
+		<button
+			class="flex min-w-0 flex-1 cursor-pointer items-center gap-4 rounded-md border-0 bg-transparent p-0 text-left outline-none transition-colors hover:bg-transparent focus:ring-0 focus:ring-offset-0"
+			type="button"
+			onclick={toggleExpanded}
+			aria-expanded={isExpanded}
+			aria-label="{(model.display_name || model.name)} – click to {isExpanded ? 'collapse' : 'expand'} context length"
+		>
+			<!-- Family Icon -->
 			<div
 				class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#1a2b44] text-xl text-[#e0e0ff]"
 			>
 				{familyIcon}
 			</div>
+			<!-- Model name, size, ctx -->
 			<div class="min-w-0 flex-1">
 				<div class="mb-1 flex flex-wrap items-center gap-2">
 					<h4 class="truncate text-sm font-semibold text-[#e0e0ff]">
@@ -136,49 +151,20 @@
 						<span>{model.quantization}</span>
 						<span class="text-[#d0d8ff]/40">|</span>
 					{/if}
-					{#if contextOptions.length > 0}
-						<!-- Single button trigger: click to open context dropdown, click again to close; z-[100] so menu appears above Settings modal -->
-						<DropdownMenu.Root>
-							<DropdownMenu.Trigger
-								type="button"
-								class="inline-flex cursor-pointer items-center gap-1 rounded-md border-0 bg-transparent px-2 py-0.5 text-left text-xs font-medium text-[#4cc9f0] outline-none transition-colors hover:bg-[#1a2b44] hover:text-[#4cc9f0] focus:ring-0 focus:ring-offset-0"
-								aria-haspopup="listbox"
-								aria-label="Change context length"
-							>
-								{getContextSizeDisplay()}
-								<ChevronDown class="h-3.5 w-3.5 shrink-0 text-[#d0d8ff]/60" />
-							</DropdownMenu.Trigger>
-							<DropdownMenu.Content
-								class="z-[100] min-w-[12rem] border-[#1a2b44] bg-[#11243a] text-[#e0e0ff]"
-								side="bottom"
-								align="start"
-							>
-								{#each optionsWithMem as { ctx, memGB } (ctx)}
-									{@const memStr =
-										typeof memGB === 'number' && !Number.isNaN(memGB) ? memGB.toFixed(1) : '—'}
-									{@const disabled = systemRAMGB != null && memGB > systemRAMGB}
-									<DropdownMenu.Item
-										class="cursor-pointer text-sm text-[#d0d8ff] focus:bg-[#1a2b44] focus:text-[#e0e0ff] data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-										{disabled}
-										onclick={() => {
-											if (!disabled) setContext(ctx);
-										}}
-									>
-										<span class={selectedCtx === ctx ? 'font-semibold text-[#4cc9f0]' : ''}>
-											{ctx >= 1000 ? Math.round(ctx / 1000) : ctx}k ctx on {memStr} GB mem
-										</span>
-									</DropdownMenu.Item>
-								{/each}
-							</DropdownMenu.Content>
-							</DropdownMenu.Root>
-					{:else}
-						<span class="font-medium text-[#4cc9f0]">{getContextSizeDisplay()}</span>
-					{/if}
+					<span class="font-medium text-[#4cc9f0]">{getContextSizeDisplay()}</span>
 				</div>
 			</div>
-		</div>
+			<!-- Chevron: same as Catalog (right when collapsed, down when expanded) -->
+			<div class="flex flex-shrink-0">
+				{#if isExpanded}
+					<ChevronDown class="h-5 w-5 text-[#d0d8ff]/50" />
+				{:else}
+					<ChevronRight class="h-5 w-5 text-[#d0d8ff]/50" />
+				{/if}
+			</div>
+		</button>
 
-		<!-- Actions: copy, delete (outside dropdown trigger so they don't toggle context) -->
+		<!-- Actions: copy, delete (do not toggle expand) -->
 		<div class="flex flex-shrink-0 items-center gap-2">
 			<Tooltip.Provider>
 				<Tooltip.Root>
@@ -224,6 +210,71 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- Expanded content: Context length section (same inline pattern as Catalog expanded models) -->
+	{#if isExpanded && contextOptions.length > 0}
+		<div
+			class="border-t border-[#1a2b44]/50 bg-[#0a1421]"
+			transition:fly={{ y: -10, duration: 200 }}
+		>
+			<div class="space-y-3 p-4 pl-6">
+				<!-- Context length (i) header like in reference image -->
+				<div class="flex items-center gap-2 text-sm text-[#d0d8ff]/80">
+					<span>Context length</span>
+					<Tooltip.Provider>
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								<Info class="h-4 w-4 shrink-0 text-[#d0d8ff]/50" aria-label="Context length info" />
+							</Tooltip.Trigger>
+							<Tooltip.Content>
+								<p>Estimated RAM for each context size. Options above your system RAM are disabled.</p>
+							</Tooltip.Content>
+						</Tooltip.Root>
+					</Tooltip.Provider>
+				</div>
+				<!-- Radio-style options: Xk ctx on Y.Y GB mem -->
+				<div class="flex flex-col gap-2">
+					{#each optionsWithMem as { ctx, memGB } (ctx)}
+						{@const memStr =
+							typeof memGB === 'number' && !Number.isNaN(memGB) ? memGB.toFixed(1) : '—'}
+						{@const disabled = systemRAMGB != null && memGB > systemRAMGB}
+						<label
+							class="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors {disabled
+								? 'cursor-not-allowed opacity-50'
+								: 'hover:bg-[#1a2b44]/50'} {selectedCtx === ctx ? 'text-[#4cc9f0]' : 'text-[#d0d8ff]/90'}"
+						>
+							<input
+								type="radio"
+								name="ctx-{model.name}"
+								value={ctx}
+								checked={selectedCtx === ctx}
+								disabled={disabled}
+								class="h-4 w-4 border-[#1a2b44] bg-[#11243a] text-[#4cc9f0] focus:ring-[#4cc9f0]/50"
+								onchange={() => {
+									if (!disabled) setContext(ctx);
+								}}
+							/>
+							<span>
+								{ctx >= 1000 ? Math.round(ctx / 1000) : ctx}k ctx on {memStr} GB mem
+							</span>
+								{#if disabled && systemRAMGB != null}
+									<Tooltip.Provider>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<span class="text-xs text-red-400/80">Requires {memStr} GB+</span>
+											</Tooltip.Trigger>
+											<Tooltip.Content>
+												<p>Needs {memStr} GB+ RAM (system has {systemRAMGB} GB)</p>
+											</Tooltip.Content>
+										</Tooltip.Root>
+									</Tooltip.Provider>
+								{/if}
+						</label>
+					{/each}
+				</div>
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>
