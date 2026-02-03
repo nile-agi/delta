@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ChevronDown, ChevronRight } from '@lucide/svelte';
-	import type { ModelFamily, ModelCatalogModel } from '$lib/data/models_catalog';
+	import type { ModelFamily } from '$lib/data/models_catalog';
 	import ModelCard from './ModelCard.svelte';
 	import { fly } from 'svelte/transition';
 
@@ -50,27 +50,29 @@
 	- Models shown as sub-items when expanded
 -->
 <div
-	class="family-accordion rounded-lg border border-[#1a2b44]/50 overflow-hidden transition-all duration-200 hover:border-[#1a2b44]"
+	class="family-accordion overflow-hidden rounded-lg border border-[#1a2b44]/50 transition-all duration-200 hover:border-[#1a2b44]"
 >
 	<!-- Family Header - Clickable to expand/collapse -->
 	<button
-		class="w-full flex items-center justify-between px-4 py-4 hover:bg-[#1a2b44]/30 transition-colors cursor-pointer text-left"
+		class="flex w-full cursor-pointer items-center justify-between px-4 py-4 text-left transition-colors hover:bg-[#1a2b44]/30"
 		onclick={toggleExpanded}
 		type="button"
 	>
-		<div class="flex items-center gap-4 flex-1 min-w-0">
+		<div class="flex min-w-0 flex-1 items-center gap-4">
 			<!-- Family Icon -->
-			<div class="flex-shrink-0 w-10 h-10 rounded-full bg-[#1a2b44] flex items-center justify-center text-xl">
+			<div
+				class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#1a2b44] text-xl"
+			>
 				{family.icon}
 			</div>
-			
+
 			<!-- Family Name and Description -->
-			<div class="flex-1 min-w-0">
-				<h3 class="font-semibold text-base text-[#e0e0ff] mb-1">{family.name}</h3>
-				<p class="text-sm text-[#d0d8ff]/70 line-clamp-1">{family.description}</p>
+			<div class="min-w-0 flex-1">
+				<h3 class="mb-1 text-base font-semibold text-[#e0e0ff]">{family.name}</h3>
+				<p class="line-clamp-1 text-sm text-[#d0d8ff]/70">{family.description}</p>
 			</div>
 		</div>
-		
+
 		<!-- Chevron Icon -->
 		<div class="ml-4 flex-shrink-0">
 			{#if isExpanded}
@@ -87,7 +89,7 @@
 			class="border-t border-[#1a2b44]/50 bg-[#0a1421]"
 			transition:fly={{ y: -10, duration: 200 }}
 		>
-			<div class="p-4 space-y-3">
+			<div class="space-y-3 p-4">
 				{#each family.models as model (model.name)}
 					<ModelCard
 						{model}

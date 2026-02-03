@@ -1,6 +1,6 @@
 /**
  * Model Catalog - Hardware-aware model catalog for Delta
- * 
+ *
  * This catalog organizes models into families with descriptions, download URLs,
  * hardware requirements, and metadata. Models are grouped by family for easy
  * browsing and hardware-aware filtering.
@@ -40,7 +40,8 @@ export const modelsCatalog: ModelFamily[] = [
 	{
 		id: 'ministral-3',
 		name: 'Ministral 3',
-		description: "Mistral AI's compact edge models with vision capabilities. Offers best cost-to-performance ratio for on-device deployment in 3B, 8B, 14B sizes.",
+		description:
+			"Mistral AI's compact edge models with vision capabilities. Offers best cost-to-performance ratio for on-device deployment in 3B, 8B, 14B sizes.",
 		icon: 'M',
 		models: [
 			{
@@ -75,7 +76,8 @@ export const modelsCatalog: ModelFamily[] = [
 	{
 		id: 'qwen3-vl',
 		name: 'Qwen3 VL',
-		description: "Alibaba's vision-language model for understanding text, images, and video. Features OCR in 32 languages, GUI agents, and spatial reasoning.",
+		description:
+			"Alibaba's vision-language model for understanding text, images, and video. Features OCR in 32 languages, GUI agents, and spatial reasoning.",
 		icon: '∇',
 		models: [
 			{
@@ -119,7 +121,8 @@ export const modelsCatalog: ModelFamily[] = [
 	{
 		id: 'gemma-3',
 		name: 'Gemma 3',
-		description: "Google's multimodal models built from Gemini technology. Supports 140+ languages, vision, and text tasks with up to 128K context for edge to cloud deployment.",
+		description:
+			"Google's multimodal models built from Gemini technology. Supports 140+ languages, vision, and text tasks with up to 128K context for edge to cloud deployment.",
 		icon: '◇',
 		models: [
 			{
@@ -172,7 +175,8 @@ export const modelsCatalog: ModelFamily[] = [
 	{
 		id: 'qwen3',
 		name: 'Qwen3',
-		description: "Alibaba's hybrid reasoning models with thinking/non-thinking modes. Excels at coding, math, and multilingual tasks across 119 languages.",
+		description:
+			"Alibaba's hybrid reasoning models with thinking/non-thinking modes. Excels at coding, math, and multilingual tasks across 119 languages.",
 		icon: '∇',
 		models: [
 			{
@@ -234,7 +238,8 @@ export const modelsCatalog: ModelFamily[] = [
 	{
 		id: 'glm-4.7',
 		name: 'GLM 4.7',
-		description: "Zhipu AI's agentic reasoning and coding models. Built for software engineering, browser automation, and multi-turn tool use.",
+		description:
+			"Zhipu AI's agentic reasoning and coding models. Built for software engineering, browser automation, and multi-turn tool use.",
 		icon: 'Z',
 		models: [
 			{
@@ -251,7 +256,8 @@ export const modelsCatalog: ModelFamily[] = [
 	{
 		id: 'devstral-2',
 		name: 'Devstral 2',
-		description: "Mistral AI's agentic coding models for software engineering tasks. Excels at exploring codebases, multi-file editing, and powering code agents.",
+		description:
+			"Mistral AI's agentic coding models for software engineering tasks. Excels at exploring codebases, multi-file editing, and powering code agents.",
 		icon: 'D',
 		models: [
 			{
@@ -277,7 +283,8 @@ export const modelsCatalog: ModelFamily[] = [
 	{
 		id: 'nemotron-nano-3',
 		name: 'Nemotron Nano 3',
-		description: "NVIDIA's efficient hybrid MoE model for agentic AI. Built for reasoning, coding, and tool use with 1M token context and 4x faster throughput.",
+		description:
+			"NVIDIA's efficient hybrid MoE model for agentic AI. Built for reasoning, coding, and tool use with 1M token context and 4x faster throughput.",
 		icon: 'N',
 		models: [
 			{
@@ -294,7 +301,8 @@ export const modelsCatalog: ModelFamily[] = [
 	{
 		id: 'gpt-oss',
 		name: 'GPT-OSS',
-		description: "OpenAI's first open-weight models since GPT-2. Built for reasoning, agentic tasks, and developer use with function calling and tool use capabilities.",
+		description:
+			"OpenAI's first open-weight models since GPT-2. Built for reasoning, agentic tasks, and developer use with function calling and tool use capabilities.",
 		icon: 'G',
 		models: [
 			{
@@ -320,7 +328,8 @@ export const modelsCatalog: ModelFamily[] = [
 	{
 		id: 'qwen3-coder',
 		name: 'Qwen3 Coder',
-		description: "Alibaba's specialized coding model for agentic software engineering. Optimized for function calling, tool use, and repository-scale reasoning.",
+		description:
+			"Alibaba's specialized coding model for agentic software engineering. Optimized for function calling, tool use, and repository-scale reasoning.",
 		icon: '∇',
 		models: [
 			{
@@ -393,11 +402,11 @@ export function getSmallestCompatibleModel(availableRAMGB: number): ModelCatalog
 	const compatibleModels = getAllModels().filter(
 		(model) => model.required_ram_gb <= availableRAMGB
 	);
-	
+
 	if (compatibleModels.length === 0) {
 		return null;
 	}
-	
+
 	// Sort by file size (smallest first)
 	compatibleModels.sort((a, b) => a.file_size_gb - b.file_size_gb);
 	return compatibleModels[0];
@@ -450,10 +459,10 @@ export function getQuantizationSuggestions(
 	if (model.required_ram_gb <= availableRAMGB) {
 		return [];
 	}
-	
+
 	// Suggest Q4 and Q5 variants if base model is too large
 	const suggestions: ModelCatalogModel[] = [];
-	
+
 	// Q4 variant (smaller)
 	const q4Model: ModelCatalogModel = {
 		...model,
@@ -463,11 +472,11 @@ export function getQuantizationSuggestions(
 		required_ram_gb: calculateRequiredRAM(model.file_size_gb * 0.6),
 		quantization: 'Q4_K_M'
 	};
-	
+
 	if (q4Model.required_ram_gb <= availableRAMGB) {
 		suggestions.push(q4Model);
 	}
-	
+
 	// Q5 variant (medium)
 	const q5Model: ModelCatalogModel = {
 		...model,
@@ -477,10 +486,10 @@ export function getQuantizationSuggestions(
 		required_ram_gb: calculateRequiredRAM(model.file_size_gb * 0.7),
 		quantization: 'Q5_K_M'
 	};
-	
+
 	if (q5Model.required_ram_gb <= availableRAMGB) {
 		suggestions.push(q5Model);
 	}
-	
+
 	return suggestions;
 }

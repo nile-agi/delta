@@ -257,15 +257,13 @@
 					key: 'showToolCallLabels',
 					label: 'Show tool call labels',
 					type: 'checkbox',
-					help:
-						'Display tool call labels and payloads from Harmony-compatible delta.tool_calls data below assistant messages.'
+					help: 'Display tool call labels and payloads from Harmony-compatible delta.tool_calls data below assistant messages.'
 				},
 				{
 					key: 'disableReasoningFormat',
 					label: 'Show raw LLM output',
 					type: 'checkbox',
-					help:
-						'Show raw LLM output without backend parsing and frontend Markdown rendering to inspect streaming across different models.'
+					help: 'Show raw LLM output without backend parsing and frontend Markdown rendering to inspect streaming across different models.'
 				},
 				{
 					key: 'custom',
@@ -520,8 +518,8 @@
 						{:else if currentSection.title === 'Model Management'}
 							<div class="space-y-6">
 								<p class="text-sm text-muted-foreground">
-									Manage your installed models and download new ones. Use the model selector in the chat
-									input to choose models in the chat interface.
+									Manage your installed models and download new ones. Use the model selector in the
+									chat input to choose models in the chat interface.
 								</p>
 								<div class="model-management-container" style="min-height: 200px;">
 									<ModelManagementTab />

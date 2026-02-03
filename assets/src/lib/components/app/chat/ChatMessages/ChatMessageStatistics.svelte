@@ -75,8 +75,7 @@
 				type="button"
 				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
 				title="Copy prompt processing speed"
-				onclick={() =>
-					copyStat(`${promptSpeed.toFixed(2)} tokens/s`, 'Prompt processing speed')}
+				onclick={() => copyStat(`${promptSpeed.toFixed(2)} tokens/s`, 'Prompt processing speed')}
 			>
 				<Gauge class="h-3 w-3" />
 				<span>{promptSpeed.toFixed(2)} tokens/s</span>

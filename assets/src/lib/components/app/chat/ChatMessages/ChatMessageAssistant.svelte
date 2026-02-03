@@ -1,8 +1,5 @@
 <script lang="ts">
-	import {
-		ChatMessageThinkingBlock,
-		MarkdownContent
-	} from '$lib/components/app';
+	import { ChatMessageThinkingBlock, MarkdownContent } from '$lib/components/app';
 	import { useProcessingState } from '$lib/hooks/use-processing-state.svelte';
 	import { isLoading } from '$lib/stores/chat.svelte';
 	import { fade } from 'svelte/transition';
@@ -15,11 +12,7 @@
 	import ChatMessageStatistics from './ChatMessageStatistics.svelte';
 	import Label from '$lib/components/ui/label/label.svelte';
 	import { config } from '$lib/stores/settings.svelte';
-	import {
-		modelOptions,
-		selectedModelId,
-		selectModel
-	} from '$lib/stores/models.svelte';
+	import { modelOptions, selectedModelId, selectModel } from '$lib/stores/models.svelte';
 	import type { DatabaseMessageToolCall } from '$lib/types/database';
 	import { copyToClipboard } from '$lib/utils/copy';
 	import autoResizeTextarea from '$lib/utils/autoresize-textarea';
@@ -133,7 +126,9 @@
 			}
 		}
 		const copyValue = JSON.stringify(
-			Object.keys(payload).length > 0 ? payload : { name: toolCall.name, arguments: toolCall.arguments },
+			Object.keys(payload).length > 0
+				? payload
+				: { name: toolCall.name, arguments: toolCall.arguments },
 			null,
 			2
 		);
@@ -220,12 +215,12 @@
 		</div>
 	{/if}
 
-	<div class="info my-6 grid gap-4 tabular-nums text-xs text-muted-foreground">
+	<div class="info my-6 grid gap-4 text-xs text-muted-foreground tabular-nums">
 		{#if message.role === 'assistant'}
 			<div class="inline-flex flex-wrap items-start gap-2">
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger
-						class="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2.5 py-1.5 font-medium text-foreground hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-ring"
+						class="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2.5 py-1.5 font-medium text-foreground hover:bg-muted/50 focus:ring-2 focus:ring-ring focus:outline-none"
 					>
 						<Box class="h-3.5 w-3.5 shrink-0" />
 						<span class="max-w-[180px] truncate">{getModelDisplayName()}</span>

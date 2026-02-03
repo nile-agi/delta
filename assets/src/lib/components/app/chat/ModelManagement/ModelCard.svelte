@@ -23,6 +23,7 @@
 		} | null;
 	}
 
+	/* eslint-disable @typescript-eslint/no-unused-vars -- onRemove, removing: parent passes for API consistency; remove lives in InstalledModelRow */
 	let {
 		model,
 		systemRAMGB,
@@ -30,9 +31,10 @@
 		onDownload,
 		onRemove,
 		downloading = false,
-		removing = false,
+		removing,
 		downloadProgress
 	}: Props = $props();
+	/* eslint-enable @typescript-eslint/no-unused-vars */
 
 	const isCompatible = $derived(model.required_ram_gb <= systemRAMGB);
 	const ramMismatch = $derived(systemRAMGB < model.required_ram_gb);
@@ -65,25 +67,27 @@
 	- Hover: subtle lighten + border glow
 -->
 <div
-	class="model-card group flex items-center gap-4 px-4 py-3 rounded-lg border transition-all duration-200 {isCompatible
-		? 'bg-[#11243a] border-[#1a2b44]/50 hover:bg-[#1a2b44] hover:border-[#4cc9f0]/20'
-		: 'bg-[#0a1421] border-[#1a2b44]/30 opacity-60'}"
+	class="model-card group flex items-center gap-4 rounded-lg border px-4 py-3 transition-all duration-200 {isCompatible
+		? 'border-[#1a2b44]/50 bg-[#11243a] hover:border-[#4cc9f0]/20 hover:bg-[#1a2b44]'
+		: 'border-[#1a2b44]/30 bg-[#0a1421] opacity-60'}"
 >
 	<!-- Model Icon (if available) -->
 	{#if model.icon}
-		<div class="flex-shrink-0 w-8 h-8 rounded-full bg-[#1a2b44] flex items-center justify-center text-lg">
+		<div
+			class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#1a2b44] text-lg"
+		>
 			{model.icon}
 		</div>
 	{/if}
 
 	<!-- Model Info -->
-	<div class="flex-1 min-w-0">
-		<div class="flex items-center gap-2 mb-1">
-			<h4 class="font-semibold text-sm {isCompatible ? 'text-[#e0e0ff]' : 'text-[#d0d8ff]/50'}">
+	<div class="min-w-0 flex-1">
+		<div class="mb-1 flex items-center gap-2">
+			<h4 class="text-sm font-semibold {isCompatible ? 'text-[#e0e0ff]' : 'text-[#d0d8ff]/50'}">
 				{model.display_name}
 			</h4>
 			{#if isInstalled}
-				<span class="text-xs px-2 py-0.5 rounded bg-[#4cc9f0]/20 text-[#4cc9f0]">Installed</span>
+				<span class="rounded bg-[#4cc9f0]/20 px-2 py-0.5 text-xs text-[#4cc9f0]">Installed</span>
 			{/if}
 		</div>
 
@@ -101,7 +105,7 @@
 			<Tooltip.Provider>
 				<Tooltip.Root>
 					<Tooltip.Trigger>
-						<div class="text-xs text-red-400/80 cursor-help inline-flex items-center gap-1">
+						<div class="inline-flex cursor-help items-center gap-1 text-xs text-red-400/80">
 							<AlertCircle class="h-3 w-3" />
 							<span>Requires Mac with {model.required_ram_gb} GB+ of memory</span>
 						</div>
@@ -112,8 +116,8 @@
 							<p>Your system has {systemRAMGB} GB available.</p>
 							{#if quantizationSuggestions.length > 0}
 								<p class="mt-2 font-medium">Consider these smaller variants:</p>
-								<ul class="list-disc list-inside text-xs">
-									{#each quantizationSuggestions as suggestion}
+								<ul class="list-inside list-disc text-xs">
+									{#each quantizationSuggestions as suggestion (suggestion.name)}
 										<li>{suggestion.display_name}</li>
 									{/each}
 								</ul>
@@ -130,14 +134,13 @@
 				<div class="flex items-center justify-between text-xs text-[#d0d8ff]/70">
 					<span class="font-medium">Downloading: {downloadProgress.progress.toFixed(1)}%</span>
 					<span>
-						{(downloadProgress.current_bytes / (1024 * 1024)).toFixed(1)} MB /{' '}
-						{(downloadProgress.total_bytes / (1024 * 1024)).toFixed(1)} MB
+						{(downloadProgress.current_bytes / (1024 * 1024)).toFixed(1)} MB / {(downloadProgress.total_bytes / (1024 * 1024)).toFixed(1)} MB
 					</span>
 				</div>
-				<div class="w-full bg-[#0a1421] rounded-full h-2 overflow-hidden">
+				<div class="h-2 w-full overflow-hidden rounded-full bg-[#0a1421]">
 					<div
-						class="h-full bg-[#4cc9f0] transition-all duration-300 ease-out rounded-full"
-						style="width: {Math.max(0, Math.min(100, downloadProgress.progress))}%"
+						class="h-full rounded-full bg-[#4cc9f0] transition-all duration-300 ease-out"
+						style="width: {Math.max(0, Math.min(100, downloadProgress.progress))}%;"
 					></div>
 				</div>
 				{#if downloadProgress.failed && downloadProgress.error_message}
@@ -148,7 +151,7 @@
 	</div>
 
 	<!-- Action Button -->
-	<div class="flex items-center gap-2 flex-shrink-0">
+	<div class="flex flex-shrink-0 items-center gap-2">
 		{#if isInstalled}
 			<!-- Installed models don't show install button in catalog -->
 		{:else if isCompatible}
@@ -159,15 +162,15 @@
 							<Button
 								variant="default"
 								size="sm"
-								class="bg-[#4cc9f0] hover:bg-[#00b4d8] text-white border-0 shadow-lg shadow-[#4cc9f0]/20"
+								class="border-0 bg-[#4cc9f0] text-white shadow-lg shadow-[#4cc9f0]/20 hover:bg-[#00b4d8]"
 								onclick={() => onDownload(model.name)}
 								disabled={downloading}
 							>
 								{#if downloading}
-									<Loader2 class="h-4 w-4 mr-2 animate-spin" />
+									<Loader2 class="mr-2 h-4 w-4 animate-spin" />
 									Downloading...
 								{:else}
-									<Download class="h-4 w-4 mr-2" />
+									<Download class="mr-2 h-4 w-4" />
 									Install
 								{/if}
 							</Button>
@@ -185,10 +188,10 @@
 						<Button
 							variant="outline"
 							size="sm"
-							class="border-[#1a2b44] text-[#d0d8ff]/40 cursor-not-allowed"
+							class="cursor-not-allowed border-[#1a2b44] text-[#d0d8ff]/40"
 							disabled
 						>
-							<AlertCircle class="h-4 w-4 mr-2" />
+							<AlertCircle class="mr-2 h-4 w-4" />
 							Incompatible
 						</Button>
 					</Tooltip.Trigger>

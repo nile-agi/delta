@@ -1,8 +1,5 @@
 import { config } from '$lib/stores/settings.svelte';
-import {
-	selectedModelName,
-	selectedModelOption
-} from '$lib/stores/models.svelte';
+import { selectedModelName, selectedModelOption } from '$lib/stores/models.svelte';
 import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
 import { slotsService } from './slots';
 /**
@@ -129,8 +126,7 @@ export class ChatService {
 		// Use the selected model's backend id so the server routes to the correct model (not gemma3-270m).
 		// Prefer option.model (canonical backend id from /api/models/list) so we never send display name.
 		const selectedOption = selectedModelOption();
-		const activeModel =
-			(selectedOption?.model ?? selectedModelName()) ?? null;
+		const activeModel = selectedOption?.model ?? selectedModelName() ?? null;
 		if (activeModel) {
 			requestBody.model = activeModel;
 		}

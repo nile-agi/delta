@@ -335,7 +335,11 @@
 					{selectedOption?.name || 'Select model'}
 				</span>
 				{#if (selectedOption || activeId) && !updating}
-					<span class="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500 dark:bg-emerald-400" aria-hidden="true" title="Model loaded"></span>
+					<span
+						class="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500 dark:bg-emerald-400"
+						aria-hidden="true"
+						title="Model loaded"
+					></span>
 				{/if}
 				{#if updating}
 					<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
@@ -368,7 +372,7 @@
 							<Search class="absolute left-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
 							<input
 								type="text"
-								class="h-9 w-full rounded-md border bg-background py-1.5 pl-8 pr-8 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+								class="h-9 w-full rounded-md border bg-background py-1.5 pr-8 pl-8 text-sm placeholder:text-muted-foreground focus:ring-2 focus:ring-ring focus:outline-none"
 								placeholder="Search models..."
 								bind:value={searchQuery}
 								onkeydown={(e) => e.stopPropagation()}
@@ -424,12 +428,17 @@
 									{/if}
 								</button>
 								{#if isSelected && !updating}
-									<span class="flex h-8 w-8 shrink-0 items-center justify-center" aria-hidden="true" title="Loaded">
-										<span class="h-2.5 w-2.5 rounded-full bg-emerald-500 dark:bg-emerald-400"></span>
+									<span
+										class="flex h-8 w-8 shrink-0 items-center justify-center"
+										aria-hidden="true"
+										title="Loaded"
+									>
+										<span class="h-2.5 w-2.5 rounded-full bg-emerald-500 dark:bg-emerald-400"
+										></span>
 									</span>
 									<button
 										type="button"
-										class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-destructive hover:bg-destructive/15 focus:outline-none focus:ring-2 focus:ring-ring"
+										class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-destructive hover:bg-destructive/15 focus:ring-2 focus:ring-ring focus:outline-none"
 										title="Unload model"
 										aria-label="Unload model"
 										onclick={handleUnloadModel}
@@ -437,18 +446,27 @@
 										<Power class="h-4 w-4" />
 									</button>
 								{:else if isLoadingThis}
-									<span class="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground" title="Loading model...">
+									<span
+										class="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground"
+										title="Loading model..."
+									>
 										<Loader2 class="h-4 w-4 animate-spin" />
 									</span>
 								{:else}
-									<span class="flex h-8 w-8 shrink-0 items-center justify-center" aria-hidden="true" title="Available">
+									<span
+										class="flex h-8 w-8 shrink-0 items-center justify-center"
+										aria-hidden="true"
+										title="Available"
+									>
 										<span class="h-2 w-2 rounded-full bg-muted-foreground/50"></span>
 									</span>
 								{/if}
 							</div>
 						{/each}
 						{#if filteredOptions.length === 0}
-							<p class="px-3 py-4 text-center text-sm text-muted-foreground">No models match your search.</p>
+							<p class="px-3 py-4 text-center text-sm text-muted-foreground">
+								No models match your search.
+							</p>
 						{/if}
 					</div>
 				</div>
