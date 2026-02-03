@@ -111,98 +111,72 @@
 	class="installed-model-row group flex flex-col rounded-lg border border-[#1a2b44]/50 bg-[#11243a] transition-all duration-200 hover:border-[#4cc9f0]/20 hover:bg-[#1a2b44]"
 >
 	<div class="flex min-h-0 items-center gap-4 px-4 py-3">
-		{#if contextOptions.length > 0}
-			<!-- Whole model field (icon + info) toggles context dropdown: click to open, click again to close -->
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger
-					class="flex min-w-0 flex-1 cursor-pointer items-center gap-4 rounded-md border-0 bg-transparent p-0 text-left outline-none focus:ring-0"
-					aria-haspopup="listbox"
-					aria-label="Model context length (click to change)"
-				>
-					<!-- Family Icon -->
-					<div
-						class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#1a2b44] text-xl text-[#e0e0ff]"
-					>
-						{familyIcon}
-					</div>
-					<!-- Model Info: name, tags, size | quantization | ctx -->
-					<div class="min-w-0 flex-1">
-						<div class="mb-1 flex flex-wrap items-center gap-2">
-							<h4 class="truncate text-sm font-semibold text-[#e0e0ff]">
-								{model.display_name || model.name}
-							</h4>
-							{#each modelTags as tag (tag)}
-								<span class="text-xs font-normal text-[#d0d8ff]/70" aria-hidden="true">{tag}</span>
-							{/each}
-						</div>
-						<div class="flex flex-wrap items-center gap-2 text-xs text-[#d0d8ff]/70">
-							{#if model.size_str}
-								<span>{model.size_str}</span>
-								<span class="text-[#d0d8ff]/40">|</span>
-							{/if}
-							{#if model.quantization}
-								<span>{model.quantization}</span>
-								<span class="text-[#d0d8ff]/40">|</span>
-							{/if}
-							<span class="font-medium text-[#4cc9f0]">{getContextSizeDisplay()}</span>
-							<ChevronDown class="h-3.5 w-3.5 text-[#d0d8ff]/60" />
-						</div>
-					</div>
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content
-					class="min-w-[12rem] border-[#1a2b44] bg-[#11243a] text-[#e0e0ff]"
-					side="bottom"
-					align="start"
-				>
-					{#each optionsWithMem as { ctx, memGB } (ctx)}
-						{@const memStr =
-							typeof memGB === 'number' && !Number.isNaN(memGB) ? memGB.toFixed(1) : '—'}
-						{@const disabled = systemRAMGB != null && memGB > systemRAMGB}
-						<DropdownMenu.Item
-							class="cursor-pointer text-sm text-[#d0d8ff] focus:bg-[#1a2b44] focus:text-[#e0e0ff] data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-							{disabled}
-							onclick={() => {
-								if (!disabled) setContext(ctx);
-							}}
-						>
-							<span class={selectedCtx === ctx ? 'font-semibold text-[#4cc9f0]' : ''}>
-								{ctx >= 1000 ? Math.round(ctx / 1000) : ctx}k ctx on {memStr} GB mem
-							</span>
-						</DropdownMenu.Item>
+		<!-- Model field: icon + name, size, quantization (context dropdown is a separate button so it opens reliably) -->
+		<div class="flex min-w-0 flex-1 items-center gap-4">
+			<div
+				class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#1a2b44] text-xl text-[#e0e0ff]"
+			>
+				{familyIcon}
+			</div>
+			<div class="min-w-0 flex-1">
+				<div class="mb-1 flex flex-wrap items-center gap-2">
+					<h4 class="truncate text-sm font-semibold text-[#e0e0ff]">
+						{model.display_name || model.name}
+					</h4>
+					{#each modelTags as tag (tag)}
+						<span class="text-xs font-normal text-[#d0d8ff]/70" aria-hidden="true">{tag}</span>
 					{/each}
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
-		{:else}
-			<!-- No context options: show static model field (no dropdown) -->
-			<div class="flex min-w-0 flex-1 items-center gap-4">
-				<div
-					class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#1a2b44] text-xl text-[#e0e0ff]"
-				>
-					{familyIcon}
 				</div>
-				<div class="min-w-0 flex-1">
-					<div class="mb-1 flex flex-wrap items-center gap-2">
-						<h4 class="truncate text-sm font-semibold text-[#e0e0ff]">
-							{model.display_name || model.name}
-						</h4>
-						{#each modelTags as tag (tag)}
-							<span class="text-xs font-normal text-[#d0d8ff]/70" aria-hidden="true">{tag}</span>
-						{/each}
-					</div>
-					<div class="flex flex-wrap items-center gap-2 text-xs text-[#d0d8ff]/70">
-						{#if model.size_str}
-							<span>{model.size_str}</span>
-							<span class="text-[#d0d8ff]/40">|</span>
-						{/if}
-						{#if model.quantization}
-							<span>{model.quantization}</span>
-							<span class="text-[#d0d8ff]/40">|</span>
-						{/if}
-						<span>{getContextSizeDisplay()}</span>
-					</div>
+				<div class="flex flex-wrap items-center gap-2 text-xs text-[#d0d8ff]/70">
+					{#if model.size_str}
+						<span>{model.size_str}</span>
+						<span class="text-[#d0d8ff]/40">|</span>
+					{/if}
+					{#if model.quantization}
+						<span>{model.quantization}</span>
+						<span class="text-[#d0d8ff]/40">|</span>
+					{/if}
+					{#if contextOptions.length > 0}
+						<!-- Single button trigger: click to open context dropdown, click again to close; z-[100] so menu appears above Settings modal -->
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger
+								type="button"
+								class="inline-flex cursor-pointer items-center gap-1 rounded-md border-0 bg-transparent px-2 py-0.5 text-left text-xs font-medium text-[#4cc9f0] outline-none transition-colors hover:bg-[#1a2b44] hover:text-[#4cc9f0] focus:ring-0 focus:ring-offset-0"
+								aria-haspopup="listbox"
+								aria-label="Change context length"
+							>
+								{getContextSizeDisplay()}
+								<ChevronDown class="h-3.5 w-3.5 shrink-0 text-[#d0d8ff]/60" />
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Content
+								class="z-[100] min-w-[12rem] border-[#1a2b44] bg-[#11243a] text-[#e0e0ff]"
+								side="bottom"
+								align="start"
+							>
+								{#each optionsWithMem as { ctx, memGB } (ctx)}
+									{@const memStr =
+										typeof memGB === 'number' && !Number.isNaN(memGB) ? memGB.toFixed(1) : '—'}
+									{@const disabled = systemRAMGB != null && memGB > systemRAMGB}
+									<DropdownMenu.Item
+										class="cursor-pointer text-sm text-[#d0d8ff] focus:bg-[#1a2b44] focus:text-[#e0e0ff] data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+										{disabled}
+										onclick={() => {
+											if (!disabled) setContext(ctx);
+										}}
+									>
+										<span class={selectedCtx === ctx ? 'font-semibold text-[#4cc9f0]' : ''}>
+											{ctx >= 1000 ? Math.round(ctx / 1000) : ctx}k ctx on {memStr} GB mem
+										</span>
+									</DropdownMenu.Item>
+								{/each}
+							</DropdownMenu.Content>
+							</DropdownMenu.Root>
+					{:else}
+						<span class="font-medium text-[#4cc9f0]">{getContextSizeDisplay()}</span>
+					{/if}
 				</div>
 			</div>
-		{/if}
+		</div>
 
 		<!-- Actions: copy, delete (outside dropdown trigger so they don't toggle context) -->
 		<div class="flex flex-shrink-0 items-center gap-2">
