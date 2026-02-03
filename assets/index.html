@@ -1,713 +1,766 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>delta</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        :root {
-            --background: #0f1419;
-            --foreground: #ffffff;
-            --muted: rgba(255, 255, 255, 0.1);
-            --muted-foreground: #a0a0a0;
-            --border: rgba(255, 255, 255, 0.1);
-            --primary: #0066ff;
-            --card: rgba(255, 255, 255, 0.05);
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--background);
-            color: var(--foreground);
-            height: 100vh;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .main-container {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        /* Header */
-        .header {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 20px;
-            background: var(--background);
-            border-bottom: 1px solid var(--border);
-            z-index: 100;
-        }
-
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .menu-icon {
-            width: 24px;
-            height: 24px;
-            cursor: pointer;
-            color: var(--muted-foreground);
-        }
-
-        .header-right {
-            display: flex;
-            align-items: center;
-        }
-
-        .settings-icon {
-            width: 24px;
-            height: 24px;
-            cursor: pointer;
-            color: var(--muted-foreground);
-        }
-
-        /* Content Area */
-        .content-area {
-            flex: 1;
-            overflow-y: auto;
-            padding: 80px 20px 20px;
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* Empty State (Initial) */
-        .empty-state {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            max-width: 48rem;
-            margin: 0 auto;
-            width: 100%;
-        }
-
-        .empty-state.hidden {
-            display: none;
-        }
-
-        .title {
-            font-size: 2rem;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-            text-align: center;
-        }
-
-        .subtitle {
-            font-size: 1.125rem;
-            color: var(--muted-foreground);
-            margin-bottom: 2rem;
-            text-align: center;
-        }
-
-        .model-info-badges {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: center;
-            gap: 1rem;
-            margin-bottom: 2rem;
-        }
-
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.25rem 0.75rem;
-            font-size: 0.75rem;
-            border-radius: 0.375rem;
-            border: 1px solid var(--border);
-            background: var(--card);
-            color: var(--foreground);
-        }
-
-        .badge.secondary {
-            background: var(--muted);
-            color: var(--muted-foreground);
-        }
-
-        /* Chat Messages */
-        .chat-messages {
-            flex: 1;
-            max-width: 48rem;
-            width: 100%;
-            margin: 0 auto;
-            padding: 2rem 0;
-        }
-
-        .chat-messages.hidden {
-            display: none;
-        }
-
-        .message-group {
-            margin-bottom: 2.5rem;
-        }
-
-        .message {
-            margin-bottom: 1.5rem;
-        }
-
-        .message.user {
-            display: flex;
-            justify-content: flex-end;
-        }
-
-        .message.assistant {
-            display: flex;
-            justify-content: flex-start;
-        }
-
-        .message-content {
-            max-width: 80%;
-            padding: 0.75rem 1rem;
-            border-radius: 1.125rem;
-            line-height: 1.6;
-            word-wrap: break-word;
-        }
-
-        .message.user .message-content {
-            background: var(--primary);
-            color: white;
-        }
-
-        .message.assistant .message-content {
-            background: var(--card);
-            border: 1px solid var(--border);
-            color: var(--foreground);
-        }
-
-        .reasoning-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.375rem 0.75rem;
-            margin-bottom: 0.75rem;
-            font-size: 0.75rem;
-            background: var(--muted);
-            color: var(--muted-foreground);
-            border-radius: 0.375rem;
-        }
-
-        .message-actions {
-            display: flex;
-            gap: 0.5rem;
-            margin-top: 0.5rem;
-            opacity: 0;
-            transition: opacity 0.2s;
-        }
-
-        .message:hover .message-actions {
-            opacity: 1;
-        }
-
-        .action-btn {
-            background: transparent;
-            border: none;
-            color: var(--muted-foreground);
-            cursor: pointer;
-            padding: 0.25rem;
-            border-radius: 0.25rem;
-            width: 20px;
-            height: 20px;
-        }
-
-        .action-btn:hover {
-            background: var(--muted);
-            color: var(--foreground);
-        }
-
-        /* Processing Info (Metrics) */
-        .processing-info {
-            position: sticky;
-            bottom: 0;
-            padding: 1.5rem 1rem;
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 1rem;
-            justify-content: center;
-            max-width: 48rem;
-            margin: 0 auto;
-            opacity: 0;
-            transform: translateY(50%);
-            pointer-events: none;
-            transition: opacity 300ms ease-out, transform 300ms ease-out;
-        }
-
-        .processing-info.visible {
-            opacity: 1;
-            pointer-events: auto;
-            transform: translateY(0);
-        }
-
-        .processing-detail {
-            color: var(--muted-foreground);
-            font-size: 0.75rem;
-            padding: 0.25rem 0.75rem;
-            background: var(--muted);
-            border-radius: 0.375rem;
-            font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
-            white-space: nowrap;
-        }
-
-        /* Input Area */
-        .input-container {
-            position: sticky;
-            bottom: 0;
-            padding: 1rem;
-            background: var(--background);
-            border-top: 1px solid var(--border);
-        }
-
-        .input-wrapper {
-            max-width: 48rem;
-            margin: 0 auto;
-        }
-
-        .chat-form {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 1.5rem;
-            padding: 1rem 1.25rem;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-
-        .input-actions {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .input-btn {
-            background: transparent;
-            border: none;
-            color: var(--muted-foreground);
-            cursor: pointer;
-            padding: 0.5rem;
-            border-radius: 0.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-        }
-
-        .input-btn:hover {
-            background: var(--muted);
-            color: var(--foreground);
-        }
-
-        .chat-input {
-            flex: 1;
-            background: transparent;
-            border: none;
-            color: var(--foreground);
-            font-size: 1rem;
-            outline: none;
-            resize: none;
-            max-height: 120px;
-            min-height: 24px;
-            line-height: 1.5;
-        }
-
-        .chat-input::placeholder {
-            color: var(--muted-foreground);
-        }
-
-        .send-btn {
-            background: var(--primary);
-            border: none;
-            border-radius: 0.5rem;
-            color: white;
-            cursor: pointer;
-            padding: 0.5rem 1rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-        }
-
-        .send-btn:hover:not(:disabled) {
-            opacity: 0.9;
-        }
-
-        .send-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .helper-text {
-            text-align: center;
-            font-size: 0.875rem;
-            color: var(--muted-foreground);
-            margin-top: 0.75rem;
-        }
-
-        .error-message {
-            background: rgba(255, 68, 68, 0.1);
-            border: 1px solid rgba(255, 68, 68, 0.3);
-            color: #ff4444;
-            padding: 0.75rem 1rem;
-            border-radius: 0.5rem;
-            margin-bottom: 1rem;
-            display: none;
-        }
-
-        @media (max-width: 768px) {
-            .title {
-                font-size: 1.5rem;
-            }
-
-            .subtitle {
-                font-size: 1rem;
-            }
-
-            .message-content {
-                max-width: 90%;
-            }
-
-            .processing-info {
-                gap: 0.5rem;
-            }
-
-            .processing-detail {
-                font-size: 0.7rem;
-                padding: 0.2rem 0.5rem;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="main-container">
-        <!-- Header -->
-        <div class="header">
-            <div class="header-left">
-                <svg class="menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-                </svg>
-            </div>
-            <div class="header-right">
-                <svg class="settings-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" onclick="showSettings()">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                </svg>
-            </div>
-        </div>
-
-        <!-- Content Area -->
-        <div class="content-area">
-            <!-- Empty State (Initial) -->
-            <div class="empty-state" id="empty-state">
-                <h1 class="title">delta</h1>
-                <p class="subtitle">How can I help you today?</p>
-            </div>
-
-            <!-- Chat Messages -->
-            <div class="chat-messages hidden" id="chat-messages">
-                <!-- Messages will be added here -->
-            </div>
-
-            <!-- Processing Info (Metrics) -->
-            <div class="processing-info" id="processing-info">
-                <span class="processing-detail" id="context-info">Context: 0/32,768 (0%)</span>
-                <span class="processing-detail" id="output-info">Output: 0/∞</span>
-                <span class="processing-detail" id="tokens-info">0.0 tokens/sec</span>
-            </div>
-        </div>
-
-        <!-- Input Area -->
-        <div class="input-container">
-            <div class="input-wrapper">
-                <div class="error-message" id="error-message"></div>
-                <div class="chat-form">
-                    <div class="input-actions">
-                        <button class="input-btn" title="Attach file">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
-                            </svg>
-                        </button>
-                        <button class="input-btn" title="Voice input">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                                <line x1="12" y1="19" x2="12" y2="23"></line>
-                                <line x1="8" y1="23" x2="16" y2="23"></line>
-                            </svg>
-                        </button>
-                    </div>
-                    <textarea 
-                        class="chat-input" 
-                        id="chat-input" 
-                        placeholder="Ask anything..."
-                        rows="1"
-                    ></textarea>
-                    <button class="send-btn" id="send-btn" onclick="sendMessage()">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="22" y1="2" x2="11" y2="13"></line>
-                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                        </svg>
-                    </button>
-                </div>
-                <div class="helper-text" id="helper-text">Press <strong>Enter</strong> to send, <strong>Shift + Enter</strong> for new line</div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        let isTyping = false;
-        let currentModel = 'qwen3:0.6b';
-        let messageCount = 0;
-        let contextUsed = 0;
-        let contextSize = 32768;
-        let outputTokens = 0;
-        let tokensPerSecond = 0;
-        let processingStartTime = null;
-
-        // Initialize the interface
-        document.addEventListener('DOMContentLoaded', function() {
-            loadModelInfo();
-            
-            // Auto-resize textarea
-            const chatInput = document.getElementById('chat-input');
-            chatInput.addEventListener('input', function() {
-                this.style.height = 'auto';
-                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
-            });
-
-            // Handle Enter key
-            chatInput.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                }
-            });
-        });
-
-        // Convert model filename to short_name format
-        function getShortName(modelId) {
-            if (!modelId.includes('.gguf') && !modelId.includes('/') && !modelId.includes('\\')) {
-                return modelId;
-            }
-            
-            let filename = modelId;
-            if (filename.includes('/')) {
-                filename = filename.split('/').pop();
-            } else if (filename.includes('\\')) {
-                filename = filename.split('\\').pop();
-            }
-            
-            if (filename.endsWith('.gguf')) {
-                filename = filename.slice(0, -5);
-            }
-            
-            filename = filename.replace(/[-_]?[QqFf]\d+[_\w]*$/i, '');
-            
-            let shortName = filename.toLowerCase()
-                .replace(/[_\s]+/g, '-')
-                .replace(/--+/g, '-')
-                .replace(/^-|-$/g, '');
-            
-            return shortName;
-        }
-
-        async function loadModelInfo() {
-            try {
-                // Fetch props for context size (used by processing info only). No model/context badges in UI.
-                try {
-                    const propsResponse = await fetch('/props');
-                    const propsData = await propsResponse.json();
-                    if (propsData.default_generation_settings && propsData.default_generation_settings.n_ctx) {
-                        contextSize = propsData.default_generation_settings.n_ctx;
-                    }
-                } catch (e) {
-                    console.warn('Failed to fetch /props:', e);
-                }
-                const response = await fetch('/v1/models');
-                const data = await response.json();
-                if (data.data && data.data.length > 0) {
-                    currentModel = data.data[0].id;
-                }
-            } catch (error) {
-                console.error('Failed to load model info:', error);
-            }
-        }
-
-        function updateProcessingInfo() {
-            const processingInfo = document.getElementById('processing-info');
-            const contextInfo = document.getElementById('context-info');
-            const outputInfo = document.getElementById('output-info');
-            const tokensInfo = document.getElementById('tokens-info');
-            
-            if (messageCount > 0) {
-                processingInfo.classList.add('visible');
-                const contextPercent = ((contextUsed / contextSize) * 100).toFixed(0);
-                contextInfo.textContent = `Context: ${contextUsed.toLocaleString()}/${contextSize.toLocaleString()} (${contextPercent}%)`;
-                outputInfo.textContent = `Output: ${outputTokens.toLocaleString()}/∞`;
-                tokensInfo.textContent = `${tokensPerSecond.toFixed(1)} tokens/sec`;
-            } else {
-                processingInfo.classList.remove('visible');
-            }
-        }
-
-        async function sendMessage() {
-            const chatInput = document.getElementById('chat-input');
-            const message = chatInput.value.trim();
-            
-            if (!message || isTyping) return;
-
-            // Hide empty state, show messages
-            if (messageCount === 0) {
-                document.getElementById('empty-state').classList.add('hidden');
-                document.getElementById('chat-messages').classList.remove('hidden');
-                document.getElementById('helper-text').style.display = 'none';
-            }
-
-            // Add user message
-            addMessage('user', message);
-            chatInput.value = '';
-            chatInput.style.height = 'auto';
-            messageCount++;
-
-            // Show processing
-            isTyping = true;
-            processingStartTime = Date.now();
-            updateProcessingInfo();
-
-            try {
-                const response = await fetch('/v1/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        model: currentModel,
-                        messages: [
-                            { role: 'user', content: message }
-                        ],
-                        max_tokens: 1000,
-                        temperature: 0.7,
-                        stream: false
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                const data = await response.json();
-                
-                // Calculate metrics
-                if (processingStartTime) {
-                    const elapsed = (Date.now() - processingStartTime) / 1000;
-                    if (data.usage) {
-                        outputTokens = data.usage.completion_tokens || 0;
-                        contextUsed = data.usage.prompt_tokens || 0;
-                        tokensPerSecond = elapsed > 0 ? outputTokens / elapsed : 0;
-                    }
-                }
-
-                // Add AI response
-                if (data.choices && data.choices.length > 0) {
-                    addMessage('assistant', data.choices[0].message.content);
-                } else {
-                    addMessage('assistant', 'Sorry, I could not generate a response.');
-                }
-
-                updateProcessingInfo();
-
-            } catch (error) {
-                console.error('Error sending message:', error);
-                showError('Failed to send message: ' + error.message);
-            } finally {
-                isTyping = false;
-                processingStartTime = null;
-            }
-        }
-
-        function addMessage(role, content) {
-            const chatMessages = document.getElementById('chat-messages');
-            const messageGroup = document.createElement('div');
-            messageGroup.className = 'message-group';
-            
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${role}`;
-            
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'message-content';
-            
-            // Add reasoning badge for assistant messages (if applicable)
-            if (role === 'assistant' && content.includes('Reasoning')) {
-                const reasoningBadge = document.createElement('div');
-                reasoningBadge.className = 'reasoning-badge';
-                reasoningBadge.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"></path></svg> Reasoning';
-                messageDiv.appendChild(reasoningBadge);
-            }
-            
-            // Format content (simple markdown-like formatting)
-            contentDiv.innerHTML = formatContent(content);
-            messageDiv.appendChild(contentDiv);
-            
-            // Add message actions
-            if (role === 'user') {
-                const actions = document.createElement('div');
-                actions.className = 'message-actions';
-                actions.innerHTML = `
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>delta</title>
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+
+			:root {
+				--background: #0f1419;
+				--foreground: #ffffff;
+				--muted: rgba(255, 255, 255, 0.1);
+				--muted-foreground: #a0a0a0;
+				--border: rgba(255, 255, 255, 0.1);
+				--primary: #0066ff;
+				--card: rgba(255, 255, 255, 0.05);
+			}
+
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+				background: var(--background);
+				color: var(--foreground);
+				height: 100vh;
+				overflow: hidden;
+				display: flex;
+				flex-direction: column;
+			}
+
+			.main-container {
+				flex: 1;
+				display: flex;
+				flex-direction: column;
+				overflow: hidden;
+			}
+
+			/* Header */
+			.header {
+				position: fixed;
+				top: 0;
+				left: 0;
+				right: 0;
+				height: 60px;
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				padding: 0 20px;
+				background: var(--background);
+				border-bottom: 1px solid var(--border);
+				z-index: 100;
+			}
+
+			.header-left {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+			}
+
+			.menu-icon {
+				width: 24px;
+				height: 24px;
+				cursor: pointer;
+				color: var(--muted-foreground);
+			}
+
+			.header-right {
+				display: flex;
+				align-items: center;
+			}
+
+			.settings-icon {
+				width: 24px;
+				height: 24px;
+				cursor: pointer;
+				color: var(--muted-foreground);
+			}
+
+			/* Content Area */
+			.content-area {
+				flex: 1;
+				overflow-y: auto;
+				padding: 80px 20px 20px;
+				display: flex;
+				flex-direction: column;
+			}
+
+			/* Empty State (Initial) */
+			.empty-state {
+				flex: 1;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				max-width: 48rem;
+				margin: 0 auto;
+				width: 100%;
+			}
+
+			.empty-state.hidden {
+				display: none;
+			}
+
+			.title {
+				font-size: 2rem;
+				font-weight: 600;
+				margin-bottom: 0.5rem;
+				text-align: center;
+			}
+
+			.subtitle {
+				font-size: 1.125rem;
+				color: var(--muted-foreground);
+				margin-bottom: 2rem;
+				text-align: center;
+			}
+
+			.model-info-badges {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				justify-content: center;
+				gap: 1rem;
+				margin-bottom: 2rem;
+			}
+
+			.badge {
+				display: inline-flex;
+				align-items: center;
+				gap: 0.5rem;
+				padding: 0.25rem 0.75rem;
+				font-size: 0.75rem;
+				border-radius: 0.375rem;
+				border: 1px solid var(--border);
+				background: var(--card);
+				color: var(--foreground);
+			}
+
+			.badge.secondary {
+				background: var(--muted);
+				color: var(--muted-foreground);
+			}
+
+			/* Chat Messages */
+			.chat-messages {
+				flex: 1;
+				max-width: 48rem;
+				width: 100%;
+				margin: 0 auto;
+				padding: 2rem 0;
+			}
+
+			.chat-messages.hidden {
+				display: none;
+			}
+
+			.message-group {
+				margin-bottom: 2.5rem;
+			}
+
+			.message {
+				margin-bottom: 1.5rem;
+			}
+
+			.message.user {
+				display: flex;
+				justify-content: flex-end;
+			}
+
+			.message.assistant {
+				display: flex;
+				justify-content: flex-start;
+			}
+
+			.message-content {
+				max-width: 80%;
+				padding: 0.75rem 1rem;
+				border-radius: 1.125rem;
+				line-height: 1.6;
+				word-wrap: break-word;
+			}
+
+			.message.user .message-content {
+				background: var(--primary);
+				color: white;
+			}
+
+			.message.assistant .message-content {
+				background: var(--card);
+				border: 1px solid var(--border);
+				color: var(--foreground);
+			}
+
+			.reasoning-badge {
+				display: inline-flex;
+				align-items: center;
+				gap: 0.5rem;
+				padding: 0.375rem 0.75rem;
+				margin-bottom: 0.75rem;
+				font-size: 0.75rem;
+				background: var(--muted);
+				color: var(--muted-foreground);
+				border-radius: 0.375rem;
+			}
+
+			.message-actions {
+				display: flex;
+				gap: 0.5rem;
+				margin-top: 0.5rem;
+				opacity: 0;
+				transition: opacity 0.2s;
+			}
+
+			.message:hover .message-actions {
+				opacity: 1;
+			}
+
+			.action-btn {
+				background: transparent;
+				border: none;
+				color: var(--muted-foreground);
+				cursor: pointer;
+				padding: 0.25rem;
+				border-radius: 0.25rem;
+				width: 20px;
+				height: 20px;
+			}
+
+			.action-btn:hover {
+				background: var(--muted);
+				color: var(--foreground);
+			}
+
+			/* Processing Info (Metrics) */
+			.processing-info {
+				position: sticky;
+				bottom: 0;
+				padding: 1.5rem 1rem;
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				gap: 1rem;
+				justify-content: center;
+				max-width: 48rem;
+				margin: 0 auto;
+				opacity: 0;
+				transform: translateY(50%);
+				pointer-events: none;
+				transition:
+					opacity 300ms ease-out,
+					transform 300ms ease-out;
+			}
+
+			.processing-info.visible {
+				opacity: 1;
+				pointer-events: auto;
+				transform: translateY(0);
+			}
+
+			.processing-detail {
+				color: var(--muted-foreground);
+				font-size: 0.75rem;
+				padding: 0.25rem 0.75rem;
+				background: var(--muted);
+				border-radius: 0.375rem;
+				font-family:
+					ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+				white-space: nowrap;
+			}
+
+			/* Input Area */
+			.input-container {
+				position: sticky;
+				bottom: 0;
+				padding: 1rem;
+				background: var(--background);
+				border-top: 1px solid var(--border);
+			}
+
+			.input-wrapper {
+				max-width: 48rem;
+				margin: 0 auto;
+			}
+
+			.chat-form {
+				background: var(--card);
+				border: 1px solid var(--border);
+				border-radius: 1.5rem;
+				padding: 1rem 1.25rem;
+				display: flex;
+				align-items: center;
+				gap: 0.75rem;
+			}
+
+			.input-actions {
+				display: flex;
+				align-items: center;
+				gap: 0.5rem;
+			}
+
+			.input-btn {
+				background: transparent;
+				border: none;
+				color: var(--muted-foreground);
+				cursor: pointer;
+				padding: 0.5rem;
+				border-radius: 0.5rem;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				transition: all 0.2s;
+			}
+
+			.input-btn:hover {
+				background: var(--muted);
+				color: var(--foreground);
+			}
+
+			.chat-input {
+				flex: 1;
+				background: transparent;
+				border: none;
+				color: var(--foreground);
+				font-size: 1rem;
+				outline: none;
+				resize: none;
+				max-height: 120px;
+				min-height: 24px;
+				line-height: 1.5;
+			}
+
+			.chat-input::placeholder {
+				color: var(--muted-foreground);
+			}
+
+			.send-btn {
+				background: var(--primary);
+				border: none;
+				border-radius: 0.5rem;
+				color: white;
+				cursor: pointer;
+				padding: 0.5rem 1rem;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				transition: all 0.2s;
+			}
+
+			.send-btn:hover:not(:disabled) {
+				opacity: 0.9;
+			}
+
+			.send-btn:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+			}
+
+			.helper-text {
+				text-align: center;
+				font-size: 0.875rem;
+				color: var(--muted-foreground);
+				margin-top: 0.75rem;
+			}
+
+			.error-message {
+				background: rgba(255, 68, 68, 0.1);
+				border: 1px solid rgba(255, 68, 68, 0.3);
+				color: #ff4444;
+				padding: 0.75rem 1rem;
+				border-radius: 0.5rem;
+				margin-bottom: 1rem;
+				display: none;
+			}
+
+			@media (max-width: 768px) {
+				.title {
+					font-size: 1.5rem;
+				}
+
+				.subtitle {
+					font-size: 1rem;
+				}
+
+				.message-content {
+					max-width: 90%;
+				}
+
+				.processing-info {
+					gap: 0.5rem;
+				}
+
+				.processing-detail {
+					font-size: 0.7rem;
+					padding: 0.2rem 0.5rem;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="main-container">
+			<!-- Header -->
+			<div class="header">
+				<div class="header-left">
+					<svg class="menu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M4 6h16M4 12h16M4 18h16"
+						></path>
+					</svg>
+				</div>
+				<div class="header-right">
+					<svg
+						class="settings-icon"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24"
+						onclick="showSettings()"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+						></path>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+						></path>
+					</svg>
+				</div>
+			</div>
+
+			<!-- Content Area -->
+			<div class="content-area">
+				<!-- Empty State (Initial) -->
+				<div class="empty-state" id="empty-state">
+					<h1 class="title">delta</h1>
+					<p class="subtitle">How can I help you today?</p>
+				</div>
+
+				<!-- Chat Messages -->
+				<div class="chat-messages hidden" id="chat-messages">
+					<!-- Messages will be added here -->
+				</div>
+
+				<!-- Processing Info (Metrics) -->
+				<div class="processing-info" id="processing-info">
+					<span class="processing-detail" id="context-info">Context: 0/32,768 (0%)</span>
+					<span class="processing-detail" id="output-info">Output: 0/∞</span>
+					<span class="processing-detail" id="tokens-info">0.0 tokens/sec</span>
+				</div>
+			</div>
+
+			<!-- Input Area -->
+			<div class="input-container">
+				<div class="input-wrapper">
+					<div class="error-message" id="error-message"></div>
+					<div class="chat-form">
+						<div class="input-actions">
+							<button class="input-btn" title="Attach file">
+								<svg
+									width="20"
+									height="20"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+								>
+									<path
+										d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"
+									></path>
+								</svg>
+							</button>
+							<button class="input-btn" title="Voice input">
+								<svg
+									width="20"
+									height="20"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+								>
+									<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+									<path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+									<line x1="12" y1="19" x2="12" y2="23"></line>
+									<line x1="8" y1="23" x2="16" y2="23"></line>
+								</svg>
+							</button>
+						</div>
+						<textarea
+							class="chat-input"
+							id="chat-input"
+							placeholder="Ask anything..."
+							rows="1"
+						></textarea>
+						<button class="send-btn" id="send-btn" onclick="sendMessage()">
+							<svg
+								width="20"
+								height="20"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<line x1="22" y1="2" x2="11" y2="13"></line>
+								<polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+							</svg>
+						</button>
+					</div>
+					<div class="helper-text" id="helper-text">
+						Press <strong>Enter</strong> to send, <strong>Shift + Enter</strong> for new line
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			let isTyping = false;
+			let currentModel = 'qwen3:0.6b';
+			let messageCount = 0;
+			let contextUsed = 0;
+			let contextSize = 32768;
+			let outputTokens = 0;
+			let tokensPerSecond = 0;
+			let processingStartTime = null;
+
+			// Initialize the interface
+			document.addEventListener('DOMContentLoaded', function () {
+				loadModelInfo();
+
+				// Auto-resize textarea
+				const chatInput = document.getElementById('chat-input');
+				chatInput.addEventListener('input', function () {
+					this.style.height = 'auto';
+					this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+				});
+
+				// Handle Enter key
+				chatInput.addEventListener('keydown', function (e) {
+					if (e.key === 'Enter' && !e.shiftKey) {
+						e.preventDefault();
+						sendMessage();
+					}
+				});
+			});
+
+			// Convert model filename to short_name format
+			function getShortName(modelId) {
+				if (!modelId.includes('.gguf') && !modelId.includes('/') && !modelId.includes('\\')) {
+					return modelId;
+				}
+
+				let filename = modelId;
+				if (filename.includes('/')) {
+					filename = filename.split('/').pop();
+				} else if (filename.includes('\\')) {
+					filename = filename.split('\\').pop();
+				}
+
+				if (filename.endsWith('.gguf')) {
+					filename = filename.slice(0, -5);
+				}
+
+				filename = filename.replace(/[-_]?[QqFf]\d+[_\w]*$/i, '');
+
+				let shortName = filename
+					.toLowerCase()
+					.replace(/[_\s]+/g, '-')
+					.replace(/--+/g, '-')
+					.replace(/^-|-$/g, '');
+
+				return shortName;
+			}
+
+			async function loadModelInfo() {
+				try {
+					// Fetch props for context size (used by processing info only). No model/context badges in UI.
+					try {
+						const propsResponse = await fetch('/props');
+						const propsData = await propsResponse.json();
+						if (
+							propsData.default_generation_settings &&
+							propsData.default_generation_settings.n_ctx
+						) {
+							contextSize = propsData.default_generation_settings.n_ctx;
+						}
+					} catch (e) {
+						console.warn('Failed to fetch /props:', e);
+					}
+					const response = await fetch('/v1/models');
+					const data = await response.json();
+					if (data.data && data.data.length > 0) {
+						currentModel = data.data[0].id;
+					}
+				} catch (error) {
+					console.error('Failed to load model info:', error);
+				}
+			}
+
+			function updateProcessingInfo() {
+				const processingInfo = document.getElementById('processing-info');
+				const contextInfo = document.getElementById('context-info');
+				const outputInfo = document.getElementById('output-info');
+				const tokensInfo = document.getElementById('tokens-info');
+
+				if (messageCount > 0) {
+					processingInfo.classList.add('visible');
+					const contextPercent = ((contextUsed / contextSize) * 100).toFixed(0);
+					contextInfo.textContent = `Context: ${contextUsed.toLocaleString()}/${contextSize.toLocaleString()} (${contextPercent}%)`;
+					outputInfo.textContent = `Output: ${outputTokens.toLocaleString()}/∞`;
+					tokensInfo.textContent = `${tokensPerSecond.toFixed(1)} tokens/sec`;
+				} else {
+					processingInfo.classList.remove('visible');
+				}
+			}
+
+			async function sendMessage() {
+				const chatInput = document.getElementById('chat-input');
+				const message = chatInput.value.trim();
+
+				if (!message || isTyping) return;
+
+				// Hide empty state, show messages
+				if (messageCount === 0) {
+					document.getElementById('empty-state').classList.add('hidden');
+					document.getElementById('chat-messages').classList.remove('hidden');
+					document.getElementById('helper-text').style.display = 'none';
+				}
+
+				// Add user message
+				addMessage('user', message);
+				chatInput.value = '';
+				chatInput.style.height = 'auto';
+				messageCount++;
+
+				// Show processing
+				isTyping = true;
+				processingStartTime = Date.now();
+				updateProcessingInfo();
+
+				try {
+					const response = await fetch('/v1/chat/completions', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json'
+						},
+						body: JSON.stringify({
+							model: currentModel,
+							messages: [{ role: 'user', content: message }],
+							max_tokens: 1000,
+							temperature: 0.7,
+							stream: false
+						})
+					});
+
+					if (!response.ok) {
+						throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+					}
+
+					const data = await response.json();
+
+					// Calculate metrics
+					if (processingStartTime) {
+						const elapsed = (Date.now() - processingStartTime) / 1000;
+						if (data.usage) {
+							outputTokens = data.usage.completion_tokens || 0;
+							contextUsed = data.usage.prompt_tokens || 0;
+							tokensPerSecond = elapsed > 0 ? outputTokens / elapsed : 0;
+						}
+					}
+
+					// Add AI response
+					if (data.choices && data.choices.length > 0) {
+						addMessage('assistant', data.choices[0].message.content);
+					} else {
+						addMessage('assistant', 'Sorry, I could not generate a response.');
+					}
+
+					updateProcessingInfo();
+				} catch (error) {
+					console.error('Error sending message:', error);
+					showError('Failed to send message: ' + error.message);
+				} finally {
+					isTyping = false;
+					processingStartTime = null;
+				}
+			}
+
+			function addMessage(role, content) {
+				const chatMessages = document.getElementById('chat-messages');
+				const messageGroup = document.createElement('div');
+				messageGroup.className = 'message-group';
+
+				const messageDiv = document.createElement('div');
+				messageDiv.className = `message ${role}`;
+
+				const contentDiv = document.createElement('div');
+				contentDiv.className = 'message-content';
+
+				// Add reasoning badge for assistant messages (if applicable)
+				if (role === 'assistant' && content.includes('Reasoning')) {
+					const reasoningBadge = document.createElement('div');
+					reasoningBadge.className = 'reasoning-badge';
+					reasoningBadge.innerHTML =
+						'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"></path></svg> Reasoning';
+					messageDiv.appendChild(reasoningBadge);
+				}
+
+				// Format content (simple markdown-like formatting)
+				contentDiv.innerHTML = formatContent(content);
+				messageDiv.appendChild(contentDiv);
+
+				// Add message actions
+				if (role === 'user') {
+					const actions = document.createElement('div');
+					actions.className = 'message-actions';
+					actions.innerHTML = `
                     <button class="action-btn" title="Edit">✏️</button>
                     <button class="action-btn" title="Copy">📋</button>
                     <button class="action-btn" title="Delete">🗑️</button>
                 `;
-                messageDiv.appendChild(actions);
-            }
-            
-            messageGroup.appendChild(messageDiv);
-            chatMessages.appendChild(messageGroup);
-            
-            // Scroll to bottom
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
+					messageDiv.appendChild(actions);
+				}
 
-        function formatContent(content) {
-            // Simple markdown-like formatting
-            return content
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                .replace(/`(.*?)`/g, '<code>$1</code>')
-                .replace(/\n/g, '<br>');
-        }
+				messageGroup.appendChild(messageDiv);
+				chatMessages.appendChild(messageGroup);
 
-        function showError(message) {
-            const errorDiv = document.getElementById('error-message');
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            
-            setTimeout(() => {
-                errorDiv.style.display = 'none';
-            }, 5000);
-        }
+				// Scroll to bottom
+				chatMessages.scrollTop = chatMessages.scrollHeight;
+			}
 
-        function showSettings() {
-            alert('Settings panel coming soon!\n\nCurrent features:\n• Model switching\n• Temperature control\n• Context size\n• Advanced parameters');
-        }
-    </script>
-</body>
+			function formatContent(content) {
+				// Simple markdown-like formatting
+				return content
+					.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+					.replace(/\*(.*?)\*/g, '<em>$1</em>')
+					.replace(/`(.*?)`/g, '<code>$1</code>')
+					.replace(/\n/g, '<br>');
+			}
+
+			function showError(message) {
+				const errorDiv = document.getElementById('error-message');
+				errorDiv.textContent = message;
+				errorDiv.style.display = 'block';
+
+				setTimeout(() => {
+					errorDiv.style.display = 'none';
+				}, 5000);
+			}
+
+			function showSettings() {
+				alert(
+					'Settings panel coming soon!\n\nCurrent features:\n• Model switching\n• Temperature control\n• Context size\n• Advanced parameters'
+				);
+			}
+		</script>
+	</body>
 </html>

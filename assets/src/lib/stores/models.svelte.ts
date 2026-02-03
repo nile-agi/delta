@@ -1,3 +1,4 @@
+import { SvelteMap } from 'svelte/reactivity';
 import { ModelsService } from '$lib/services/models';
 import { persisted } from '$lib/stores/persisted.svelte';
 import { SELECTED_MODEL_LOCALSTORAGE_KEY } from '$lib/constants/localstorage-keys';
@@ -107,27 +108,25 @@ class ModelsStore {
 			}
 
 			// Get all installed models from model management API
-			const installedModelsMap = new Map<string, ModelOption>();
+			const installedModelsMap = new SvelteMap<string, ModelOption>();
 			if (
 				installedModelsResponse.status === 'fulfilled' &&
 				installedModelsResponse.value !== null
 			) {
 				// Handle both formats: {models: [...]} or [...] (for backward compatibility)
 				const responseData = installedModelsResponse.value;
-				const installed = Array.isArray(responseData)
-					? responseData
-					: responseData.models || [];
-				
+				const installed = Array.isArray(responseData) ? responseData : responseData.models || [];
+
 				if (!Array.isArray(installed)) {
 					console.error('Invalid response format from model API:', responseData);
 					throw new Error('Invalid response format from model management API');
 				}
-				
+
 				for (const modelInfo of installed) {
 					// Use model name as ID (e.g., "qwen3:0.6b")
 					const modelId = modelInfo.name;
 					const displayName = modelInfo.display_name || this.toDisplayName(modelInfo.name);
-					
+
 					// Get model path - we'll fetch it when needed, but store the name for now
 					// The model name will be used to get the path when selected
 
@@ -201,13 +200,27 @@ class ModelsStore {
 		this._error = null;
 
 		try {
-			// Get the model path from the backend API
-			// llama-server needs the full model path to switch models dynamically
+			// Get the model path from the backend API; pass user's stored context length if set
+			const storedCtx =
+				typeof window !== 'undefined'
+					? (() => {
+							const raw = localStorage.getItem('delta_model_ctx_' + option.model);
+							if (!raw) return undefined;
+							const n = parseInt(raw, 10);
+							return Number.isNaN(n) ? undefined : n;
+						})()
+					: undefined;
 			try {
-				const useResponse = await ModelsService.use(option.model);
+				const useResponse = await ModelsService.use(
+					option.model,
+					storedCtx != null && storedCtx > 0 ? storedCtx : undefined
+				);
 				// Prefer model_alias for chat requests (router mode); fallback to model_path or option.model
 				const modelForRequests =
-					useResponse.model_alias ?? useResponse.model_name ?? useResponse.model_path ?? option.model;
+					useResponse.model_alias ??
+					useResponse.model_name ??
+					useResponse.model_path ??
+					option.model;
 
 				this._selectedModelId = option.id;
 				this._selectedModelName = modelForRequests;

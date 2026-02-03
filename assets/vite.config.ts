@@ -55,7 +55,7 @@ function deltaBuildPlugin() {
 
 						// Add favicon links after charset meta tag
 						const faviconLink = `    <link rel="icon" type="image/svg+xml" href="${faviconDataUrl}">\n    <link rel="shortcut icon" type="image/svg+xml" href="${faviconDataUrl}">\n`;
-						
+
 						// Insert favicon links after charset meta tag or at the start of head
 						if (content.includes('<head>')) {
 							if (content.includes('<meta charset')) {

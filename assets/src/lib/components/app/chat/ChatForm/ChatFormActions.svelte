@@ -76,11 +76,7 @@
 					<ArrowUp class="h-12 w-12" />
 				</Button>
 			{:else}
-				<Button
-					type="submit"
-					disabled={sendDisabled}
-					class="h-8 w-8 rounded-full p-0"
-				>
+				<Button type="submit" disabled={sendDisabled} class="h-8 w-8 rounded-full p-0">
 					<span class="sr-only">Send</span>
 					<ArrowUp class="h-12 w-12" />
 				</Button>

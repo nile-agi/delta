@@ -49,9 +49,7 @@
 
 	let currentConfig = $derived(config());
 	let autoScrollEnabled = $state(true);
-	let effectiveAutoScroll = $derived(
-		!currentConfig.disableAutoScroll && autoScrollEnabled
-	);
+	let effectiveAutoScroll = $derived(!currentConfig.disableAutoScroll && autoScrollEnabled);
 	let chatScrollContainer: HTMLDivElement | undefined = $state();
 	let dragCounter = $state(0);
 	let isDragOver = $state(false);

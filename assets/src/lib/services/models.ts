@@ -54,14 +54,18 @@ export class ModelsService {
 					const raw = (await modelsRes.json()) as unknown;
 					const items = Array.isArray(raw)
 						? raw
-						: (raw as { items?: unknown[] })?.items ?? (raw as { models?: unknown[] })?.models ?? [];
+						: ((raw as { items?: unknown[] })?.items ??
+							(raw as { models?: unknown[] })?.models ??
+							[]);
 					if (items.length > 0) {
-						data.data = items.map((m: { id?: string; name?: string; path?: string }, i: number) => ({
-							id: m.id ?? m.name ?? m.path ?? `model-${i}`,
-							object: 'model',
-							created: 0,
-							owned_by: ''
-						}));
+						data.data = items.map(
+							(m: { id?: string; name?: string; path?: string }, i: number) => ({
+								id: m.id ?? m.name ?? m.path ?? `model-${i}`,
+								object: 'model',
+								created: 0,
+								owned_by: ''
+							})
+						);
 					}
 				}
 			} catch {
@@ -139,7 +143,11 @@ export class ModelsService {
 			});
 
 			if (!response.ok) {
-				console.error('[ModelsService] Progress fetch failed:', response.status, response.statusText);
+				console.error(
+					'[ModelsService] Progress fetch failed:',
+					response.status,
+					response.statusText
+				);
 				throw new Error(`Failed to get download progress (status ${response.status})`);
 			}
 
@@ -178,18 +186,19 @@ export class ModelsService {
 	 * Remove a model
 	 */
 	static async remove(modelName: string): Promise<ModelOperationResponse> {
-		const response = await fetch(`${getModelApiBaseUrl()}/api/models/${encodeURIComponent(modelName)}`, {
-			method: 'DELETE',
-			headers: {
-				'Content-Type': 'application/json'
+		const response = await fetch(
+			`${getModelApiBaseUrl()}/api/models/${encodeURIComponent(modelName)}`,
+			{
+				method: 'DELETE',
+				headers: {
+					'Content-Type': 'application/json'
+				}
 			}
-		});
+		);
 
 		if (!response.ok) {
 			const error = await response.json().catch(() => ({}));
-			throw new Error(
-				error.error?.message || `Failed to remove model (status ${response.status})`
-			);
+			throw new Error(error.error?.message || `Failed to remove model (status ${response.status})`);
 		}
 
 		return response.json() as Promise<ModelOperationResponse>;
@@ -214,9 +223,7 @@ export class ModelsService {
 
 		if (!response.ok) {
 			const error = await response.json().catch(() => ({}));
-			throw new Error(
-				error.error?.message || `Failed to switch model (status ${response.status})`
-			);
+			throw new Error(error.error?.message || `Failed to switch model (status ${response.status})`);
 		}
 
 		return response.json() as Promise<ModelOperationResponse>;
@@ -235,9 +242,7 @@ export class ModelsService {
 
 		if (!response.ok) {
 			const error = await response.json().catch(() => ({}));
-			throw new Error(
-				error.error?.message || `Failed to unload model (status ${response.status})`
-			);
+			throw new Error(error.error?.message || `Failed to unload model (status ${response.status})`);
 		}
 
 		return response.json() as Promise<ModelOperationResponse>;
@@ -257,7 +262,7 @@ export class ModelsService {
 		if (!response.ok) {
 			// Fallback: try browser API if available
 			if (typeof navigator !== 'undefined' && 'deviceMemory' in navigator) {
-				const deviceMemory = (navigator as any).deviceMemory;
+				const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
 				if (deviceMemory) {
 					return {
 						total_ram_gb: deviceMemory,

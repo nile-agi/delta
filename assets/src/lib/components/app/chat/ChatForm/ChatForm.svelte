@@ -273,9 +273,9 @@
 			isEmpty={!message.trim() && uploadedFiles.length === 0}
 			{isLoading}
 			{isRecording}
-			recordingSupported={recordingSupported}
+			{recordingSupported}
 			showMicrophoneOnEmptyInput={Boolean(currentConfig.showMicrophoneOnEmptyInput)}
-			openModelDropdownTrigger={openModelDropdownTrigger}
+			{openModelDropdownTrigger}
 			onRequestOpenModelDropdown={requestOpenModelDropdown}
 			onFileUpload={handleFileUpload}
 			onMicClick={handleMicClick}
