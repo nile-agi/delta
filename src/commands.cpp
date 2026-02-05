@@ -110,17 +110,16 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
          return false;
      }
      
-     // Require a model: llama-server needs -m (do not start without it or it may use a broken default path).
+     // When no model path: use first .gguf in models_dir if any; else start with --models-dir so llama-server serves web UI and user can install a model from the UI.
      std::string effective_model = model_path;
      if (effective_model.empty() && !models_dir.empty()) {
          effective_model = tools::FileOps::first_gguf_in_dir(models_dir);
      }
-     if (effective_model.empty()) {
-         UI::print_error("No model specified. Use -m <path> or ensure ~/.delta-cli/models contains a .gguf file.");
-         UI::print_info("Run 'delta pull <model>' first, e.g. delta pull qwen2.5:0.5b");
+     if (effective_model.empty() && models_dir.empty()) {
+         UI::print_error("No model or models directory. Use -m <path> or --models-dir <dir>, or ensure ~/.delta-cli/models exists.");
          return false;
      }
-     if (!tools::FileOps::file_exists(effective_model)) {
+     if (!effective_model.empty() && !tools::FileOps::file_exists(effective_model)) {
          UI::print_error("Model file not found: " + effective_model);
          return false;
      }
@@ -358,8 +357,8 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      // Stop existing llama-server if running
      stop_llama_server();
      
-     // Build command (always -m with absolute path; effective_model already validated above)
-     std::string cmd_str = build_llama_server_cmd(server_bin, effective_model, port, ctx_size, model_alias, public_path, "");
+     // Build command: -m when we have a model, else --models-dir so web UI opens and user can install a model
+     std::string cmd_str = build_llama_server_cmd(server_bin, effective_model, port, ctx_size, model_alias, public_path, models_dir);
      
     // Create error log file path
 #ifdef _WIN32
@@ -582,7 +581,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      return true;
  }
  
- // Helper to build llama-server/delta-server command. Always passes -m with absolute path so server finds the model regardless of cwd.
+ // Helper to build llama-server command: -m <path> when we have a model, else --models-dir so UI opens (user can install model from web UI).
 std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path,
                                               int port, int ctx_size, const std::string& model_alias,
                                               const std::string& public_path, const std::string& models_dir) {
@@ -596,6 +595,10 @@ std::string Commands::build_llama_server_cmd(const std::string& server_bin, cons
         std::string abs_model = tools::FileOps::absolute_path(effective_model);
         if (!abs_model.empty()) effective_model = abs_model;
         cmd << " -m \"" << effective_model << "\"";
+    } else if (!models_dir.empty()) {
+        std::string dir_arg = tools::FileOps::absolute_path(models_dir);
+        if (dir_arg.empty()) dir_arg = models_dir;
+        cmd << " --models-dir \"" << dir_arg << "\"";
     }
     cmd << " --host 0.0.0.0"
         << " --port " << port;

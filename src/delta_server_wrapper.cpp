@@ -340,9 +340,12 @@ public:
     
     std::string build_llama_server_command(const std::string& model_path, int ctx_size, const std::string& model_alias) {
         std::string cmd = llama_server_path_;
-        // Use -m only (avoid --models-dir for compatibility with builds that don't support it)
         if (!model_path.empty()) {
             cmd += " -m \"" + model_path + "\"";
+        } else if (!models_dir_.empty()) {
+            std::string dir_arg = delta::tools::FileOps::absolute_path(models_dir_);
+            if (dir_arg.empty()) dir_arg = models_dir_;
+            cmd += " --models-dir \"" + dir_arg + "\"";
         }
         cmd += " --host 0.0.0.0";
         cmd += " --port " + std::to_string(port_);
@@ -522,22 +525,17 @@ public:
             return 1;
         }
 
-        // Resolve model: require -m <path> or --models-dir with at least one .gguf (llama-server does not support --models-dir on all builds)
+        // When no -m: use first .gguf in models_dir if any; else start with --models-dir so web UI opens and user can install a model from the UI.
         if (model_path_.empty() && !models_dir_.empty()) {
             std::string first = delta::tools::FileOps::first_gguf_in_dir(models_dir_);
             if (!first.empty()) {
                 model_path_ = first;
-            } else {
-                std::cerr << "Error: No .gguf models in " << models_dir_ << std::endl;
-                std::cerr << "Add a model to that directory or use -m <path>." << std::endl;
-                return 1;
             }
         }
         if (model_path_.empty() && models_dir_.empty()) {
             std::cerr << "Error: No model specified! Use -m <path> or --models-dir <directory>." << std::endl;
             return 1;
         }
-        // Resolve to absolute path so llama-server finds the model regardless of cwd
         if (!model_path_.empty()) {
             std::string abs_path = delta::tools::FileOps::absolute_path(model_path_);
             if (!abs_path.empty()) model_path_ = abs_path;
