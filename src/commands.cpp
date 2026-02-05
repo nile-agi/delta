@@ -575,17 +575,19 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
  }
  
  // Helper to build delta-server command
- // Uses minimal flags for maximum compatibility; some builds may not support --flash-attn or --jinja
- // If model_path empty and models_dir non-empty, router mode: no -m, use --models-dir
+ // Uses minimal flags for maximum compatibility; some builds may not support --models-dir or --flash-attn
+ // When models_dir set and model_path empty, use first .gguf in dir with -m (avoids --models-dir for macOS/Homebrew compatibility)
 std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path,
                                               int port, int ctx_size, const std::string& model_alias,
                                               const std::string& public_path, const std::string& models_dir) {
     std::stringstream cmd;
     cmd << server_bin;
-    if (!models_dir.empty() && model_path.empty()) {
-        cmd << " --models-dir \"" << models_dir << "\"";
-    } else if (!model_path.empty()) {
-        cmd << " -m \"" << model_path << "\"";
+    std::string effective_model = model_path;
+    if (effective_model.empty() && !models_dir.empty()) {
+        effective_model = tools::FileOps::first_gguf_in_dir(models_dir);
+    }
+    if (!effective_model.empty()) {
+        cmd << " -m \"" << effective_model << "\"";
     }
     cmd << " --host 0.0.0.0"
         << " --port " << port;

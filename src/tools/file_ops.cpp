@@ -116,6 +116,18 @@ std::vector<std::string> FileOps::list_dir(const std::string& path) {
     return files;
 }
 
+std::string FileOps::first_gguf_in_dir(const std::string& path) {
+    if (!dir_exists(path)) return "";
+    std::vector<std::string> files = list_dir(path);
+    for (const std::string& name : files) {
+        if (name.length() > 5 && name.substr(name.length() - 5) == ".gguf") {
+            std::string full = join_path(path, name);
+            if (file_exists(full)) return full;
+        }
+    }
+    return "";
+}
+
 std::string FileOps::get_home_dir() {
 #ifdef _WIN32
     char path[MAX_PATH];
