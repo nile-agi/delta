@@ -1,5 +1,6 @@
 import { SvelteMap } from 'svelte/reactivity';
 import { ModelsService } from '$lib/services/models';
+import { slotsService } from '$lib/services/slots';
 import { persisted } from '$lib/stores/persisted.svelte';
 import { SELECTED_MODEL_LOCALSTORAGE_KEY } from '$lib/constants/localstorage-keys';
 import type { ModelOption } from '$lib/types/models';
@@ -228,6 +229,10 @@ class ModelsStore {
 				if (useResponse.loaded) {
 					// Server restarted with new model (same as /use in terminal). Refetch so main API shows current model.
 					await this.fetch(true);
+					// Update Context stat immediately to loaded model's n_ctx (from llama-server -c).
+					if (useResponse.ctx_size != null && useResponse.ctx_size > 0) {
+						slotsService.setLoadedContextTotal(useResponse.ctx_size);
+					}
 				}
 			} catch (error) {
 				console.warn('Failed to switch model:', error);

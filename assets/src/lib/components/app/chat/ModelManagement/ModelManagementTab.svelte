@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ModelsService, type ModelInfo } from '$lib/services/models';
+	import { slotsService } from '$lib/services/slots';
 	import { modelsCatalog, getSmallestCompatibleModel } from '$lib/data/models_catalog';
 	import { selectedModelName as getSelectedModelName } from '$lib/stores/models.svelte';
 	import FamilyAccordion from './FamilyAccordion.svelte';
@@ -181,11 +182,15 @@
 	}
 
 	async function handleContextChange(modelName: string, ctx: number) {
-		// If this model is currently selected, update backend so server uses new context
+		// If this model is currently selected, update backend so server uses new context (llama-server -c)
 		if (selectedModelName === modelName) {
 			try {
-				await ModelsService.use(modelName, ctx);
+				const useResponse = await ModelsService.use(modelName, ctx);
 				toast.success(`Context set to ${ctx >= 1000 ? ctx / 1000 + 'k' : ctx} for ${modelName}`);
+				// Update Context stat immediately when backend reloads with new ctx
+				if (useResponse.loaded && useResponse.ctx_size != null && useResponse.ctx_size > 0) {
+					slotsService.setLoadedContextTotal(useResponse.ctx_size);
+				}
 			} catch (error) {
 				console.error('Failed to set context:', error);
 				toast.error(

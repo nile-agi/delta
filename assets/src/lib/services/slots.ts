@@ -39,6 +39,8 @@ export class SlotsService {
 	private lastKnownState: ApiProcessingState | null = null;
 	private conversationStates: Map<string, ApiProcessingState | null> = new Map();
 	private activeConversationId: string | null = null;
+	/** When model is loaded with a specific ctx (from /api/models/use), use this until /slots is next fetched. */
+	private loadedContextTotalOverride: number | null = null;
 
 	/**
 	 * Start streaming session tracking
@@ -60,6 +62,7 @@ export class SlotsService {
 	 */
 	clearState(): void {
 		this.lastKnownState = null;
+		this.loadedContextTotalOverride = null;
 
 		for (const callback of this.callbacks) {
 			try {
@@ -68,6 +71,31 @@ export class SlotsService {
 				console.error('Error in clearState callback:', error);
 			}
 		}
+	}
+
+	/**
+	 * Update context total when a model is loaded with a specific ctx (from POST /api/models/use).
+	 * So "Context: 0/ctxSize" in visible stats reflects the current loaded model's n_ctx immediately,
+	 * without waiting for the next /slots fetch or completion.
+	 */
+	setLoadedContextTotal(ctxSize: number): void {
+		if (ctxSize <= 0) return;
+		this.loadedContextTotalOverride = ctxSize;
+		const currentConfig = config();
+		this.lastKnownState = {
+			status: 'idle',
+			tokensDecoded: 0,
+			tokensRemaining: currentConfig?.max_tokens ?? -1,
+			contextUsed: 0,
+			contextTotal: ctxSize,
+			outputTokensUsed: 0,
+			outputTokensMax: currentConfig?.max_tokens ?? -1,
+			temperature: currentConfig?.temperature ?? 0.8,
+			topP: currentConfig?.top_p ?? 0.95,
+			speculative: false,
+			hasNextToken: false
+		};
+		this.notifyCallbacks();
 	}
 
 	/**
@@ -185,9 +213,12 @@ export class SlotsService {
 	}
 
 	/**
-	 * Gets context total from last known slots data or fetches from server
+	 * Gets context total: override from last model load, then last known state, then /slots fetch.
 	 */
 	private async getContextTotal(): Promise<number | null> {
+		if (this.loadedContextTotalOverride != null && this.loadedContextTotalOverride > 0) {
+			return this.loadedContextTotalOverride;
+		}
 		if (this.lastKnownState && this.lastKnownState.contextTotal > 0) {
 			return this.lastKnownState.contextTotal;
 		}
