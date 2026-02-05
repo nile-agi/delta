@@ -328,6 +328,8 @@ public:
     static bool dir_exists(const std::string& path);
     static bool create_dir(const std::string& path);
     static std::vector<std::string> list_dir(const std::string& path);
+    /** Return full path of first .gguf file in directory, or "" if none. For server compatibility when --models-dir is not supported. */
+    static std::string first_gguf_in_dir(const std::string& path);
     static std::string get_home_dir();
     static std::string join_path(const std::string& a, const std::string& b);
     static std::string get_executable_dir();

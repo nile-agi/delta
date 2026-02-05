@@ -641,51 +641,69 @@ int main(int argc, char** argv) {
         int server_ctx = max_context;
 
         if (model_name.empty()) {
-            // No -m: router mode with --models-dir (user-provided or default)
+            // No -m: use models dir (user-provided or default)
             if (models_dir.empty()) {
                 models_dir = tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli");
                 models_dir = tools::FileOps::join_path(models_dir, "models");
             }
-            use_router_mode = true;
+            // Use first .gguf in directory with -m instead of --models-dir for compatibility:
+            // many llama-server builds (e.g. older vendored, some Homebrew) do not support --models-dir.
+            std::string first_gguf = tools::FileOps::first_gguf_in_dir(models_dir);
+            if (!first_gguf.empty()) {
+                model_path = first_gguf;
+                use_router_mode = false;
+                // Derive alias from filename for web UI
+                size_t last_slash = first_gguf.find_last_of("/\\");
+                if (last_slash != std::string::npos) {
+                    model_alias = model_mgr.get_short_name_from_filename(first_gguf.substr(last_slash + 1));
+                    if (model_alias.empty()) model_alias = first_gguf.substr(last_slash + 1);
+                }
+            } else {
+                UI::print_error("No .gguf models in " + models_dir);
+                UI::print_info("Run 'delta pull <model>' first, e.g. delta pull qwen2.5:0.5b");
+                return 1;
+            }
         } else if (!models_dir.empty()) {
             // User passed both -m and --models-dir: prefer single-model (-m)
             use_router_mode = false;
         }
         if (!use_router_mode) {
-            // Single-model: resolve model
-            if (model_name.empty()) {
-                model_name = model_mgr.get_auto_selected_model();
-            }
-            if (!model_mgr.is_model_installed(model_name)) {
-                UI::print_error("Model not found: " + model_name);
-                UI::print_info("Use 'delta pull " + model_name + "' to download it");
-                return 1;
-            }
-            model_path = model_mgr.get_model_path(model_name);
+            // Single-model: resolve model (skip if model_path already set, e.g. from first .gguf in dir)
             if (model_path.empty()) {
-                UI::print_error("Could not resolve model path for: " + model_name);
-                return 1;
-            }
-            if (!max_context_explicit) {
-                server_ctx = model_mgr.get_max_context_for_model(model_name);
-            }
-            // Resolve model alias for web UI
-            std::string filename = model_path;
-            size_t last_slash = filename.find_last_of("/\\");
-            if (last_slash != std::string::npos) {
-                filename = filename.substr(last_slash + 1);
-            }
-            std::string found_name = model_mgr.get_name_from_filename(filename);
-            if (!found_name.empty()) {
-                model_alias = found_name;
-            } else {
-                std::string registry_name_for_alias = model_name;
-                if (model_mgr.is_in_registry(registry_name_for_alias)) {
-                    auto entry = model_mgr.get_registry_entry(registry_name_for_alias);
-                    if (!entry.name.empty()) model_alias = entry.name;
+                if (model_name.empty()) {
+                    model_name = model_mgr.get_auto_selected_model();
                 }
-                if (model_alias.empty()) {
-                    model_alias = model_mgr.get_short_name_from_filename(filename);
+                if (!model_mgr.is_model_installed(model_name)) {
+                    UI::print_error("Model not found: " + model_name);
+                    UI::print_info("Use 'delta pull " + model_name + "' to download it");
+                    return 1;
+                }
+                model_path = model_mgr.get_model_path(model_name);
+                if (model_path.empty()) {
+                    UI::print_error("Could not resolve model path for: " + model_name);
+                    return 1;
+                }
+                if (!max_context_explicit) {
+                    server_ctx = model_mgr.get_max_context_for_model(model_name);
+                }
+                // Resolve model alias for web UI
+                std::string filename = model_path;
+                size_t last_slash = filename.find_last_of("/\\");
+                if (last_slash != std::string::npos) {
+                    filename = filename.substr(last_slash + 1);
+                }
+                std::string found_name = model_mgr.get_name_from_filename(filename);
+                if (!found_name.empty()) {
+                    model_alias = found_name;
+                } else {
+                    std::string registry_name_for_alias = model_name;
+                    if (model_mgr.is_in_registry(registry_name_for_alias)) {
+                        auto entry = model_mgr.get_registry_entry(registry_name_for_alias);
+                        if (!entry.name.empty()) model_alias = entry.name;
+                    }
+                    if (model_alias.empty()) {
+                        model_alias = model_mgr.get_short_name_from_filename(filename);
+                    }
                 }
             }
         }

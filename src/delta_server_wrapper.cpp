@@ -341,10 +341,8 @@ public:
     
     std::string build_llama_server_command(const std::string& model_path, int ctx_size, const std::string& model_alias) {
         std::string cmd = llama_server_path_;
-        // Router mode: no -m, use --models-dir so llama-server scans for .gguf files
-        if (!models_dir_.empty() && model_path.empty()) {
-            cmd += " --models-dir \"" + models_dir_ + "\"";
-        } else if (!model_path.empty()) {
+        // Use -m only (avoid --models-dir for compatibility with builds that don't support it)
+        if (!model_path.empty()) {
             cmd += " -m \"" + model_path + "\"";
         }
         cmd += " --host 0.0.0.0";
@@ -525,7 +523,17 @@ public:
             return 1;
         }
 
-        // Either single model (-m) or router mode (--models-dir) is required
+        // Resolve model: require -m <path> or --models-dir with at least one .gguf (use first for compatibility; many llama-server builds do not support --models-dir)
+        if (model_path_.empty() && !models_dir_.empty()) {
+            std::string first = delta::tools::FileOps::first_gguf_in_dir(models_dir_);
+            if (!first.empty()) {
+                model_path_ = first;
+            } else {
+                std::cerr << "Error: No .gguf models in " << models_dir_ << std::endl;
+                std::cerr << "Add a model to that directory or use -m <path>." << std::endl;
+                return 1;
+            }
+        }
         if (model_path_.empty() && models_dir_.empty()) {
             std::cerr << "Error: No model specified! Use -m <path> or --models-dir <directory>." << std::endl;
             return 1;
@@ -543,9 +551,7 @@ public:
 
         std::cout << "🚀 Starting Delta CLI Server..." << std::endl;
         std::cout << "📡 Server: http://localhost:" << port_ << std::endl;
-        if (!models_dir_.empty()) {
-            std::cout << "📂 Models dir (router mode): " << models_dir_ << std::endl;
-        } else {
+        if (!model_path_.empty()) {
             std::cout << "🤖 Model: " << model_path_ << std::endl;
         }
         std::cout << "⚡ Parallel: " << max_parallel_ << std::endl;
