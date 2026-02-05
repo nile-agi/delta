@@ -61,6 +61,8 @@ public:
     // Launch server automatically (for auto-start on delta launch). Uses port 8080 only.
     // Launches llama-server with -m <path>. If model_path empty and models_dir set, uses first .gguf in models_dir.
     static bool launch_server_auto(const std::string& model_path, int port = 8080, int ctx_size = 0, const std::string& model_alias = "", const std::string& models_dir = "");
+    /** Start UI-only server (model API + static web UI on 8080) when no model; avoids --models-dir on unsupported builds. */
+    static bool launch_ui_only_server();
     
     // Restart llama-server with new model (for model switching)
     static bool restart_llama_server(const std::string& model_path, const std::string& model_name, int ctx_size, const std::string& model_alias);
