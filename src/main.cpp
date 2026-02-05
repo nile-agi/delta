@@ -156,18 +156,29 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     
     UI::init();
     
-    // Launch web UI server: router mode (no model) when current_model empty; else single-model.
+    // Launch web UI server: use first .gguf in ~/.delta-cli/models when no current model (llama-server requires -m; no --models-dir on all builds).
     if (current_model.empty()) {
-        // Router mode: server scans ~/.delta-cli/models; user selects model in Web UI.
         std::string models_dir = tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli");
         models_dir = tools::FileOps::join_path(models_dir, "models");
-        if (Commands::launch_server_auto("", 8080, 0, "", models_dir)) {
-            int actual_port = Commands::get_current_port();
-            std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            tools::Browser::open_url(url);
+        std::string first_gguf = tools::FileOps::first_gguf_in_dir(models_dir);
+        if (first_gguf.empty()) {
+            UI::print_error("No .gguf models in " + models_dir);
+            UI::print_info("Run 'delta pull <model>' first, e.g. delta pull qwen2.5:0.5b");
         } else {
-            UI::print_error("Server failed to start. Check the error messages above.");
+            std::string model_alias;
+            size_t last_slash = first_gguf.find_last_of("/\\");
+            if (last_slash != std::string::npos) {
+                model_alias = model_mgr.get_short_name_from_filename(first_gguf.substr(last_slash + 1));
+                if (model_alias.empty()) model_alias = first_gguf.substr(last_slash + 1);
+            }
+            if (Commands::launch_server_auto(first_gguf, 8080, 0, model_alias, "")) {
+                int actual_port = Commands::get_current_port();
+                std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                tools::Browser::open_url(url);
+            } else {
+                UI::print_error("Server failed to start. Check the error messages above.");
+            }
         }
     } else {
         std::string model_path = model_mgr.get_model_path(current_model);
@@ -633,26 +644,20 @@ int main(int argc, char** argv) {
         return 0;
     }
     
-    // Handle server mode: spawn bundled delta-server (single-model with -m, or router mode with --models-dir)
+    // Handle server mode: spawn llama-server (via delta-server wrapper) with -m <absolute path>
     if (start_server) {
-        bool use_router_mode = false;
         std::string model_path;
         std::string model_alias;
         int server_ctx = max_context;
 
         if (model_name.empty()) {
-            // No -m: use models dir (user-provided or default)
             if (models_dir.empty()) {
                 models_dir = tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli");
                 models_dir = tools::FileOps::join_path(models_dir, "models");
             }
-            // Use first .gguf in directory with -m instead of --models-dir for compatibility:
-            // many llama-server builds (e.g. older vendored, some Homebrew) do not support --models-dir.
             std::string first_gguf = tools::FileOps::first_gguf_in_dir(models_dir);
             if (!first_gguf.empty()) {
                 model_path = first_gguf;
-                use_router_mode = false;
-                // Derive alias from filename for web UI
                 size_t last_slash = first_gguf.find_last_of("/\\");
                 if (last_slash != std::string::npos) {
                     model_alias = model_mgr.get_short_name_from_filename(first_gguf.substr(last_slash + 1));
@@ -663,52 +668,44 @@ int main(int argc, char** argv) {
                 UI::print_info("Run 'delta pull <model>' first, e.g. delta pull qwen2.5:0.5b");
                 return 1;
             }
-        } else if (!models_dir.empty()) {
-            // User passed both -m and --models-dir: prefer single-model (-m)
-            use_router_mode = false;
         }
-        if (!use_router_mode) {
-            // Single-model: resolve model (skip if model_path already set, e.g. from first .gguf in dir)
+        if (model_path.empty()) {
+            if (model_name.empty()) {
+                model_name = model_mgr.get_auto_selected_model();
+            }
+            if (!model_mgr.is_model_installed(model_name)) {
+                UI::print_error("Model not found: " + model_name);
+                UI::print_info("Use 'delta pull " + model_name + "' to download it");
+                return 1;
+            }
+            model_path = model_mgr.get_model_path(model_name);
             if (model_path.empty()) {
-                if (model_name.empty()) {
-                    model_name = model_mgr.get_auto_selected_model();
+                UI::print_error("Could not resolve model path for: " + model_name);
+                return 1;
+            }
+            if (!max_context_explicit) {
+                server_ctx = model_mgr.get_max_context_for_model(model_name);
+            }
+            std::string filename = model_path;
+            size_t last_slash = filename.find_last_of("/\\");
+            if (last_slash != std::string::npos) {
+                filename = filename.substr(last_slash + 1);
+            }
+            std::string found_name = model_mgr.get_name_from_filename(filename);
+            if (!found_name.empty()) {
+                model_alias = found_name;
+            } else {
+                if (model_mgr.is_in_registry(model_name)) {
+                    auto entry = model_mgr.get_registry_entry(model_name);
+                    if (!entry.name.empty()) model_alias = entry.name;
                 }
-                if (!model_mgr.is_model_installed(model_name)) {
-                    UI::print_error("Model not found: " + model_name);
-                    UI::print_info("Use 'delta pull " + model_name + "' to download it");
-                    return 1;
-                }
-                model_path = model_mgr.get_model_path(model_name);
-                if (model_path.empty()) {
-                    UI::print_error("Could not resolve model path for: " + model_name);
-                    return 1;
-                }
-                if (!max_context_explicit) {
-                    server_ctx = model_mgr.get_max_context_for_model(model_name);
-                }
-                // Resolve model alias for web UI
-                std::string filename = model_path;
-                size_t last_slash = filename.find_last_of("/\\");
-                if (last_slash != std::string::npos) {
-                    filename = filename.substr(last_slash + 1);
-                }
-                std::string found_name = model_mgr.get_name_from_filename(filename);
-                if (!found_name.empty()) {
-                    model_alias = found_name;
-                } else {
-                    std::string registry_name_for_alias = model_name;
-                    if (model_mgr.is_in_registry(registry_name_for_alias)) {
-                        auto entry = model_mgr.get_registry_entry(registry_name_for_alias);
-                        if (!entry.name.empty()) model_alias = entry.name;
-                    }
-                    if (model_alias.empty()) {
-                        model_alias = model_mgr.get_short_name_from_filename(filename);
-                    }
+                if (model_alias.empty()) {
+                    model_alias = model_mgr.get_short_name_from_filename(filename);
                 }
             }
         }
 
-        // Find delta-server binary with comprehensive cross-platform search
+        // Find delta-server binary (wrapper that runs llama-server)
         std::string exe_dir = tools::FileOps::get_executable_dir();
         std::vector<std::string> server_candidates;
         
@@ -895,34 +892,26 @@ int main(int argc, char** argv) {
 #endif
         }
 
-        // Build command (router mode: --models-dir only; single-model: -m model_path)
+        // Build command: always -m with absolute path (llama-server requires -m on all builds)
+        std::string abs_model = tools::FileOps::absolute_path(model_path);
+        if (abs_model.empty()) abs_model = model_path;
         std::stringstream cmd;
         cmd << server_bin;
-        if (use_router_mode) {
-            cmd << " --models-dir \"" << models_dir << "\"";
-        } else {
-            cmd << " -m \"" << model_path << "\"";
-        }
+        cmd << " -m \"" << abs_model << "\"";
         cmd << " --port " << server_port
             << " --parallel " << max_parallel;
         if (server_ctx > 0) {
             cmd << " -c " << server_ctx;
         }
         
-        // Add --flash-attn flag for single-model only (router mode uses server defaults)
-        if (!use_router_mode) {
-            if (server_ctx > 16384) {
-                cmd << " --flash-attn off";
-                if (server_ctx > 32768) {
-                    cmd << " --gpu-layers 0";
-                }
-            } else {
-                cmd << " --flash-attn auto";
+        if (server_ctx > 16384) {
+            cmd << " --flash-attn off";
+            if (server_ctx > 32768) {
+                cmd << " --gpu-layers 0";
             }
+        } else {
+            cmd << " --flash-attn auto";
         }
-        
-        // Add --jinja flag for gemma3 models (single-model only)
-        if (!use_router_mode) {
         std::string model_name_lower = model_name;
         std::string model_alias_lower = model_alias;
         std::string model_path_lower = model_path;
@@ -934,15 +923,12 @@ int main(int argc, char** argv) {
             model_path_lower.find("gemma3") != std::string::npos) {
             cmd << " --jinja";
         }
-        }
         
         if (enable_embedding) cmd << " --embedding";
         if (enable_reranking) cmd << " --reranking";
         if (!draft_model.empty()) cmd << " --md \"" << draft_model << "\"";
         if (!grammar_file.empty()) cmd << " --grammar-file \"" << grammar_file << "\"";
-        
-        // Add --alias flag to use short_name instead of filename in web UI (single-model only)
-        if (!use_router_mode && !model_alias.empty()) {
+        if (!model_alias.empty()) {
             cmd << " --alias \"" << model_alias << "\"";
         }
         
@@ -958,7 +944,7 @@ int main(int argc, char** argv) {
             UI::print_error("Failed to start server process");
             return 1;
         }
-        UI::print_success(use_router_mode ? "Delta Server started in background (router mode)" : "Delta Server started in background");
+        UI::print_success("Delta Server started in background");
         std::string url = "http://localhost:" + std::to_string(server_port) + "/index.html";
         UI::print_info("Open: " + url);
         // Open browser after a short delay to ensure server is ready
