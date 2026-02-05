@@ -156,32 +156,31 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     
     UI::init();
     
-    // Launch web UI server: use first .gguf if present, else start with --models-dir so user can install a model from the web UI.
+    // Launch web UI: with a model use llama-server (-m); with no model use UI-only server (no llama-server, no --models-dir).
     if (current_model.empty()) {
         std::string models_dir = tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli");
         models_dir = tools::FileOps::join_path(models_dir, "models");
-        tools::FileOps::create_dir(models_dir);  // ensure dir exists so --models-dir works and UI can install models
+        tools::FileOps::create_dir(models_dir);
         std::string first_gguf = tools::FileOps::first_gguf_in_dir(models_dir);
-        std::string model_path_arg;
-        std::string model_alias;
+        bool opened = false;
         if (!first_gguf.empty()) {
-            model_path_arg = first_gguf;
+            std::string model_alias;
             size_t last_slash = first_gguf.find_last_of("/\\");
             if (last_slash != std::string::npos) {
                 model_alias = model_mgr.get_short_name_from_filename(first_gguf.substr(last_slash + 1));
                 if (model_alias.empty()) model_alias = first_gguf.substr(last_slash + 1);
             }
+            opened = Commands::launch_server_auto(first_gguf, 8080, 0, model_alias, "");
+        } else {
+            opened = Commands::launch_ui_only_server();
         }
-        if (Commands::launch_server_auto(model_path_arg, 8080, 0, model_alias, models_dir)) {
+        if (opened) {
             int actual_port = Commands::get_current_port();
             std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            if (model_path_arg.empty()) {
-                UI::print_info("No model loaded yet. Install one from the web UI: Model Management → Available.");
-            }
             tools::Browser::open_url(url);
         } else {
-            UI::print_error("Server failed to start. Check the error messages above.");
+            UI::print_error("Could not start server. Ensure the web UI is installed (e.g. share/delta-cli/webui).");
         }
     } else {
         std::string model_path = model_mgr.get_model_path(current_model);

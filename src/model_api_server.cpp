@@ -70,6 +70,7 @@ thread_local std::string g_current_model_name;
 class ModelAPIServer {
 private:
     int port_;
+    std::string webui_path_;
     std::unique_ptr<httplib::Server> server_;
     std::thread server_thread_;
     std::atomic<bool> running_;
@@ -567,6 +568,10 @@ private:
                 res.set_content(error.dump(), "application/json");
             }
         });
+        // Serve web UI static files when path is set (for first-time users with no model; no llama-server)
+        if (!webui_path_.empty() && tools::FileOps::dir_exists(webui_path_)) {
+            server_->set_mount_point("/", webui_path_);
+        }
     }
     
     void server_loop() {
@@ -579,7 +584,7 @@ private:
     }
     
 public:
-    ModelAPIServer(int port = 8081) : port_(port), running_(false) {
+    ModelAPIServer(int port = 8081, const std::string& webui_path = "") : port_(port), webui_path_(webui_path), running_(false) {
         server_ = std::make_unique<httplib::Server>();
         setup_routes();
     }
@@ -619,9 +624,15 @@ void set_model_unload_callback(ModelUnloadCallback callback) {
 
 void start_model_api_server(int port) {
     if (!g_model_api_server) {
-        g_model_api_server = std::make_unique<ModelAPIServer>(port);
+        g_model_api_server = std::make_unique<ModelAPIServer>(port, "");
         g_model_api_server->start();
     }
+}
+
+void start_model_api_server(int port, const std::string& webui_path) {
+    stop_model_api_server();
+    g_model_api_server = std::make_unique<ModelAPIServer>(port, webui_path);
+    g_model_api_server->start();
 }
 
 void stop_model_api_server() {

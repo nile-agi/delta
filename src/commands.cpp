@@ -58,6 +58,55 @@ int Commands::current_port_ = 8080;
 std::mutex Commands::server_mutex_;
 
 // Launch server automatically (public method)
+bool Commands::launch_ui_only_server() {
+    std::string exe_dir = tools::FileOps::get_executable_dir();
+    std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
+    std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
+    std::vector<std::string> public_candidates;
+#ifdef _WIN32
+    char cwd[MAX_PATH];
+    if (_getcwd(cwd, MAX_PATH) != nullptr) {
+        std::string cwd_str(cwd);
+        public_candidates.push_back(tools::FileOps::join_path(cwd_str, "public"));
+        public_candidates.push_back(tools::FileOps::join_path(cwd_str, "..\\public"));
+    }
+#else
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+        std::string cwd_str(cwd);
+        public_candidates.push_back(tools::FileOps::join_path(cwd_str, "public"));
+        public_candidates.push_back(tools::FileOps::join_path(cwd_str, "../public"));
+    }
+#endif
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../public"));
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../public"));
+    public_candidates.push_back("/opt/homebrew/share/delta-cli/webui");
+    public_candidates.push_back("/usr/local/share/delta-cli/webui");
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"));
+    public_candidates.push_back("public");
+    public_candidates.push_back("./public");
+    std::string public_path;
+    for (const auto& candidate : public_candidates) {
+        if (!tools::FileOps::dir_exists(candidate)) continue;
+        std::string idx = tools::FileOps::join_path(candidate, "index.html");
+        std::string idx_gz = tools::FileOps::join_path(candidate, "index.html.gz");
+        if (tools::FileOps::file_exists(idx_gz) || tools::FileOps::file_exists(idx)) {
+            public_path = tools::FileOps::absolute_path(candidate);
+            if (public_path.empty()) public_path = candidate;
+            break;
+        }
+    }
+    if (public_path.empty()) return false;
+    stop_llama_server();
+    delta::start_model_api_server(8080, public_path);
+    {
+        std::lock_guard<std::mutex> lock(server_mutex_);
+        current_port_ = 8080;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    return true;
+}
+
 bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size, const std::string& model_alias, const std::string& models_dir) {
     port = 8080;  // Single port for macOS, Linux, Windows
     // Prefer "server" (llama.cpp HTTP server); fallback to delta-server wrapper

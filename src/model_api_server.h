@@ -10,6 +10,8 @@
 
 namespace delta {
     void start_model_api_server(int port = 8081);
+    /** Start model API server on port and serve web UI from webui_path (for first-time users with no model). */
+    void start_model_api_server(int port, const std::string& webui_path);
     void stop_model_api_server();
     
     // Callback function type for model switching

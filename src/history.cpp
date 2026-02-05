@@ -876,10 +876,9 @@ void HistoryManager::initialize_default_session() {
         }
     }
     
-    // If no default session exists, create one
+    // If no default session exists, create one (silent for first-time users)
     if (!default_exists) {
         create_session("default", "unknown");
-        UI::print_info("Created default session for new user");
     }
     
     // ALWAYS switch to default session - this enforces default session usage
@@ -933,7 +932,6 @@ bool HistoryManager::enforce_default_session() {
             UI::print_error("Failed to create default session");
             return false;
         }
-        UI::print_info("Created default session for new user");
     }
     
     // ALWAYS switch to default session - this is the core enforcement
