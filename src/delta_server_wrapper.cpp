@@ -11,7 +11,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <limits.h>
-#include <algorithm>
 #include <cctype>
 #include <thread>
 #include <chrono>
@@ -523,7 +522,7 @@ public:
             return 1;
         }
 
-        // Resolve model: require -m <path> or --models-dir with at least one .gguf (use first for compatibility; many llama-server builds do not support --models-dir)
+        // Resolve model: require -m <path> or --models-dir with at least one .gguf (llama-server does not support --models-dir on all builds)
         if (model_path_.empty() && !models_dir_.empty()) {
             std::string first = delta::tools::FileOps::first_gguf_in_dir(models_dir_);
             if (!first.empty()) {
@@ -537,6 +536,11 @@ public:
         if (model_path_.empty() && models_dir_.empty()) {
             std::cerr << "Error: No model specified! Use -m <path> or --models-dir <directory>." << std::endl;
             return 1;
+        }
+        // Resolve to absolute path so llama-server finds the model regardless of cwd
+        if (!model_path_.empty()) {
+            std::string abs_path = delta::tools::FileOps::absolute_path(model_path_);
+            if (!abs_path.empty()) model_path_ = abs_path;
         }
 
         // Find and use Delta web UI
@@ -577,7 +581,7 @@ public:
             this->stop_llama_server();
         });
         
-        // Start delta-server in background (single-model or router mode)
+        // Start llama-server in background (single-model with -m)
         std::cout << "🚀 Starting delta-server..." << std::endl;
         std::string path_to_load = model_path_;
         if (path_to_load.empty() && !models_dir_.empty()) {

@@ -128,6 +128,23 @@ std::string FileOps::first_gguf_in_dir(const std::string& path) {
     return "";
 }
 
+std::string FileOps::absolute_path(const std::string& path) {
+    if (path.empty()) return "";
+#ifdef _WIN32
+    char resolved[MAX_PATH];
+    if (_fullpath(resolved, path.c_str(), MAX_PATH) != nullptr) {
+        return std::string(resolved);
+    }
+    return path;
+#else
+    char resolved[PATH_MAX];
+    if (realpath(path.c_str(), resolved) != nullptr) {
+        return std::string(resolved);
+    }
+    return path;
+#endif
+}
+
 std::string FileOps::get_home_dir() {
 #ifdef _WIN32
     char path[MAX_PATH];

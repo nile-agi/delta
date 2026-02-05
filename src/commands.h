@@ -59,7 +59,7 @@ public:
     static bool process_command(const std::string& input, InteractiveSession& session);
     
     // Launch server automatically (for auto-start on delta launch). Uses port 8080 only.
-    // If model_path empty and models_dir non-empty, starts in router mode (llama-server scans models_dir for .gguf).
+    // Launches llama-server with -m <path>. If model_path empty and models_dir set, uses first .gguf in models_dir.
     static bool launch_server_auto(const std::string& model_path, int port = 8080, int ctx_size = 0, const std::string& model_alias = "", const std::string& models_dir = "");
     
     // Restart llama-server with new model (for model switching)
@@ -96,7 +96,7 @@ private:
     static int current_port_;
     static std::mutex server_mutex_;
     
-    // Helper to build llama-server command. If model_path empty and models_dir non-empty, router mode (no -m).
+    // Helper to build llama-server command (always -m with absolute path).
     static std::string build_llama_server_cmd(const std::string& server_bin, const std::string& model_path,
                                                int port, int ctx_size, const std::string& model_alias,
                                                const std::string& public_path, const std::string& models_dir = "");
