@@ -156,29 +156,32 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     
     UI::init();
     
-    // Launch web UI server: use first .gguf in ~/.delta-cli/models when no current model (llama-server requires -m; no --models-dir on all builds).
+    // Launch web UI server: use first .gguf if present, else start with --models-dir so user can install a model from the web UI.
     if (current_model.empty()) {
         std::string models_dir = tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli");
         models_dir = tools::FileOps::join_path(models_dir, "models");
+        tools::FileOps::create_dir(models_dir);  // ensure dir exists so --models-dir works and UI can install models
         std::string first_gguf = tools::FileOps::first_gguf_in_dir(models_dir);
-        if (first_gguf.empty()) {
-            UI::print_error("No .gguf models in " + models_dir);
-            UI::print_info("Run 'delta pull <model>' first, e.g. delta pull qwen2.5:0.5b");
-        } else {
-            std::string model_alias;
+        std::string model_path_arg;
+        std::string model_alias;
+        if (!first_gguf.empty()) {
+            model_path_arg = first_gguf;
             size_t last_slash = first_gguf.find_last_of("/\\");
             if (last_slash != std::string::npos) {
                 model_alias = model_mgr.get_short_name_from_filename(first_gguf.substr(last_slash + 1));
                 if (model_alias.empty()) model_alias = first_gguf.substr(last_slash + 1);
             }
-            if (Commands::launch_server_auto(first_gguf, 8080, 0, model_alias, "")) {
-                int actual_port = Commands::get_current_port();
-                std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                tools::Browser::open_url(url);
-            } else {
-                UI::print_error("Server failed to start. Check the error messages above.");
+        }
+        if (Commands::launch_server_auto(model_path_arg, 8080, 0, model_alias, models_dir)) {
+            int actual_port = Commands::get_current_port();
+            std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            if (model_path_arg.empty()) {
+                UI::print_info("No model loaded yet. Install one from the web UI: Model Management → Available.");
             }
+            tools::Browser::open_url(url);
+        } else {
+            UI::print_error("Server failed to start. Check the error messages above.");
         }
     } else {
         std::string model_path = model_mgr.get_model_path(current_model);
@@ -655,6 +658,7 @@ int main(int argc, char** argv) {
                 models_dir = tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli");
                 models_dir = tools::FileOps::join_path(models_dir, "models");
             }
+            tools::FileOps::create_dir(models_dir);
             std::string first_gguf = tools::FileOps::first_gguf_in_dir(models_dir);
             if (!first_gguf.empty()) {
                 model_path = first_gguf;
@@ -663,13 +667,10 @@ int main(int argc, char** argv) {
                     model_alias = model_mgr.get_short_name_from_filename(first_gguf.substr(last_slash + 1));
                     if (model_alias.empty()) model_alias = first_gguf.substr(last_slash + 1);
                 }
-            } else {
-                UI::print_error("No .gguf models in " + models_dir);
-                UI::print_info("Run 'delta pull <model>' first, e.g. delta pull qwen2.5:0.5b");
-                return 1;
             }
+            // else: no model yet, will start with --models-dir so web UI opens
         }
-        if (model_path.empty()) {
+        if (model_path.empty() && !model_name.empty()) {
             if (model_name.empty()) {
                 model_name = model_mgr.get_auto_selected_model();
             }
@@ -892,12 +893,18 @@ int main(int argc, char** argv) {
 #endif
         }
 
-        // Build command: always -m with absolute path (llama-server requires -m on all builds)
-        std::string abs_model = tools::FileOps::absolute_path(model_path);
-        if (abs_model.empty()) abs_model = model_path;
+        // Build command: -m when we have a model, else --models-dir so web UI opens
         std::stringstream cmd;
         cmd << server_bin;
-        cmd << " -m \"" << abs_model << "\"";
+        if (!model_path.empty()) {
+            std::string abs_model = tools::FileOps::absolute_path(model_path);
+            if (abs_model.empty()) abs_model = model_path;
+            cmd << " -m \"" << abs_model << "\"";
+        } else if (!models_dir.empty()) {
+            std::string dir_arg = tools::FileOps::absolute_path(models_dir);
+            if (dir_arg.empty()) dir_arg = models_dir;
+            cmd << " --models-dir \"" << dir_arg << "\"";
+        }
         cmd << " --port " << server_port
             << " --parallel " << max_parallel;
         if (server_ctx > 0) {
