@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { ChatSidebar, ConversationTitleUpdateDialog } from '$lib/components/app';
 	import {
@@ -10,11 +11,28 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { serverStore } from '$lib/stores/server.svelte';
 	import { config, settingsStore } from '$lib/stores/settings.svelte';
+	import { resolveModelApiBaseUrl } from '$lib/utils/model-api-url';
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 
 	let { children } = $props();
+
+	// When served from port 8080, resolve whether API is same-origin (UI-only) or :8081 (with model) before rendering
+	let modelApiReady = $state(!browser || typeof window === 'undefined');
+	$effect(() => {
+		if (!browser || typeof window === 'undefined') {
+			modelApiReady = true;
+			return;
+		}
+		if (window.location.port !== '8080') {
+			modelApiReady = true;
+			return;
+		}
+		resolveModelApiBaseUrl().then(() => {
+			modelApiReady = true;
+		});
+	});
 
 	let isChatRoute = $derived(page.route.id === '/chat/[id]');
 	let isHomeRoute = $derived(page.route.id === '/');
@@ -151,31 +169,37 @@
 
 <Toaster richColors />
 
-<ConversationTitleUpdateDialog
-	bind:open={titleUpdateDialogOpen}
-	currentTitle={titleUpdateCurrentTitle}
-	newTitle={titleUpdateNewTitle}
-	onConfirm={handleTitleUpdateConfirm}
-	onCancel={handleTitleUpdateCancel}
-/>
+{#if modelApiReady}
+	<ConversationTitleUpdateDialog
+		bind:open={titleUpdateDialogOpen}
+		currentTitle={titleUpdateCurrentTitle}
+		newTitle={titleUpdateNewTitle}
+		onConfirm={handleTitleUpdateConfirm}
+		onCancel={handleTitleUpdateCancel}
+	/>
 
-<Sidebar.Provider bind:open={sidebarOpen}>
-	<div class="flex h-screen w-full" style:height="{innerHeight}px">
-		<Sidebar.Root class="h-full">
-			<ChatSidebar bind:this={chatSidebar} />
-		</Sidebar.Root>
+	<Sidebar.Provider bind:open={sidebarOpen}>
+		<div class="flex h-screen w-full" style:height="{innerHeight}px">
+			<Sidebar.Root class="h-full">
+				<ChatSidebar bind:this={chatSidebar} />
+			</Sidebar.Root>
 
-		<Sidebar.Trigger
-			class="transition-left absolute left-0 z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
-				? 'md:left-[var(--sidebar-width)]'
-				: ''}"
-			style="translate: 1rem 1rem;"
-		/>
+			<Sidebar.Trigger
+				class="transition-left absolute left-0 z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
+					? 'md:left-[var(--sidebar-width)]'
+					: ''}"
+				style="translate: 1rem 1rem;"
+			/>
 
-		<Sidebar.Inset class="flex flex-1 flex-col overflow-hidden">
-			{@render children?.()}
-		</Sidebar.Inset>
+			<Sidebar.Inset class="flex flex-1 flex-col overflow-hidden">
+				{@render children?.()}
+			</Sidebar.Inset>
+		</div>
+	</Sidebar.Provider>
+{:else}
+	<div class="flex h-screen w-full items-center justify-center bg-background">
+		<div class="text-muted-foreground">Loading...</div>
 	</div>
-</Sidebar.Provider>
+{/if}
 
 <svelte:window onkeydown={handleKeydown} bind:innerHeight />
