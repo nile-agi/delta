@@ -739,9 +739,11 @@ void Commands::stop_llama_server() {
      
      if (is_ui_only_mode) {
          UI::print_info("   Detected UI-only mode - migrating to full server mode...");
-         // Stop model API server from 8080
-         delta::stop_model_api_server();
-         std::this_thread::sleep_for(std::chrono::milliseconds(500));
+         // CRITICAL: Don't stop model API server synchronously here - it causes deadlock
+         // because we're called from within the server's request handler thread.
+         // The migration thread (spawned from /api/models/use handler) will handle stopping
+         // the old server after the request completes. We just proceed with starting llama-server.
+         // Note: llama-server will fail to bind to 8080 initially, but that's handled in the migration thread.
      }
      
      // Stop current delta-server (check and stop with lock)
