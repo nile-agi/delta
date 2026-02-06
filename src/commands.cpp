@@ -103,6 +103,15 @@ bool Commands::launch_ui_only_server() {
         std::lock_guard<std::mutex> lock(server_mutex_);
         current_port_ = 8080;
     }
+    // Set up model switch callback so when user selects a model, llama-server starts
+    delta::set_model_switch_callback([](const std::string& model_path, const std::string& model_name,
+                                         int ctx_size, const std::string& model_alias) -> bool {
+        return Commands::restart_llama_server(model_path, model_name, ctx_size, model_alias);
+    });
+    // Set up model unload callback (stop llama-server when user clicks Unload)
+    delta::set_model_unload_callback([]() {
+        Commands::stop_llama_server();
+    });
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
     return true;
 }
@@ -720,6 +729,21 @@ void Commands::stop_llama_server() {
      UI::print_info("🔄 Switching to model: " + model_name);
      UI::print_info("   Path: " + model_path);
      
+     // Check if we're in UI-only mode (model API server on 8080, no llama-server)
+     // If so, we need to stop model API server, start llama-server on 8080, then restart model API on 8081
+     bool is_ui_only_mode = false;
+     {
+         std::lock_guard<std::mutex> lock(server_mutex_);
+         is_ui_only_mode = (llama_server_pid_ == 0 && current_port_ == 8080);
+     }
+     
+     if (is_ui_only_mode) {
+         UI::print_info("   Detected UI-only mode - migrating to full server mode...");
+         // Stop model API server from 8080
+         delta::stop_model_api_server();
+         std::this_thread::sleep_for(std::chrono::milliseconds(500));
+     }
+     
      // Stop current delta-server (check and stop with lock)
      {
          std::lock_guard<std::mutex> lock(server_mutex_);
@@ -861,19 +885,79 @@ void Commands::stop_llama_server() {
      llama_server_pid_ = pi.dwProcessId;
      current_model_path_ = model_path;
      
-     // Wait a moment for server to start
-     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+     // Wait for server to start and verify it's listening (up to 30 seconds)
+     bool server_listening = false;
+     for (int attempt = 0; attempt < 60; attempt++) {  // 60 * 500ms = 30 seconds
+         std::this_thread::sleep_for(std::chrono::milliseconds(500));
+         
+         DWORD exit_code;
+         if (!GetExitCodeProcess(pi.hProcess, &exit_code) || exit_code != STILL_ACTIVE) {
+             // Process exited
+             break;
+         }
+         
+         // Check if port is listening
+         WSADATA wsaData;
+         if (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0) {
+             SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+             if (sock != INVALID_SOCKET) {
+                 sockaddr_in addr;
+                 addr.sin_family = AF_INET;
+                 addr.sin_port = htons(current_port_);
+                 inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+                 if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
+                     server_listening = true;
+                     closesocket(sock);
+                     break;
+                 }
+                 closesocket(sock);
+             }
+             WSACleanup();
+         }
+     }
      
      // Check if process is still running
      DWORD exit_code;
-     if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
+     if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE && server_listening) {
          UI::print_info("   ✓ Model loaded successfully!");
          CloseHandle(pi.hProcess);
+         // If we migrated from UI-only mode, restart model API server on 8081
+         if (is_ui_only_mode) {
+             std::this_thread::sleep_for(std::chrono::milliseconds(500));
+             delta::start_model_api_server(8081);
+             UI::print_info("   ✓ Model API server restarted on port 8081");
+         }
          return true;
      } else {
          UI::print_error("   ✗ Failed to start delta-server");
          CloseHandle(pi.hProcess);
          llama_server_pid_ = 0;
+         // If we were migrating from UI-only mode, restore model API server on 8080
+         if (is_ui_only_mode) {
+             std::string exe_dir = tools::FileOps::get_executable_dir();
+             std::vector<std::string> public_candidates = {
+                 tools::FileOps::join_path(exe_dir, "../public"),
+                 tools::FileOps::join_path(exe_dir, "../../public"),
+                 "public",
+                 "./public",
+                 "/opt/homebrew/share/delta-cli/webui",
+                 "/usr/local/share/delta-cli/webui"
+             };
+             std::string public_path;
+             for (const auto& candidate : public_candidates) {
+                 if (tools::FileOps::dir_exists(candidate)) {
+                     std::string idx = tools::FileOps::join_path(candidate, "index.html.gz");
+                     if (tools::FileOps::file_exists(idx) || 
+                         tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
+                         public_path = candidate;
+                         break;
+                     }
+                 }
+             }
+             if (!public_path.empty()) {
+                 delta::start_model_api_server(8080, public_path);
+             }
+         }
          return false;
      }
 #else
@@ -900,21 +984,124 @@ void Commands::stop_llama_server() {
          llama_server_pid_ = -pid; // Store negative for process group
          current_model_path_ = model_path;
          
-         // Wait a moment for server to start
-         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+         // Wait for server to start and verify it's listening (up to 30 seconds)
+         bool server_listening = false;
+         for (int attempt = 0; attempt < 60; attempt++) {  // 60 * 500ms = 30 seconds
+             std::this_thread::sleep_for(std::chrono::milliseconds(500));
+             
+             // Check if process is still running
+             int status;
+             if (waitpid(pid, &status, WNOHANG) != 0) {
+                 // Process exited
+                 break;
+             }
+             
+             // Check if port is listening
+#ifdef _WIN32
+             WSADATA wsaData;
+             if (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0) {
+                 SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+                 if (sock != INVALID_SOCKET) {
+                     sockaddr_in addr;
+                     addr.sin_family = AF_INET;
+                     addr.sin_port = htons(current_port_);
+                     inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+                     if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
+                         server_listening = true;
+                         closesocket(sock);
+                         break;
+                     }
+                     closesocket(sock);
+                 }
+                 WSACleanup();
+             }
+#else
+             int sock = socket(AF_INET, SOCK_STREAM, 0);
+             if (sock >= 0) {
+                 struct sockaddr_in addr;
+                 addr.sin_family = AF_INET;
+                 addr.sin_port = htons(current_port_);
+                 inet_aton("127.0.0.1", &addr.sin_addr);
+                 if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
+                     server_listening = true;
+                     close(sock);
+                     break;
+                 }
+                 close(sock);
+             }
+#endif
+         }
          
          // Check if process is still running
          int status;
-         if (waitpid(pid, &status, WNOHANG) == 0) {
+         if (waitpid(pid, &status, WNOHANG) == 0 && server_listening) {
              UI::print_info("   ✓ Model loaded successfully!");
+             // If we migrated from UI-only mode, restart model API server on 8081
+             if (is_ui_only_mode) {
+                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                 delta::start_model_api_server(8081);
+                 UI::print_info("   ✓ Model API server restarted on port 8081");
+             }
              return true;
          } else {
              UI::print_error("   ✗ Failed to start delta-server");
              llama_server_pid_ = 0;
+             // If we were migrating from UI-only mode, restore model API server on 8080
+             if (is_ui_only_mode) {
+                 std::string exe_dir = tools::FileOps::get_executable_dir();
+                 std::vector<std::string> public_candidates = {
+                     tools::FileOps::join_path(exe_dir, "../public"),
+                     tools::FileOps::join_path(exe_dir, "../../public"),
+                     "public",
+                     "./public",
+                     "/opt/homebrew/share/delta-cli/webui",
+                     "/usr/local/share/delta-cli/webui"
+                 };
+                 std::string public_path;
+                 for (const auto& candidate : public_candidates) {
+                     if (tools::FileOps::dir_exists(candidate)) {
+                         std::string idx = tools::FileOps::join_path(candidate, "index.html.gz");
+                         if (tools::FileOps::file_exists(idx) || 
+                             tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
+                             public_path = candidate;
+                             break;
+                         }
+                     }
+                 }
+                 if (!public_path.empty()) {
+                     delta::start_model_api_server(8080, public_path);
+                 }
+             }
              return false;
          }
      } else {
          UI::print_error("   ✗ Failed to fork process");
+         // If we were migrating from UI-only mode, restore model API server on 8080
+         if (is_ui_only_mode) {
+             std::string exe_dir = tools::FileOps::get_executable_dir();
+             std::vector<std::string> public_candidates = {
+                 tools::FileOps::join_path(exe_dir, "../public"),
+                 tools::FileOps::join_path(exe_dir, "../../public"),
+                 "public",
+                 "./public",
+                 "/opt/homebrew/share/delta-cli/webui",
+                 "/usr/local/share/delta-cli/webui"
+             };
+             std::string public_path;
+             for (const auto& candidate : public_candidates) {
+                 if (tools::FileOps::dir_exists(candidate)) {
+                     std::string idx = tools::FileOps::join_path(candidate, "index.html.gz");
+                     if (tools::FileOps::file_exists(idx) || 
+                         tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
+                         public_path = candidate;
+                         break;
+                     }
+                 }
+             }
+             if (!public_path.empty()) {
+                 delta::start_model_api_server(8080, public_path);
+             }
+         }
          return false;
      }
 #endif

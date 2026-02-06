@@ -233,6 +233,12 @@ class ModelsStore {
 					if (useResponse.ctx_size != null && useResponse.ctx_size > 0) {
 						slotsService.setLoadedContextTotal(useResponse.ctx_size);
 					}
+					// When model is loaded, llama-server is on 8080, so model API must be on 8081
+					// Force model API base URL to 8081 if we're on port 8080
+					if (typeof window !== 'undefined' && window.location.port === '8080') {
+						const { forceModelApi8081 } = await import('$lib/utils/model-api-url');
+						forceModelApi8081();
+					}
 				}
 			} catch (error) {
 				console.warn('Failed to switch model:', error);
