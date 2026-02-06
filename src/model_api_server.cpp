@@ -76,6 +76,88 @@ private:
     std::atomic<bool> running_;
     ModelManager model_mgr_;
     
+    void write_props_fallback(httplib::Response& res) {
+        std::string model_path;
+        std::string model_alias;
+        {
+            std::lock_guard<std::mutex> lock(g_props_fallback_mutex);
+            model_path = g_props_fallback_model_path;
+            model_alias = g_props_fallback_model_alias;
+        }
+        json params = {
+            {"n_predict", -1},
+            {"seed", -1},
+            {"temperature", 0.8},
+            {"dynatemp_range", 0.0},
+            {"dynatemp_exponent", 1.0},
+            {"top_k", 40},
+            {"top_p", 0.95},
+            {"min_p", 0.05},
+            {"top_n_sigma", 0.0},
+            {"xtc_probability", 0.0},
+            {"xtc_threshold", 0.0},
+            {"typ_p", 1.0},
+            {"repeat_last_n", 64},
+            {"repeat_penalty", 1.1},
+            {"presence_penalty", 0.0},
+            {"frequency_penalty", 0.0},
+            {"dry_multiplier", 1.0},
+            {"dry_base", 1.0},
+            {"dry_allowed_length", 0},
+            {"dry_penalty_last_n", 0},
+            {"dry_sequence_breakers", json::array()},
+            {"mirostat", 0},
+            {"mirostat_tau", 5.0},
+            {"mirostat_eta", 0.1},
+            {"stop", json::array()},
+            {"max_tokens", 512},
+            {"n_keep", 0},
+            {"n_discard", 0},
+            {"ignore_eos", false},
+            {"stream", true},
+            {"logit_bias", json::array()},
+            {"n_probs", 0},
+            {"min_keep", 0},
+            {"grammar", ""},
+            {"grammar_lazy", false},
+            {"grammar_triggers", json::array()},
+            {"preserved_tokens", json::array()},
+            {"chat_format", ""},
+            {"reasoning_format", ""},
+            {"reasoning_in_content", false},
+            {"thinking_forced_open", false},
+            {"samplers", json::array()},
+            {"speculative.n_max", 0},
+            {"speculative.n_min", 0},
+            {"speculative.p_min", 0.0},
+            {"timings_per_token", false},
+            {"post_sampling_probs", false},
+            {"lora", json::array()}
+        };
+        json default_gen = {
+            {"id", 0},
+            {"id_task", 0},
+            {"n_ctx", 0},
+            {"speculative", false},
+            {"is_processing", false},
+            {"params", params},
+            {"prompt", ""},
+            {"next_token", {{"has_next_token", false}, {"has_new_line", false}, {"n_remain", 0}, {"n_decoded", 0}, {"stopping_word", ""}}}
+        };
+        json fallback = {
+            {"default_generation_settings", default_gen},
+            {"total_slots", 1},
+            {"model_path", model_path},
+            {"model_alias", model_alias},
+            {"modalities", {{"vision", false}, {"audio", false}}},
+            {"chat_template", ""},
+            {"bos_token", ""},
+            {"eos_token", ""},
+            {"build_info", "delta-cli"}
+        };
+        res.set_content(fallback.dump(), "application/json");
+    }
+
     void setup_routes() {
         // CORS headers
         server_->set_default_headers({
@@ -89,8 +171,13 @@ private:
             return;
         });
         
-        // GET /api/props - Server props for web UI (proxy to main server or return fallback when /props returns 404)
-        server_->Get("/api/props", [](const httplib::Request&, httplib::Response& res) {
+        // GET /props - Same-origin request from web UI; in UI-only mode we serve this so the UI does not show "Server /props endpoint not available"
+        server_->Get("/props", [this](const httplib::Request&, httplib::Response& res) {
+            write_props_fallback(res);
+        });
+        
+        // GET /api/props - Proxy to llama-server when running, else fallback (for requests to port 8081)
+        server_->Get("/api/props", [this](const httplib::Request&, httplib::Response& res) {
             try {
                 httplib::Client cli("127.0.0.1", 8080);
                 cli.set_connection_timeout(2, 0);
@@ -103,86 +190,7 @@ private:
             } catch (...) {
                 // Proxy failed (e.g. connection refused), use fallback
             }
-            // Fallback: minimal props so UI loads when main server (8080) does not serve /props
-            std::string model_path;
-            std::string model_alias;
-            {
-                std::lock_guard<std::mutex> lock(g_props_fallback_mutex);
-                model_path = g_props_fallback_model_path;
-                model_alias = g_props_fallback_model_alias;
-            }
-            json params = {
-                {"n_predict", -1},
-                {"seed", -1},
-                {"temperature", 0.8},
-                {"dynatemp_range", 0.0},
-                {"dynatemp_exponent", 1.0},
-                {"top_k", 40},
-                {"top_p", 0.95},
-                {"min_p", 0.05},
-                {"top_n_sigma", 0.0},
-                {"xtc_probability", 0.0},
-                {"xtc_threshold", 0.0},
-                {"typ_p", 1.0},
-                {"repeat_last_n", 64},
-                {"repeat_penalty", 1.1},
-                {"presence_penalty", 0.0},
-                {"frequency_penalty", 0.0},
-                {"dry_multiplier", 1.0},
-                {"dry_base", 1.0},
-                {"dry_allowed_length", 0},
-                {"dry_penalty_last_n", 0},
-                {"dry_sequence_breakers", json::array()},
-                {"mirostat", 0},
-                {"mirostat_tau", 5.0},
-                {"mirostat_eta", 0.1},
-                {"stop", json::array()},
-                {"max_tokens", 512},
-                {"n_keep", 0},
-                {"n_discard", 0},
-                {"ignore_eos", false},
-                {"stream", true},
-                {"logit_bias", json::array()},
-                {"n_probs", 0},
-                {"min_keep", 0},
-                {"grammar", ""},
-                {"grammar_lazy", false},
-                {"grammar_triggers", json::array()},
-                {"preserved_tokens", json::array()},
-                {"chat_format", ""},
-                {"reasoning_format", ""},
-                {"reasoning_in_content", false},
-                {"thinking_forced_open", false},
-                {"samplers", json::array()},
-                {"speculative.n_max", 0},
-                {"speculative.n_min", 0},
-                {"speculative.p_min", 0.0},
-                {"timings_per_token", false},
-                {"post_sampling_probs", false},
-                {"lora", json::array()}
-            };
-            json default_gen = {
-                {"id", 0},
-                {"id_task", 0},
-                {"n_ctx", 0},
-                {"speculative", false},
-                {"is_processing", false},
-                {"params", params},
-                {"prompt", ""},
-                {"next_token", {{"has_next_token", false}, {"has_new_line", false}, {"n_remain", 0}, {"n_decoded", 0}, {"stopping_word", ""}}}
-            };
-            json fallback = {
-                {"default_generation_settings", default_gen},
-                {"total_slots", 1},
-                {"model_path", model_path},
-                {"model_alias", model_alias},
-                {"modalities", {{"vision", false}, {"audio", false}}},
-                {"chat_template", ""},
-                {"bos_token", ""},
-                {"eos_token", ""},
-                {"build_info", "delta-cli"}
-            };
-            res.set_content(fallback.dump(), "application/json");
+            write_props_fallback(res);
         });
         
         // GET /api/models/available - List all available models
