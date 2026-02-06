@@ -25,6 +25,8 @@
 #include <map>
 #include <mutex>
 #include <iomanip>
+#include <future>
+#include <chrono>
 #ifdef _WIN32
 #include <windows.h>
 #include <sysinfoapi.h>
@@ -481,17 +483,55 @@ private:
                 }
                 
                 // Try to actually switch the model if callback is set
+                // CRITICAL: If we're in UI-only mode (port 8080), migration needs to stop this server.
+                // This would deadlock if done synchronously because we're in the server's request handler thread.
+                // Solution: Run the callback in a detached thread so the request can return first.
                 bool model_loaded = false;
                 {
                     std::lock_guard<std::mutex> lock(g_props_fallback_mutex);
                     g_props_fallback_model_path = model_path;
                     g_props_fallback_model_alias = model_alias;
                 }
+                
                 if (g_model_switch_callback) {
-                    try {
-                        model_loaded = (*g_model_switch_callback)(model_path, model_name, ctx_size, model_alias);
-                    } catch (const std::exception& e) {
-                        std::cerr << "[ERROR] Error switching model: " << e.what() << std::endl;
+                    // Check if we're likely in UI-only mode (on port 8080)
+                    // If so, run migration asynchronously to avoid deadlock
+                    bool likely_ui_only = (port_ == 8080);
+                    
+                    if (likely_ui_only) {
+                        // Run migration in detached thread to avoid deadlock
+                        // The thread will stop this server after the request handler returns
+                        std::thread migration_thread([model_path, model_name, ctx_size, model_alias]() {
+                            try {
+                                // Wait for request handler to return and response to be sent
+                                std::this_thread::sleep_for(std::chrono::milliseconds(300));
+                                
+                                // Now stop the model API server (we're in a separate thread, so safe)
+                                std::cerr << "[INFO] Stopping model API server to migrate to full server mode..." << std::endl;
+                                stop_model_api_server();
+                                
+                                // Wait a bit for port to be released
+                                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                                
+                                // Now call the callback to start llama-server
+                                if (g_model_switch_callback) {
+                                    (*g_model_switch_callback)(model_path, model_name, ctx_size, model_alias);
+                                }
+                            } catch (const std::exception& e) {
+                                std::cerr << "[ERROR] Error in migration thread: " << e.what() << std::endl;
+                            }
+                        });
+                        migration_thread.detach();
+                        
+                        // Return immediately - migration happens in background
+                        model_loaded = false;
+                    } else {
+                        // Normal mode - can call synchronously
+                        try {
+                            model_loaded = (*g_model_switch_callback)(model_path, model_name, ctx_size, model_alias);
+                        } catch (const std::exception& e) {
+                            std::cerr << "[ERROR] Error switching model: " << e.what() << std::endl;
+                        }
                     }
                 }
                 
@@ -504,7 +544,9 @@ private:
                     {"loaded", model_loaded},
                     {"message", model_loaded 
                         ? "Model loaded successfully! The server is now using " + model_alias + "."
-                        : "Model selected. The model path will be sent in API requests. Note: llama-server uses the model loaded at startup. To actually use this model, restart the server with: ./delta-server -m \"" + model_path + "\" --port 8080"}
+                        : (model_loaded == false && port_ == 8080
+                            ? "Model migration in progress. The server is switching to full mode. This may take a few seconds."
+                            : "Model selected. The model path will be sent in API requests. Note: llama-server uses the model loaded at startup. To actually use this model, restart the server with: ./delta-server -m \"" + model_path + "\" --port 8080")}
                 };
                 
                 res.set_content(result.dump(), "application/json");
@@ -608,7 +650,26 @@ public:
             server_->stop();
         }
         if (server_thread_.joinable()) {
-            server_thread_.join();
+            // Check if we're being called from within the server thread itself
+            // If so, detach instead of join to avoid deadlock
+            if (server_thread_.get_id() == std::this_thread::get_id()) {
+                // We're in the server thread - can't join ourselves, so detach
+                std::cerr << "[WARN] stop() called from server thread, detaching..." << std::endl;
+                server_thread_.detach();
+            } else {
+                // Use a timeout to avoid deadlock if thread is blocked
+                auto future = std::async(std::launch::async, [this]() {
+                    if (server_thread_.joinable()) {
+                        server_thread_.join();
+                    }
+                });
+                // Wait up to 2 seconds for the thread to finish
+                if (future.wait_for(std::chrono::seconds(2)) == std::future_status::timeout) {
+                    // Thread didn't finish in time - detach it to avoid deadlock
+                    std::cerr << "[WARN] Model API server thread did not finish in time, detaching..." << std::endl;
+                    server_thread_.detach();
+                }
+            }
         }
     }
     
