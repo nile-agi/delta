@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ModelsService, type ModelInfo } from '$lib/services/models';
 	import { slotsService } from '$lib/services/slots';
-	import { modelsCatalog, getSmallestCompatibleModel } from '$lib/data/models_catalog';
+	import { modelsCatalog } from '$lib/data/models_catalog';
 	import { selectedModelName as getSelectedModelName } from '$lib/stores/models.svelte';
 	import FamilyAccordion from './FamilyAccordion.svelte';
 	import InstalledModelRow from './InstalledModelRow.svelte';
@@ -32,7 +32,6 @@
 	let progressPollInterval: ReturnType<typeof setInterval> | null = null;
 	let removingModel = $state<string | null>(null);
 	let confirmDeleteModel = $state<string | null>(null);
-	let autoDownloadAttempted = $state(false);
 
 	const selectedModelName = $derived(getSelectedModelName());
 
@@ -200,34 +199,10 @@
 		}
 	}
 
-	async function autoDownloadSmallestCompatible() {
-		if (autoDownloadAttempted || systemRAMGB === null || installedModels.length > 0) {
-			return;
-		}
-
-		autoDownloadAttempted = true;
-		const smallestModel = getSmallestCompatibleModel(systemRAMGB);
-
-		if (smallestModel) {
-			toast.info(`Auto-downloading smallest compatible model: ${smallestModel.display_name}`);
-			await handleDownload(smallestModel.name);
-		} else {
-			console.warn('No compatible models found for auto-download');
-		}
-	}
-
 	onMount(async () => {
 		console.log('ModelManagementTab mounted');
 		await loadSystemRAM();
 		await loadInstalledModels();
-
-		// Auto-download smallest compatible model if none installed
-		if (installedModels.length === 0 && systemRAMGB !== null) {
-			// Delay auto-download slightly to let UI render
-			setTimeout(() => {
-				autoDownloadSmallestCompatible();
-			}, 1000);
-		}
 	});
 
 	onDestroy(() => {
