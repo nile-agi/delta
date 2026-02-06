@@ -26,6 +26,8 @@ export interface ModelOperationResponse {
 	model_alias?: string;
 	/** True when the server was restarted with the new model (same as /use in terminal). */
 	loaded?: boolean;
+	/** Context size (n_ctx) the model was loaded with; from backend -c / llama-server. */
+	ctx_size?: number;
 }
 
 export class ModelsService {
