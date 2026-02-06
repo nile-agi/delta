@@ -329,7 +329,8 @@
 	<ServerLoadingSplash />
 {:else if serverStore.error && !serverStore.modelName}
 	<ServerErrorSplash error={serverStore.error} />
-{:else if serverStore.modelName}
+{:else if serverStore.serverProps != null}
+	<!-- Server reachable (with or without model): show welcome and input so user can download a model or chat -->
 	<div
 		aria-label="Welcome screen with file drop zone"
 		class="flex h-full items-center justify-center"

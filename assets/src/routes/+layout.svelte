@@ -29,9 +29,13 @@
 			modelApiReady = true;
 			return;
 		}
-		resolveModelApiBaseUrl().then(() => {
+		const done = () => {
 			modelApiReady = true;
-		});
+		};
+		Promise.race([
+			resolveModelApiBaseUrl(),
+			new Promise<void>((resolve) => setTimeout(resolve, 3000))
+		]).then(done);
 	});
 
 	let isChatRoute = $derived(page.route.id === '/chat/[id]');

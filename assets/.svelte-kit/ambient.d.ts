@@ -98,6 +98,7 @@ declare module '$env/static/private' {
 	export const HOMEBREW_CELLAR: string;
 	export const CC: string;
 	export const OSLogRateLimit: string;
+	export const VSCODE_L10N_BUNDLE_LOCATION: string;
 	export const VSCODE_CWD: string;
 	export const npm_node_execpath: string;
 	export const npm_config_prefix: string;
@@ -206,6 +207,7 @@ declare module '$env/dynamic/private' {
 		HOMEBREW_CELLAR: string;
 		CC: string;
 		OSLogRateLimit: string;
+		VSCODE_L10N_BUNDLE_LOCATION: string;
 		VSCODE_CWD: string;
 		npm_node_execpath: string;
 		npm_config_prefix: string;
