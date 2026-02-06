@@ -57,6 +57,16 @@ export function resolveModelApiBaseUrl(): Promise<void> {
 }
 
 /**
+ * Force model API to use 8081 (e.g. after llama-server starts on 8080)
+ */
+export function forceModelApi8081(): void {
+	if (typeof window !== 'undefined' && window.location.port === '8080') {
+		cachedBaseUrl = build8081Url();
+		resolved = true;
+	}
+}
+
+/**
  * Returns the model API base URL ('' for same-origin or 'http://host:8081').
  * When on 8080, ensure resolveModelApiBaseUrl() has been awaited first.
  */
