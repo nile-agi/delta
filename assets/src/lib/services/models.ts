@@ -166,13 +166,24 @@ export class ModelsService {
 	 * Download a model (returns immediately, use getDownloadProgress to track)
 	 */
 	static async download(modelName: string): Promise<ModelOperationResponse> {
-		const response = await fetch(`${getModelApiBaseUrl()}/api/models/download`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({ model: modelName })
-		});
+		let response: Response;
+		try {
+			response = await fetch(`${getModelApiBaseUrl()}/api/models/download`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ model: modelName })
+			});
+		} catch (e) {
+			const msg =
+				e instanceof Error && e.message === 'Failed to fetch'
+					? "Cannot reach model server. Make sure Delta is running (e.g. run 'delta' in terminal or start delta-server)."
+					: e instanceof Error
+						? e.message
+						: 'Failed to fetch';
+			throw new Error(msg);
+		}
 
 		if (!response.ok) {
 			const error = await response.json().catch(() => ({}));
