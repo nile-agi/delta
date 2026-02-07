@@ -57,11 +57,8 @@ std::string Commands::current_model_path_ = "";
 int Commands::current_port_ = 8080;
 std::mutex Commands::server_mutex_;
 
-// Launch server automatically (public method)
-bool Commands::launch_ui_only_server() {
+std::string Commands::get_webui_public_path() {
     std::string exe_dir = tools::FileOps::get_executable_dir();
-    std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
-    std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
     std::vector<std::string> public_candidates;
 #ifdef _WIN32
     char cwd[MAX_PATH];
@@ -85,17 +82,32 @@ bool Commands::launch_ui_only_server() {
     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"));
     public_candidates.push_back("public");
     public_candidates.push_back("./public");
-    std::string public_path;
     for (const auto& candidate : public_candidates) {
         if (!tools::FileOps::dir_exists(candidate)) continue;
         std::string idx = tools::FileOps::join_path(candidate, "index.html");
         std::string idx_gz = tools::FileOps::join_path(candidate, "index.html.gz");
         if (tools::FileOps::file_exists(idx_gz) || tools::FileOps::file_exists(idx)) {
-            public_path = tools::FileOps::absolute_path(candidate);
-            if (public_path.empty()) public_path = candidate;
-            break;
+            std::string path = tools::FileOps::absolute_path(candidate);
+            return path.empty() ? candidate : path;
         }
     }
+    return "";
+}
+
+void Commands::start_ui_only_server_on_8080() {
+    std::string public_path = get_webui_public_path();
+    if (public_path.empty()) return;
+    delta::stop_model_api_server();
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    delta::start_model_api_server(8080, public_path);
+    {
+        std::lock_guard<std::mutex> lock(server_mutex_);
+        current_port_ = 8080;
+    }
+}
+
+bool Commands::launch_ui_only_server() {
+    std::string public_path = get_webui_public_path();
     if (public_path.empty()) return false;
     stop_llama_server();
     delta::start_model_api_server(8080, public_path);
@@ -108,9 +120,13 @@ bool Commands::launch_ui_only_server() {
                                          int ctx_size, const std::string& model_alias) -> bool {
         return Commands::restart_llama_server(model_path, model_name, ctx_size, model_alias);
     });
-    // Set up model unload callback (stop llama-server when user clicks Unload)
+    // Set up model unload callback: stop llama-server then restore UI-only server so refresh keeps working
     delta::set_model_unload_callback([]() {
         Commands::stop_llama_server();
+        std::thread([]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            Commands::start_ui_only_server_on_8080();
+        }).detach();
     });
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
     return true;

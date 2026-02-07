@@ -63,6 +63,8 @@ public:
     static bool launch_server_auto(const std::string& model_path, int port = 8080, int ctx_size = 0, const std::string& model_alias = "", const std::string& models_dir = "");
     /** Start UI-only server (model API + static web UI on 8080) when no model; avoids --models-dir on unsupported builds. */
     static bool launch_ui_only_server();
+    /** Restore UI-only server on 8080 after unload (call from deferred thread so response can be sent first). */
+    static void start_ui_only_server_on_8080();
     
     // Restart llama-server with new model (for model switching)
     static bool restart_llama_server(const std::string& model_path, const std::string& model_name, int ctx_size, const std::string& model_alias);
@@ -102,6 +104,7 @@ private:
     static std::string build_llama_server_cmd(const std::string& server_bin, const std::string& model_path,
                                                int port, int ctx_size, const std::string& model_alias,
                                                const std::string& public_path, const std::string& models_dir = "");
+    static std::string get_webui_public_path();
 };
 
 } // namespace delta
