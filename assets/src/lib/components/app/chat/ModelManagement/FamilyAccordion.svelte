@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { ChevronDown, ChevronRight } from '@lucide/svelte';
 	import type { ModelFamily } from '$lib/data/models_catalog';
+	import { isLogoPath } from '$lib/data/models_catalog';
 	import ModelCard from './ModelCard.svelte';
 	import { fly } from 'svelte/transition';
 
@@ -61,9 +63,17 @@
 		<div class="flex min-w-0 flex-1 items-center gap-4">
 			<!-- Family Icon -->
 			<div
-				class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#1a2b44] text-xl"
+				class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1a2b44] text-xl"
 			>
-				{family.icon}
+				{#if isLogoPath(family.icon)}
+					<img
+						src={`${base}/${encodeURIComponent(family.icon)}`}
+						alt=""
+						class="h-7 w-7 object-contain"
+					/>
+				{:else}
+					{family.icon}
+				{/if}
 			</div>
 
 			<!-- Family Name and Description -->
@@ -93,6 +103,7 @@
 				{#each family.models as model (model.name)}
 					<ModelCard
 						{model}
+						familyIcon={family.icon}
 						{systemRAMGB}
 						isInstalled={installedModelNames.has(model.name)}
 						onDownload={onModelDownload}

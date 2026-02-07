@@ -42,7 +42,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Ministral 3',
 		description:
 			"Mistral AI's compact edge models with vision capabilities. Offers best cost-to-performance ratio for on-device deployment in 3B, 8B, 14B sizes.",
-		icon: 'M',
+		icon: 'ministral logo.png',
 		models: [
 			{
 				name: 'ministral-3:3b',
@@ -78,7 +78,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Qwen3 VL',
 		description:
 			"Alibaba's vision-language model for understanding text, images, and video. Features OCR in 32 languages, GUI agents, and spatial reasoning.",
-		icon: '∇',
+		icon: 'qwen logo.jpeg',
 		models: [
 			{
 				name: 'qwen3-vl:2b',
@@ -123,7 +123,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Gemma 3',
 		description:
 			"Google's multimodal models built from Gemini technology. Supports 140+ languages, vision, and text tasks with up to 128K context for edge to cloud deployment.",
-		icon: '◇',
+		icon: 'gemma logo.svg',
 		models: [
 			{
 				name: 'gemma3:270m',
@@ -177,7 +177,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Qwen3',
 		description:
 			"Alibaba's hybrid reasoning models with thinking/non-thinking modes. Excels at coding, math, and multilingual tasks across 119 languages.",
-		icon: '∇',
+		icon: 'qwen logo.jpeg',
 		models: [
 			{
 				name: 'qwen3:0.6b',
@@ -240,7 +240,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'GLM',
 		description:
 			"Zhipu AI's agentic reasoning and coding models. Built for software engineering, browser automation, and multi-turn tool use.",
-		icon: 'Z',
+		icon: 'glm logo.svg',
 		models: [
 			{
 				name: 'glm-4.7:flash',
@@ -276,7 +276,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Devstral 2',
 		description:
 			"Mistral AI's agentic coding models for software engineering tasks. Excels at exploring codebases, multi-file editing, and powering code agents.",
-		icon: 'D',
+		icon: 'ministral logo.png',
 		models: [
 			{
 				name: 'devstral-2:24b',
@@ -303,7 +303,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Nemotron Nano 3',
 		description:
 			"NVIDIA's efficient hybrid MoE model for agentic AI. Built for reasoning, coding, and tool use with 1M token context and 4x faster throughput.",
-		icon: 'N',
+		icon: 'nemotron logo.png',
 		models: [
 			{
 				name: 'nemotron-nano-3:30b-a3b',
@@ -321,7 +321,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'GPT-OSS',
 		description:
 			"OpenAI's first open-weight models since GPT-2. Built for reasoning, agentic tasks, and developer use with function calling and tool use capabilities.",
-		icon: 'G',
+		icon: 'GPT logo.png',
 		models: [
 			{
 				name: 'gpt-oss:20b',
@@ -348,7 +348,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Qwen3 Coder',
 		description:
 			"Alibaba's specialized coding model for agentic software engineering. Optimized for function calling, tool use, and repository-scale reasoning.",
-		icon: '∇',
+		icon: 'qwen logo.jpeg',
 		models: [
 			{
 				name: 'qwen3-coder:30b-a3b',
@@ -377,9 +377,26 @@ export function findModelByName(name: string): ModelCatalogModel | undefined {
 	return getAllModels().find((model) => model.name === name);
 }
 
+/** Logo filenames in assets/static (used for family icons in Catalog and Installed). */
+export const FAMILY_LOGO_FILES: Record<string, string> = {
+	gemma: 'gemma logo.svg',
+	qwen: 'qwen logo.jpeg',
+	ministral: 'ministral logo.png',
+	mistral: 'ministral logo.png',
+	devstral: 'ministral logo.png',
+	glm: 'glm logo.svg',
+	nemotron: 'nemotron logo.png',
+	gpt: 'GPT logo.png'
+};
+
+/** True if icon is a logo filename (has file extension). */
+export function isLogoPath(icon: string): boolean {
+	return /\.(svg|png|jpe?g|webp)$/i.test(icon.trim());
+}
+
 /**
  * Get family icon for a model by name (shared between Catalog and Installed).
- * LlamaBarn-style: ◇ Gemma, ∇ Qwen, M Ministral/Mistral, etc.
+ * Returns logo filename from static/ or fallback character.
  */
 export function getFamilyIconForModelName(name: string): string {
 	const catalogModel = findModelByName(name);
@@ -389,13 +406,12 @@ export function getFamilyIconForModelName(name: string): string {
 		}
 	}
 	const lower = name.toLowerCase();
-	if (lower.includes('gemma')) return '◇';
-	if (lower.includes('qwen')) return '∇';
-	if (lower.includes('ministral') || lower.includes('mistral')) return 'M';
-	if (lower.includes('glm')) return 'Z';
-	if (lower.includes('devstral')) return 'D';
-	if (lower.includes('nemotron')) return 'N';
-	if (lower.includes('gpt')) return 'G';
+	if (lower.includes('gemma')) return FAMILY_LOGO_FILES.gemma;
+	if (lower.includes('qwen')) return FAMILY_LOGO_FILES.qwen;
+	if (lower.includes('ministral') || lower.includes('mistral') || lower.includes('devstral')) return FAMILY_LOGO_FILES.ministral;
+	if (lower.includes('glm')) return FAMILY_LOGO_FILES.glm;
+	if (lower.includes('nemotron')) return FAMILY_LOGO_FILES.nemotron;
+	if (lower.includes('gpt')) return FAMILY_LOGO_FILES.gpt;
 	return '●';
 }
 
