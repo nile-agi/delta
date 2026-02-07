@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { Trash2, Copy, Loader2, ChevronDown, ChevronRight, Info } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Tooltip from '$lib/components/ui/tooltip';
@@ -7,7 +8,8 @@
 		findModelByName,
 		getContextOptionsForModel,
 		estimateMemoryGB,
-		getFamilyIconForModelName
+		getFamilyIconForModelName,
+		isLogoPath
 	} from '$lib/data/models_catalog';
 	import { fly } from 'svelte/transition';
 
@@ -128,9 +130,17 @@
 		>
 			<!-- Family Icon -->
 			<div
-				class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#1a2b44] text-xl text-[#e0e0ff]"
+				class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1a2b44] text-xl text-[#e0e0ff]"
 			>
-				{familyIcon}
+				{#if isLogoPath(familyIcon)}
+					<img
+						src={`${base}/${encodeURIComponent(familyIcon)}`}
+						alt=""
+						class="h-7 w-7 object-contain"
+					/>
+				{:else}
+					{familyIcon}
+				{/if}
 			</div>
 			<!-- Model name, size, ctx -->
 			<div class="min-w-0 flex-1">

@@ -1,14 +1,16 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { Download, Loader2, AlertCircle } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { ModelCatalogModel } from '$lib/data/models_catalog';
-	import { getQuantizationSuggestions } from '$lib/data/models_catalog';
+	import { getQuantizationSuggestions, isLogoPath } from '$lib/data/models_catalog';
 
 	interface Props {
 		model: ModelCatalogModel;
 		systemRAMGB: number;
 		isInstalled: boolean;
+		familyIcon?: string;
 		onDownload?: (modelName: string) => void;
 		onRemove?: (modelName: string) => void;
 		downloading?: boolean;
@@ -28,12 +30,15 @@
 		model,
 		systemRAMGB,
 		isInstalled,
+		familyIcon,
 		onDownload,
 		onRemove,
 		downloading = false,
 		removing,
 		downloadProgress
 	}: Props = $props();
+
+	const displayIcon = $derived(model.icon ?? familyIcon ?? '');
 	/* eslint-enable @typescript-eslint/no-unused-vars */
 
 	const isCompatible = $derived(model.required_ram_gb <= systemRAMGB);
@@ -71,12 +76,20 @@
 		? 'border-[#1a2b44]/50 bg-[#11243a] hover:border-[#4cc9f0]/20 hover:bg-[#1a2b44]'
 		: 'border-[#1a2b44]/30 bg-[#0a1421] opacity-60'}"
 >
-	<!-- Model Icon (if available) -->
-	{#if model.icon}
+	<!-- Model Icon (family or model icon) -->
+	{#if displayIcon}
 		<div
-			class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#1a2b44] text-lg"
+			class="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1a2b44] text-lg"
 		>
-			{model.icon}
+			{#if isLogoPath(displayIcon)}
+				<img
+					src={`${base}/${encodeURIComponent(displayIcon)}`}
+					alt=""
+					class="h-6 w-6 object-contain"
+				/>
+			{:else}
+				{displayIcon}
+			{/if}
 		</div>
 	{/if}
 
