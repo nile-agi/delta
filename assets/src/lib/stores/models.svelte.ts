@@ -75,46 +75,19 @@ class ModelsStore {
 		this._error = null;
 
 		try {
-			// Fetch from both APIs: main API (currently loaded model) and model management API (all installed models)
+			// Fetch installed models from model management API (single source of truth for the list).
+			// Optionally fetch main API only to detect currently loaded model for initial selection.
 			const [mainResponse, installedModelsResponse] = await Promise.allSettled([
 				ModelsService.list(),
 				ModelsService.listInstalled().catch(() => null) // Gracefully handle if model API server is not running
 			]);
 
-			// Get models from main API (currently loaded model)
-			const mainModels: ModelOption[] = [];
-			if (mainResponse.status === 'fulfilled') {
-				const response = mainResponse.value;
-				mainModels.push(
-					...response.data.map((item, index) => {
-						const details = response.models?.[index];
-						const rawCapabilities = Array.isArray(details?.capabilities)
-							? details?.capabilities
-							: [];
-						const displayNameSource =
-							details?.name && details.name.trim().length > 0 ? details.name : item.id;
-						const displayName = this.toDisplayName(displayNameSource);
-
-						return {
-							id: item.id,
-							name: displayName,
-							model: details?.model || item.id,
-							description: details?.description,
-							capabilities: rawCapabilities.filter((value): value is string => Boolean(value)),
-							details: details?.details,
-							meta: item.meta ?? null
-						} satisfies ModelOption;
-					})
-				);
-			}
-
-			// Get all installed models from model management API
+			// Build options only from installed models so each model appears once with display_name.
 			const installedModelsMap = new SvelteMap<string, ModelOption>();
 			if (
 				installedModelsResponse.status === 'fulfilled' &&
 				installedModelsResponse.value !== null
 			) {
-				// Handle both formats: {models: [...]} or [...] (for backward compatibility)
 				const responseData = installedModelsResponse.value;
 				const installed = Array.isArray(responseData) ? responseData : responseData.models || [];
 
@@ -124,17 +97,13 @@ class ModelsStore {
 				}
 
 				for (const modelInfo of installed) {
-					// Use model name as ID (e.g., "qwen3:0.6b")
 					const modelId = modelInfo.name;
 					const displayName = modelInfo.display_name || this.toDisplayName(modelInfo.name);
-
-					// Get model path - we'll fetch it when needed, but store the name for now
-					// The model name will be used to get the path when selected
 
 					installedModelsMap.set(modelId, {
 						id: modelId,
 						name: displayName,
-						model: modelInfo.name, // Store the model name/ID
+						model: modelInfo.name,
 						description: modelInfo.description,
 						capabilities: [],
 						details: {
@@ -145,31 +114,59 @@ class ModelsStore {
 				}
 			}
 
-			// Merge: add installed models, but keep main API models if they exist (they have more details)
-			for (const mainModel of mainModels) {
-				installedModelsMap.set(mainModel.id, mainModel);
-			}
-
 			const models = Array.from(installedModelsMap.values());
-
-			// Sort by name for consistent ordering
 			models.sort((a, b) => a.name.localeCompare(b.name));
-
 			this._models = models;
 
-			// On initial load (not force-refresh): open in "Select model" mode so user chooses in Web UI.
-			// On force-refresh (e.g. after model switch): preserve current selection so it stays loaded.
+			// Normalize model id for matching (e.g. "qwen3-0.6b" and "qwen3:0.6b" -> same canonical form).
+			const normalizeId = (id: string) =>
+				(id ?? '').toLowerCase().replace(/\s+/g, '').replace(/:/g, '-');
+			const findOptionByMainId = (mainId: string) =>
+				models.find(
+					(opt) =>
+						opt.id === mainId ||
+						opt.model === mainId ||
+						normalizeId(opt.model) === normalizeId(mainId)
+				);
+
 			if (!force) {
-				this._selectedModelId = null;
-				this._selectedModelName = null;
-				this._persistedSelection.value = null;
-			} else {
-				// Keep selection valid if the selected model is still in the new list
-				const stillPresent = this._models.some((m) => m.id === this._selectedModelId);
-				if (!stillPresent) {
+				// Initial load: restore from persisted if present; otherwise set current from main API if available.
+				const persisted = this._persistedSelection.value;
+				if (persisted && models.some((m) => m.id === persisted.id)) {
+					this._selectedModelId = persisted.id;
+					this._selectedModelName = persisted.model;
+				} else if (mainResponse.status === 'fulfilled' && mainResponse.value?.data?.length > 0) {
+					const firstMainId = mainResponse.value.data[0]?.id;
+					const matched = firstMainId ? findOptionByMainId(firstMainId) : null;
+					if (matched) {
+						this._selectedModelId = matched.id;
+						this._selectedModelName = matched.model;
+						this._persistedSelection.value = { id: matched.id, model: matched.model };
+					} else {
+						this._selectedModelId = null;
+						this._selectedModelName = null;
+						this._persistedSelection.value = null;
+					}
+				} else {
 					this._selectedModelId = null;
 					this._selectedModelName = null;
 					this._persistedSelection.value = null;
+				}
+			} else {
+				const stillPresent = this._models.some((m) => m.id === this._selectedModelId);
+				if (!stillPresent) {
+					const byModel = this._models.find(
+						(m) => m.model === this._selectedModelName || normalizeId(m.model) === normalizeId(this._selectedModelName ?? '')
+					);
+					if (byModel) {
+						this._selectedModelId = byModel.id;
+						this._selectedModelName = byModel.model;
+						this._persistedSelection.value = { id: byModel.id, model: byModel.model };
+					} else {
+						this._selectedModelId = null;
+						this._selectedModelName = null;
+						this._persistedSelection.value = null;
+					}
 				}
 			}
 		} catch (error) {

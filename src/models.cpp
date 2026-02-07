@@ -376,7 +376,152 @@ void ModelManager::init_model_registry() {
         "Qwen3-VL 8B Instruct",
         0  // use model default (-c from model)
     };
-    
+
+    // Catalog-only entries (names match frontend models_catalog.ts for Install from UI)
+    model_registry_["qwen3-vl:2b"] = {
+        "qwen3-vl:2b",
+        "qwen3-vl-2b",
+        "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+        "Qwen3-VL-2B-Instruct-Q4_K_M.gguf",
+        "Q4_K_M",
+        1900LL * 1024 * 1024,
+        "Qwen3-VL 2B Instruct vision-language model",
+        "Qwen3 VL 2B",
+        8192
+    };
+    model_registry_["qwen3-vl:30b-a3b"] = {
+        "qwen3-vl:30b-a3b",
+        "qwen3-vl-30b-a3b",
+        "Qwen/Qwen3-VL-30B-A3B-Instruct-GGUF",
+        "Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf",
+        "Q4_K_M",
+        20000LL * 1024 * 1024,
+        "Qwen3-VL 30B-A3B Instruct vision-language model",
+        "Qwen3 VL 30B-A3B",
+        8192
+    };
+    model_registry_["ministral-3:3b"] = {
+        "ministral-3:3b",
+        "ministral-3-3b",
+        "mistralai/Ministral-3-3B-Instruct-2512-GGUF",
+        "Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
+        "Q4_K_M",
+        2200LL * 1024 * 1024,
+        "Ministral 3 3B Instruct",
+        "Ministral 3 3B",
+        16384
+    };
+    model_registry_["ministral-3:8b"] = {
+        "ministral-3:8b",
+        "ministral-3-8b",
+        "mistralai/Ministral-3-8B-Instruct-GGUF",
+        "Ministral-3-8B-Instruct-Q4_K_M.gguf",
+        "Q4_K_M",
+        5800LL * 1024 * 1024,
+        "Ministral 3 8B Instruct",
+        "Ministral 3 8B",
+        16384
+    };
+    model_registry_["ministral-3:14b"] = {
+        "ministral-3:14b",
+        "ministral-3-14b",
+        "mistralai/Ministral-3-14B-Instruct-GGUF",
+        "Ministral-3-14B-Instruct-Q4_K_M.gguf",
+        "Q4_K_M",
+        10000LL * 1024 * 1024,
+        "Ministral 3 14B Instruct",
+        "Ministral 3 14B",
+        16384
+    };
+    model_registry_["gemma3:27b"] = {
+        "gemma3:27b",
+        "gemma3-27b",
+        "google/gemma-3-27b-it-GGUF",
+        "gemma-3-27b-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        16500LL * 1024 * 1024,
+        "Gemma 3 27B Instruct",
+        "Gemma 3 27B",
+        32768
+    };
+    model_registry_["glm-4.7:flash"] = {
+        "glm-4.7:flash",
+        "glm-4.7-flash",
+        "THUDM/glm-4-7-flash-GGUF",
+        "glm-4-7-flash-Q4_K_M.gguf",
+        "Q4_K_M",
+        2100LL * 1024 * 1024,
+        "GLM 4.7 Flash",
+        "GLM 4.7 Flash",
+        131072
+    };
+    model_registry_["devstral-2:24b"] = {
+        "devstral-2:24b",
+        "devstral-2-24b",
+        "mistralai/Devstral-2-24B-Instruct-GGUF",
+        "Devstral-2-24B-Instruct-Q4_K_M.gguf",
+        "Q4_K_M",
+        15000LL * 1024 * 1024,
+        "Devstral 2 24B Instruct",
+        "Devstral 2 24B",
+        131072
+    };
+    model_registry_["devstral-2:123b"] = {
+        "devstral-2:123b",
+        "devstral-2-123b",
+        "mistralai/Devstral-2-123B-Instruct-GGUF",
+        "Devstral-2-123B-Instruct-Q4_K_M.gguf",
+        "Q4_K_M",
+        78000LL * 1024 * 1024,
+        "Devstral 2 123B Instruct",
+        "Devstral 2 123B",
+        131072
+    };
+    model_registry_["nemotron-nano-3:30b-a3b"] = {
+        "nemotron-nano-3:30b-a3b",
+        "nemotron-nano-3-30b-a3b",
+        "nvidia/Nemotron-Nano-3-30B-A3B-GGUF",
+        "Nemotron-Nano-3-30B-A3B-Q4_K_M.gguf",
+        "Q4_K_M",
+        20000LL * 1024 * 1024,
+        "Nemotron Nano 3 30B-A3B",
+        "Nemotron Nano 3 30B-A3B",
+        1048576
+    };
+    model_registry_["gpt-oss:20b"] = {
+        "gpt-oss:20b",
+        "gpt-oss-20b",
+        "openai/gpt-oss-20b-GGUF",
+        "gpt-oss-20b-Q4_K_M.gguf",
+        "Q4_K_M",
+        12500LL * 1024 * 1024,
+        "GPT-OSS 20B",
+        "GPT-OSS 20B",
+        131072
+    };
+    model_registry_["gpt-oss:120b"] = {
+        "gpt-oss:120b",
+        "gpt-oss-120b",
+        "openai/gpt-oss-120b-GGUF",
+        "gpt-oss-120b-Q4_K_M.gguf",
+        "Q4_K_M",
+        75000LL * 1024 * 1024,
+        "GPT-OSS 120B",
+        "GPT-OSS 120B",
+        131072
+    };
+    model_registry_["qwen3-coder:30b-a3b"] = {
+        "qwen3-coder:30b-a3b",
+        "qwen3-coder-30b-a3b",
+        "Qwen/Qwen3-Coder-30B-A3B-GGUF",
+        "Qwen3-Coder-30B-A3B-Q4_K_M.gguf",
+        "Q4_K_M",
+        20000LL * 1024 * 1024,
+        "Qwen3 Coder 30B-A3B",
+        "Qwen3 Coder 30B-A3B",
+        131072
+    };
+
     // ===== QWEN 2.5 CODER SERIES (Code-specialized)(128K native) =====
     model_registry_["qwen2.5-coder:0.5b"] = {
         "qwen2.5-coder:0.5b",
@@ -1441,55 +1586,58 @@ std::vector<ModelRegistry> ModelManager::get_registry_models() {
     return models;
 }
 
-ModelRegistry ModelManager::get_registry_entry(const std::string& model_name) {
+std::string ModelManager::get_registry_key_for_name(const std::string& model_name) const {
+    if (model_name.empty()) return "";
     auto it = model_registry_.find(model_name);
-    if (it != model_registry_.end()) {
-        return it->second;
+    if (it != model_registry_.end()) return it->first;
+    for (const auto& pair : model_registry_) {
+        if (pair.second.name == model_name) return pair.first;
     }
-    return ModelRegistry{}; // Return empty registry entry
+    return "";
+}
+
+ModelRegistry ModelManager::get_registry_entry(const std::string& model_name) {
+    std::string key = get_registry_key_for_name(model_name);
+    if (!key.empty()) {
+        auto it = model_registry_.find(key);
+        if (it != model_registry_.end()) return it->second;
+    }
+    return ModelRegistry{};
 }
 
 bool ModelManager::is_in_registry(const std::string& model_name) {
-    return model_registry_.find(model_name) != model_registry_.end();
+    return !get_registry_key_for_name(model_name).empty();
 }
 
 int ModelManager::get_max_context_for_model(const std::string& model_name) {
     if (model_name.empty()) return 0;
-    // Resolve to registry name (colon form) for override lookup
-    std::string key = model_name;
-    if (is_in_registry(model_name)) {
-        key = model_name;
-    } else {
+    std::string key = get_registry_key_for_name(model_name);
+    if (key.empty()) {
         size_t last_dash = model_name.find_last_of('-');
         if (last_dash != std::string::npos) {
             std::string colon_name = model_name.substr(0, last_dash) + ":" + model_name.substr(last_dash + 1);
-            if (is_in_registry(colon_name)) key = colon_name;
+            key = get_registry_key_for_name(colon_name);
         }
     }
-    // User override takes precedence
+    if (key.empty()) return 0;
     auto it = context_overrides_.find(key);
     if (it != context_overrides_.end() && it->second > 0)
         return it->second;
-    // Fall back to registry
-    if (is_in_registry(key)) {
-        int ctx = get_registry_entry(key).max_context;
-        return ctx > 0 ? ctx : 0;
-    }
-    return 0;
+    int ctx = get_registry_entry(key).max_context;
+    return ctx > 0 ? ctx : 0;
 }
 
 void ModelManager::set_max_context_override(const std::string& model_name, int ctx) {
     if (model_name.empty()) return;
-    std::string key = model_name;
-    if (is_in_registry(model_name)) {
-        key = model_name;
-    } else {
+    std::string key = get_registry_key_for_name(model_name);
+    if (key.empty()) {
         size_t last_dash = model_name.find_last_of('-');
         if (last_dash != std::string::npos) {
             std::string colon_name = model_name.substr(0, last_dash) + ":" + model_name.substr(last_dash + 1);
-            if (is_in_registry(colon_name)) key = colon_name;
+            key = get_registry_key_for_name(colon_name);
         }
     }
+    if (key.empty()) return;
     if (ctx <= 0) {
         context_overrides_.erase(key);
     } else {
@@ -1546,10 +1694,11 @@ std::string ModelManager::resolve_model_name(const std::string& input_name) {
         return input_name;
     }
     
-    // First, check if it matches a registry name (with colon notation: "qwen3:0.6b")
-    auto it = model_registry_.find(input_name);
-    if (it != model_registry_.end()) {
-        return it->second.filename;
+    // First, check if it matches a registry key or entry.name (catalog name e.g. "qwen3-vl:4b")
+    std::string key = get_registry_key_for_name(input_name);
+    if (!key.empty()) {
+        auto it = model_registry_.find(key);
+        if (it != model_registry_.end()) return it->second.filename;
     }
     
     // Check if it matches a short_name in registry ("qwen3-0.6b")

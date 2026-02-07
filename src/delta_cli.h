@@ -215,6 +215,8 @@ private:
     
     void ensure_models_dir();
     void init_model_registry();
+    /** Resolve model name to registry map key (by exact key or by entry.name for catalog names). Returns empty if not found. */
+    std::string get_registry_key_for_name(const std::string& model_name) const;
     std::map<std::string, ModelRegistry> model_registry_;
 
     // Per-model context overrides (user choice from UI), persisted to file

@@ -390,7 +390,7 @@
 						</div>
 					</div>
 					<div
-						class="overflow-y-auto py-1"
+						class="min-h-0 flex-1 overflow-y-auto py-1"
 						style:max-height={menuPosition && menuPosition.maxHeight > 0
 							? `${menuPosition.maxHeight}px`
 							: undefined}
