@@ -447,8 +447,8 @@ void ModelManager::init_model_registry() {
     model_registry_["glm-4.7:flash"] = {
         "glm-4.7:flash",
         "glm-4.7-flash",
-        "THUDM/glm-4-7-flash-GGUF",
-        "glm-4-7-flash-Q4_K_M.gguf",
+        "unsloth/GLM-4.7-Flash-GGUF",
+        "GLM-4.7-Flash-Q4_K_M.gguf",
         "Q4_K_M",
         2100LL * 1024 * 1024,
         "GLM 4.7 Flash",
