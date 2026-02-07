@@ -27,9 +27,7 @@
  */
 declare module '$env/static/private' {
 	export const _ZO_DOCTOR: string;
-	export const VSCODE_CLI: string;
 	export const VSCODE_CRASH_REPORTER_PROCESS_TYPE: string;
-	export const TERM_PROGRAM: string;
 	export const NODE: string;
 	export const INIT_CWD: string;
 	export const TERM: string;
@@ -38,13 +36,10 @@ declare module '$env/static/private' {
 	export const TMPDIR: string;
 	export const HOMEBREW_REPOSITORY: string;
 	export const npm_config_global_prefix: string;
-	export const CURSOR_CLI: string;
-	export const TERM_PROGRAM_VERSION: string;
 	export const MallocNanoZone: string;
 	export const CURSOR_TRACE_ID: string;
 	export const COLOR: string;
 	export const NO_COLOR: string;
-	export const TERM_SESSION_ID: string;
 	export const npm_config_noproxy: string;
 	export const npm_config_local_prefix: string;
 	export const USER: string;
@@ -57,7 +52,6 @@ declare module '$env/static/private' {
 	export const PATH: string;
 	export const npm_package_json: string;
 	export const npm_config_engine_strict: string;
-	export const _: string;
 	export const npm_config_userconfig: string;
 	export const npm_config_init_module: string;
 	export const __CFBundleIdentifier: string;
@@ -65,14 +59,12 @@ declare module '$env/static/private' {
 	export const PWD: string;
 	export const VSCODE_HANDLES_UNCAUGHT_ERRORS: string;
 	export const MAMBA_ROOT_PREFIX: string;
-	export const ELECTRON_NO_ATTACH_CONSOLE: string;
 	export const npm_lifecycle_event: string;
 	export const EDITOR: string;
 	export const VSCODE_ESM_ENTRYPOINT: string;
 	export const npm_package_name: string;
 	export const CURSOR_AGENT: string;
 	export const LANG: string;
-	export const CURSOR_CLI_MODE: string;
 	export const npm_config_npm_version: string;
 	export const XPC_FLAGS: string;
 	export const FORCE_COLOR: string;
@@ -91,7 +83,6 @@ declare module '$env/static/private' {
 	export const MODULAR_HOME: string;
 	export const VSCODE_IPC_HOOK: string;
 	export const VSCODE_CODE_CACHE_PATH: string;
-	export const LC_CTYPE: string;
 	export const npm_config_user_agent: string;
 	export const VSCODE_PID: string;
 	export const INFOPATH: string;
@@ -102,7 +93,7 @@ declare module '$env/static/private' {
 	export const VSCODE_CWD: string;
 	export const npm_node_execpath: string;
 	export const npm_config_prefix: string;
-	export const COLORTERM: string;
+	export const _: string;
 	export const NODE_ENV: string;
 	export const __STORYBOOK_URL__: string;
 	export const __STORYBOOK_SCRIPT__: string;
@@ -136,9 +127,7 @@ declare module '$env/static/public' {
 declare module '$env/dynamic/private' {
 	export const env: {
 		_ZO_DOCTOR: string;
-		VSCODE_CLI: string;
 		VSCODE_CRASH_REPORTER_PROCESS_TYPE: string;
-		TERM_PROGRAM: string;
 		NODE: string;
 		INIT_CWD: string;
 		TERM: string;
@@ -147,13 +136,10 @@ declare module '$env/dynamic/private' {
 		TMPDIR: string;
 		HOMEBREW_REPOSITORY: string;
 		npm_config_global_prefix: string;
-		CURSOR_CLI: string;
-		TERM_PROGRAM_VERSION: string;
 		MallocNanoZone: string;
 		CURSOR_TRACE_ID: string;
 		COLOR: string;
 		NO_COLOR: string;
-		TERM_SESSION_ID: string;
 		npm_config_noproxy: string;
 		npm_config_local_prefix: string;
 		USER: string;
@@ -166,7 +152,6 @@ declare module '$env/dynamic/private' {
 		PATH: string;
 		npm_package_json: string;
 		npm_config_engine_strict: string;
-		_: string;
 		npm_config_userconfig: string;
 		npm_config_init_module: string;
 		__CFBundleIdentifier: string;
@@ -174,14 +159,12 @@ declare module '$env/dynamic/private' {
 		PWD: string;
 		VSCODE_HANDLES_UNCAUGHT_ERRORS: string;
 		MAMBA_ROOT_PREFIX: string;
-		ELECTRON_NO_ATTACH_CONSOLE: string;
 		npm_lifecycle_event: string;
 		EDITOR: string;
 		VSCODE_ESM_ENTRYPOINT: string;
 		npm_package_name: string;
 		CURSOR_AGENT: string;
 		LANG: string;
-		CURSOR_CLI_MODE: string;
 		npm_config_npm_version: string;
 		XPC_FLAGS: string;
 		FORCE_COLOR: string;
@@ -200,7 +183,6 @@ declare module '$env/dynamic/private' {
 		MODULAR_HOME: string;
 		VSCODE_IPC_HOOK: string;
 		VSCODE_CODE_CACHE_PATH: string;
-		LC_CTYPE: string;
 		npm_config_user_agent: string;
 		VSCODE_PID: string;
 		INFOPATH: string;
@@ -211,7 +193,7 @@ declare module '$env/dynamic/private' {
 		VSCODE_CWD: string;
 		npm_node_execpath: string;
 		npm_config_prefix: string;
-		COLORTERM: string;
+		_: string;
 		NODE_ENV: string;
 		__STORYBOOK_URL__: string;
 		__STORYBOOK_SCRIPT__: string;

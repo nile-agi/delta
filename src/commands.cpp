@@ -1171,13 +1171,13 @@ void Commands::stop_llama_server() {
      std::cout << "\n" << UI::BRIGHT_GREEN << UI::BOLD << "Interactive Commands:" << UI::RESET << std::endl;
      std::cout << "  " << UI::GREEN << "/download <model>" << UI::RESET << "     - Download a model" << std::endl;
      std::cout << "  " << UI::GREEN << "/remove <model>" << UI::RESET << "       - Remove a model (alias: /delete)" << std::endl;
-     std::cout << "  " << UI::GREEN << "/list" << UI::RESET << "                - List local models" << std::endl;
+     std::cout << "  " << UI::GREEN << "/list" << UI::RESET << "                 - List local models" << std::endl;
      std::cout << "  " << UI::GREEN << "/available" << UI::RESET << "            - List available models" << std::endl;
      std::cout << "  " << UI::GREEN << "/use <model>" << UI::RESET << "          - Switch to another model" << std::endl;
      std::cout << "  " << UI::GREEN << "/clear-screen" << UI::RESET << "         - Clear the terminal screen" << std::endl;
      std::cout << "  " << UI::GREEN << "/help" << UI::RESET << "                 - Show this help" << std::endl;
      std::cout << std::endl;
-     std::cout << "  " << UI::YELLOW << "exit, quit" << UI::RESET << "            - Exit interactive mode" << std::endl;
+     std::cout << "  " << UI::YELLOW << "exit, quit" << UI::RESET << "           - Exit interactive mode" << std::endl;
      std::cout << std::endl;
  }
  
