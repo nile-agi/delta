@@ -177,7 +177,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Gemma 3N',
 		description:
 			"Gemma 3n Our powerful and efficient open model designed to run locally on phones, tablets, and laptops.",
-		icon: 'gemma logo.jpeg',
+		icon: 'gemma logo.svg',
 		models: [
 			{
 				name: 'gemma3n:e2b',
@@ -204,7 +204,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'MedGemma',
 		description:
 			"Collection of Gemma 3 variants for performance on medical text and image comprehension to accelerate building healthcare-based AI applications.",
-		icon: 'gemma logo.jpeg',
+		icon: 'gemma logo.svg',
 		models: [
 			{
 				name: 'medgemma1.5:4b',
