@@ -156,24 +156,12 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     
     UI::init();
     
-    // Launch web UI: with a model use llama-server (-m); with no model use UI-only server (no llama-server, no --models-dir).
+    // Launch web UI in "Select model" mode: never auto-load a model; always start UI-only server so user chooses.
     if (current_model.empty()) {
         std::string models_dir = tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli");
         models_dir = tools::FileOps::join_path(models_dir, "models");
         tools::FileOps::create_dir(models_dir);
-        std::string first_gguf = tools::FileOps::first_gguf_in_dir(models_dir);
-        bool opened = false;
-        if (!first_gguf.empty()) {
-            std::string model_alias;
-            size_t last_slash = first_gguf.find_last_of("/\\");
-            if (last_slash != std::string::npos) {
-                model_alias = model_mgr.get_short_name_from_filename(first_gguf.substr(last_slash + 1));
-                if (model_alias.empty()) model_alias = first_gguf.substr(last_slash + 1);
-            }
-            opened = Commands::launch_server_auto(first_gguf, 8080, 0, model_alias, "");
-        } else {
-            opened = Commands::launch_ui_only_server();
-        }
+        bool opened = Commands::launch_ui_only_server();
         if (opened) {
             int actual_port = Commands::get_current_port();
             std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
