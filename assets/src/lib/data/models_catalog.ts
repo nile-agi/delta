@@ -236,8 +236,8 @@ export const modelsCatalog: ModelFamily[] = [
 		]
 	},
 	{
-		id: 'glm-4.7',
-		name: 'GLM 4.7',
+		id: 'glm',
+		name: 'GLM',
 		description:
 			"Zhipu AI's agentic reasoning and coding models. Built for software engineering, browser automation, and multi-turn tool use.",
 		icon: 'Z',
@@ -245,10 +245,28 @@ export const modelsCatalog: ModelFamily[] = [
 			{
 				name: 'glm-4.7:flash',
 				display_name: 'GLM 4.7 Flash',
-				download_url: 'THUDM/glm-4-7-flash-GGUF',
-				file_size_gb: 2.0,
+				download_url: 'unsloth/GLM-4.7-Flash-GGUF',
+				file_size_gb: 18.3,
 				context_size: 131072,
-				required_ram_gb: calculateRequiredRAM(2.0),
+				required_ram_gb: calculateRequiredRAM(18.3),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'GML-4.6V-Flash',
+				display_name: 'GLM 4.6V Flash',
+				download_url: 'ggml-org/GLM-4.6V-Flash-GGUF',
+				file_size_gb: 6.17,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(6.17),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'AutoGLM-Phone:9B',
+				display_name: 'GLM 4.1V 9B Base',
+				download_url: 'ggml-org/AutoGLM-Phone-9B-GGUF',
+				file_size_gb: 6.17,
+				context_size: 65536,
+				required_ram_gb: calculateRequiredRAM(6.17),
 				quantization: 'Q4_K_M'
 			}
 		]

@@ -444,17 +444,7 @@ void ModelManager::init_model_registry() {
         "Gemma 3 27B",
         32768
     };
-    model_registry_["glm-4.7:flash"] = {
-        "glm-4.7:flash",
-        "glm-4.7-flash",
-        "unsloth/GLM-4.7-Flash-GGUF",
-        "GLM-4.7-Flash-Q4_K_M.gguf",
-        "Q4_K_M",
-        2100LL * 1024 * 1024,
-        "GLM 4.7 Flash",
-        "GLM 4.7 Flash",
-        131072
-    };
+   
     model_registry_["devstral-2:24b"] = {
         "devstral-2:24b",
         "devstral-2-24b",
@@ -1560,7 +1550,19 @@ void ModelManager::init_model_registry() {
         "Q4_K_M",
         6170LL * 1024 * 1024,
         "lightweight model optimized for local deployment and low-latency applications",
-        "GML-4.6V-Flash",
+        "GML 4.6V Flash",
+        131072
+    };
+
+    model_registry_["glm-4.7:flash"] = {
+        "glm-4.7-Flash",
+        "glm-4.7-Flash",
+        "unsloth/GLM-4.7-Flash-GGUF",
+        "GLM-4.7-Flash-Q4_K_M.gguf",
+        "Q4_K_M",
+        18300LL * 1024 * 1024,
+        "GLM 4.7 Flash",
+        "GLM 4.7 Flash",
         131072
     };
 
@@ -1572,7 +1574,7 @@ void ModelManager::init_model_registry() {
         "Q4_K_M",
         6170LL * 1024 * 1024,
         "lightweight model optimized for local deployment and low-latency applications",
-        "AutoGLM-Phone-9B",
+        "GLM 4.1V 9B Base",
         65536
     };
 
