@@ -173,6 +173,69 @@ export const modelsCatalog: ModelFamily[] = [
 		]
 	},
 	{
+		id: 'gemma3n',
+		name: 'Gemma 3N',
+		description:
+			"Gemma 3n Our powerful and efficient open model designed to run locally on phones, tablets, and laptops.",
+		icon: 'gemma logo.jpeg',
+		models: [
+			{
+				name: 'gemma3n:e2b',
+				display_name: 'Gemma 3N E2B',
+				download_url: 'unsloth/gemma-3n-E2B-it-GGUF',
+				file_size_gb: 3.03,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(3.03),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'gemma3n:e4b',
+				display_name: 'Gemma 3N E4B',
+				download_url: 'unsloth/gemma-3n-E4B-it-GGUF',
+				file_size_gb: 4.54,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(4.54),
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
+	{
+		id: 'medgemma',
+		name: 'MedGemma',
+		description:
+			"Collection of Gemma 3 variants for performance on medical text and image comprehension to accelerate building healthcare-based AI applications.",
+		icon: 'gemma logo.jpeg',
+		models: [
+			{
+				name: 'medgemma1.5:4b',
+				display_name: 'MedGemma 1.5 4B',
+				download_url: 'unsloth/medgemma-1.5-4b-it-GGUF',
+				file_size_gb: 2.49,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(2.49),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'medgemma:4b',
+				display_name: 'MedGemma 4B',
+				download_url: 'unsloth/medgemma-4b-it-GGUF',
+				file_size_gb: 2.49,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(2.49),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'medgemma:27b',
+				display_name: 'MedGemma 27B',
+				download_url: 'unsloth/medgemma-27b-it-GGUF',
+				file_size_gb: 16.5,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(16.5),
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
+	{
 		id: 'qwen3',
 		name: 'Qwen3',
 		description:

@@ -965,6 +965,7 @@ void ModelManager::init_model_registry() {
         0  // use model default (-c from model)
     };
     
+    // ===== GEMMA 3N SERIES (128K) =====
     model_registry_["gemma3n:e2b"] = {
         "gemma3n:e2b",
         "gemma3n-e2b",
@@ -986,6 +987,43 @@ void ModelManager::init_model_registry() {
         4540LL * 1024 * 1024,     // ~4.54 GB
         "Enhanced 4B variant",
         "Gemma 3N E4B",
+        0  // use model default (-c from model)
+    };
+
+     // ===== MEDGEMMA SERIES (128K) =====
+     model_registry_["medgemma1.5:4b"] = {
+        "medgemma1.5:4b",
+        "medgemma-1.5-4b",
+        "unsloth/medgemma-1.5-4b-it-GGUF",
+        "medgemma-1.5-4b-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        2496LL * 1024 * 1024,     // ~2.49 GB
+        "Balanced MedGemma",
+        "MedGemma 1.5 4B",
+        0  // use model default (-c from model)
+    };
+    
+    model_registry_["medgemma:4b"] = {
+        "medgemma:4b",
+        "medgemma-4b",
+        "unsloth/medgemma-4b-it-GGUF",
+        "medgemma-4b-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        2496LL * 1024 * 1024,     // ~2.49 GB
+        "Balanced MedGemma",
+        "MedGemma 4B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["medgemma:27b"] = {
+        "medgemma:27b",
+        "medgemma-27b",
+        "unsloth/medgemma-27b-it-GGUF",
+        "medgemma-27b-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        16500LL * 1024 * 1024,     // ~16.5 GB
+        "Balanced MedGemma",
+        "MedGemma 27B",
         0  // use model default (-c from model)
     };
     
