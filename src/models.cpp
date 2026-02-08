@@ -1187,7 +1187,7 @@ void ModelManager::init_model_registry() {
         "smollm2-135m-instruct-q4_k_m.gguf",
         "Q4_K_M",
         82LL * 1024 * 1024,       // ~82 MB
-        "Tiny SmolLM variant",
+        "Tiny SmolLM variant 🪐",
         "SmolLM 2 135M",
         0  // use model default (-c from model)
     };
@@ -1199,7 +1199,7 @@ void ModelManager::init_model_registry() {
         "smollm2-360m-instruct-ft-q4_k_m.gguf",
         "Q4_K_M",
         220LL * 1024 * 1024,      // ~220 MB
-        "Small SmolLM variant",
+        "Small SmolLM variant 🪐",
         "SmolLM 2 360M",
         0  // use model default (-c from model)
     };
@@ -1224,9 +1224,9 @@ void ModelManager::init_model_registry() {
         "SmolLM-135M.Q4_K_M.gguf",
         "Q4_K_M",
         82LL * 1024 * 1024,       // ~82 MB
-        "Original tiny SmolLM",
+        "Original tiny SmolLM 🪐",
         "SmolLM 135M",
-        0  // use model default (-c from model)
+        0,  // use model default (-c from model)
     };
     
     model_registry_["smollm:360m"] = {
@@ -1248,11 +1248,11 @@ void ModelManager::init_model_registry() {
         "smollm-1.7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
         1126LL * 1024 * 1024,     // ~1.1 GB
-        "Original balanced SmolLM",
+        "Original balanced SmolLM 🪐",
         "SmolLM 1.7B",
         0  // use model default (-c from model)
     };
-    
+
     // ===== FALCON 3 SERIES (32K) =====
     model_registry_["falcon3:1b"] = {
         "falcon3:1b",
