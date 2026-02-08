@@ -9,7 +9,7 @@
 	} from '$lib/components/app';
 	import { INPUT_CLASSES } from '$lib/constants/input-classes';
 	import { config } from '$lib/stores/settings.svelte';
-	import { selectedModelId } from '$lib/stores/models.svelte';
+	import { modelLoadedOnServer, selectedModelId } from '$lib/stores/models.svelte';
 	import { FileTypeCategory, MimeTypeApplication } from '$lib/enums/files';
 	import {
 		AudioRecorder,
@@ -64,7 +64,7 @@
 	let recordingSupported = $state(false);
 	let textareaRef: ChatFormTextarea | undefined = $state(undefined);
 	let openModelDropdownTrigger = $state(0);
-	let hasModel = $derived(!!selectedModelId());
+	let hasModel = $derived(!!selectedModelId() && modelLoadedOnServer());
 
 	function requestOpenModelDropdown() {
 		openModelDropdownTrigger++;

@@ -114,9 +114,10 @@ export class ChatService {
 			});
 
 		const processedMessages = this.injectSystemMessage(normalizedMessages);
+		const alternatingMessages = ChatService.ensureAlternatingRoles(processedMessages);
 
 		const requestBody: ApiChatCompletionRequest = {
-			messages: processedMessages.map((msg: ApiChatMessageData) => ({
+			messages: alternatingMessages.map((msg: ApiChatMessageData) => ({
 				role: msg.role,
 				content: msg.content
 			})),
@@ -646,6 +647,56 @@ export class ChatService {
 		};
 
 		return [systemMsg, ...messages];
+	}
+
+	/**
+	 * Ensures messages follow strict user/assistant alternation after an optional system message.
+	 * Merges consecutive same-role messages so chat templates (e.g. Jinja) that require alternation don't error.
+	 */
+	private static ensureAlternatingRoles(messages: ApiChatMessageData[]): ApiChatMessageData[] {
+		if (messages.length <= 1) return messages;
+
+		const result: ApiChatMessageData[] = [];
+		let i = 0;
+
+		// Keep at most one system message at the start
+		if (messages[0].role === 'system') {
+			result.push(messages[0]);
+			i = 1;
+		}
+
+		// Merge consecutive same-role messages so we get user -> assistant -> user -> assistant...
+		while (i < messages.length) {
+			const msg = messages[i];
+			// Skip empty system messages in the middle (shouldn't happen after injectSystemMessage)
+			if (msg.role === 'system') {
+				i++;
+				continue;
+			}
+			const last = result[result.length - 1];
+			if (last && last.role === msg.role) {
+				// Merge content into last
+				last.content = ChatService.mergeContent(last.content, msg.content);
+			} else {
+				result.push({ role: msg.role, content: msg.content });
+			}
+			i++;
+		}
+
+		return result;
+	}
+
+	private static mergeContent(
+		a: string | ApiChatMessageContentPart[],
+		b: string | ApiChatMessageContentPart[]
+	): string | ApiChatMessageContentPart[] {
+		const toParts = (c: string | ApiChatMessageContentPart[]): ApiChatMessageContentPart[] =>
+			typeof c === 'string' ? (c.trim() ? [{ type: 'text' as const, text: c }] : []) : c;
+		const partsA = toParts(a);
+		const partsB = toParts(b);
+		if (partsA.length === 0) return b;
+		if (partsB.length === 0) return a;
+		return [...partsA, { type: 'text' as const, text: '\n\n' }, ...partsB];
 	}
 
 	/**

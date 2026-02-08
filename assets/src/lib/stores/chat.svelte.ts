@@ -2,7 +2,6 @@ import { DatabaseStore } from '$lib/stores/database';
 import { chatService, slotsService } from '$lib/services';
 import { config } from '$lib/stores/settings.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
-import { modelLoadedOnServer, modelsUpdating } from '$lib/stores/models.svelte';
 import { normalizeModelName } from '$lib/utils/model-names';
 import { filterByLeafNodeId, findLeafNode, findDescendantMessages } from '$lib/utils/branching';
 import { browser } from '$app/environment';
@@ -579,13 +578,12 @@ class ChatStore {
 	}
 
 	private showErrorDialog(type: 'timeout' | 'server', message: string): void {
-		// Don't show error when the server says the model is still loading - the model selector already shows a spinner.
+		// Never show error when the server says the model is still loading - the model selector shows a spinner until ready.
 		const isModelLoadingError =
 			message &&
 			(message === 'Loading model' ||
 				(message.toLowerCase().includes('loading') && message.toLowerCase().includes('model')));
-		const modelNotReady = modelsUpdating() || !modelLoadedOnServer();
-		if (isModelLoadingError && modelNotReady) {
+		if (isModelLoadingError) {
 			return;
 		}
 		this.errorDialogState = { type, message };
