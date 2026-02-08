@@ -270,7 +270,11 @@ class ModelsStore {
 				}
 			} catch (error) {
 				console.warn('Failed to switch model:', error);
-				this._error = error instanceof Error ? error.message : String(error);
+				const rawMessage = error instanceof Error ? error.message : String(error);
+				this._error =
+					rawMessage === 'Failed to fetch' || (error instanceof TypeError && rawMessage.includes('fetch'))
+						? "Cannot reach the server while loading the model. Make sure Delta is running (run 'delta' in terminal). If you just selected a model, wait a few seconds and try again."
+						: rawMessage;
 				// Still set selection so chat can use this model (e.g. router mode loads on demand)
 				this._selectedModelId = option.id;
 				this._selectedModelName = option.model;

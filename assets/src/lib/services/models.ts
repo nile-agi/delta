@@ -226,13 +226,39 @@ export class ModelsService {
 		if (ctxSize != null && ctxSize > 0) {
 			body.ctx_size = ctxSize;
 		}
-		const response = await fetch(`${getModelApiBaseUrl()}/api/models/use`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify(body)
-		});
+		const url = `${getModelApiBaseUrl()}/api/models/use`;
+		const doRequest = async (): Promise<Response> => {
+			return fetch(url, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(body)
+			});
+		};
+
+		let response: Response;
+		try {
+			response = await doRequest();
+		} catch (e) {
+			const isNetworkError =
+				e instanceof TypeError && (e.message === 'Failed to fetch' || e.message.includes('fetch'));
+			if (isNetworkError) {
+				// Retry once after a short delay (server may be restarting during migration)
+				await new Promise((r) => setTimeout(r, 2500));
+				try {
+					response = await doRequest();
+				} catch (retryErr) {
+					throw new Error(
+						"Cannot reach the server while loading the model. Make sure Delta is running (run 'delta' in terminal). If you just selected a model, the server may be restarting — wait a few seconds and try again."
+					);
+				}
+			} else {
+				throw new Error(
+					e instanceof Error ? e.message : 'Connection error while loading the model. Please try again.'
+				);
+			}
+		}
 
 		if (!response.ok) {
 			const error = await response.json().catch(() => ({}));
