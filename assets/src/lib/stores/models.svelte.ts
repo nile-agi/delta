@@ -251,11 +251,13 @@ class ModelsStore {
 								const list = await ModelsService.list();
 								if (list?.data?.length > 0) {
 									this._modelLoadedOnServer = true;
-									await this.fetch(true);
-									if (typeof window !== 'undefined' && window.location.port === '8080') {
+									// Switch to 8081 for model API *before* refetch, so listInstalled() hits the right server.
+									// After migration, 8080 is llama-server; /api/models/list is only on 8081.
+									if (window.location.port === '8080') {
 										const { forceModelApi8081 } = await import('$lib/utils/model-api-url');
 										forceModelApi8081();
 									}
+									await this.fetch(true);
 									return;
 								}
 							} catch {
