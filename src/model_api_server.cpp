@@ -561,6 +561,24 @@ private:
             }
         });
         
+        // When serving web UI on 8080 (UI-only mode), llama-server is not running.
+        // Handle /v1/chat/completions and /v1/models so the frontend gets a proper error instead of 404.
+        server_->Post("/v1/chat/completions", [this](const httplib::Request&, httplib::Response& res) {
+            json err = {
+                {"error", {
+                    {"message", "No model loaded. Please select a model from the dropdown first."},
+                    {"type", "server_error"},
+                    {"code", "no_model_loaded"}
+                }}
+            };
+            res.status = 503;
+            res.set_content(err.dump(), "application/json");
+        });
+        server_->Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
+            json out = {{"object", "list"}, {"data", json::array()}};
+            res.set_content(out.dump(), "application/json");
+        });
+
         // POST /api/models/unload - Unload model and stop llama-server
         server_->Post("/api/models/unload", [](const httplib::Request&, httplib::Response& res) {
             try {

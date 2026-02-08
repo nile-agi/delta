@@ -18,17 +18,15 @@ class ModelsStore {
 	private _error = $state<string | null>(null);
 	private _selectedModelId = $state<string | null>(null);
 	private _selectedModelName = $state<string | null>(null);
+	/** True only when the backend has a model loaded (from select() loaded:true or main API /v1/models). */
+	private _modelLoadedOnServer = $state(false);
 	private _persistedSelection = persisted<PersistedModelSelection | null>(
 		SELECTED_MODEL_LOCALSTORAGE_KEY,
 		null
 	);
 
 	constructor() {
-		const persisted = this._persistedSelection.value;
-		if (persisted) {
-			this._selectedModelId = persisted.id;
-			this._selectedModelName = persisted.model;
-		}
+		// Do not restore selection from localStorage here - let fetch() set it only when the backend has a model loaded.
 	}
 
 	get models(): ModelOption[] {
@@ -65,6 +63,10 @@ class ModelsStore {
 		}
 
 		return this._models.find((model) => model.id === this._selectedModelId) ?? null;
+	}
+
+	get modelLoadedOnServer(): boolean {
+		return this._modelLoadedOnServer;
 	}
 
 	async fetch(force = false): Promise<void> {
@@ -130,27 +132,27 @@ class ModelsStore {
 				);
 
 			if (!force) {
-				// Initial load: restore from persisted if present; otherwise set current from main API if available.
-				const persisted = this._persistedSelection.value;
-				if (persisted && models.some((m) => m.id === persisted.id)) {
-					this._selectedModelId = persisted.id;
-					this._selectedModelName = persisted.model;
-				} else if (mainResponse.status === 'fulfilled' && mainResponse.value?.data?.length > 0) {
+				// Initial load: only set selection when the main API reports a model is loaded (llama-server running).
+				// Otherwise leave selection empty so the user must choose a model.
+				if (mainResponse.status === 'fulfilled' && mainResponse.value?.data?.length > 0) {
 					const firstMainId = mainResponse.value.data[0]?.id;
 					const matched = firstMainId ? findOptionByMainId(firstMainId) : null;
 					if (matched) {
 						this._selectedModelId = matched.id;
 						this._selectedModelName = matched.model;
 						this._persistedSelection.value = { id: matched.id, model: matched.model };
+						this._modelLoadedOnServer = true;
 					} else {
 						this._selectedModelId = null;
 						this._selectedModelName = null;
 						this._persistedSelection.value = null;
+						this._modelLoadedOnServer = false;
 					}
 				} else {
 					this._selectedModelId = null;
 					this._selectedModelName = null;
 					this._persistedSelection.value = null;
+					this._modelLoadedOnServer = false;
 				}
 			} else {
 				const stillPresent = this._models.some((m) => m.id === this._selectedModelId);
@@ -223,6 +225,7 @@ class ModelsStore {
 				this._selectedModelId = option.id;
 				this._selectedModelName = modelForRequests;
 				this._persistedSelection.value = { id: option.id, model: modelForRequests };
+				this._modelLoadedOnServer = !!useResponse.loaded;
 				if (useResponse.loaded) {
 					// Server restarted with new model (same as /use in terminal). Refetch so main API shows current model.
 					await this.fetch(true);
@@ -236,6 +239,34 @@ class ModelsStore {
 						const { forceModelApi8081 } = await import('$lib/utils/model-api-url');
 						forceModelApi8081();
 					}
+				} else {
+					// Migration in progress (UI-only -> llama-server). Poll so we show green dot once server is up.
+					if (typeof window !== 'undefined') {
+						const pollInterval = 2000;
+						const maxAttempts = 30;
+						let attempts = 0;
+						const checkLoaded = async () => {
+							attempts++;
+							try {
+								const list = await ModelsService.list();
+								if (list?.data?.length > 0) {
+									this._modelLoadedOnServer = true;
+									await this.fetch(true);
+									if (typeof window !== 'undefined' && window.location.port === '8080') {
+										const { forceModelApi8081 } = await import('$lib/utils/model-api-url');
+										forceModelApi8081();
+									}
+									return;
+								}
+							} catch {
+								// Ignore
+							}
+							if (attempts < maxAttempts && this._selectedModelId === option.id) {
+								setTimeout(checkLoaded, pollInterval);
+							}
+						};
+						setTimeout(checkLoaded, pollInterval);
+					}
 				}
 			} catch (error) {
 				console.warn('Failed to switch model:', error);
@@ -244,6 +275,7 @@ class ModelsStore {
 				this._selectedModelId = option.id;
 				this._selectedModelName = option.model;
 				this._persistedSelection.value = { id: option.id, model: option.model };
+				this._modelLoadedOnServer = false;
 			}
 		} finally {
 			this._updating = false;
@@ -265,6 +297,7 @@ class ModelsStore {
 		this._selectedModelId = null;
 		this._selectedModelName = null;
 		this._persistedSelection.value = null;
+		this._modelLoadedOnServer = false;
 	}
 }
 
@@ -278,6 +311,7 @@ export const modelsError = () => modelsStore.error;
 export const selectedModelId = () => modelsStore.selectedModelId;
 export const selectedModelName = () => modelsStore.selectedModelName;
 export const selectedModelOption = () => modelsStore.selectedModel;
+export const modelLoadedOnServer = () => modelsStore.modelLoadedOnServer;
 
 export const fetchModels = modelsStore.fetch.bind(modelsStore);
 export const selectModel = modelsStore.select.bind(modelsStore);

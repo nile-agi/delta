@@ -7,6 +7,7 @@
 	import {
 		fetchModels,
 		loadingModelId,
+		modelLoadedOnServer,
 		modelOptions,
 		modelsError,
 		modelsLoading,
@@ -31,6 +32,7 @@
 	let loadingId = $derived(loadingModelId());
 	let error = $derived(modelsError());
 	let activeId = $derived(selectedModelId());
+	let loadedOnServer = $derived(modelLoadedOnServer());
 
 	let isMounted = $state(false);
 	let isOpen = $state(false);
@@ -334,16 +336,18 @@
 				<span class="max-w-[160px] truncate text-right font-medium">
 					{selectedOption?.name || 'Select model'}
 				</span>
-				{#if (selectedOption || activeId) && !updating}
+				{#if updating}
+					<span class="h-2.5 w-2.5 shrink-0 flex items-center justify-center" title="Loading model...">
+						<Loader2 class="h-2.5 w-2.5 animate-spin text-muted-foreground" />
+					</span>
+				{:else if (selectedOption || activeId) && loadedOnServer}
 					<span
 						class="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500 dark:bg-emerald-400"
 						aria-hidden="true"
 						title="Model loaded"
 					></span>
 				{/if}
-				{#if updating}
-					<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
-				{:else}
+				{#if !updating}
 					<ChevronDown
 						class={cn(
 							'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
@@ -427,7 +431,7 @@
 										</span>
 									{/if}
 								</button>
-								{#if isSelected && !updating}
+								{#if isSelected && loadedOnServer && !updating}
 									<span
 										class="flex h-8 w-8 shrink-0 items-center justify-center"
 										aria-hidden="true"
