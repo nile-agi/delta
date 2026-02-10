@@ -1026,16 +1026,53 @@ void ModelManager::init_model_registry() {
         "MedGemma 27B",
         0  // use model default (-c from model)
     };
+
+     // ===== TRANSLATEGEMMA SERIES (128K) =====
+     model_registry_["translategemma:4b"] = {
+        "translategemma:4b",
+        "translategemma-4b",
+        "bullerwins/translategemma-4b-it-GGUF",
+        "translategemma-4b-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        2496LL * 1024 * 1024,     // ~2.49 GB
+        "Balanced TranslateGemma",
+        "TranslateGemma 4B",
+        0  // use model default (-c from model)
+    };
+    
+    model_registry_["translategemma:12b"] = {
+        "translategemma:12b",
+        "translategemma-12b",
+        "bullerwins/translategemma-12b-it-GGUF",
+        "translategemma-12b-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        7300LL * 1024 * 1024,     // ~7.3 GB
+        "Translation model",
+        "TranslateGemma 12B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["translategemma:27b"] = {
+        "translategemma:27b",
+        "translategemma-27b",
+        "bullerwins/translategemma-27b-it-GGUF",
+        "translategemma-27b-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        1650LL * 1024 * 1024,     // ~16.5 GB
+        "Translation model",
+        "TranslateGemma 27B",
+        0  // use model default (-c from model)
+    };
     
     // ===== DEEPSEEK R1 SERIES (128K) =====
     model_registry_["deepseek-r1:1.5b"] = {
         "deepseek-r1:1.5b",
         "deepseek-r1-1.5b",
         "unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF",
-        "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
-        "Q4_K_M",
-        1024LL * 1024 * 1024,     // ~1 GB
-        "Research-focused model",
+        "DeepSeek-R1-Distill-Qwen-1.5B-Q8_0.gguf",
+        "Q8_0",
+        1890LL * 1024 * 1024,     // ~1.89 GB
+        "Tiny reasoning model",
         "DeepSeek R1 1.5B",
         0  // use model default (-c from model)
     };
@@ -1046,8 +1083,8 @@ void ModelManager::init_model_registry() {
         "unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF",
         "DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.5 GB
-        "Advanced research model",
+        4680LL * 1024 * 1024,     // ~4.68 GB
+        "Advanced reasoning model",
         "DeepSeek R1 7B",
         0  // use model default (-c from model)
     };
@@ -1058,9 +1095,83 @@ void ModelManager::init_model_registry() {
         "unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF",
         "DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf",
         "Q4_K_M",
-        4915LL * 1024 * 1024,     // ~4.8 GB
-        "High-performance research model",
+        4920LL * 1024 * 1024,     // ~4.92 GB
+        "Powerful reasoning model",
         "DeepSeek R1 8B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["deepseek-r1:14b"] = {
+        "deepseek-r1:14b",
+        "deepseek-r1-14b",
+        "unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+        "DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf",
+        "Q4_K_M",
+        8990LL * 1024 * 1024,     // ~8.99 GB
+        "Powerful reasoning model",
+        "DeepSeek R1 14B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["deepseek-r1:32b"] = {
+        "deepseek-r1:32b",
+        "deepseek-r1-32b",
+        "unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF",
+        "DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf",
+        "Q4_K_M",
+        19900LL * 1024 * 1024,     // ~19.9 GB
+        "Powerful reasoning model",
+        "DeepSeek R1 32B",
+        0  // use model default (-c from model)
+    };
+
+    // ===== DEEPSEEK OCR SERIES (128K) =====
+    model_registry_["deepseek-ocr"] = {
+        "deepseek-ocr",
+        "deepseek-ocr",
+        "NexaAI/DeepSeek-OCR-GGUF",
+        "DeepSeek-OCR-Q4_K_M.gguf",
+        "Q8_0",
+        2610LL * 1024 * 1024,     // ~2.61 GB
+        "Token-efficient OCR model",
+        "DeepSeek OCR",
+        0  // use model default (-c from model)
+    };
+
+    // ===== DEEPSEEK CODER SERIES (128K) =====
+    model_registry_["deepseek-coder-1.3b"] = {
+        "deepseek-coder-1.3b",
+        "deepseek-coder-1.3b",
+        "TheBloke/deepseek-coder-1.3b-instruct-GGUF",
+        "deepseek-coder-1.3b-instruct-q8_0.gguf",
+        "Q8_0",
+        1400LL * 1024 * 1024,     // ~1.4 GB
+        "Tiny coding assistant",
+        "DeepSeek Coder 1.3B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["deepseek-coder-6.7b"] = {
+        "deepseek-coder-6.7b",
+        "deepseek-coder-6.7b",
+        "TheBloke/deepseek-coder-6.7b-instruct-GGUF",
+        "deepseek-coder-6.7b-instruct.Q4_K_M.gguf",
+        "Q4_K_M",
+        4080LL * 1024 * 1024,     // ~4.08 GB
+        "Advanced coding assistant",
+        "DeepSeek Coder 6.7B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["deepseek-coder-7b"] = {
+        "deepseek-coder-7b",
+        "deepseek-coder-7b",
+        "mradermacher/deepseek-coder-7b-instruct-v1.5-GGUF",
+        "deepseek-coder-7b-instruct-v1.5.Q4_K_M.gguf",
+        "Q4_K_M",
+        4200LL * 1024 * 1024,     // ~4.22 GB
+        "Advanced coding assistant",
+        "DeepSeek Coder 7B",
         0  // use model default (-c from model)
     };
     

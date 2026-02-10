@@ -200,6 +200,42 @@ export const modelsCatalog: ModelFamily[] = [
 		]
 	},
 	{
+		id: 'translate-gemma',
+		name: 'TRANSLATE GEMMA',
+		description:
+			"A new collection of open translation models built on Gemma 3, helping people communicate across 55 languages.",
+		icon: 'gemma logo.svg',
+		models: [
+			{
+				name: 'translategemma:4b',
+				display_name: 'TranslateGemma 4B',
+				download_url: 'bullerwins/translategemma-27b-it-GGUF',
+				file_size_gb: 2.49,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(2.49),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'translategemma:12b',
+				display_name: 'TranslateGemma 12B',
+				download_url: 'bullerwins/translategemma-12b-it-GGUF',
+				file_size_gb: 7.3,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(7.3),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'translategemma:27b',
+				display_name: 'TranslateGemma 27B',
+				download_url: 'bullerwins/translategemma-27b-it-GGUF',
+				file_size_gb: 16.5,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(16.5),
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
+	{
 		id: 'medgemma',
 		name: 'MedGemma',
 		description:
@@ -423,6 +459,117 @@ export const modelsCatalog: ModelFamily[] = [
 				quantization: 'Q4_K_M'
 			}
 		]
+	},
+	{
+		id: 'deepseek-r1',
+		name: 'DeepSeek R1',
+		description:
+			"DeepSeek-R1 is a family of open reasoning models with performance approaching that of leading models, such as O3 and Gemini 2.5 Pro.",
+		icon: 'deepseek logo.png',
+		models: [
+			{
+				name: 'deepseek-r1:1.5b',
+				display_name: 'DeepSeek R1 1.5B',
+				download_url: 'unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF',
+				file_size_gb: 1.89,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(1.89),
+				quantization: 'Q8_0'	
+			},
+			{
+				name: 'deepseek-r1:7b',
+				display_name: 'DeepSeek R1 7B',
+				download_url: 'unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF',
+				file_size_gb: 4.68,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(4.68),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'deepseek-r1:8b',
+				display_name: 'DeepSeek R1 8B',
+				download_url: 'unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF',
+				file_size_gb: 4.92,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(4.92),
+				quantization: 'Q4_K_M'
+
+			},
+			{
+				name: 'deepseek-r1:14b',
+				display_name: 'DeepSeek R1 14B',
+				download_url: 'unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF',
+				file_size_gb: 8.99,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(8.99),
+				quantization: 'Q4_K_M'
+
+			},
+			{
+				name: 'deepseek-r1:32b',
+				display_name: 'DeepSeek R1 32B',
+				download_url: 'unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF',
+				file_size_gb: 19.9,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(19.9),
+				quantization: 'Q4_K_M'
+
+			}
+		]	
+	},
+	{
+		id: 'deepseek-ocr',
+		name: 'DeepSeek OCR',
+		description:
+			"DeepSeek-OCR is a vision-language model that can perform token-efficient OCR.",
+		icon: 'deepseek logo.png',
+		models: [
+			{
+				name: 'deepseek-ocr',
+				display_name: 'DeepSeek OCR',
+				download_url: 'NexaAI/DeepSeek-OCR-GGUF',
+				file_size_gb: 2.61,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(2.61),
+				quantization: 'Q6_K'	
+			}
+		]	
+	},
+	{
+		id: 'deepseek-coder',
+		name: 'DeepSeek Coder',
+		description:
+			"DeepSeek-Coder is a coding model that can perform token-efficient coding.",
+		icon: 'deepseek logo.png',
+		models: [
+			{
+				name: 'deepseek-coder-1.3b',
+				display_name: 'DeepSeek Coder 1.3B',
+				download_url: 'TheBloke/deepseek-coder-1.3b-instruct-GGUF',
+				file_size_gb: 1.43,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(1.43),
+				quantization: 'Q8_0'	
+			},
+			{
+				name: 'deepseek-coder-6.7b',
+				display_name: 'DeepSeek Coder 6.7B',
+				download_url: 'TheBloke/deepseek-coder-6.7b-instruct-GGUF',
+				file_size_gb: 6.7,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(6.7),
+				quantization: 'Q4_K_M'	
+			},
+			{
+				name: 'deepseek-coder-7b',
+				display_name: 'DeepSeek Coder 7B',
+				download_url: 'mradermacher/deepseek-coder-7b-instruct-v1.5-GGUF',
+				file_size_gb: 4.22,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(4.22),
+				quantization: 'Q4_K_M'	
+			}
+		]	
 	}
 ];
 
