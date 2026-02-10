@@ -35,8 +35,27 @@ function calculateRequiredRAM(fileSizeGB: number): number {
 
 /**
  * Model Catalog - Organized by families
+ * '\
  */
 export const modelsCatalog: ModelFamily[] = [
+	{
+		id: 'HY-2Bit',
+		name: 'HY-2Bit 1.8B',
+		description:
+			"HY-1.8B-2Bit, a high-efficiency 2-bit LLM built for on-device deployment. This model scales the 1.8B base down to an effective 0.3B parameter footprint, requiring only 600MB of storage, making it smaller than many mobile apps.",
+		icon: 'angelslim logo.webp',
+		models: [
+			{
+				name: 'HY-2Bit:1.8b',
+				display_name: 'HY-2Bit 1.8B',
+				download_url: 'AngelSlim/HY-1.8B-2Bit-GGUF',
+				file_size_gb: 1.08,
+				context_size: 8192,
+				required_ram_gb: calculateRequiredRAM(1.08),
+				quantization: 'Q4_0'
+			}
+		]
+	},
 	{
 		id: 'ministral-3',
 		name: 'Ministral 3',
@@ -597,7 +616,8 @@ export const FAMILY_LOGO_FILES: Record<string, string> = {
 	glm: 'glm logo.svg',
 	nemotron: 'nemotron logo.png',
 	gpt: 'GPT logo.png',
-	deepseek: 'deepseek logo.webp'
+	deepseek: 'deepseek logo.webp',
+	angelslim: 'angelslim logo.webp'
 };
 
 /** True if icon is a logo filename (has file extension). */

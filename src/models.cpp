@@ -254,11 +254,25 @@ void ModelManager::init_model_registry() {
     // Format: {name, short_name, repo_id, filename, quant, size, description, display_name, max_context}
     // Updated with verified HuggingFace repositories as of v1.0.0
     // max_context: 0 = use model default (-c from model); no override passed to llama-server
-    
+   
+    // ===== HY 2Bit SERIES (Latest generation) =====
+    model_registry_["HY-2Bit:1.8b"] = {
+        "HY-2Bit:1.8b",
+        "hy-2Bit-1.8b",
+        "AngelSlim/HY-1.8B-2Bit-GGUF",
+        "hunyuan-q4_0.gguf",
+        "Q4_0",
+        1080LL * 1024 * 1024,      // ~1.08 MB
+        "HY-1.8B-2Bit, a high-efficiency 2-bit LLM built for on-device deployment",
+        "HY-2Bit 1.8B",
+        0  // use model default (-c from model)
+    };
+
+
     // ===== QWEN 3 SERIES (Latest generation) =====
     model_registry_["tinygemma3"] = {
         "tinygemma3",
-        "qwen3-0.6b",
+        "tinygemma3",
         "ggml-org/tinygemma3-GGUF",
         "tinygemma3-Q8_0.gguf",
         "Q8_0",
