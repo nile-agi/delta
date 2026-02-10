@@ -29,8 +29,8 @@ declare module '$env/static/private' {
 	export const TERM_PROGRAM: string;
 	export const NODE: string;
 	export const INIT_CWD: string;
-	export const SHELL: string;
 	export const TERM: string;
+	export const SHELL: string;
 	export const HOMEBREW_REPOSITORY: string;
 	export const TMPDIR: string;
 	export const npm_config_global_prefix: string;
@@ -66,8 +66,8 @@ declare module '$env/static/private' {
 	export const npm_package_version: string;
 	export const CXX: string;
 	export const XPC_SERVICE_NAME: string;
-	export const SHLVL: string;
 	export const HOME: string;
+	export const SHLVL: string;
 	export const HOMEBREW_PREFIX: string;
 	export const npm_config_cache: string;
 	export const LOGNAME: string;
@@ -118,8 +118,8 @@ declare module '$env/dynamic/private' {
 		TERM_PROGRAM: string;
 		NODE: string;
 		INIT_CWD: string;
-		SHELL: string;
 		TERM: string;
+		SHELL: string;
 		HOMEBREW_REPOSITORY: string;
 		TMPDIR: string;
 		npm_config_global_prefix: string;
@@ -155,8 +155,8 @@ declare module '$env/dynamic/private' {
 		npm_package_version: string;
 		CXX: string;
 		XPC_SERVICE_NAME: string;
-		SHLVL: string;
 		HOME: string;
+		SHLVL: string;
 		HOMEBREW_PREFIX: string;
 		npm_config_cache: string;
 		LOGNAME: string;
