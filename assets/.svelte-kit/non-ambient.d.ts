@@ -38,6 +38,6 @@ declare module "$app/types" {
 		};
 		Pathname(): "/" | "/chat" | "/chat/" | `/chat/${string}` & {} | `/chat/${string}/` & {};
 		ResolvedPathname(): `${"" | `/${string}`}${ReturnType<AppTypes['Pathname']>}`;
-		Asset(): "/GPT logo.png" | "/deepseek logo.webp" | "/favicon.svg" | "/gemma logo.svg" | "/glm logo.svg" | "/glm.svg" | "/loading.html" | "/ministral logo.png" | "/nemotron logo.png" | "/qwen logo.jpeg" | string & {};
+		Asset(): "/GPT logo.png" | "/angleslim logo.webp" | "/deepseek logo.webp" | "/favicon.svg" | "/gemma logo.svg" | "/glm logo.svg" | "/glm.svg" | "/loading.html" | "/ministral logo.png" | "/nemotron logo.png" | "/qwen logo.jpeg" | string & {};
 	}
 }
