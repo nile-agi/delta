@@ -465,7 +465,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'DeepSeek R1',
 		description:
 			"DeepSeek-R1 is a family of open reasoning models with performance approaching that of leading models, such as O3 and Gemini 2.5 Pro.",
-		icon: 'deepseek logo.png',
+		icon: 'deepseek logo.webp',
 		models: [
 			{
 				name: 'deepseek-r1:1.5b',
@@ -522,7 +522,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'DeepSeek OCR',
 		description:
 			"DeepSeek-OCR is a vision-language model that can perform token-efficient OCR.",
-		icon: 'deepseek logo.png',
+		icon: 'deepseek logo.webp',
 		models: [
 			{
 				name: 'deepseek-ocr',
@@ -540,7 +540,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'DeepSeek Coder',
 		description:
 			"DeepSeek-Coder is a coding model that can perform token-efficient coding.",
-		icon: 'deepseek logo.png',
+		icon: 'deepseek logo.webp',
 		models: [
 			{
 				name: 'deepseek-coder-1.3b',
@@ -596,7 +596,8 @@ export const FAMILY_LOGO_FILES: Record<string, string> = {
 	devstral: 'ministral logo.png',
 	glm: 'glm logo.svg',
 	nemotron: 'nemotron logo.png',
-	gpt: 'GPT logo.png'
+	gpt: 'GPT logo.png',
+	deepseek: 'deepseek logo.webp'
 };
 
 /** True if icon is a logo filename (has file extension). */
@@ -622,6 +623,7 @@ export function getFamilyIconForModelName(name: string): string {
 	if (lower.includes('glm')) return FAMILY_LOGO_FILES.glm;
 	if (lower.includes('nemotron')) return FAMILY_LOGO_FILES.nemotron;
 	if (lower.includes('gpt')) return FAMILY_LOGO_FILES.gpt;
+	if (lower.includes('deepseek')) return FAMILY_LOGO_FILES.deepseek;
 	return '●';
 }
 
