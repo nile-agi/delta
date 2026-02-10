@@ -40,7 +40,7 @@ function calculateRequiredRAM(fileSizeGB: number): number {
 export const modelsCatalog: ModelFamily[] = [
 	{
 		id: 'HY-2Bit',
-		name: 'HY-2Bit 1.8B',
+		name: 'HY 2Bit',
 		description:
 			"HY-1.8B-2Bit, a high-efficiency 2-bit LLM built for on-device deployment. This model scales the 1.8B base down to an effective 0.3B parameter footprint, requiring only 600MB of storage, making it smaller than many mobile apps.",
 		icon: 'angelslim logo.webp',
