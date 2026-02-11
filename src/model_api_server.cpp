@@ -407,6 +407,32 @@ private:
             }
         });
         
+        // POST /api/models/download/cancel - Cancel in-progress download (best-effort)
+        server_->Post("/api/models/download/cancel", [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                json body = json::parse(req.body);
+                std::string model_name = body.value("model", "");
+                (void)model_name; // Currently unused – global cancel affects any active download
+                
+                // Signal cancellation to ModelManager via shared flag
+                model_mgr_.cancel_download();
+                
+                json result = {
+                    {"success", true},
+                    {"message", "Download cancellation requested"}
+                };
+                res.set_content(result.dump(), "application/json");
+            } catch (const json::parse_error&) {
+                json error = {{"error", {{"code", 400}, {"message", "Invalid JSON in request body"}}}};
+                res.status = 400;
+                res.set_content(error.dump(), "application/json");
+            } catch (const std::exception& e) {
+                json error = {{"error", {{"code", 500}, {"message", e.what()}}}};
+                res.status = 500;
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+        
         // DELETE /api/models/:name - Remove a model
         server_->Delete(R"(/api/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
             try {

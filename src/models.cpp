@@ -11,8 +11,12 @@
 #include <iomanip>
 #include <iostream>
 #include <cctype>
+#include <atomic>
 
 namespace delta {
+
+// Global cancellation flag for downloads (shared between CLI and API server)
+static std::atomic<bool> g_download_cancel_requested{false};
 
 // Define the default model (qwen3:0.6b - 400 MB, ultra-compact multilingual)
 const std::string ModelManager::DEFAULT_MODEL_NAME = "qwen3:0.6b";
@@ -243,6 +247,11 @@ std::map<std::string, std::string> ModelManager::get_model_info(const std::strin
     }
     
     return info;
+}
+
+void ModelManager::cancel_download() {
+    // Signal any in-progress libcurl transfer to abort on next progress callback
+    g_download_cancel_requested.store(true);
 }
 
 // ============================================================================
@@ -2045,6 +2054,11 @@ static int progress_callback_wrapper(void* clientp,
     (void)ultotal;
     (void)ulnow;
     
+    // If cancellation was requested, abort the transfer
+    if (g_download_cancel_requested.load()) {
+        return 1; // Non-zero return value tells libcurl to abort
+    }
+    
     if (dltotal > 0) {
         ModelManager::ProgressCallback* callback = 
             static_cast<ModelManager::ProgressCallback*>(clientp);
@@ -2062,6 +2076,9 @@ bool ModelManager::download_file(const std::string& url,
     CURL* curl;
     CURLcode res;
     bool success = false;
+    
+    // Clear any previous cancellation request for a new download
+    g_download_cancel_requested.store(false);
     
     // Create temporary file path
     std::string temp_path = dest_path + ".tmp";

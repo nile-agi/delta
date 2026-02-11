@@ -196,6 +196,29 @@ export class ModelsService {
 	}
 
 	/**
+	 * Request cancellation of an in-progress download.
+	 * This is best-effort: the backend stops the underlying transfer via libcurl.
+	 */
+	static async cancelDownload(modelName: string): Promise<ModelOperationResponse> {
+		const response = await fetch(`${getModelApiBaseUrl()}/api/models/download/cancel`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ model: modelName })
+		});
+
+		if (!response.ok) {
+			const error = await response.json().catch(() => ({}));
+			throw new Error(
+				error.error?.message || `Failed to cancel download (status ${response.status})`
+			);
+		}
+
+		return response.json() as Promise<ModelOperationResponse>;
+	}
+
+	/**
 	 * Remove a model
 	 */
 	static async remove(modelName: string): Promise<ModelOperationResponse> {

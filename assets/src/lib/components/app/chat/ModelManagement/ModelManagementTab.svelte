@@ -164,7 +164,7 @@
 		}
 	}
 
-	function handleStopDownload(modelName: string) {
+	async function handleStopDownload(modelName: string) {
 		console.log('[Download] Stopping download for:', modelName);
 
 		// Only stop if this model is currently tracked as downloading
@@ -172,15 +172,24 @@
 			return;
 		}
 
-		// Stop polling progress and reset local UI state.
-		// NOTE: Backend download continues; add API cancel here when available.
+		// Stop polling progress while we send cancel request
 		if (progressPollInterval) {
 			clearInterval(progressPollInterval);
 			progressPollInterval = null;
 		}
 
-		downloadProgress = null;
-		downloadingModel = null;
+		try {
+			await ModelsService.cancelDownload(modelName);
+		} catch (e) {
+			const errorMessage = e instanceof Error ? e.message : 'Failed to cancel download';
+			toast.error(errorMessage);
+			console.error('[Download] Error cancelling download:', e);
+		} finally {
+			// Reset local UI state regardless of backend outcome; libcurl will
+			// observe cancellation flag on next progress callback when possible.
+			downloadProgress = null;
+			downloadingModel = null;
+		}
 	}
 
 	async function handleRemove(modelName: string) {

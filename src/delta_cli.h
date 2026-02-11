@@ -191,6 +191,9 @@ public:
     typedef void (*ProgressCallback)(double progress, long long current, long long total);
     void set_progress_callback(ProgressCallback callback);
     
+    // Request cancellation of any in-progress download (checked via progress callback).
+    void cancel_download();
+    
     // ===== DEFAULT MODEL SUPPORT =====
     
     // Get the default model name (registry format: "qwen3:0.6b")
