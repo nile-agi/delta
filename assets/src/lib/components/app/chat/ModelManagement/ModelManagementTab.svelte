@@ -164,6 +164,25 @@
 		}
 	}
 
+	function handleStopDownload(modelName: string) {
+		console.log('[Download] Stopping download for:', modelName);
+
+		// Only stop if this model is currently tracked as downloading
+		if (downloadingModel !== modelName) {
+			return;
+		}
+
+		// Stop polling progress and reset local UI state.
+		// NOTE: Backend download continues; add API cancel here when available.
+		if (progressPollInterval) {
+			clearInterval(progressPollInterval);
+			progressPollInterval = null;
+		}
+
+		downloadProgress = null;
+		downloadingModel = null;
+	}
+
 	async function handleRemove(modelName: string) {
 		removingModel = modelName;
 		try {
@@ -347,6 +366,7 @@
 					{installedModelNames}
 					onModelDownload={handleDownload}
 					onModelRemove={handleRemove}
+					onModelStopDownload={handleStopDownload}
 					{downloadingModel}
 					{removingModel}
 					{downloadProgress}
