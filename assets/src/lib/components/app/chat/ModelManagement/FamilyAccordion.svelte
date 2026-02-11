@@ -13,6 +13,7 @@
 		installedModelNames: Set<string>;
 		onModelDownload?: (modelName: string) => void;
 		onModelRemove?: (modelName: string) => void;
+		onModelStopDownload?: (modelName: string) => void;
 		downloadingModel?: string | null;
 		removingModel?: string | null;
 		downloadProgress?: {
@@ -32,6 +33,7 @@
 		installedModelNames,
 		onModelDownload,
 		onModelRemove,
+		onModelStopDownload,
 		downloadingModel,
 		removingModel,
 		downloadProgress
@@ -108,6 +110,7 @@
 						isInstalled={installedModelNames.has(model.name)}
 						onDownload={onModelDownload}
 						onRemove={onModelRemove}
+						onStopDownload={onModelStopDownload}
 						downloading={downloadingModel === model.name}
 						removing={removingModel === model.name}
 						downloadProgress={downloadingModel === model.name ? downloadProgress : null}

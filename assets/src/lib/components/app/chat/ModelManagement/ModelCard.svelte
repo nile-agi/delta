@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { base } from '$app/paths';
-	import { Download, Loader2, AlertCircle } from '@lucide/svelte';
+	import { Download, Loader2, AlertCircle, X } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { ModelCatalogModel } from '$lib/data/models_catalog';
@@ -13,6 +13,7 @@
 		familyIcon?: string;
 		onDownload?: (modelName: string) => void;
 		onRemove?: (modelName: string) => void;
+		onStopDownload?: (modelName: string) => void;
 		downloading?: boolean;
 		removing?: boolean;
 		downloadProgress?: {
@@ -33,6 +34,7 @@
 		familyIcon,
 		onDownload,
 		onRemove,
+		onStopDownload,
 		downloading = false,
 		removing,
 		downloadProgress
@@ -145,7 +147,10 @@
 		{#if downloading && downloadProgress}
 			<div class="mt-3 space-y-1.5">
 				<div class="flex items-center justify-between text-xs text-[#d0d8ff]/70">
-					<span class="font-medium">Downloading: {downloadProgress.progress.toFixed(1)}%</span>
+					<span class="font-medium">
+						<!-- Downloading:  -->
+						{downloadProgress.progress.toFixed(1)}%
+					</span>
 					<span>
 						{(downloadProgress.current_bytes / (1024 * 1024)).toFixed(1)} MB / {(downloadProgress.total_bytes / (1024 * 1024)).toFixed(1)} MB
 					</span>
@@ -172,6 +177,16 @@
 				<Tooltip.Provider>
 					<Tooltip.Root>
 						<Tooltip.Trigger>
+							{#if downloading && onStopDownload}
+								<Button
+									variant="ghost"
+									size="icon"
+									class="h-8 w-8 rounded-full border border-[#1a2b44] bg-[#11243a] text-[#d0d8ff]/70 hover:bg-[#1a2b44] hover:text-[#ff6b6b]"
+									onclick={() => onStopDownload(model.name)}
+								>
+									<X class="h-4 w-4" />
+								</Button>
+							{/if}
 							<Button
 								variant="default"
 								size="sm"
@@ -180,11 +195,9 @@
 								disabled={downloading}
 							>
 								{#if downloading}
-									<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-									Downloading...
+									<Loader2 class="h-4 w-4 animate-spin" />
 								{:else}
-									<Download class="mr-2 h-4 w-4" />
-									Install
+									<Download class="h-4 w-4" />
 								{/if}
 							</Button>
 						</Tooltip.Trigger>
