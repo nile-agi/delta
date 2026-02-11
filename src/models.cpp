@@ -1153,9 +1153,9 @@ void ModelManager::init_model_registry() {
         "deepseek-ocr",
         "deepseek-ocr",
         "NexaAI/DeepSeek-OCR-GGUF",
-        "DeepSeek-OCR-Q4_K_M.gguf",
+        "DeepSeek-OCR.Q8_0.gguf",
         "Q8_0",
-        2610LL * 1024 * 1024,     // ~2.61 GB
+        3120LL * 1024 * 1024,     // ~3.12 GB
         "Token-efficient OCR model",
         "DeepSeek OCR",
         0  // use model default (-c from model)
@@ -1166,9 +1166,9 @@ void ModelManager::init_model_registry() {
         "deepseek-coder-1.3b",
         "deepseek-coder-1.3b",
         "TheBloke/deepseek-coder-1.3b-instruct-GGUF",
-        "deepseek-coder-1.3b-instruct-q8_0.gguf",
+        "deepseek-coder-1.3b-instruct.Q8_0.gguf",
         "Q8_0",
-        1400LL * 1024 * 1024,     // ~1.4 GB
+        1430LL * 1024 * 1024,     // ~1.43 GB
         "Tiny coding assistant",
         "DeepSeek Coder 1.3B",
         0  // use model default (-c from model)
@@ -1177,7 +1177,7 @@ void ModelManager::init_model_registry() {
     model_registry_["deepseek-coder-6.7b"] = {
         "deepseek-coder-6.7b",
         "deepseek-coder-6.7b",
-        "TheBloke/deepseek-coder-6.7b-instruct-GGUF",
+        "TheBloke/deepseek-coder-6.7B-instruct-GGUF",
         "deepseek-coder-6.7b-instruct.Q4_K_M.gguf",
         "Q4_K_M",
         4080LL * 1024 * 1024,     // ~4.08 GB
@@ -1189,8 +1189,8 @@ void ModelManager::init_model_registry() {
     model_registry_["deepseek-coder-7b"] = {
         "deepseek-coder-7b",
         "deepseek-coder-7b",
-        "mradermacher/deepseek-coder-7b-instruct-v1.5-GGUF",
-        "deepseek-coder-7b-instruct-v1.5.Q4_K_M.gguf",
+        "mradermacher/deepseek-coder-7b-instruct-v1.5-i1-GGUF",
+        "deepseek-coder-7b-instruct-v1.5.i1-Q4_K_M.gguf",
         "Q4_K_M",
         4200LL * 1024 * 1024,     // ~4.22 GB
         "Advanced coding assistant",

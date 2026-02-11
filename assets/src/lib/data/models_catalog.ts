@@ -573,7 +573,7 @@ export const modelsCatalog: ModelFamily[] = [
 			{
 				name: 'deepseek-coder-6.7b',
 				display_name: 'DeepSeek Coder 6.7B',
-				download_url: 'TheBloke/deepseek-coder-6.7b-instruct-GGUF',
+				download_url: 'TheBloke/deepseek-coder-6.7B-instruct-GGUF',
 				file_size_gb: 6.7,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(6.7),
@@ -582,7 +582,7 @@ export const modelsCatalog: ModelFamily[] = [
 			{
 				name: 'deepseek-coder-7b',
 				display_name: 'DeepSeek Coder 7B',
-				download_url: 'mradermacher/deepseek-coder-7b-instruct-v1.5-GGUF',
+				download_url: 'mradermacher/deepseek-coder-7b-instruct-v1.5-i1-GGUF',
 				file_size_gb: 4.22,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(4.22),
