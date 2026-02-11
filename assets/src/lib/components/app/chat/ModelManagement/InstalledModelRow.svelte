@@ -115,9 +115,9 @@
 	);
 </script>
 
-<!-- Same accordion pattern as Catalog (FamilyAccordion): click row to expand/collapse; expanded section shows context length options inline with radio buttons -->
+<!-- Same accordion pattern as Catalog (FamilyAccordion): click row to expand/collapse; expanded section shows context length options inline with radio buttons (Option A: app design tokens) -->
 <div
-	class="installed-model-row group flex flex-col overflow-hidden rounded-lg border border-[#1a2b44]/50 bg-[#11243a] transition-all duration-200 hover:border-[#4cc9f0]/20 hover:bg-[#1a2b44]"
+	class="installed-model-row group flex flex-col overflow-hidden rounded-lg border border-border bg-muted transition-all duration-200 hover:bg-accent/50"
 >
 	<!-- Clickable header row (like Catalog family header): toggles context length section -->
 	<div class="flex min-h-0 items-center gap-4 px-4 py-3">
@@ -130,7 +130,7 @@
 		>
 			<!-- Family Icon -->
 			<div
-				class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1a2b44] text-xl text-[#e0e0ff]"
+				class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-background text-xl text-foreground"
 			>
 				{#if isLogoPath(familyIcon)}
 					<img
@@ -145,31 +145,31 @@
 			<!-- Model name, size, ctx -->
 			<div class="min-w-0 flex-1">
 				<div class="mb-1 flex flex-wrap items-center gap-2">
-					<h4 class="truncate text-sm font-semibold text-[#e0e0ff]">
+					<h4 class="truncate text-sm font-semibold text-foreground">
 						{model.display_name || model.name}
 					</h4>
 					{#each modelTags as tag (tag)}
-						<span class="text-xs font-normal text-[#d0d8ff]/70" aria-hidden="true">{tag}</span>
+						<span class="text-xs font-normal text-muted-foreground" aria-hidden="true">{tag}</span>
 					{/each}
 				</div>
-				<div class="flex flex-wrap items-center gap-2 text-xs text-[#d0d8ff]/70">
+				<div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
 					{#if model.size_str}
 						<span>{model.size_str}</span>
-						<span class="text-[#d0d8ff]/40">|</span>
+						<span class="text-muted-foreground/70">|</span>
 					{/if}
 					{#if model.quantization}
 						<span>{model.quantization}</span>
-						<span class="text-[#d0d8ff]/40">|</span>
+						<span class="text-muted-foreground/70">|</span>
 					{/if}
-					<span class="font-medium text-[#4cc9f0]">{getContextSizeDisplay()}</span>
+					<span class="font-medium text-primary">{getContextSizeDisplay()}</span>
 				</div>
 			</div>
 			<!-- Chevron: same as Catalog (right when collapsed, down when expanded) -->
 			<div class="flex flex-shrink-0">
 				{#if isExpanded}
-					<ChevronDown class="h-5 w-5 text-[#d0d8ff]/50" />
+					<ChevronDown class="h-5 w-5 text-muted-foreground" />
 				{:else}
-					<ChevronRight class="h-5 w-5 text-[#d0d8ff]/50" />
+					<ChevronRight class="h-5 w-5 text-muted-foreground" />
 				{/if}
 			</div>
 		</button>
@@ -182,7 +182,7 @@
 						<Button
 							variant="ghost"
 							size="sm"
-							class="h-8 w-8 p-0 text-[#d0d8ff]/60 transition-colors hover:bg-[#1a2b44] hover:text-[#4cc9f0]"
+							class="h-8 w-8 p-0 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
 							onclick={copyModelPath}
 						>
 							<Copy class="h-4 w-4" />
@@ -201,7 +201,7 @@
 							<Button
 								variant="ghost"
 								size="sm"
-								class="h-8 w-8 p-0 text-[#d0d8ff]/60 transition-colors hover:bg-red-500/10 hover:text-red-400"
+								class="h-8 w-8 p-0 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
 								onclick={handleDelete}
 								disabled={removing}
 							>
@@ -224,17 +224,17 @@
 	<!-- Expanded content: Context length section (same inline pattern as Catalog expanded models) -->
 	{#if isExpanded && contextOptions.length > 0}
 		<div
-			class="border-t border-[#1a2b44]/50 bg-[#0a1421]"
+			class="border-t border-border bg-background"
 			transition:fly={{ y: -10, duration: 200 }}
 		>
 			<div class="space-y-3 p-4 pl-6">
 				<!-- Context length (i) header like in reference image -->
-				<div class="flex items-center gap-2 text-sm text-[#d0d8ff]/80">
+				<div class="flex items-center gap-2 text-sm text-muted-foreground">
 					<span>Context length</span>
 					<Tooltip.Provider>
 						<Tooltip.Root>
 							<Tooltip.Trigger>
-								<Info class="h-4 w-4 shrink-0 text-[#d0d8ff]/50" aria-label="Context length info" />
+								<Info class="h-4 w-4 shrink-0 text-muted-foreground" aria-label="Context length info" />
 							</Tooltip.Trigger>
 							<Tooltip.Content>
 								<p>Estimated RAM for each context size. Options above your system RAM are disabled.</p>
@@ -251,7 +251,7 @@
 						<label
 							class="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors {disabled
 								? 'cursor-not-allowed opacity-50'
-								: 'hover:bg-[#1a2b44]/50'} {selectedCtx === ctx ? 'text-[#4cc9f0]' : 'text-[#d0d8ff]/90'}"
+								: 'hover:bg-muted'} {selectedCtx === ctx ? 'text-primary' : 'text-foreground'}"
 						>
 							<input
 								type="radio"
@@ -259,7 +259,7 @@
 								value={ctx}
 								checked={selectedCtx === ctx}
 								disabled={disabled}
-								class="h-4 w-4 border-[#1a2b44] bg-[#11243a] text-[#4cc9f0] focus:ring-[#4cc9f0]/50"
+								class="h-4 w-4 border-border bg-muted text-primary focus:ring-ring"
 								onchange={() => {
 									if (!disabled) setContext(ctx);
 								}}
@@ -271,7 +271,7 @@
 									<Tooltip.Provider>
 										<Tooltip.Root>
 											<Tooltip.Trigger>
-												<span class="text-xs text-red-400/80">Requires {memStr} GB+</span>
+												<span class="text-xs text-destructive">Requires {memStr} GB+</span>
 											</Tooltip.Trigger>
 											<Tooltip.Content>
 												<p>Needs {memStr} GB+ RAM (system has {systemRAMGB} GB)</p>
@@ -287,8 +287,4 @@
 	{/if}
 </div>
 
-<style>
-	.installed-model-row:hover {
-		box-shadow: 0 0 0 1px rgba(76, 201, 240, 0.2);
-	}
-</style>
+<!-- Option A: uses app design tokens -->

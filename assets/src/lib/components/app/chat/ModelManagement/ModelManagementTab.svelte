@@ -247,18 +247,18 @@
 	- Pill-shaped tabs
 	- Prominent system RAM display
 -->
-<div class="model-management-container">
+<div class="model-management-container min-h-[400px] rounded-lg border border-border bg-background p-6 text-foreground">
 	<!-- Top Bar: Tabs, Search, RAM Display -->
 	<div class="mb-6 flex flex-col gap-4">
 		<!-- Tabs and Search Row -->
 		<div class="flex items-center justify-between gap-4">
 			<!-- Pill-shaped Tabs -->
-			<div class="flex items-center gap-2 rounded-full border border-[#1a2b44]/50 bg-[#0a1421] p-1">
+			<div class="flex items-center gap-2 rounded-full border border-border bg-muted p-1">
 				<button
 					class="rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 {viewMode ===
 					'installed'
-						? 'bg-[#4cc9f0] text-white shadow-lg shadow-[#4cc9f0]/20'
-						: 'text-[#d0d8ff]/60 hover:text-[#e0e0ff]'}"
+						? 'bg-primary text-primary-foreground shadow-sm'
+						: 'text-muted-foreground hover:text-foreground'}"
 					onclick={() => {
 						viewMode = 'installed';
 						searchQuery = '';
@@ -270,8 +270,8 @@
 				<button
 					class="rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 {viewMode ===
 					'catalog'
-						? 'bg-[#4cc9f0] text-white shadow-lg shadow-[#4cc9f0]/20'
-						: 'text-[#d0d8ff]/60 hover:text-[#e0e0ff]'}"
+						? 'bg-primary text-primary-foreground shadow-sm'
+						: 'text-muted-foreground hover:text-foreground'}"
 					onclick={() => {
 						viewMode = 'catalog';
 						searchQuery = '';
@@ -285,13 +285,13 @@
 			<!-- Search Bar -->
 			<div class="relative max-w-md flex-1">
 				<Search
-					class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 transform text-[#d0d8ff]/50"
+					class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 transform text-muted-foreground"
 				/>
 				<Input
 					type="text"
 					placeholder="Search models..."
 					bind:value={searchQuery}
-					class="rounded-lg border-[#1a2b44] bg-[#11243a] pl-9 text-[#e0e0ff] placeholder:text-[#d0d8ff]/40 focus:border-[#4cc9f0]/50 focus:ring-1 focus:ring-[#4cc9f0]/20"
+					class="w-full pl-9"
 				/>
 			</div>
 
@@ -299,7 +299,7 @@
 			<Button
 				variant="ghost"
 				size="sm"
-				class="text-[#d0d8ff]/60 hover:bg-[#1a2b44] hover:text-[#4cc9f0]"
+				class="text-muted-foreground hover:bg-accent hover:text-accent-foreground"
 				onclick={loadInstalledModels}
 				disabled={loadingInstalled}
 			>
@@ -310,11 +310,11 @@
 		<!-- System RAM Display (Prominent, Right-aligned) -->
 		<div class="flex items-center justify-end">
 			{#if systemRAMGB !== null}
-				<div class="text-sm text-[#d0d8ff]/70">
-					System RAM: <span class="font-bold text-[#4cc9f0]">{systemRAMGB} GB</span>
+				<div class="text-sm text-muted-foreground">
+					System RAM: <span class="font-bold text-foreground">{systemRAMGB} GB</span>
 				</div>
 			{:else if loadingRAM}
-				<div class="flex items-center gap-2 text-sm text-[#d0d8ff]/50">
+				<div class="flex items-center gap-2 text-sm text-muted-foreground">
 					<Loader2 class="h-4 w-4 animate-spin" />
 					Detecting system RAM...
 				</div>
@@ -326,10 +326,10 @@
 	{#if viewMode === 'installed'}
 		{#if loadingInstalled && installedModels.length === 0}
 			<div class="flex items-center justify-center py-16">
-				<Loader2 class="h-8 w-8 animate-spin text-[#4cc9f0]" />
+				<Loader2 class="h-8 w-8 animate-spin text-primary" />
 			</div>
 		{:else if filteredInstalledModels.length === 0}
-			<div class="py-16 text-center text-[#d0d8ff]/50">
+			<div class="py-16 text-center text-muted-foreground">
 				<p class="mb-2">
 					{#if searchQuery}
 						No installed models match your search.
@@ -357,11 +357,11 @@
 		{/if}
 		<!-- Catalog View -->
 	{:else if systemRAMGB === null && !loadingRAM}
-		<div class="py-16 text-center text-[#d0d8ff]/50">
+		<div class="py-16 text-center text-muted-foreground">
 			<p>Unable to detect system RAM. Hardware-aware filtering disabled.</p>
 		</div>
 	{:else if filteredFamilies.length === 0}
-		<div class="py-16 text-center text-[#d0d8ff]/50">
+		<div class="py-16 text-center text-muted-foreground">
 			<p>No model families match your search.</p>
 		</div>
 	{:else}
@@ -409,36 +409,4 @@
 	</AlertDialog.Content>
 </AlertDialog.Root>
 
-<style>
-	/* 
-		LlamaBarn-inspired dark theme
-		- Deep navy background (#0a1421) for main container
-		- Slightly lighter cards (#11243a / #1a2b44)
-		- White/light gray text (#e0e0ff / #d0d8ff)
-		- Cyan accent (#4cc9f0) for highlights
-	*/
-	.model-management-container {
-		min-height: 400px;
-		padding: 1.5rem;
-		background: #0a1421;
-		border-radius: 0.75rem;
-		color: #e0e0ff;
-	}
-
-	/* Ensure inputs use proper colors */
-	:global(.model-management-container input) {
-		color: #e0e0ff;
-		background-color: #11243a;
-		border-color: #1a2b44;
-	}
-
-	:global(.model-management-container input::placeholder) {
-		color: rgba(208, 216, 255, 0.4);
-	}
-
-	:global(.model-management-container input:focus) {
-		border-color: rgba(76, 201, 240, 0.5);
-		outline: none;
-		box-shadow: 0 0 0 1px rgba(76, 201, 240, 0.2);
-	}
-</style>
+<!-- Option A: uses app design tokens (background, foreground, muted, border, primary, accent) for light/dark consistency -->

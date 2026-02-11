@@ -67,21 +67,20 @@
 </script>
 
 <!-- 
-	LlamaBarn-style model card for catalog items
+	Model card for catalog items (Option A: app design tokens)
 	- Horizontal layout: icon + info + action button
 	- Compatible: normal styling with Install button
 	- Incompatible: grayed out with RAM warning
-	- Hover: subtle lighten + border glow
 -->
 <div
-	class="model-card group flex items-center gap-4 rounded-lg border px-4 py-3 transition-all duration-200 {isCompatible
-		? 'border-[#1a2b44]/50 bg-[#11243a] hover:border-[#4cc9f0]/20 hover:bg-[#1a2b44]'
-		: 'border-[#1a2b44]/30 bg-[#0a1421] opacity-60'}"
+	class="model-card group flex items-center gap-4 rounded-lg border border-border px-4 py-3 transition-all duration-200 {isCompatible
+		? 'bg-muted hover:bg-accent/50 hover:border-border'
+		: 'bg-background opacity-60'}"
 >
 	<!-- Model Icon (family or model icon) -->
 	{#if displayIcon}
 		<div
-			class="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1a2b44] text-lg"
+			class="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-lg"
 		>
 			{#if isLogoPath(displayIcon)}
 				<img
@@ -98,16 +97,16 @@
 	<!-- Model Info -->
 	<div class="min-w-0 flex-1">
 		<div class="mb-1 flex items-center gap-2">
-			<h4 class="text-sm font-semibold {isCompatible ? 'text-[#e0e0ff]' : 'text-[#d0d8ff]/50'}">
+			<h4 class="text-sm font-semibold {isCompatible ? 'text-foreground' : 'text-muted-foreground'}">
 				{model.display_name}
 			</h4>
 			{#if isInstalled}
-				<span class="rounded bg-[#4cc9f0]/20 px-2 py-0.5 text-xs text-[#4cc9f0]">Installed</span>
+				<span class="rounded bg-primary/20 px-2 py-0.5 text-xs text-primary">Installed</span>
 			{/if}
 		</div>
 
 		{#if isCompatible}
-			<div class="flex items-center gap-3 text-xs text-[#d0d8ff]/70">
+			<div class="flex items-center gap-3 text-xs text-muted-foreground">
 				<span>{formatFileSize(model.file_size_gb)}</span>
 				<span>•</span>
 				<span>{formatContextSize(model.context_size)}</span>
@@ -120,7 +119,7 @@
 			<Tooltip.Provider>
 				<Tooltip.Root>
 					<Tooltip.Trigger>
-						<div class="inline-flex cursor-help items-center gap-1 text-xs text-red-400/80">
+						<div class="inline-flex cursor-help items-center gap-1 text-xs text-destructive">
 							<AlertCircle class="h-3 w-3" />
 							<span>Requires Mac with {model.required_ram_gb} GB+ of memory</span>
 						</div>
@@ -146,7 +145,7 @@
 		<!-- Download Progress -->
 		{#if downloading && downloadProgress}
 			<div class="mt-3 space-y-1.5">
-				<div class="flex items-center justify-between text-xs text-[#d0d8ff]/70">
+				<div class="flex items-center justify-between text-xs text-muted-foreground">
 					<span class="font-medium">
 						<!-- Downloading:  -->
 						{downloadProgress.progress.toFixed(1)}%
@@ -155,14 +154,14 @@
 						{(downloadProgress.current_bytes / (1024 * 1024)).toFixed(1)} MB / {(downloadProgress.total_bytes / (1024 * 1024)).toFixed(1)} MB
 					</span>
 				</div>
-				<div class="h-2 w-full overflow-hidden rounded-full bg-[#0a1421]">
+				<div class="h-2 w-full overflow-hidden rounded-full bg-muted">
 					<div
-						class="h-full rounded-full bg-[#4cc9f0] transition-all duration-300 ease-out"
+						class="h-full rounded-full bg-primary transition-all duration-300 ease-out"
 						style="width: {Math.max(0, Math.min(100, downloadProgress.progress))}%;"
 					></div>
 				</div>
 				{#if downloadProgress.failed && downloadProgress.error_message}
-					<p class="text-xs text-red-400">{downloadProgress.error_message}</p>
+					<p class="text-xs text-destructive">{downloadProgress.error_message}</p>
 				{/if}
 			</div>
 		{/if}
@@ -181,7 +180,7 @@
 								<Button
 									variant="ghost"
 									size="icon"
-									class="h-8 w-8 rounded-full border border-[#1a2b44] bg-[#11243a] text-[#d0d8ff]/70 hover:bg-[#1a2b44] hover:text-[#ff6b6b]"
+									class="h-8 w-8 rounded-full border border-border bg-muted text-muted-foreground hover:bg-accent hover:text-destructive"
 									onclick={() => onStopDownload(model.name)}
 								>
 									<X class="h-4 w-4" />
@@ -190,7 +189,6 @@
 							<Button
 								variant="default"
 								size="sm"
-								class="border-0 bg-[#4cc9f0] text-white shadow-lg shadow-[#4cc9f0]/20 hover:bg-[#00b4d8]"
 								onclick={() => onDownload(model.name)}
 								disabled={downloading}
 							>
@@ -214,7 +212,7 @@
 						<Button
 							variant="outline"
 							size="sm"
-							class="cursor-not-allowed border-[#1a2b44] text-[#d0d8ff]/40"
+							class="cursor-not-allowed text-muted-foreground"
 							disabled
 						>
 							<AlertCircle class="mr-2 h-4 w-4" />
@@ -236,9 +234,5 @@
 <style>
 	.model-card {
 		cursor: default;
-	}
-
-	.model-card:hover {
-		box-shadow: 0 0 0 1px rgba(76, 201, 240, 0.2);
 	}
 </style>

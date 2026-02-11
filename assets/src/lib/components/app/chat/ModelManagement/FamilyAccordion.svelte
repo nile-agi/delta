@@ -47,25 +47,24 @@
 </script>
 
 <!-- 
-	LlamaBarn-style family accordion
-	- Dark blue card background (#11243a)
+	Family accordion (Option A: app design tokens)
 	- Icon + name + description header
 	- Smooth expand/collapse animation
 	- Models shown as sub-items when expanded
 -->
 <div
-	class="family-accordion overflow-hidden rounded-lg border border-[#1a2b44]/50 transition-all duration-200 hover:border-[#1a2b44]"
+	class="family-accordion overflow-hidden rounded-lg border border-border bg-muted transition-all duration-200 hover:border-border"
 >
 	<!-- Family Header - Clickable to expand/collapse -->
 	<button
-		class="flex w-full cursor-pointer items-center justify-between px-4 py-4 text-left transition-colors hover:bg-[#1a2b44]/30"
+		class="flex w-full cursor-pointer items-center justify-between px-4 py-4 text-left transition-colors hover:bg-accent/50"
 		onclick={toggleExpanded}
 		type="button"
 	>
 		<div class="flex min-w-0 flex-1 items-center gap-4">
 			<!-- Family Icon -->
 			<div
-				class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1a2b44] text-xl"
+				class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-background text-xl"
 			>
 				{#if isLogoPath(family.icon)}
 					<img
@@ -80,17 +79,17 @@
 
 			<!-- Family Name and Description -->
 			<div class="min-w-0 flex-1">
-				<h3 class="mb-1 text-base font-semibold text-[#e0e0ff]">{family.name}</h3>
-				<p class="line-clamp-1 text-sm text-[#d0d8ff]/70">{family.description}</p>
+				<h3 class="mb-1 text-base font-semibold text-foreground">{family.name}</h3>
+				<p class="line-clamp-1 text-sm text-muted-foreground">{family.description}</p>
 			</div>
 		</div>
 
 		<!-- Chevron Icon -->
 		<div class="ml-4 flex-shrink-0">
 			{#if isExpanded}
-				<ChevronDown class="h-5 w-5 text-[#d0d8ff]/50" />
+				<ChevronDown class="h-5 w-5 text-muted-foreground" />
 			{:else}
-				<ChevronRight class="h-5 w-5 text-[#d0d8ff]/50" />
+				<ChevronRight class="h-5 w-5 text-muted-foreground" />
 			{/if}
 		</div>
 	</button>
@@ -98,7 +97,7 @@
 	<!-- Expanded Content - Models List -->
 	{#if isExpanded}
 		<div
-			class="border-t border-[#1a2b44]/50 bg-[#0a1421]"
+			class="border-t border-border bg-background"
 			transition:fly={{ y: -10, duration: 200 }}
 		>
 			<div class="space-y-3 p-4">
@@ -121,18 +120,4 @@
 	{/if}
 </div>
 
-<style>
-	/* 
-		Family accordion styling
-		- Card background: #11243a (slightly lighter than main background)
-		- Hover: subtle lighten
-		- Border: subtle dark blue
-	*/
-	.family-accordion {
-		background: #11243a;
-	}
-
-	.family-accordion:hover {
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-	}
-</style>
+<!-- Option A: uses app design tokens -->
