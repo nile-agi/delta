@@ -356,6 +356,20 @@ public:
         if (ctx_size > 16384) {
             cmd += " --gpu-layers 0";
         }
+        
+        // Optimize batch sizes for large prompt processing (like LlamaBarn)
+        // Larger ubatch-size significantly improves prompt processing speed for large prompts
+        // Default ubatch-size is 512, but 1024-2048 provides better throughput for 20k+ token prompts
+        if (ctx_size >= 8192) {
+            // For large contexts, use larger batch sizes to improve prompt processing speed
+            cmd += " --ubatch-size 2048";  // Physical batch size - processes more tokens per batch
+            cmd += " --batch-size 4096";   // Logical batch size - allows larger batches
+        } else if (ctx_size >= 4096) {
+            // Medium contexts get moderate batch size increase
+            cmd += " --ubatch-size 1024";
+            cmd += " --batch-size 2048";
+        }
+        
         if (!model_alias.empty()) {
             cmd += " --alias \"" + model_alias + "\"";
         }
