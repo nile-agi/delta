@@ -770,6 +770,7 @@ export class ChatService {
 					prompt_n: timings?.prompt_n || 0,
 					predicted_n: timings?.predicted_n || 0,
 					predicted_per_second: tokensPerSecond,
+					predicted_ms: timings?.predicted_ms || 0,
 					cache_n: timings?.cache_n || 0,
 					prompt_progress: promptProgress
 				},

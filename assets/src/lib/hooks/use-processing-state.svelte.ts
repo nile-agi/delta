@@ -174,6 +174,42 @@ export function useProcessingState(): UseProcessingStateReturn {
 			}
 		}
 
+		// During generation, show generation-specific stats first
+		if (stateToUse.status === 'generating') {
+			// Show generated tokens
+			if (stateToUse.tokensDecoded > 0) {
+				details.push(`${stateToUse.tokensDecoded} tokens`);
+			}
+
+			// Show elapsed time for generation
+			// Use predicted_ms if available, otherwise calculate from tokensPerSecond
+			let elapsedSeconds: string | null = null;
+			if (stateToUse.generationTimeMs !== undefined && stateToUse.generationTimeMs > 0) {
+				elapsedSeconds = (stateToUse.generationTimeMs / 1000).toFixed(2);
+			} else if (
+				stateToUse.tokensDecoded > 0 &&
+				stateToUse.tokensPerSecond &&
+				stateToUse.tokensPerSecond > 0
+			) {
+				// Calculate elapsed time from tokens and tokensPerSecond
+				const calculatedMs = (stateToUse.tokensDecoded / stateToUse.tokensPerSecond) * 1000;
+				elapsedSeconds = (calculatedMs / 1000).toFixed(2);
+			}
+
+			if (elapsedSeconds) {
+				details.push(`${elapsedSeconds}s`);
+			}
+
+			// Show generation speed (tokens per second)
+			if (
+				currentConfig.showTokensPerSecond &&
+				stateToUse.tokensPerSecond &&
+				stateToUse.tokensPerSecond > 0
+			) {
+				details.push(`${stateToUse.tokensPerSecond.toFixed(2)} tokens/s`);
+			}
+		}
+
 		// Always show context info when we have valid data
 		if (stateToUse.contextUsed >= 0 && stateToUse.contextTotal > 0) {
 			const contextPercent = Math.round((stateToUse.contextUsed / stateToUse.contextTotal) * 100);
@@ -196,16 +232,6 @@ export function useProcessingState(): UseProcessingStateReturn {
 					`Output: ${stateToUse.outputTokensUsed}/${stateToUse.outputTokensMax} (${outputPercent}%)`
 				);
 			}
-		}
-
-		// Show generation tokens/sec (different from prompt tokens/sec)
-		if (
-			currentConfig.showTokensPerSecond &&
-			stateToUse.status === 'generating' &&
-			stateToUse.tokensPerSecond &&
-			stateToUse.tokensPerSecond > 0
-		) {
-			details.push(`${stateToUse.tokensPerSecond.toFixed(1)} tokens/sec`);
 		}
 
 		if (stateToUse.speculative) {

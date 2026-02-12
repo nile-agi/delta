@@ -301,4 +301,6 @@ export interface ApiProcessingState {
 	promptProgressProcessed?: number; // Number of tokens processed
 	promptProgressTotal?: number; // Total tokens to process
 	promptTokensPerSecond?: number; // Prompt processing speed
+	// Generation statistics
+	generationTimeMs?: number; // Elapsed time for generation in milliseconds
 }

@@ -191,6 +191,7 @@ export class SlotsService {
 			prompt_n: number;
 			predicted_n: number;
 			predicted_per_second: number;
+			predicted_ms?: number;
 			cache_n: number;
 			prompt_progress?: ChatMessagePromptProgress;
 		},
@@ -256,6 +257,7 @@ export class SlotsService {
 		const predictedTokens = (timingData.predicted_n as number) || 0;
 		const tokensPerSecond = (timingData.predicted_per_second as number) || 0;
 		const cacheTokens = (timingData.cache_n as number) || 0;
+		const predictedMs = (timingData.predicted_ms as number) || 0;
 		const promptProgress = timingData.prompt_progress as
 			| {
 					total: number;
@@ -308,7 +310,8 @@ export class SlotsService {
 			promptProgressTimeMs: promptProgress?.time_ms,
 			promptProgressProcessed: promptProgress?.processed,
 			promptProgressTotal: promptProgress?.total,
-			promptTokensPerSecond
+			promptTokensPerSecond,
+			generationTimeMs: predictedMs > 0 ? predictedMs : undefined
 		};
 	}
 
