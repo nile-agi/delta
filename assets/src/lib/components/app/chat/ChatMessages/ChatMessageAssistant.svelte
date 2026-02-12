@@ -84,9 +84,22 @@
 	let currentConfig = $derived(config());
 	let options = $derived(modelOptions());
 	let activeModelId = $derived(selectedModelId());
+	const streamingState = $derived(
+		getConversationStreaming(activeConversation()?.id ?? '')
+	);
 	/** Id of the assistant message currently being streamed (so we can show live stats on it) */
-	const streamingMessageId = $derived(
-		getConversationStreaming(activeConversation()?.id ?? '')?.messageId ?? null
+	const streamingMessageId = $derived(streamingState?.messageId ?? null);
+	/** When backend doesn't send timings, show at least elapsed time and ~tokens from stream */
+	const streamFallback = $derived(
+		message.role === 'assistant' &&
+			isLoading() &&
+			message.id === streamingMessageId &&
+			streamingState
+			? {
+					startTimeMs: streamingState.startTimeMs,
+					contentLength: streamingState.response.length
+				}
+			: null
 	);
 
 	function getModelDisplayName(): string {
@@ -257,6 +270,7 @@
 						message.id === streamingMessageId
 							? processingState.processingState
 							: null}
+						{streamFallback}
 					/>
 				{/if}
 			</div>

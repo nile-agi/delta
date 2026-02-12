@@ -13,37 +13,74 @@
 		predictedMs: number;
 		/** When set and not idle, stats are shown in real time from this state */
 		liveState?: ApiProcessingState | null;
+		/** When backend doesn't send timings, use elapsed time and content length to show at least something */
+		streamFallback?: { startTimeMs: number; contentLength: number } | null;
 	}
 
-	let { promptTokens, promptMs, predictedTokens, predictedMs, liveState = null }: Props = $props();
+	let {
+		promptTokens,
+		promptMs,
+		predictedTokens,
+		predictedMs,
+		liveState = null,
+		streamFallback = null
+	}: Props = $props();
 
 	let statsView = $state<'reading' | 'generation'>('generation');
+	/** Ticks every 500ms while streaming so fallback elapsed time updates */
+	let nowMs = $state(Date.now());
 
-	// Use live state when active; otherwise use final timings from props
-	const isLive = $derived(liveState != null && liveState.status !== 'idle');
-	const isLiveReading = $derived(isLive && liveState?.status === 'preparing');
-	const isLiveGen = $derived(isLive && liveState?.status === 'generating');
+	$effect(() => {
+		if (!streamFallback) return;
+		const interval = setInterval(() => {
+			nowMs = Date.now();
+		}, 500);
+		return () => clearInterval(interval);
+	});
+
+	// Use live state when active; otherwise use final timings from props. Fallback to client-side when no server timings.
+	const hasServerLiveState = $derived(liveState != null && liveState.status !== 'idle');
+	const useFallback = $derived(
+		streamFallback != null && !hasServerLiveState
+	);
+	const isLive = $derived(hasServerLiveState || useFallback);
+	const isLiveReading = $derived(
+		hasServerLiveState && liveState?.status === 'preparing'
+	);
+	const isLiveGen = $derived(
+		hasServerLiveState && liveState?.status === 'generating'
+	);
+
+	// Fallback: show generation stats from elapsed time and approximate token count (~4 chars per token)
+	const fallbackElapsedMs = $derived(
+		useFallback && streamFallback ? nowMs - streamFallback.startTimeMs : 0
+	);
+	const fallbackApproxTokens = $derived(
+		useFallback && streamFallback ? Math.max(0, Math.round(streamFallback.contentLength / 4)) : 0
+	);
 
 	const effectivePromptTokens = $derived(
-		isLive && liveState?.status === 'preparing'
-			? (liveState.promptProgressProcessed ?? liveState.promptTokens ?? 0)
+		isLiveReading
+			? (liveState!.promptProgressProcessed ?? liveState!.promptTokens ?? 0)
 			: promptTokens
 	);
 	const effectivePromptMs = $derived(
-		isLive && liveState?.status === 'preparing' && liveState.promptProgressTimeMs != null
+		isLiveReading && liveState?.promptProgressTimeMs != null
 			? liveState.promptProgressTimeMs
 			: promptMs
 	);
 	const effectivePredictedTokens = $derived(
-		isLive && liveState?.status === 'generating' ? liveState.tokensDecoded : predictedTokens
+		useFallback ? fallbackApproxTokens : isLiveGen ? liveState!.tokensDecoded : predictedTokens
 	);
 	const effectivePredictedMs = $derived(
-		isLive && liveState?.status === 'generating'
-			? liveState.generationTimeMs ??
-					(liveState.tokensPerSecond && liveState.tokensPerSecond > 0
-						? (liveState.tokensDecoded / liveState.tokensPerSecond) * 1000
-						: 0)
-			: predictedMs
+		useFallback
+			? fallbackElapsedMs
+			: isLiveGen
+				? liveState!.generationTimeMs ??
+						(liveState!.tokensPerSecond && liveState!.tokensPerSecond > 0
+							? (liveState!.tokensDecoded / liveState!.tokensPerSecond) * 1000
+							: 0)
+				: predictedMs
 	);
 
 	const promptSpeed = $derived(
@@ -68,17 +105,27 @@
 		isLiveReading && promptSpeed === 0 ? '—' : promptSpeed.toFixed(2) + ' tokens/s'
 	);
 	const displayGenTokens = $derived(
-		isLiveGen && effectivePredictedTokens === 0 ? '—' : String(effectivePredictedTokens)
+		useFallback && fallbackApproxTokens === 0
+			? '—'
+			: isLiveGen && effectivePredictedTokens === 0
+				? '—'
+				: String(effectivePredictedTokens)
 	);
 	const displayGenTime = $derived(
-		isLiveGen && effectivePredictedMs === 0 ? '—s' : (effectivePredictedMs / 1000).toFixed(2) + 's'
+		!useFallback && isLiveGen && effectivePredictedMs === 0
+			? '—s'
+			: (effectivePredictedMs / 1000).toFixed(2) + 's'
 	);
 	const displayGenSpeed = $derived(
-		isLiveGen && genSpeed === 0 ? '—' : genSpeed.toFixed(2) + ' tokens/s'
+		!useFallback && isLiveGen && genSpeed === 0 ? '—' : genSpeed.toFixed(2) + ' tokens/s'
 	);
 
-	// When live, sync tab to current phase
+	// When live, sync tab to current phase (server state or fallback = generation)
 	$effect(() => {
+		if (useFallback) {
+			statsView = 'generation';
+			return;
+		}
 		if (!liveState || liveState.status === 'idle') return;
 		if (liveState.status === 'preparing') statsView = 'reading';
 		else if (liveState.status === 'generating') statsView = 'generation';

@@ -11,11 +11,12 @@
 	let processingDetails = $derived(processingState.getProcessingDetails());
 	let showSlotsInfo = $derived(isCurrentConversationLoading || config().keepStatsVisible);
 
-	// Track loading state reactively by checking if conversation ID is in loading conversations array
+	// Start monitoring when viewing a conversation (so live stats work from first stream chunk)
 	$effect(() => {
 		const keepStatsVisible = config().keepStatsVisible;
+		const hasActiveConversation = !!activeConversation()?.id;
 
-		if (keepStatsVisible || isCurrentConversationLoading) {
+		if (hasActiveConversation && (keepStatsVisible || isCurrentConversationLoading)) {
 			processingState.startMonitoring();
 		}
 

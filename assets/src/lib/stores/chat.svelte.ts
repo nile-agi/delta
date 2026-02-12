@@ -53,7 +53,10 @@ class ChatStore {
 	isInitialized = $state(false);
 	isLoading = $state(false);
 	conversationLoadingStates = new SvelteMap<string, boolean>();
-	conversationStreamingStates = new SvelteMap<string, { response: string; messageId: string }>();
+	conversationStreamingStates = new SvelteMap<
+		string,
+		{ response: string; messageId: string; startTimeMs: number }
+	>();
 	titleUpdateConfirmationCallback?: (currentTitle: string, newTitle: string) => Promise<boolean>;
 
 	constructor() {
@@ -325,8 +328,15 @@ class ChatStore {
 		return this.conversationLoadingStates.get(convId) || false;
 	}
 
-	private setConversationStreaming(convId: string, response: string, messageId: string): void {
-		this.conversationStreamingStates.set(convId, { response, messageId });
+	private setConversationStreaming(
+		convId: string,
+		response: string,
+		messageId: string,
+		startTimeMs?: number
+	): void {
+		const existing = this.conversationStreamingStates.get(convId);
+		const start = startTimeMs ?? existing?.startTimeMs ?? Date.now();
+		this.conversationStreamingStates.set(convId, { response, messageId, startTimeMs: start });
 		if (this.activeConversation?.id === convId) {
 			this.currentResponse = response;
 		}
@@ -341,7 +351,7 @@ class ChatStore {
 
 	private getConversationStreaming(
 		convId: string
-	): { response: string; messageId: string } | undefined {
+	): { response: string; messageId: string; startTimeMs: number } | undefined {
 		return this.conversationStreamingStates.get(convId);
 	}
 
@@ -439,7 +449,12 @@ class ChatStore {
 		slotsService.startStreaming();
 		slotsService.setActiveConversation(assistantMessage.convId);
 		// Mark which message is being streamed so UI can show live stats from the first chunk (including prompt_progress)
-		this.setConversationStreaming(assistantMessage.convId, '', assistantMessage.id);
+		this.setConversationStreaming(
+			assistantMessage.convId,
+			'',
+			assistantMessage.id,
+			Date.now()
+		);
 
 		await chatService.sendMessage(
 			allMessages,
@@ -1726,7 +1741,7 @@ class ChatStore {
 
 	public getConversationStreamingPublic(
 		convId: string
-	): { response: string; messageId: string } | undefined {
+	): { response: string; messageId: string; startTimeMs: number } | undefined {
 		return this.getConversationStreaming(convId);
 	}
 
