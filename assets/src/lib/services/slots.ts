@@ -283,18 +283,23 @@ export class SlotsService {
 		const contextUsed = promptTokens + cacheTokens + predictedTokens;
 		const outputTokensUsed = predictedTokens;
 
-		const progressPercent = promptProgress
-			? Math.round((promptProgress.processed / promptProgress.total) * 100)
+		// When backend sends prompt_n but no prompt_progress (e.g. PDF/image), treat as preparing so Reading stats can show
+		const isPreparing = predictedTokens === 0 && (promptProgress != null || promptTokens > 0);
+		const progressPercent = promptProgress?.total
+			? Math.round(((promptProgress.processed ?? promptTokens) / promptProgress.total) * 100)
 			: undefined;
+
+		// Processed count: from prompt_progress or fall back to prompt_n from timings
+		const processedCount = promptProgress?.processed ?? (isPreparing ? promptTokens : 0);
 
 		// Calculate prompt processing speed (tokens per second)
 		const promptTokensPerSecond =
 			promptProgress && promptProgress.time_ms > 0
-				? (promptProgress.processed / promptProgress.time_ms) * 1000
+				? ((promptProgress.processed ?? 0) / promptProgress.time_ms) * 1000
 				: undefined;
 
 		return {
-			status: predictedTokens > 0 ? 'generating' : promptProgress ? 'preparing' : 'idle',
+			status: predictedTokens > 0 ? 'generating' : isPreparing ? 'preparing' : 'idle',
 			tokensDecoded: predictedTokens,
 			tokensRemaining: outputTokensMax - predictedTokens,
 			contextUsed,
@@ -310,7 +315,7 @@ export class SlotsService {
 			promptTokens,
 			cacheTokens,
 			promptProgressTimeMs: promptProgress?.time_ms,
-			promptProgressProcessed: promptProgress?.processed,
+			promptProgressProcessed: isPreparing ? processedCount : undefined,
 			promptProgressTotal: promptProgress?.total,
 			promptTokensPerSecond,
 			generationTimeMs: predictedMs > 0 ? predictedMs : undefined

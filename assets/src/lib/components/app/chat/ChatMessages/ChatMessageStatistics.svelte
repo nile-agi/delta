@@ -43,6 +43,13 @@
 	const useFallback = $derived(
 		streamFallback != null && !hasServerLiveState
 	);
+	// When streaming but no content yet (e.g. PDF/image prompt processing), show Reading with elapsed time
+	const useReadingFallback = $derived(
+		useFallback && streamFallback != null && streamFallback.contentLength === 0
+	);
+	const useGenerationFallback = $derived(
+		useFallback && streamFallback != null && streamFallback.contentLength > 0
+	);
 	const isLive = $derived(hasServerLiveState || useFallback);
 	const isLiveReading = $derived(
 		hasServerLiveState && liveState?.status === 'preparing'
@@ -51,29 +58,43 @@
 		hasServerLiveState && liveState?.status === 'generating'
 	);
 
-	// Fallback: show generation stats from elapsed time and approximate token count (~4 chars per token)
+	// Reading fallback: elapsed time only (tokens/speed unknown until backend sends data)
+	const readingFallbackElapsedMs = $derived(
+		useReadingFallback && streamFallback ? nowMs - streamFallback.startTimeMs : 0
+	);
+	// Generation fallback: elapsed time and approximate token count (~4 chars per token)
 	const fallbackElapsedMs = $derived(
-		useFallback && streamFallback ? nowMs - streamFallback.startTimeMs : 0
+		useGenerationFallback && streamFallback ? nowMs - streamFallback.startTimeMs : 0
 	);
 	const fallbackApproxTokens = $derived(
-		useFallback && streamFallback ? Math.max(0, Math.round(streamFallback.contentLength / 4)) : 0
+		useGenerationFallback && streamFallback
+			? Math.max(0, Math.round(streamFallback.contentLength / 4))
+			: 0
 	);
 
 	const effectivePromptTokens = $derived(
 		isLiveReading
 			? (liveState!.promptProgressProcessed ?? liveState!.promptTokens ?? 0)
-			: promptTokens
+			: useReadingFallback
+				? 0
+				: promptTokens
 	);
 	const effectivePromptMs = $derived(
 		isLiveReading && liveState?.promptProgressTimeMs != null
 			? liveState.promptProgressTimeMs
-			: promptMs
+			: useReadingFallback
+				? readingFallbackElapsedMs
+				: promptMs
 	);
 	const effectivePredictedTokens = $derived(
-		useFallback ? fallbackApproxTokens : isLiveGen ? liveState!.tokensDecoded : predictedTokens
+		useGenerationFallback
+			? fallbackApproxTokens
+			: isLiveGen
+				? liveState!.tokensDecoded
+				: predictedTokens
 	);
 	const effectivePredictedMs = $derived(
-		useFallback
+		useGenerationFallback
 			? fallbackElapsedMs
 			: isLiveGen
 				? liveState!.generationTimeMs ??
@@ -84,7 +105,7 @@
 	);
 
 	const promptSpeed = $derived(
-		effectivePromptMs > 0
+		effectivePromptMs > 0 && effectivePromptTokens > 0
 			? (effectivePromptTokens / effectivePromptMs) * 1000
 			: (liveState?.promptTokensPerSecond ?? 0)
 	);
@@ -96,44 +117,52 @@
 
 	// When live, hide "0" until data arrives — show placeholder so stats feel real-time
 	const displayPromptTokens = $derived(
-		isLiveReading && effectivePromptTokens === 0 ? '—' : String(effectivePromptTokens)
+		(isLiveReading || useReadingFallback) && effectivePromptTokens === 0
+			? '—'
+			: String(effectivePromptTokens)
 	);
 	const displayPromptTime = $derived(
-		isLiveReading && effectivePromptMs === 0 ? '—s' : (effectivePromptMs / 1000).toFixed(2) + 's'
+		(isLiveReading || useReadingFallback) && effectivePromptMs === 0
+			? '—s'
+			: (effectivePromptMs / 1000).toFixed(2) + 's'
 	);
 	const displayPromptSpeed = $derived(
-		isLiveReading && promptSpeed === 0 ? '—' : promptSpeed.toFixed(2) + ' tokens/s'
+		(isLiveReading || useReadingFallback) && promptSpeed === 0
+			? '—'
+			: promptSpeed.toFixed(2) + ' tokens/s'
 	);
 	const displayGenTokens = $derived(
-		useFallback && fallbackApproxTokens === 0
+		useGenerationFallback && fallbackApproxTokens === 0
 			? '—'
 			: isLiveGen && effectivePredictedTokens === 0
 				? '—'
 				: String(effectivePredictedTokens)
 	);
 	const displayGenTime = $derived(
-		!useFallback && isLiveGen && effectivePredictedMs === 0
+		!useGenerationFallback && isLiveGen && effectivePredictedMs === 0
 			? '—s'
 			: (effectivePredictedMs / 1000).toFixed(2) + 's'
 	);
 	const displayGenSpeed = $derived(
-		!useFallback && isLiveGen && genSpeed === 0 ? '—' : genSpeed.toFixed(2) + ' tokens/s'
+		!useGenerationFallback && isLiveGen && genSpeed === 0 ? '—' : genSpeed.toFixed(2) + ' tokens/s'
 	);
 
-	// When live, sync tab to current phase (server state or fallback = generation)
+	// When live, sync tab to current phase: reading fallback or server preparing → Reading; else Generation
 	$effect(() => {
-		if (useFallback) {
+		if (useReadingFallback || (liveState?.status === 'preparing')) {
+			statsView = 'reading';
+			return;
+		}
+		if (useGenerationFallback || liveState?.status === 'generating') {
 			statsView = 'generation';
 			return;
 		}
 		if (!liveState || liveState.status === 'idle') return;
-		if (liveState.status === 'preparing') statsView = 'reading';
-		else if (liveState.status === 'generating') statsView = 'generation';
 	});
 
 	// During prompt processing only Reading is available; during generation only Generation is available
-	const isInReadingPhase = $derived(isLiveReading);
-	const isInGenerationPhase = $derived(isLiveGen || useFallback);
+	const isInReadingPhase = $derived(isLiveReading || useReadingFallback);
+	const isInGenerationPhase = $derived(isLiveGen || useGenerationFallback);
 	const disableReadingButton = $derived(isInGenerationPhase);
 	const disableGenerationButton = $derived(isInReadingPhase);
 

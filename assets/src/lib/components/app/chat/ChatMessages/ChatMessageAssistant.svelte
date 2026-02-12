@@ -101,6 +101,26 @@
 				}
 			: null
 	);
+	/** True when we're streaming but no content yet (e.g. PDF/image prompt processing) */
+	const isReadingFallback = $derived(
+		!!(streamFallback && streamFallback.contentLength === 0)
+	);
+
+	// Tick every 500ms during reading fallback so "Processing... (elapsed: Xs)" updates
+	let processingNowMs = $state(Date.now());
+	$effect(() => {
+		if (!isReadingFallback) return;
+		const interval = setInterval(() => {
+			processingNowMs = Date.now();
+		}, 500);
+		return () => clearInterval(interval);
+	});
+	/** Message shown above stats: use elapsed when no server progress (PDF/image), else hook message */
+	const processingMessage = $derived(
+		isReadingFallback
+			? `Processing... (elapsed: ${Math.round((processingNowMs - streamFallback!.startTimeMs) / 1000)}s)`
+			: processingState.getProcessingMessage()
+	);
 
 	function getModelDisplayName(): string {
 		const modelId = message.model;
@@ -180,7 +200,7 @@
 		<div class="mt-6 w-full max-w-[48rem]" in:fade>
 			<div class="processing-container">
 				<span class="processing-text">
-					{processingState.getProcessingMessage()}
+					{processingMessage}
 				</span>
 			</div>
 		</div>
