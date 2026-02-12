@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { BookOpen, Sparkles, Copy, Gauge, Clock, WholeWord } from '@lucide/svelte';
 	import { copyToClipboard } from '$lib/utils/copy';
+	import * as Tooltip from '$lib/components/ui/tooltip';
+
+	/** Delay (ms) before tooltip shows — fast appearance on hover */
+	const TOOLTIP_DELAY_MS = 150;
 
 	interface Props {
 		promptTokens: number;
@@ -17,6 +21,8 @@
 
 	// Use live state when active; otherwise use final timings from props
 	const isLive = $derived(liveState != null && liveState.status !== 'idle');
+	const isLiveReading = $derived(isLive && liveState?.status === 'preparing');
+	const isLiveGen = $derived(isLive && liveState?.status === 'generating');
 
 	const effectivePromptTokens = $derived(
 		isLive && liveState?.status === 'preparing'
@@ -51,6 +57,26 @@
 			: (liveState?.tokensPerSecond ?? 0)
 	);
 
+	// When live, hide "0" until data arrives — show placeholder so stats feel real-time
+	const displayPromptTokens = $derived(
+		isLiveReading && effectivePromptTokens === 0 ? '—' : String(effectivePromptTokens)
+	);
+	const displayPromptTime = $derived(
+		isLiveReading && effectivePromptMs === 0 ? '—s' : (effectivePromptMs / 1000).toFixed(2) + 's'
+	);
+	const displayPromptSpeed = $derived(
+		isLiveReading && promptSpeed === 0 ? '—' : promptSpeed.toFixed(2) + ' tokens/s'
+	);
+	const displayGenTokens = $derived(
+		isLiveGen && effectivePredictedTokens === 0 ? '—' : String(effectivePredictedTokens)
+	);
+	const displayGenTime = $derived(
+		isLiveGen && effectivePredictedMs === 0 ? '—s' : (effectivePredictedMs / 1000).toFixed(2) + 's'
+	);
+	const displayGenSpeed = $derived(
+		isLiveGen && genSpeed === 0 ? '—' : genSpeed.toFixed(2) + ' tokens/s'
+	);
+
 	// When live, sync tab to current phase
 	$effect(() => {
 		if (!liveState || liveState.status === 'idle') return;
@@ -65,105 +91,163 @@
 
 <div class="flex flex-wrap items-center gap-3">
 	<div class="flex items-center gap-1 rounded-md border border-border/50 bg-muted/20 p-0.5">
-		<button
-			type="button"
-			class="inline-flex items-center justify-center rounded px-2 py-1.5 transition {statsView ===
-			'reading'
-				? 'bg-background text-foreground shadow-sm'
-				: 'text-muted-foreground hover:text-foreground'}"
-			title="Reading (prompt processing)"
-			aria-label="Reading (prompt processing)"
-			onclick={() => (statsView = 'reading')}
-		>
-			<BookOpen class="h-3.5 w-3.5 shrink-0" />
-		</button>
-		<button
-			type="button"
-			class="inline-flex items-center justify-center rounded px-2 py-1.5 transition {statsView ===
-			'generation'
-				? 'bg-background text-foreground shadow-sm'
-				: 'text-muted-foreground hover:text-foreground'}"
-			title="Generation (token output)"
-			aria-label="Generation (token output)"
-			onclick={() => (statsView = 'generation')}
-		>
-			<Sparkles class="h-3.5 w-3.5 shrink-0" />
-		</button>
+		<Tooltip.Root delayDuration={TOOLTIP_DELAY_MS}>
+			<Tooltip.Trigger>
+				<button
+					type="button"
+					class="inline-flex items-center justify-center rounded px-2 py-1.5 transition {statsView ===
+					'reading'
+						? 'bg-background text-foreground shadow-sm'
+						: 'text-muted-foreground hover:text-foreground'}"
+					aria-label="Reading (prompt processing)"
+					onclick={() => (statsView = 'reading')}
+				>
+					<BookOpen class="h-3.5 w-3.5 shrink-0" />
+				</button>
+			</Tooltip.Trigger>
+			<Tooltip.Content>
+				<p>Reading (prompt processing)</p>
+			</Tooltip.Content>
+		</Tooltip.Root>
+		<Tooltip.Root delayDuration={TOOLTIP_DELAY_MS}>
+			<Tooltip.Trigger>
+				<button
+					type="button"
+					class="inline-flex items-center justify-center rounded px-2 py-1.5 transition {statsView ===
+					'generation'
+						? 'bg-background text-foreground shadow-sm'
+						: 'text-muted-foreground hover:text-foreground'}"
+					aria-label="Generation (token output)"
+					onclick={() => (statsView = 'generation')}
+				>
+					<Sparkles class="h-3.5 w-3.5 shrink-0" />
+				</button>
+			</Tooltip.Trigger>
+			<Tooltip.Content>
+				<p>Generation (token output)</p>
+			</Tooltip.Content>
+		</Tooltip.Root>
 	</div>
 
 	{#if statsView === 'reading'}
 		<div class="inline-flex flex-wrap items-center gap-2">
-			<button
-				type="button"
-				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-				title="Copy prompt tokens"
-				aria-label="Prompt tokens: {effectivePromptTokens}. Copy to clipboard"
-				onclick={() => copyStat(String(effectivePromptTokens), 'Prompt tokens')}
-			>
-				<WholeWord class="h-3 w-3" />
-				<span>{effectivePromptTokens} tokens</span>
-				<Copy class="h-3 w-3 opacity-70" />
-			</button>
-			<button
-				type="button"
-				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-				title="Copy prompt processing time"
-				aria-label="Prompt processing time: {(effectivePromptMs / 1000).toFixed(2)} seconds. Copy to clipboard"
-				onclick={() =>
-					copyStat(`${(effectivePromptMs / 1000).toFixed(2)}s`, 'Prompt processing time')}
-			>
-				<Clock class="h-3 w-3" />
-				<span>{(effectivePromptMs / 1000).toFixed(2)}s</span>
-				<Copy class="h-3 w-3 opacity-70" />
-			</button>
-			<button
-				type="button"
-				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-				title="Copy prompt processing speed"
-				aria-label="Prompt processing speed: {promptSpeed.toFixed(2)} tokens per second. Copy to clipboard"
-				onclick={() => copyStat(`${promptSpeed.toFixed(2)} tokens/s`, 'Prompt processing speed')}
-			>
-				<Gauge class="h-3 w-3" />
-				<span>{promptSpeed.toFixed(2)} tokens/s</span>
-				<Copy class="h-3 w-3 opacity-70" />
-			</button>
+			<Tooltip.Root delayDuration={TOOLTIP_DELAY_MS}>
+				<Tooltip.Trigger>
+					<button
+						type="button"
+						class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
+						aria-label={isLiveReading && effectivePromptTokens === 0
+							? 'Prompt tokens: updating. Copy to clipboard'
+							: `Prompt tokens: ${effectivePromptTokens}. Copy to clipboard`}
+						onclick={() => copyStat(displayPromptTokens, 'Prompt tokens')}
+					>
+						<WholeWord class="h-3 w-3" />
+						<span>{displayPromptTokens} tokens</span>
+						<Copy class="h-3 w-3 opacity-70" />
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Content>
+					<p>Copy prompt tokens</p>
+				</Tooltip.Content>
+			</Tooltip.Root>
+			<Tooltip.Root delayDuration={TOOLTIP_DELAY_MS}>
+				<Tooltip.Trigger>
+					<button
+						type="button"
+						class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
+						aria-label={isLiveReading && effectivePromptMs === 0
+							? 'Prompt processing time: updating. Copy to clipboard'
+							: `Prompt processing time: ${(effectivePromptMs / 1000).toFixed(2)} seconds. Copy to clipboard`}
+						onclick={() => copyStat(displayPromptTime, 'Prompt processing time')}
+					>
+						<Clock class="h-3 w-3" />
+						<span>{displayPromptTime}</span>
+						<Copy class="h-3 w-3 opacity-70" />
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Content>
+					<p>Copy prompt processing time</p>
+				</Tooltip.Content>
+			</Tooltip.Root>
+			<Tooltip.Root delayDuration={TOOLTIP_DELAY_MS}>
+				<Tooltip.Trigger>
+					<button
+						type="button"
+						class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
+						aria-label={isLiveReading && promptSpeed === 0
+							? 'Prompt processing speed: updating. Copy to clipboard'
+							: `Prompt processing speed: ${promptSpeed.toFixed(2)} tokens per second. Copy to clipboard`}
+						onclick={() => copyStat(displayPromptSpeed, 'Prompt processing speed')}
+					>
+						<Gauge class="h-3 w-3" />
+						<span>{displayPromptSpeed}</span>
+						<Copy class="h-3 w-3 opacity-70" />
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Content>
+					<p>Copy prompt processing speed</p>
+				</Tooltip.Content>
+			</Tooltip.Root>
 		</div>
 	{:else}
 		<div class="inline-flex flex-wrap items-center gap-2">
-			<button
-				type="button"
-				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-				title="Generated tokens"
-				aria-label="Generated tokens: {effectivePredictedTokens}. Copy to clipboard"
-				onclick={() => copyStat(String(effectivePredictedTokens), 'Generated tokens')}
-			>
-				<WholeWord class="h-3 w-3" />
-				<span>{effectivePredictedTokens} tokens</span>
-				<Copy class="h-3 w-3 opacity-70" />
-			</button>
-			<button
-				type="button"
-				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-				title="Generation time"
-				aria-label="Generation time: {(effectivePredictedMs / 1000).toFixed(2)} seconds. Copy to clipboard"
-				onclick={() =>
-					copyStat(`${(effectivePredictedMs / 1000).toFixed(2)}s`, 'Generation time')}
-			>
-				<Clock class="h-3 w-3" />
-				<span>{(effectivePredictedMs / 1000).toFixed(2)}s</span>
-				<Copy class="h-3 w-3 opacity-70" />
-			</button>
-			<button
-				type="button"
-				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
-				title="Generation speed"
-				aria-label="Generation speed: {genSpeed.toFixed(2)} tokens per second. Copy to clipboard"
-				onclick={() => copyStat(`${genSpeed.toFixed(2)} tokens/s`, 'Generation speed')}
-			>
-				<Gauge class="h-3 w-3" />
-				<span>{genSpeed.toFixed(2)} tokens/s</span>
-				<Copy class="h-3 w-3 opacity-70" />
-			</button>
+			<Tooltip.Root delayDuration={TOOLTIP_DELAY_MS}>
+				<Tooltip.Trigger>
+					<button
+						type="button"
+						class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
+						aria-label={isLiveGen && effectivePredictedTokens === 0
+							? 'Generated tokens: updating. Copy to clipboard'
+							: `Generated tokens: ${effectivePredictedTokens}. Copy to clipboard`}
+						onclick={() => copyStat(displayGenTokens, 'Generated tokens')}
+					>
+						<WholeWord class="h-3 w-3" />
+						<span>{displayGenTokens} tokens</span>
+						<Copy class="h-3 w-3 opacity-70" />
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Content>
+					<p>Generated tokens</p>
+				</Tooltip.Content>
+			</Tooltip.Root>
+			<Tooltip.Root delayDuration={TOOLTIP_DELAY_MS}>
+				<Tooltip.Trigger>
+					<button
+						type="button"
+						class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
+						aria-label={isLiveGen && effectivePredictedMs === 0
+							? 'Generation time: updating. Copy to clipboard'
+							: `Generation time: ${(effectivePredictedMs / 1000).toFixed(2)} seconds. Copy to clipboard`}
+						onclick={() => copyStat(displayGenTime, 'Generation time')}
+					>
+						<Clock class="h-3 w-3" />
+						<span>{displayGenTime}</span>
+						<Copy class="h-3 w-3 opacity-70" />
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Content>
+					<p>Generation time</p>
+				</Tooltip.Content>
+			</Tooltip.Root>
+			<Tooltip.Root delayDuration={TOOLTIP_DELAY_MS}>
+				<Tooltip.Trigger>
+					<button
+						type="button"
+						class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
+						aria-label={isLiveGen && genSpeed === 0
+							? 'Generation speed: updating. Copy to clipboard'
+							: `Generation speed: ${genSpeed.toFixed(2)} tokens per second. Copy to clipboard`}
+						onclick={() => copyStat(displayGenSpeed, 'Generation speed')}
+					>
+						<Gauge class="h-3 w-3" />
+						<span>{displayGenSpeed}</span>
+						<Copy class="h-3 w-3 opacity-70" />
+					</button>
+				</Tooltip.Trigger>
+				<Tooltip.Content>
+					<p>Generation speed</p>
+				</Tooltip.Content>
+			</Tooltip.Root>
 		</div>
 	{/if}
 </div>
