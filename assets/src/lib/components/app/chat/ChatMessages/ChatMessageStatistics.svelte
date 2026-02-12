@@ -131,6 +131,11 @@
 		else if (liveState.status === 'generating') statsView = 'generation';
 	});
 
+	/** Disable switching to Reading when output is being generated */
+	const generationTabDisabled = $derived(isLiveReading);
+	/** Disable switching to Generation when prompt is being processed */
+	const readingTabDisabled = $derived(isLiveGen || useFallback);
+
 	async function copyStat(value: string, label: string) {
 		await copyToClipboard(value, `${label} copied`);
 	}
@@ -145,15 +150,23 @@
 					class="inline-flex items-center justify-center rounded px-2 py-1.5 transition {statsView ===
 					'reading'
 						? 'bg-background text-foreground shadow-sm'
-						: 'text-muted-foreground hover:text-foreground'}"
+						: 'text-muted-foreground hover:text-foreground'} {readingTabDisabled
+						? 'cursor-not-allowed opacity-60'
+						: ''}"
 					aria-label="Reading (prompt processing)"
-					onclick={() => (statsView = 'reading')}
+					aria-disabled={readingTabDisabled}
+					disabled={readingTabDisabled}
+					onclick={() => !readingTabDisabled && (statsView = 'reading')}
 				>
 					<BookOpen class="h-3.5 w-3.5 shrink-0" />
 				</button>
 			</Tooltip.Trigger>
 			<Tooltip.Content>
-				<p>Reading (prompt processing)</p>
+				<p>
+					{readingTabDisabled
+						? 'Reading (prompt processing) — switch after generation finishes'
+						: 'Reading (prompt processing)'}
+				</p>
 			</Tooltip.Content>
 		</Tooltip.Root>
 		<Tooltip.Root delayDuration={TOOLTIP_DELAY_MS}>
@@ -163,15 +176,23 @@
 					class="inline-flex items-center justify-center rounded px-2 py-1.5 transition {statsView ===
 					'generation'
 						? 'bg-background text-foreground shadow-sm'
-						: 'text-muted-foreground hover:text-foreground'}"
+						: 'text-muted-foreground hover:text-foreground'} {generationTabDisabled
+						? 'cursor-not-allowed opacity-60'
+						: ''}"
 					aria-label="Generation (token output)"
-					onclick={() => (statsView = 'generation')}
+					aria-disabled={generationTabDisabled}
+					disabled={generationTabDisabled}
+					onclick={() => !generationTabDisabled && (statsView = 'generation')}
 				>
 					<Sparkles class="h-3.5 w-3.5 shrink-0" />
 				</button>
 			</Tooltip.Trigger>
 			<Tooltip.Content>
-				<p>Generation (token output)</p>
+				<p>
+					{generationTabDisabled
+						? 'Generation (token output) — switch after prompt is read'
+						: 'Generation (token output)'}
+				</p>
 			</Tooltip.Content>
 		</Tooltip.Root>
 	</div>
