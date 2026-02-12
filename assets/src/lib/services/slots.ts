@@ -145,11 +145,13 @@ export class SlotsService {
 	}
 
 	/**
-	 * Notify all callbacks with current state
+	 * Notify all callbacks with current state.
+	 * When we have an active conversation, use its state or fall back to lastKnownState
+	 * so subscribers always get the latest timing data even if conversation state was set async.
 	 */
 	private notifyCallbacks(): void {
 		const currentState = this.activeConversationId
-			? this.conversationStates.get(this.activeConversationId) || null
+			? this.conversationStates.get(this.activeConversationId) ?? this.lastKnownState
 			: this.lastKnownState;
 
 		for (const callback of this.callbacks) {
