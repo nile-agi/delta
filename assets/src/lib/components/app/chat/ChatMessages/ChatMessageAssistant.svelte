@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { ChatMessageThinkingBlock, MarkdownContent } from '$lib/components/app';
 	import { useProcessingState } from '$lib/hooks/use-processing-state.svelte';
-	import { isLoading } from '$lib/stores/chat.svelte';
+	import {
+		activeConversation,
+		getConversationStreaming,
+		isLoading
+	} from '$lib/stores/chat.svelte';
 	import { fade } from 'svelte/transition';
 	import { Check, X, Box, ChevronDown, Wrench } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -80,6 +84,10 @@
 	let currentConfig = $derived(config());
 	let options = $derived(modelOptions());
 	let activeModelId = $derived(selectedModelId());
+	/** Id of the assistant message currently being streamed (so we can show live stats on it) */
+	const streamingMessageId = $derived(
+		getConversationStreaming(activeConversation()?.id ?? '')?.messageId ?? null
+	);
 
 	function getModelDisplayName(): string {
 		const modelId = message.model;
@@ -244,7 +252,9 @@
 						promptMs={t?.prompt_ms ?? 0}
 						predictedTokens={t?.predicted_n ?? 0}
 						predictedMs={t?.predicted_ms ?? 0}
-						liveState={message.role === 'assistant' && isLoading() && !message.timestamp
+						liveState={message.role === 'assistant' &&
+						isLoading() &&
+						message.id === streamingMessageId
 							? processingState.processingState
 							: null}
 					/>

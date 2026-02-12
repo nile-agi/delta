@@ -438,6 +438,8 @@ class ChatStore {
 
 		slotsService.startStreaming();
 		slotsService.setActiveConversation(assistantMessage.convId);
+		// Mark which message is being streamed so UI can show live stats from the first chunk (including prompt_progress)
+		this.setConversationStreaming(assistantMessage.convId, '', assistantMessage.id);
 
 		await chatService.sendMessage(
 			allMessages,
