@@ -131,10 +131,11 @@
 		else if (liveState.status === 'generating') statsView = 'generation';
 	});
 
-	/** Disable switching to Reading when output is being generated */
-	const generationTabDisabled = $derived(isLiveReading);
-	/** Disable switching to Generation when prompt is being processed */
-	const readingTabDisabled = $derived(isLiveGen || useFallback);
+	// During prompt processing only Reading is available; during generation only Generation is available
+	const isInReadingPhase = $derived(isLiveReading);
+	const isInGenerationPhase = $derived(isLiveGen || useFallback);
+	const disableReadingButton = $derived(isInGenerationPhase);
+	const disableGenerationButton = $derived(isInReadingPhase);
 
 	async function copyStat(value: string, label: string) {
 		await copyToClipboard(value, `${label} copied`);
@@ -150,21 +151,21 @@
 					class="inline-flex items-center justify-center rounded px-2 py-1.5 transition {statsView ===
 					'reading'
 						? 'bg-background text-foreground shadow-sm'
-						: 'text-muted-foreground hover:text-foreground'} {readingTabDisabled
-						? 'cursor-not-allowed opacity-60'
+						: 'text-muted-foreground hover:text-foreground'} {disableReadingButton
+						? 'cursor-not-allowed opacity-50'
 						: ''}"
 					aria-label="Reading (prompt processing)"
-					aria-disabled={readingTabDisabled}
-					disabled={readingTabDisabled}
-					onclick={() => !readingTabDisabled && (statsView = 'reading')}
+					aria-disabled={disableReadingButton}
+					disabled={disableReadingButton}
+					onclick={() => !disableReadingButton && (statsView = 'reading')}
 				>
 					<BookOpen class="h-3.5 w-3.5 shrink-0" />
 				</button>
 			</Tooltip.Trigger>
 			<Tooltip.Content>
 				<p>
-					{readingTabDisabled
-						? 'Reading (prompt processing) — switch after generation finishes'
+					{disableReadingButton
+						? 'Reading (prompt processing) — available after generation'
 						: 'Reading (prompt processing)'}
 				</p>
 			</Tooltip.Content>
@@ -176,21 +177,21 @@
 					class="inline-flex items-center justify-center rounded px-2 py-1.5 transition {statsView ===
 					'generation'
 						? 'bg-background text-foreground shadow-sm'
-						: 'text-muted-foreground hover:text-foreground'} {generationTabDisabled
-						? 'cursor-not-allowed opacity-60'
+						: 'text-muted-foreground hover:text-foreground'} {disableGenerationButton
+						? 'cursor-not-allowed opacity-50'
 						: ''}"
 					aria-label="Generation (token output)"
-					aria-disabled={generationTabDisabled}
-					disabled={generationTabDisabled}
-					onclick={() => !generationTabDisabled && (statsView = 'generation')}
+					aria-disabled={disableGenerationButton}
+					disabled={disableGenerationButton}
+					onclick={() => !disableGenerationButton && (statsView = 'generation')}
 				>
 					<Sparkles class="h-3.5 w-3.5 shrink-0" />
 				</button>
 			</Tooltip.Trigger>
 			<Tooltip.Content>
 				<p>
-					{generationTabDisabled
-						? 'Generation (token output) — switch after prompt is read'
+					{disableGenerationButton
+						? 'Generation (token output) — available after prompt is read'
 						: 'Generation (token output)'}
 				</p>
 			</Tooltip.Content>

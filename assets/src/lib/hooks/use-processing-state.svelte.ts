@@ -86,29 +86,30 @@ export function useProcessingState(): UseProcessingStateReturn {
 
 	function getProcessingMessage(): string {
 		if (!processingState) {
-			return 'Processing...';
+			return 'Processing 0% (ETA: —s)';
 		}
 
 		switch (processingState.status) {
 			case 'initializing':
-				return 'Initializing...';
-			case 'preparing':
-				if (processingState.progressPercent !== undefined) {
-					// Calculate ETA based on progress and elapsed time
-					const etaSeconds = calculateETA(processingState);
-					if (etaSeconds !== null && etaSeconds > 0) {
-						return `Processing ${processingState.progressPercent}% (ETA: ${Math.round(etaSeconds)}s)`;
-					}
-					return `Processing ${processingState.progressPercent}%`;
-				}
-				return 'Preparing response...';
+				return 'Processing 0% (ETA: —s)';
+			case 'preparing': {
+				// Always use "Processing X% (ETA: Ys)" for consistency (normal chat, PDF, image, text upload, etc.)
+				const percent =
+					processingState.progressPercent !== undefined
+						? processingState.progressPercent
+						: 0;
+				const etaSeconds = calculateETA(processingState);
+				const etaStr =
+					etaSeconds !== null && etaSeconds > 0 ? `${Math.round(etaSeconds)}s` : '—s';
+				return `Processing ${percent}% (ETA: ${etaStr})`;
+			}
 			case 'generating':
 				if (processingState.tokensDecoded > 0) {
 					return `Generating... (${processingState.tokensDecoded} tokens)`;
 				}
 				return 'Generating...';
 			default:
-				return 'Processing...';
+				return 'Processing 0% (ETA: —s)';
 		}
 	}
 
