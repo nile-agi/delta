@@ -296,4 +296,9 @@ export interface ApiProcessingState {
 	progressPercent?: number;
 	promptTokens?: number;
 	cacheTokens?: number;
+	// Prompt processing progress details for ETA calculation
+	promptProgressTimeMs?: number; // Elapsed time in milliseconds
+	promptProgressProcessed?: number; // Number of tokens processed
+	promptProgressTotal?: number; // Total tokens to process
+	promptTokensPerSecond?: number; // Prompt processing speed
 }

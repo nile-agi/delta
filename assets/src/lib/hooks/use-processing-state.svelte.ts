@@ -94,7 +94,12 @@ export function useProcessingState(): UseProcessingStateReturn {
 				return 'Initializing...';
 			case 'preparing':
 				if (processingState.progressPercent !== undefined) {
-					return `Processing (${processingState.progressPercent}%)`;
+					// Calculate ETA based on progress and elapsed time
+					const etaSeconds = calculateETA(processingState);
+					if (etaSeconds !== null && etaSeconds > 0) {
+						return `Processing ${processingState.progressPercent}% (ETA: ${Math.round(etaSeconds)}s)`;
+					}
+					return `Processing ${processingState.progressPercent}%`;
 				}
 				return 'Preparing response...';
 			case 'generating':
@@ -107,6 +112,36 @@ export function useProcessingState(): UseProcessingStateReturn {
 		}
 	}
 
+	/**
+	 * Calculate ETA (Estimated Time to Arrival) in seconds based on current progress
+	 * Returns null if calculation is not possible
+	 */
+	function calculateETA(state: ApiProcessingState): number | null {
+		if (
+			state.progressPercent === undefined ||
+			state.progressPercent <= 0 ||
+			state.progressPercent >= 100 ||
+			!state.promptProgressTimeMs ||
+			state.promptProgressTimeMs <= 0
+		) {
+			return null;
+		}
+
+		// Calculate ETA: if we've processed X% in Y seconds, remaining time = (Y / X) * (100 - X)
+		const elapsedSeconds = state.promptProgressTimeMs / 1000;
+		const progressDecimal = state.progressPercent / 100;
+		const remainingProgress = 1 - progressDecimal;
+
+		if (progressDecimal <= 0) {
+			return null;
+		}
+
+		const estimatedTotalTime = elapsedSeconds / progressDecimal;
+		const etaSeconds = estimatedTotalTime - elapsedSeconds;
+
+		return etaSeconds > 0 ? etaSeconds : null;
+	}
+
 	function getProcessingDetails(): string[] {
 		// Use current processing state or fall back to last known state
 		const stateToUse = processingState || lastKnownState;
@@ -116,6 +151,28 @@ export function useProcessingState(): UseProcessingStateReturn {
 
 		const details: string[] = [];
 		const currentConfig = config(); // Get fresh config each time
+
+		// During prompt processing (preparing), show prompt-specific stats first
+		if (stateToUse.status === 'preparing') {
+			// Show prompt tokens if available
+			if (stateToUse.promptTokens !== undefined && stateToUse.promptTokens > 0) {
+				details.push(`${stateToUse.promptTokens} tokens`);
+			}
+
+			// Show elapsed time for prompt processing
+			if (stateToUse.promptProgressTimeMs !== undefined && stateToUse.promptProgressTimeMs > 0) {
+				const elapsedSeconds = (stateToUse.promptProgressTimeMs / 1000).toFixed(2);
+				details.push(`${elapsedSeconds}s`);
+			}
+
+			// Show prompt processing speed (tokens per second)
+			if (
+				stateToUse.promptTokensPerSecond !== undefined &&
+				stateToUse.promptTokensPerSecond > 0
+			) {
+				details.push(`${stateToUse.promptTokensPerSecond.toFixed(2)} tokens/s`);
+			}
+		}
 
 		// Always show context info when we have valid data
 		if (stateToUse.contextUsed >= 0 && stateToUse.contextTotal > 0) {
@@ -141,8 +198,10 @@ export function useProcessingState(): UseProcessingStateReturn {
 			}
 		}
 
+		// Show generation tokens/sec (different from prompt tokens/sec)
 		if (
 			currentConfig.showTokensPerSecond &&
+			stateToUse.status === 'generating' &&
 			stateToUse.tokensPerSecond &&
 			stateToUse.tokensPerSecond > 0
 		) {
