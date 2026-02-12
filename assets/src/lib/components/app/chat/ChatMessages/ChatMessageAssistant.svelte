@@ -238,12 +238,15 @@
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
 
-				{#if currentConfig.showMessageStats && t}
+				{#if currentConfig.showMessageStats && (t || (message.role === 'assistant' && isLoading()))}
 					<ChatMessageStatistics
-						promptTokens={t.prompt_n ?? 0}
-						promptMs={t.prompt_ms ?? 0}
-						predictedTokens={t.predicted_n ?? 0}
-						predictedMs={t.predicted_ms ?? 0}
+						promptTokens={t?.prompt_n ?? 0}
+						promptMs={t?.prompt_ms ?? 0}
+						predictedTokens={t?.predicted_n ?? 0}
+						predictedMs={t?.predicted_ms ?? 0}
+						liveState={message.role === 'assistant' && isLoading() && !message.timestamp
+							? processingState.processingState
+							: null}
 					/>
 				{/if}
 			</div>

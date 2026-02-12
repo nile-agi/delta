@@ -7,14 +7,56 @@
 		promptMs: number;
 		predictedTokens: number;
 		predictedMs: number;
+		/** When set and not idle, stats are shown in real time from this state */
+		liveState?: ApiProcessingState | null;
 	}
 
-	let { promptTokens, promptMs, predictedTokens, predictedMs }: Props = $props();
+	let { promptTokens, promptMs, predictedTokens, predictedMs, liveState = null }: Props = $props();
 
 	let statsView = $state<'reading' | 'generation'>('generation');
 
-	const promptSpeed = $derived(promptMs > 0 ? (promptTokens / promptMs) * 1000 : 0);
-	const genSpeed = $derived(predictedMs > 0 ? (predictedTokens / predictedMs) * 1000 : 0);
+	// Use live state when active; otherwise use final timings from props
+	const isLive = $derived(liveState != null && liveState.status !== 'idle');
+
+	const effectivePromptTokens = $derived(
+		isLive && liveState?.status === 'preparing'
+			? (liveState.promptProgressProcessed ?? liveState.promptTokens ?? 0)
+			: promptTokens
+	);
+	const effectivePromptMs = $derived(
+		isLive && liveState?.status === 'preparing' && liveState.promptProgressTimeMs != null
+			? liveState.promptProgressTimeMs
+			: promptMs
+	);
+	const effectivePredictedTokens = $derived(
+		isLive && liveState?.status === 'generating' ? liveState.tokensDecoded : predictedTokens
+	);
+	const effectivePredictedMs = $derived(
+		isLive && liveState?.status === 'generating'
+			? liveState.generationTimeMs ??
+					(liveState.tokensPerSecond && liveState.tokensPerSecond > 0
+						? (liveState.tokensDecoded / liveState.tokensPerSecond) * 1000
+						: 0)
+			: predictedMs
+	);
+
+	const promptSpeed = $derived(
+		effectivePromptMs > 0
+			? (effectivePromptTokens / effectivePromptMs) * 1000
+			: (liveState?.promptTokensPerSecond ?? 0)
+	);
+	const genSpeed = $derived(
+		effectivePredictedMs > 0
+			? (effectivePredictedTokens / effectivePredictedMs) * 1000
+			: (liveState?.tokensPerSecond ?? 0)
+	);
+
+	// When live, sync tab to current phase
+	$effect(() => {
+		if (!liveState || liveState.status === 'idle') return;
+		if (liveState.status === 'preparing') statsView = 'reading';
+		else if (liveState.status === 'generating') statsView = 'generation';
+	});
 
 	async function copyStat(value: string, label: string) {
 		await copyToClipboard(value, `${label} copied`);
@@ -55,26 +97,30 @@
 				type="button"
 				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
 				title="Copy prompt tokens"
-				onclick={() => copyStat(String(promptTokens), 'Prompt tokens')}
+				aria-label="Prompt tokens: {effectivePromptTokens}. Copy to clipboard"
+				onclick={() => copyStat(String(effectivePromptTokens), 'Prompt tokens')}
 			>
 				<WholeWord class="h-3 w-3" />
-				<span>{promptTokens} tokens</span>
+				<span>{effectivePromptTokens} tokens</span>
 				<Copy class="h-3 w-3 opacity-70" />
 			</button>
 			<button
 				type="button"
 				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
 				title="Copy prompt processing time"
-				onclick={() => copyStat(`${(promptMs / 1000).toFixed(2)}s`, 'Prompt processing time')}
+				aria-label="Prompt processing time: {(effectivePromptMs / 1000).toFixed(2)} seconds. Copy to clipboard"
+				onclick={() =>
+					copyStat(`${(effectivePromptMs / 1000).toFixed(2)}s`, 'Prompt processing time')}
 			>
 				<Clock class="h-3 w-3" />
-				<span>{(promptMs / 1000).toFixed(2)}s</span>
+				<span>{(effectivePromptMs / 1000).toFixed(2)}s</span>
 				<Copy class="h-3 w-3 opacity-70" />
 			</button>
 			<button
 				type="button"
 				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
 				title="Copy prompt processing speed"
+				aria-label="Prompt processing speed: {promptSpeed.toFixed(2)} tokens per second. Copy to clipboard"
 				onclick={() => copyStat(`${promptSpeed.toFixed(2)} tokens/s`, 'Prompt processing speed')}
 			>
 				<Gauge class="h-3 w-3" />
@@ -88,26 +134,30 @@
 				type="button"
 				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
 				title="Generated tokens"
-				onclick={() => copyStat(String(predictedTokens), 'Generated tokens')}
+				aria-label="Generated tokens: {effectivePredictedTokens}. Copy to clipboard"
+				onclick={() => copyStat(String(effectivePredictedTokens), 'Generated tokens')}
 			>
 				<WholeWord class="h-3 w-3" />
-				<span>{predictedTokens} tokens</span>
+				<span>{effectivePredictedTokens} tokens</span>
 				<Copy class="h-3 w-3 opacity-70" />
 			</button>
 			<button
 				type="button"
 				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
 				title="Generation time"
-				onclick={() => copyStat(`${(predictedMs / 1000).toFixed(2)}s`, 'Generation time')}
+				aria-label="Generation time: {(effectivePredictedMs / 1000).toFixed(2)} seconds. Copy to clipboard"
+				onclick={() =>
+					copyStat(`${(effectivePredictedMs / 1000).toFixed(2)}s`, 'Generation time')}
 			>
 				<Clock class="h-3 w-3" />
-				<span>{(predictedMs / 1000).toFixed(2)}s</span>
+				<span>{(effectivePredictedMs / 1000).toFixed(2)}s</span>
 				<Copy class="h-3 w-3 opacity-70" />
 			</button>
 			<button
 				type="button"
 				class="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-1 hover:bg-muted/60"
 				title="Generation speed"
+				aria-label="Generation speed: {genSpeed.toFixed(2)} tokens per second. Copy to clipboard"
 				onclick={() => copyStat(`${genSpeed.toFixed(2)} tokens/s`, 'Generation speed')}
 			>
 				<Gauge class="h-3 w-3" />
