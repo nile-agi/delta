@@ -380,7 +380,7 @@ class ChatStore {
 					} else if ('base64Data' in e && typeof e.base64Data === 'string') {
 						chars += e.base64Data.length;
 					} else if ('images' in e && Array.isArray(e.images)) {
-						chars += e.images.reduce((s, img) => s + (typeof img === 'string' ? img.length : 0), 0);
+						chars += e.images.reduce((s: number, img: unknown) => s + (typeof img === 'string' ? img.length : 0), 0);
 					} else {
 						chars += 2000;
 					}
