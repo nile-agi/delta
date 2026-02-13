@@ -108,15 +108,21 @@
 				? liveState!.tokensDecoded
 				: predictedTokens
 	);
+	// Prefer client elapsed for generation time when we have generationStartTimeMs so it streams in real time (every 500ms)
+	const generationClientElapsedMs = $derived(
+		streamFallback?.generationStartTimeMs != null ? nowMs - streamFallback.generationStartTimeMs : null
+	);
 	const effectivePredictedMs = $derived(
 		useGenerationFallback
 			? fallbackElapsedMs
-			: isLiveGen
-				? liveState!.generationTimeMs ??
-						(liveState!.tokensPerSecond && liveState!.tokensPerSecond > 0
-							? (liveState!.tokensDecoded / liveState!.tokensPerSecond) * 1000
-							: 0)
-				: predictedMs
+			: isLiveGen && generationClientElapsedMs != null
+				? generationClientElapsedMs
+				: isLiveGen
+					? liveState!.generationTimeMs ??
+							(liveState!.tokensPerSecond && liveState!.tokensPerSecond > 0
+								? (liveState!.tokensDecoded / liveState!.tokensPerSecond) * 1000
+								: 0)
+					: predictedMs
 	);
 
 	const promptSpeed = $derived(

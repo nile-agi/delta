@@ -131,7 +131,8 @@
 		return () => clearInterval(interval);
 	});
 
-	/** Real-time progress % and ETA during reading fallback (when backend doesn't send prompt_progress) */
+	/** Real-time progress % and ETA during reading fallback (when backend doesn't send prompt_progress).
+	 * Cap at 99% so we never show "100% (ETA: 0s)" while still in reading phase — only generation start means reading is done. */
 	const READING_TOKENS_PER_SEC = 60;
 	const readingProgress = $derived.by(() => {
 		if (!isReadingFallback || !streamFallback?.startTimeMs) return null;
@@ -139,9 +140,9 @@
 		const elapsedSec = elapsedMs / 1000;
 		const processed = Math.round(elapsedSec * READING_TOKENS_PER_SEC);
 		const total = streamFallback.estimatedTotalPromptTokens ?? 1;
-		const percent = Math.min(100, Math.round((processed / total) * 100));
+		const percent = Math.min(99, Math.round((processed / total) * 100));
 		const remaining = Math.max(0, total - processed);
-		const etaSec = percent >= 100 ? 0 : remaining / READING_TOKENS_PER_SEC;
+		const etaSec = remaining / READING_TOKENS_PER_SEC;
 		return { percent, etaSec };
 	});
 
