@@ -100,6 +100,10 @@
 					contentLength: streamingState.response.length,
 					...(streamingState.generationStartTimeMs != null && {
 						generationStartTimeMs: streamingState.generationStartTimeMs
+					}),
+					...(streamingState.estimatedTotalPromptTokens != null &&
+						streamingState.estimatedTotalPromptTokens > 0 && {
+						estimatedTotalPromptTokens: streamingState.estimatedTotalPromptTokens
 					})
 				}
 			: null
@@ -117,7 +121,7 @@
 					processingState.processingState.promptProgressTimeMs > 0))
 	);
 
-	// Tick every 500ms during reading fallback so "Processing... (elapsed: Xs)" updates
+	// Tick every 500ms during reading fallback so "Processing X% (ETA: Ys)" streams in real time
 	let processingNowMs = $state(Date.now());
 	$effect(() => {
 		if (!isReadingFallback) return;
@@ -126,13 +130,30 @@
 		}, 500);
 		return () => clearInterval(interval);
 	});
-	/** Message: prefer "Processing X% (ETA: Ys)" when server sends progress; else elapsed when reading fallback */
+
+	/** Real-time progress % and ETA during reading fallback (when backend doesn't send prompt_progress) */
+	const READING_TOKENS_PER_SEC = 60;
+	const readingProgress = $derived.by(() => {
+		if (!isReadingFallback || !streamFallback?.startTimeMs) return null;
+		const elapsedMs = processingNowMs - streamFallback.startTimeMs;
+		const elapsedSec = elapsedMs / 1000;
+		const processed = Math.round(elapsedSec * READING_TOKENS_PER_SEC);
+		const total = streamFallback.estimatedTotalPromptTokens ?? 1;
+		const percent = Math.min(100, Math.round((processed / total) * 100));
+		const remaining = Math.max(0, total - processed);
+		const etaSec = percent >= 100 ? 0 : remaining / READING_TOKENS_PER_SEC;
+		return { percent, etaSec };
+	});
+
+	/** Message: prefer server "Processing X% (ETA: Ys)"; else compute from estimated total + real-time speed */
 	const processingMessage = $derived(
 		hasServerProgress
 			? processingState.getProcessingMessage()
-			: isReadingFallback
-				? `Processing... (elapsed: ${Math.round((processingNowMs - streamFallback!.startTimeMs) / 1000)}s)`
-				: processingState.getProcessingMessage()
+			: isReadingFallback && readingProgress
+				? `Processing ${readingProgress.percent}% (ETA: ${Math.round(readingProgress.etaSec)}s)`
+				: isReadingFallback
+					? `Processing 0% (ETA: —s)`
+					: processingState.getProcessingMessage()
 	);
 
 	function getModelDisplayName(): string {

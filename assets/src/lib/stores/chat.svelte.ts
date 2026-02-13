@@ -61,6 +61,8 @@ class ChatStore {
 			startTimeMs: number;
 			/** Set when first content chunk arrives so Generation time excludes prompt phase */
 			generationStartTimeMs?: number;
+			/** Estimated total prompt tokens (for "Processing X% (ETA: Ys)" when backend doesn't send progress) */
+			estimatedTotalPromptTokens?: number;
 		}
 	>();
 	titleUpdateConfirmationCallback?: (currentTitle: string, newTitle: string) => Promise<boolean>;
@@ -338,7 +340,8 @@ class ChatStore {
 		convId: string,
 		response: string,
 		messageId: string,
-		startTimeMs?: number
+		startTimeMs?: number,
+		estimatedTotalPromptTokens?: number
 	): void {
 		const existing = this.conversationStreamingStates.get(convId);
 		const start = startTimeMs ?? existing?.startTimeMs ?? Date.now();
@@ -346,15 +349,45 @@ class ChatStore {
 		const hasContentNow = response.length > 0;
 		const generationStartTimeMs =
 			hadNoContent && hasContentNow ? Date.now() : existing?.generationStartTimeMs;
+		const totalTokens =
+			estimatedTotalPromptTokens ?? existing?.estimatedTotalPromptTokens;
 		this.conversationStreamingStates.set(convId, {
 			response,
 			messageId,
 			startTimeMs: start,
-			...(generationStartTimeMs != null && { generationStartTimeMs })
+			...(generationStartTimeMs != null && { generationStartTimeMs }),
+			...(totalTokens != null && totalTokens > 0 && { estimatedTotalPromptTokens: totalTokens })
 		});
 		if (this.activeConversation?.id === convId) {
 			this.currentResponse = response;
 		}
+	}
+
+	/**
+	 * Estimate total prompt tokens from messages (content + extras) for progress % and ETA when backend doesn't send prompt_progress.
+	 * Uses ~4 chars per token for text; uses actual content length for PDF/text/image/audio when available.
+	 */
+	private estimatePromptTokensFromMessages(messages: DatabaseMessage[]): number {
+		let chars = 0;
+		for (const m of messages) {
+			if (typeof m.content === 'string') chars += m.content.length;
+			if (m.extra?.length) {
+				for (const e of m.extra) {
+					if ('content' in e && typeof e.content === 'string') {
+						chars += e.content.length;
+					} else if ('base64Url' in e && typeof e.base64Url === 'string') {
+						chars += e.base64Url.length;
+					} else if ('base64Data' in e && typeof e.base64Data === 'string') {
+						chars += e.base64Data.length;
+					} else if ('images' in e && Array.isArray(e.images)) {
+						chars += e.images.reduce((s, img) => s + (typeof img === 'string' ? img.length : 0), 0);
+					} else {
+						chars += 2000;
+					}
+				}
+			}
+		}
+		return Math.max(1, Math.ceil(chars / 4));
 	}
 
 	private clearConversationStreaming(convId: string): void {
@@ -371,6 +404,7 @@ class ChatStore {
 		messageId: string;
 		startTimeMs: number;
 		generationStartTimeMs?: number;
+		estimatedTotalPromptTokens?: number;
 	} | undefined {
 		return this.conversationStreamingStates.get(convId);
 	}
@@ -468,12 +502,14 @@ class ChatStore {
 
 		slotsService.startStreaming();
 		slotsService.setActiveConversation(assistantMessage.convId);
-		// Mark which message is being streamed so UI can show live stats from the first chunk (including prompt_progress)
+		// Mark which message is being streamed; pass estimated total prompt tokens for "Processing X% (ETA: Ys)"
+		const estimatedTotalPromptTokens = this.estimatePromptTokensFromMessages(allMessages);
 		this.setConversationStreaming(
 			assistantMessage.convId,
 			'',
 			assistantMessage.id,
-			Date.now()
+			Date.now(),
+			estimatedTotalPromptTokens
 		);
 
 		await chatService.sendMessage(
@@ -1766,6 +1802,7 @@ class ChatStore {
 		messageId: string;
 		startTimeMs: number;
 		generationStartTimeMs?: number;
+		estimatedTotalPromptTokens?: number;
 	} | undefined {
 		return this.getConversationStreaming(convId);
 	}
