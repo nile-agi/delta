@@ -55,7 +55,13 @@ class ChatStore {
 	conversationLoadingStates = new SvelteMap<string, boolean>();
 	conversationStreamingStates = new SvelteMap<
 		string,
-		{ response: string; messageId: string; startTimeMs: number }
+		{
+			response: string;
+			messageId: string;
+			startTimeMs: number;
+			/** Set when first content chunk arrives so Generation time excludes prompt phase */
+			generationStartTimeMs?: number;
+		}
 	>();
 	titleUpdateConfirmationCallback?: (currentTitle: string, newTitle: string) => Promise<boolean>;
 
@@ -336,7 +342,16 @@ class ChatStore {
 	): void {
 		const existing = this.conversationStreamingStates.get(convId);
 		const start = startTimeMs ?? existing?.startTimeMs ?? Date.now();
-		this.conversationStreamingStates.set(convId, { response, messageId, startTimeMs: start });
+		const hadNoContent = (existing?.response.length ?? 0) === 0;
+		const hasContentNow = response.length > 0;
+		const generationStartTimeMs =
+			hadNoContent && hasContentNow ? Date.now() : existing?.generationStartTimeMs;
+		this.conversationStreamingStates.set(convId, {
+			response,
+			messageId,
+			startTimeMs: start,
+			...(generationStartTimeMs != null && { generationStartTimeMs })
+		});
 		if (this.activeConversation?.id === convId) {
 			this.currentResponse = response;
 		}
@@ -351,7 +366,12 @@ class ChatStore {
 
 	private getConversationStreaming(
 		convId: string
-	): { response: string; messageId: string; startTimeMs: number } | undefined {
+	): {
+		response: string;
+		messageId: string;
+		startTimeMs: number;
+		generationStartTimeMs?: number;
+	} | undefined {
 		return this.conversationStreamingStates.get(convId);
 	}
 
@@ -1741,7 +1761,12 @@ class ChatStore {
 
 	public getConversationStreamingPublic(
 		convId: string
-	): { response: string; messageId: string; startTimeMs: number } | undefined {
+	): {
+		response: string;
+		messageId: string;
+		startTimeMs: number;
+		generationStartTimeMs?: number;
+	} | undefined {
 		return this.getConversationStreaming(convId);
 	}
 

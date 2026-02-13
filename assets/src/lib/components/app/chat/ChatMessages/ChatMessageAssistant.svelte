@@ -97,13 +97,24 @@
 			streamingState
 			? {
 					startTimeMs: streamingState.startTimeMs,
-					contentLength: streamingState.response.length
+					contentLength: streamingState.response.length,
+					...(streamingState.generationStartTimeMs != null && {
+						generationStartTimeMs: streamingState.generationStartTimeMs
+					})
 				}
 			: null
 	);
 	/** True when we're streaming but no content yet (e.g. PDF/image prompt processing) */
 	const isReadingFallback = $derived(
 		!!(streamFallback && streamFallback.contentLength === 0)
+	);
+	/** Server sent progress (X% / ETA) during prompt processing — show "Processing X% (ETA: Ys)" */
+	const hasServerProgress = $derived(
+		message.id === streamingMessageId &&
+			processingState.processingState?.status === 'preparing' &&
+			(processingState.processingState?.progressPercent != null ||
+				(processingState.processingState?.promptProgressTimeMs != null &&
+					processingState.processingState.promptProgressTimeMs > 0))
 	);
 
 	// Tick every 500ms during reading fallback so "Processing... (elapsed: Xs)" updates
@@ -115,11 +126,13 @@
 		}, 500);
 		return () => clearInterval(interval);
 	});
-	/** Message shown above stats: use elapsed when no server progress (PDF/image), else hook message */
+	/** Message: prefer "Processing X% (ETA: Ys)" when server sends progress; else elapsed when reading fallback */
 	const processingMessage = $derived(
-		isReadingFallback
-			? `Processing... (elapsed: ${Math.round((processingNowMs - streamFallback!.startTimeMs) / 1000)}s)`
-			: processingState.getProcessingMessage()
+		hasServerProgress
+			? processingState.getProcessingMessage()
+			: isReadingFallback
+				? `Processing... (elapsed: ${Math.round((processingNowMs - streamFallback!.startTimeMs) / 1000)}s)`
+				: processingState.getProcessingMessage()
 	);
 
 	function getModelDisplayName(): string {

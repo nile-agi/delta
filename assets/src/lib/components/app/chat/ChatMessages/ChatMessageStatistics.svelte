@@ -14,7 +14,12 @@
 		/** When set and not idle, stats are shown in real time from this state */
 		liveState?: ApiProcessingState | null;
 		/** When backend doesn't send timings, use elapsed time and content length to show at least something */
-		streamFallback?: { startTimeMs: number; contentLength: number } | null;
+		streamFallback?: {
+			startTimeMs: number;
+			contentLength: number;
+			/** When set, Generation time = now - this (excludes prompt phase) */
+			generationStartTimeMs?: number;
+		} | null;
 	}
 
 	let {
@@ -58,13 +63,23 @@
 		hasServerLiveState && liveState?.status === 'generating'
 	);
 
-	// Reading fallback: elapsed time only (tokens/speed unknown until backend sends data)
+	// Reading fallback: elapsed time + estimated tokens/speed so all three stream (backend may not send prompt_progress)
 	const readingFallbackElapsedMs = $derived(
 		useReadingFallback && streamFallback ? nowMs - streamFallback.startTimeMs : 0
 	);
-	// Generation fallback: elapsed time and approximate token count (~4 chars per token)
+	/** Approximate prompt tokens during reading when backend doesn't send (e.g. PDF): ~60 tokens/s */
+	const READING_FALLBACK_TOKENS_PER_SEC = 60;
+	const readingFallbackEstTokens = $derived(
+		useReadingFallback && streamFallback
+			? Math.max(0, Math.round((readingFallbackElapsedMs / 1000) * READING_FALLBACK_TOKENS_PER_SEC))
+			: 0
+	);
+	// Generation fallback: elapsed since first token (not stream start), and approximate token count (~4 chars per token)
+	const generationStartMs = $derived(
+		streamFallback?.generationStartTimeMs ?? streamFallback?.startTimeMs ?? 0
+	);
 	const fallbackElapsedMs = $derived(
-		useGenerationFallback && streamFallback ? nowMs - streamFallback.startTimeMs : 0
+		useGenerationFallback && streamFallback ? nowMs - generationStartMs : 0
 	);
 	const fallbackApproxTokens = $derived(
 		useGenerationFallback && streamFallback
@@ -76,7 +91,7 @@
 		isLiveReading
 			? (liveState!.promptProgressProcessed ?? liveState!.promptTokens ?? 0)
 			: useReadingFallback
-				? 0
+				? readingFallbackEstTokens
 				: promptTokens
 	);
 	const effectivePromptMs = $derived(
@@ -115,7 +130,7 @@
 			: (liveState?.tokensPerSecond ?? 0)
 	);
 
-	// When live, hide "0" until data arrives — show placeholder so stats feel real-time
+	// When live, hide "0" until data arrives (reading fallback shows estimated tokens)
 	const displayPromptTokens = $derived(
 		(isLiveReading || useReadingFallback) && effectivePromptTokens === 0
 			? '—'
