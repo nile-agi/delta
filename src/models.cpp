@@ -1215,11 +1215,11 @@ void ModelManager::init_model_registry() {
     model_registry_["llama3.1:8b"] = {
         "llama3.1:8b",
         "llama3.1-8b",
-        "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
-        "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+        "unsloth/Llama-3.1-8B-Instruct-GGUF",
+        "Llama-3.1-8B-Instruct-Q4_K_M.gguf",
         "Q4_K_M",
-        4700LL * 1024 * 1024,     // ~4.7 GB
-        "Meta's versatile multilingual instruct model",
+        4920LL * 1024 * 1024,     // ~4.92 GB
+        "Light-weight, ultra-fast model you can run anywhere.",
         "Llama 3.1 8B",
         0  // use model default (-c from model)
     };
@@ -1229,10 +1229,10 @@ void ModelManager::init_model_registry() {
         "llama3.2:1b",
         "llama3.2-1b",
         "bartowski/Llama-3.2-1B-Instruct-GGUF",
-        "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-        "Q4_K_M",
-        730LL * 1024 * 1024,      // ~0.73 GB
-        "Meta's compact vision-language model",
+        "Llama-3.2-1B-Instruct-Q8_0.gguf",
+        "Q8_0",
+        1320LL * 1024 * 1024,      // ~1.32 GB
+        "Light-weight, efficient models you can run everywhere.",
         "Llama 3.2 1B",
         0  // use model default (-c from model)
     };
@@ -1241,10 +1241,10 @@ void ModelManager::init_model_registry() {
         "llama3.2:3b",
         "llama3.2-3b",
         "bartowski/Llama-3.2-3B-Instruct-GGUF",
-        "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-        "Q4_K_M",
-        2000LL * 1024 * 1024,     // ~2.0 GB
-        "Meta's balanced vision-language model for edge devices",
+        "Llama-3.2-3B-Instruct-Q5_K_M.gguf",
+        "Q5_K_M",
+        2320LL * 1024 * 1024,     // ~2.32 GB
+        "Light-weight, efficient models you can run everywhere.",
         "Llama 3.2 3B",
         0  // use model default (-c from model)
     };

@@ -589,6 +589,51 @@ export const modelsCatalog: ModelFamily[] = [
 				quantization: 'Q4_K_M'	
 			}
 		]	
+	},
+	{
+		id: 'Llama 3.2',
+		name: 'Llama 3.2',
+		description:
+			"Llama 3.2 11B Vision-enabled models plus lightweight 1B and 3B models optimized for on-device and edge deployment.",
+		icon: 'meta-llama logo.webp',
+		models: [
+			{
+				name: 'llama3.2-1b',
+				display_name: 'Llama 3.2 1B',
+				download_url: 'bartowski/Llama-3.2-1B-Instruct-GGUF',
+				file_size_gb: 1.32,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(1.32),
+				quantization: 'Q8_0'	
+			},
+			{
+				name: 'llama3.2-3b',
+				display_name: 'llama 3.2 3b',
+				download_url: 'bartowski/Llama-3.2-3B-Instruct-GGUF',
+				file_size_gb: 2.32,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(2.32),
+				quantization: 'Q5_K_M'	
+			}
+		]	
+	},
+	{
+		id: 'Llama 3.1',
+		name: 'Llama 3.1',
+		description:
+			"Llama 3.1 is a new state-of-the-art model from Meta available in 8B parameter sizes.",
+		icon: 'meta-llama logo.webp',
+		models: [
+			{
+				name: 'llama3.1-8b',
+				display_name: 'Llama 3.1 8B',
+				download_url: 'unsloth/Llama-3.1-8B-Instruct-GGUF',
+				file_size_gb: 4.92,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(4.92),
+				quantization: 'Q4_K_M'	
+			}
+		]	
 	}
 ];
 
