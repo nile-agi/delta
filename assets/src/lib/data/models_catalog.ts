@@ -662,7 +662,8 @@ export const FAMILY_LOGO_FILES: Record<string, string> = {
 	nemotron: 'nemotron logo.png',
 	gpt: 'GPT logo.png',
 	deepseek: 'deepseek logo.webp',
-	angelslim: 'angelslim logo.webp'
+	angelslim: 'angelslim logo.webp',
+	llama: 'meta-llama logo.webp'
 };
 
 /** True if icon is a logo filename (has file extension). */
@@ -690,6 +691,7 @@ export function getFamilyIconForModelName(name: string): string {
 	if (lower.includes('gpt')) return FAMILY_LOGO_FILES.gpt;
 	if (lower.includes('deepseek')) return FAMILY_LOGO_FILES.deepseek;
 	if (lower.includes('angleslim')) return FAMILY_LOGO_FILES.angelslim;
+	if (lower.includes('llama')) return FAMILY_LOGO_FILES.llama;
 	return '●';
 }
 
