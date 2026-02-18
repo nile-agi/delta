@@ -1750,6 +1750,55 @@ void ModelManager::init_model_registry() {
         65536
     };
 
+    /*
+    ====================== Cohere Lab model catalog =====================
+    */
+    model_registry_["tiny-aya-global"] = {
+        "tiny-aya-global",
+        "tiny-aya-global",
+        "CohereLabs/tiny-aya-global-GGUF",
+        "tiny-aya-global-q8_0.gguf",
+        "Q8_0",
+        3570LL * 1024 * 1024,
+        "Optimized for balanced multilingual performance.",
+        "Tiny-AYA Global",
+        131072  // 128K native context
+    };
+
+    model_registry_["tiny-aya-earth"] = {
+        "tiny-aya-earth",
+        "tiny-aya-earth",
+        "CohereLabs/tiny-aya-earth-GGUF",
+        "tiny-aya-earth-q8_0.gguf",
+        "Q8_0",
+        3570LL * 1024 * 1024,
+        "Strongest for languages across Africa and West Asia regions.",
+        "Tiny-AYA Earth",
+        131072  // 128K native context
+    };
+
+    model_registry_["tiny-aya-fire"] = {
+        "tiny-aya-fire",
+        "tiny-aya-fire",
+        "cohere/tiny-aya-fire-GGUF",
+        "tiny-aya-fire-q8_0.gguf",
+        "Q8_0",
+        3570LL * 1024 * 1024,
+        "Strongest for South Asian languages.",
+        "Tiny-AYA Fire",
+        131072  // 128K native context
+    };
+    model_registry_["tiny-aya-water"] = {
+        "tiny-aya-water",
+        "tiny-aya-water",
+        "CohereLabs/tiny-aya-water-GGUF",
+        "tiny-aya-water-q8_0.gguf",
+        "Q8_0",
+        3570LL * 1024 * 1024,
+        "Strongest for the Asia-Pacific and Europe regions.",
+        "Tiny-AYA Water",
+        131072  // 128K native context
+    };
 }
 
 std::vector<ModelRegistry> ModelManager::get_registry_models() {
