@@ -634,51 +634,6 @@ export const modelsCatalog: ModelFamily[] = [
 				quantization: 'Q4_K_M'	
 			}
 		]	
-	},
-	{
-		id: 'Aya',
-		name: 'Aya',
-		description:
-			"Aya, a global open-science initiative from Cohere Labs, unites researchers to push the frontier of multilingual AI, bridging gaps between people and cultures worldwide..",
-		icon: 'cohere logo.webp',
-		models: [
-			{
-				name: 'tiny-aya-global',
-				display_name: 'Tiny-AYA Global',
-				download_url: 'CohereLabs/tiny-aya-global-GGUF',
-				file_size_gb: 3.57,
-				context_size: 131072,
-				required_ram_gb: calculateRequiredRAM(3.57),
-				quantization: 'Q8_0'
-			},
-			{
-				name: 'tiny-aya-earth',
-				display_name: 'Tiny-AYA Earth',
-				download_url: 'CohereLabs/tiny-aya-earth-GGUF',
-				file_size_gb: 3.57,
-				context_size: 131072,
-				required_ram_gb: calculateRequiredRAM(3.57),
-				quantization: 'Q8_0'
-			},
-			{
-				name: 'tiny-aya-fire',
-				display_name: 'Tiny-AYA Fire',
-				download_url: 'CohereLabs/tiny-aya-fire-GGUF',
-				file_size_gb: 3.57,
-				context_size: 131072,
-				required_ram_gb: calculateRequiredRAM(3.57),
-				quantization: 'Q8_0'
-			},
-			{
-				name: 'tiny-aya-water',
-				display_name: 'Tiny-AYA Water',
-				download_url: 'CohereLabs/tiny-aya-water-GGUF',
-				file_size_gb: 3.57,
-				context_size: 131072,
-				required_ram_gb: calculateRequiredRAM(3.57),
-				quantization: 'Q8_0'
-			}
-		]
 	}
 ];
 
@@ -708,8 +663,7 @@ export const FAMILY_LOGO_FILES: Record<string, string> = {
 	gpt: 'GPT logo.png',
 	deepseek: 'deepseek logo.webp',
 	angelslim: 'angelslim logo.webp',
-	llama: 'meta-llama logo.webp',
-	cohere: 'cohere logo.webp'
+	llama: 'meta-llama logo.webp'
 };
 
 /** True if icon is a logo filename (has file extension). */
@@ -738,7 +692,6 @@ export function getFamilyIconForModelName(name: string): string {
 	if (lower.includes('deepseek')) return FAMILY_LOGO_FILES.deepseek;
 	if (lower.includes('angleslim')) return FAMILY_LOGO_FILES.angelslim;
 	if (lower.includes('llama')) return FAMILY_LOGO_FILES.llama;
-	if (lower.includes('cohere')) return FAMILY_LOGO_FILES.cohere;
 	return '●';
 }
 
