@@ -634,6 +634,51 @@ export const modelsCatalog: ModelFamily[] = [
 				quantization: 'Q4_K_M'	
 			}
 		]	
+	},
+	{
+		id: 'Tiny Aya',
+		name: 'Tiny Aya',
+		description:
+			"A compact multilingual AI model family that runs locally on any device. Our 3.35B-parameter base model supports 70+ languages with specialized variants for different regions, delivering strong performance without cloud dependency.",
+		icon: 'cohere logo.webp',
+		models: [
+			{
+				name: 'tiny-aya-global',
+				display_name: 'Tiny Aya Global',
+				download_url: 'CohereLabs/tiny-aya-global-GGUF',
+				file_size_gb: 2.14,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(2.14),
+				quantization: 'Q4_K_M'	
+			},
+			{
+				name: 'tiny-aya-earth',
+				display_name: 'Tiny Aya Earth',
+				download_url: 'CohereLabs/tiny-aya-earth-GGUF',
+				file_size_gb: 2.14,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(2.14),
+				quantization: 'Q4_K_M'	
+			},
+			{
+				name: 'tiny-aya-fire',
+				display_name: 'Tiny Aya Fire',
+				download_url: 'CohereLabs/tiny-aya-fire-GGUF',
+				file_size_gb: 2.14,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(2.14),
+				quantization: 'Q4_K_M'	
+			},
+			{
+				name: 'tiny-aya-water',
+				display_name: 'Tiny Aya Water',
+				download_url: 'CohereLabs/tiny-aya-water-GGUF',
+				file_size_gb: 2.14,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(2.14),
+				quantization: 'Q4_K_M'	
+			}
+		]	
 	}
 ];
 
@@ -663,7 +708,8 @@ export const FAMILY_LOGO_FILES: Record<string, string> = {
 	gpt: 'GPT logo.png',
 	deepseek: 'deepseek logo.webp',
 	angelslim: 'angelslim logo.webp',
-	llama: 'meta-llama logo.webp'
+	llama: 'meta-llama logo.webp',
+	cohere: 'cohere logo.webp'
 };
 
 /** True if icon is a logo filename (has file extension). */
@@ -692,6 +738,7 @@ export function getFamilyIconForModelName(name: string): string {
 	if (lower.includes('deepseek')) return FAMILY_LOGO_FILES.deepseek;
 	if (lower.includes('angleslim')) return FAMILY_LOGO_FILES.angelslim;
 	if (lower.includes('llama')) return FAMILY_LOGO_FILES.llama;
+	if (lower.includes('cohere')) return FAMILY_LOGO_FILES.cohere;
 	return '●';
 }
 

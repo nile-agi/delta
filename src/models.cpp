@@ -1750,6 +1750,55 @@ void ModelManager::init_model_registry() {
         65536
     };
 
+    // ===== TINY AYA (MODELS) =====
+
+    model_registry_["tiny-aya-global"] = {
+        "tiny-aya-global",
+        "tiny-aya-global",
+        "CohereLabs/tiny-aya-global-GGUF",
+        "tiny-aya-global-q4_k_m.gguf",
+        "Q4_K_M",
+        2140LL * 1024 * 1024,      // ~2.14 GB
+        "Optimized for balanced multilingual performance.",
+        "Tiny Aya Global",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["tiny-aya-earth"] = {
+        "tiny-aya-earth",
+        "tiny-aya-earth",
+        "CohereLabs/tiny-aya-earth-GGUF",
+        "tiny-aya-earth-q4_k_m.gguf",
+        "Q4_K_M",
+        2140LL * 1024 * 1024,      // ~2.14 GB
+        "Strongest for languages across Africa and West Asia regions.",
+        "Tiny Aya Earth",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["tiny-aya-fire"] = {
+        "tiny-aya-global-mini-mini",
+        "tiny-aya-fire",
+        "CohereLabs/tiny-aya-fire-GGUF",
+        "tiny-aya-fire-q4_k_m.gguf",
+        "Q4_K_M",
+        2140LL * 1024 * 1024,      // ~2.14 MB
+        "Strongest for South Asian languages.",
+        "Tiny Aya Fire",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["tiny-aya-water"] = {
+        "tiny-aya-global-water",
+        "tiny-aya-water",
+        "CohereLabs/tiny-aya-water-GGUF",
+        "tiny-aya-water-q4_k_m.gguf",
+        "Q4_K_M",
+        2140LL * 1024 * 1024,      // ~2.14 GB
+        "Strongest for the Asia-Pacific and Europe regions.",
+        "Tiny Aya Water",
+        0  // use model default (-c from model)
+    };
 }
 
 std::vector<ModelRegistry> ModelManager::get_registry_models() {
