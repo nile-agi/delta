@@ -459,8 +459,9 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     std::vector<char> cmd_line(cmd_str.begin(), cmd_str.end());
     cmd_line.push_back('\0');
     
+    const char* work_dir = exe_dir.empty() ? NULL : exe_dir.c_str();
     if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, 
-                       CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &si, &pi)) {
+                       CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, work_dir, &si, &pi)) {
         UI::print_error("Failed to create process for delta-server (Error: " + std::to_string(GetLastError()) + ")");
         return false;
     }
@@ -660,7 +661,12 @@ std::string Commands::build_llama_server_cmd(const std::string& server_bin, cons
                                               int port, int ctx_size, const std::string& model_alias,
                                               const std::string& public_path, const std::string& models_dir) {
     std::stringstream cmd;
+#ifdef _WIN32
+    // Quote so CreateProcess parses correctly when path has spaces (e.g. C:\Program Files\Delta\server.exe)
+    cmd << "\"" << server_bin << "\"";
+#else
     cmd << server_bin;
+#endif
     std::string effective_model = model_path;
     if (effective_model.empty() && !models_dir.empty()) {
         effective_model = tools::FileOps::first_gguf_in_dir(models_dir);
@@ -906,8 +912,9 @@ void Commands::stop_llama_server() {
      std::vector<char> cmd_line(cmd_str.begin(), cmd_str.end());
      cmd_line.push_back('\0');
      
+     const char* work_dir_switch = exe_dir.empty() ? NULL : exe_dir.c_str();
      if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, 
-                        CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &si, &pi)) {
+                        CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, work_dir_switch, &si, &pi)) {
          UI::print_error("   ✗ Failed to create process");
          return false;
      }

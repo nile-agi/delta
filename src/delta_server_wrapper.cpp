@@ -339,7 +339,13 @@ public:
     }
     
     std::string build_llama_server_command(const std::string& model_path, int ctx_size, const std::string& model_alias) {
-        std::string cmd = llama_server_path_;
+        // On Windows, quote the executable path so CreateProcess parses it correctly when path contains spaces (e.g. "C:\Program Files\Delta\server.exe")
+        std::string cmd;
+#ifdef _WIN32
+        cmd = "\"" + llama_server_path_ + "\"";
+#else
+        cmd = llama_server_path_;
+#endif
         if (!model_path.empty()) {
             cmd += " -m \"" + model_path + "\"";
         } else if (!models_dir_.empty()) {
@@ -454,8 +460,12 @@ public:
         std::vector<char> cmd_line(cmd.begin(), cmd.end());
         cmd_line.push_back('\0');
         
+        // Use install directory as working directory so server.exe finds DLLs and assets
+        std::string work_dir = get_executable_dir();
+        const char* work_dir_p = work_dir.empty() ? NULL : work_dir.c_str();
+        
         if (CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, 
-                          CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &si, &pi)) {
+                          CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, work_dir_p, &si, &pi)) {
             CloseHandle(pi.hThread);
             llama_server_process_ = pi.hProcess;
             llama_server_pid_ = pi.dwProcessId;

@@ -389,6 +389,11 @@ void download_progress_callback(double progress, long long current, long long to
 }
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    // Use UTF-8 for console so symbols (✓, 🔄) and progress display correctly
+    SetConsoleOutputCP(65001);
+    SetConsoleCP(65001);
+#endif
     // Parse command line arguments
     InferenceConfig config;
     std::string model_name = "";
