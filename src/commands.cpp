@@ -915,7 +915,8 @@ void Commands::stop_llama_server() {
      const char* work_dir_switch = exe_dir.empty() ? NULL : exe_dir.c_str();
      if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, 
                         CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, work_dir_switch, &si, &pi)) {
-         UI::print_error("   ✗ Failed to create process");
+         DWORD err = GetLastError();
+         UI::print_error("   ✗ Failed to create process (Error " + std::to_string(err) + ")");
          return false;
      }
      
@@ -925,10 +926,10 @@ void Commands::stop_llama_server() {
      
      // Wait for server to start and verify it's listening (up to 30 seconds)
      bool server_listening = false;
+     DWORD exit_code = 0;
      for (int attempt = 0; attempt < 60; attempt++) {  // 60 * 500ms = 30 seconds
          std::this_thread::sleep_for(std::chrono::milliseconds(500));
          
-         DWORD exit_code;
          if (!GetExitCodeProcess(pi.hProcess, &exit_code) || exit_code != STILL_ACTIVE) {
              // Process exited
              break;
@@ -955,7 +956,6 @@ void Commands::stop_llama_server() {
      }
      
      // Check if process is still running
-     DWORD exit_code;
      if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE && server_listening) {
          UI::print_info("   ✓ Model loaded successfully!");
          CloseHandle(pi.hProcess);
@@ -967,7 +967,7 @@ void Commands::stop_llama_server() {
          }
          return true;
      } else {
-         UI::print_error("   ✗ Failed to start delta-server");
+         UI::print_error("   ✗ Failed to start delta-server (process exited with code " + std::to_string(exit_code) + ")");
          CloseHandle(pi.hProcess);
          llama_server_pid_ = 0;
          // If we were migrating from UI-only mode, restore model API server on 8080

@@ -529,6 +529,10 @@ private:
                         // The thread will stop this server after the request handler returns
                         std::thread migration_thread([model_path, model_name, ctx_size, model_alias]() {
                             try {
+#ifdef _WIN32
+                                SetConsoleOutputCP(65001);
+                                SetConsoleCP(65001);
+#endif
                                 // Wait for request handler to return and response to be sent
                                 std::this_thread::sleep_for(std::chrono::milliseconds(300));
                                 
