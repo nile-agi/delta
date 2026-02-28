@@ -135,13 +135,29 @@ void UI::print_border(const std::string& title) {
     
     std::cout << BRIGHT_GREEN << BOLD;
     
+#ifdef _WIN32
+    // ASCII-only on Windows to avoid garbled box-drawing (e.g. â) when console isn't UTF-8
     if (title.empty()) {
-        // Simple border
+        std::cout << "+";
+        for (int i = 0; i < terminal_width - 2; i++) std::cout << "=";
+        std::cout << "+" << std::endl;
+    } else {
+        int padding = (terminal_width - static_cast<int>(title.length()) - 4) / 2;
+        if (padding < 0) padding = 0;
+        std::cout << "+";
+        for (int i = 0; i < padding; i++) std::cout << "=";
+        std::cout << " " << title << " ";
+        int remaining = terminal_width - padding - static_cast<int>(title.length()) - 4;
+        if (remaining < 0) remaining = 0;
+        for (int i = 0; i < remaining; i++) std::cout << "=";
+        std::cout << "+" << std::endl;
+    }
+#else
+    if (title.empty()) {
         std::cout << "╔";
         for (int i = 0; i < terminal_width - 2; i++) std::cout << "═";
         std::cout << "╗" << std::endl;
     } else {
-        // Border with title
         int padding = (terminal_width - title.length() - 4) / 2;
         std::cout << "╔";
         for (int i = 0; i < padding; i++) std::cout << "═";
@@ -150,6 +166,7 @@ void UI::print_border(const std::string& title) {
         for (int i = 0; i < remaining; i++) std::cout << "═";
         std::cout << "╗" << std::endl;
     }
+#endif
     
     std::cout << RESET;
 }

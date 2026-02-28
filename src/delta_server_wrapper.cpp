@@ -478,10 +478,18 @@ public:
             DWORD exit_code;
             if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+#ifdef _WIN32
+                std::cout << "   [OK] Model loaded successfully!" << std::endl;
+#else
                 std::cout << "   ✓ Model loaded successfully!" << std::endl;
+#endif
                 return true;
             } else {
+#ifdef _WIN32
+                std::cerr << "   [X] Failed to start delta-server" << std::endl;
+#else
                 std::cerr << "   ✗ Failed to start delta-server" << std::endl;
+#endif
                 CloseHandle(pi.hProcess);
                 llama_server_process_ = NULL;
                 llama_server_pid_ = 0;
@@ -489,7 +497,11 @@ public:
                 return false;
             }
         } else {
+#ifdef _WIN32
+            std::cerr << "   [X] Failed to create process" << std::endl;
+#else
             std::cerr << "   ✗ Failed to create process" << std::endl;
+#endif
             return false;
         }
 #else

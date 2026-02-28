@@ -2291,14 +2291,14 @@ bool ModelManager::pull_model(const std::string& model_name, const std::string& 
     
     if (success) {
         std::cout << std::endl;
-        UI::print_info("✓ Download complete!");
+        UI::print_success("Download complete!");
         UI::print_info("Model saved to: " + dest_path);
         UI::print_info("You can now use: delta --model " + model_name);
         return true;
     } else {
         std::cout << std::endl;
-        UI::print_error("✗ Download failed");
-        UI::print_error("Please check your internet connection and try again");
+        UI::print_error("Download failed");
+        UI::print_info("Please check your internet connection and try again");
         UI::print_info("Or manually download from: " + url);
         return false;
     }
@@ -2360,7 +2360,7 @@ bool ModelManager::ensure_default_model_installed(ProgressCallback progress) {
     set_progress_callback(nullptr);
     
     if (success) {
-        UI::print_info("✓ Default model installed successfully!");
+        UI::print_success("Default model installed successfully!");
         UI::print_info("You can now start chatting with your AI assistant!");
         std::cout << std::endl;
     } else {

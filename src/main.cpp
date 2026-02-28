@@ -366,22 +366,26 @@ void list_models(ModelManager& model_mgr, bool show_available = false) {
     }
 }
 
-// Progress bar for model downloads
+// Progress bar for model downloads (ASCII on Windows to avoid garbled output)
 void download_progress_callback(double progress, long long current, long long total) {
-    // Calculate MB
     double current_mb = current / (1024.0 * 1024.0);
     double total_mb = total / (1024.0 * 1024.0);
-    
-    // Create progress bar
     int bar_width = 50;
     int pos = (int)(progress / 100.0 * bar_width);
-    
     std::cout << "\r  [";
+#ifdef _WIN32
+    for (int i = 0; i < bar_width; i++) {
+        if (i < pos) std::cout << "#";
+        else if (i == pos) std::cout << ">";
+        else std::cout << "-";
+    }
+#else
     for (int i = 0; i < bar_width; i++) {
         if (i < pos) std::cout << "█";
         else if (i == pos) std::cout << "▓";
         else std::cout << "░";
     }
+#endif
     std::cout << "] " << std::fixed << std::setprecision(1) << progress << "% ";
     std::cout << "(" << std::fixed << std::setprecision(1) << current_mb << " / ";
     std::cout << total_mb << " MB)";

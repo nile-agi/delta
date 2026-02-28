@@ -446,40 +446,42 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     
     // Start delta-server
 #ifdef _WIN32
-    // Windows: Use CreateProcess
+    // Windows: Use CreateProcess with stderr redirected to log file so we can see why the server fails to start
+    SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
+    HANDLE hErrLog = CreateFileA(err_file.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE hNul = INVALID_HANDLE_VALUE;
+    if (hErrLog != INVALID_HANDLE_VALUE) {
+        hNul = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ, &sa, OPEN_EXISTING, 0, NULL);
+    }
     STARTUPINFOA si = {0};
     PROCESS_INFORMATION pi = {0};
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-    
-    // CreateProcess requires a mutable string
+    si.hStdInput = (hNul != INVALID_HANDLE_VALUE) ? hNul : GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = (hErrLog != INVALID_HANDLE_VALUE) ? hErrLog : GetStdHandle(STD_OUTPUT_HANDLE);
+    si.hStdError = (hErrLog != INVALID_HANDLE_VALUE) ? hErrLog : GetStdHandle(STD_ERROR_HANDLE);
+
     std::vector<char> cmd_line(cmd_str.begin(), cmd_str.end());
     cmd_line.push_back('\0');
-    
     const char* work_dir = exe_dir.empty() ? NULL : exe_dir.c_str();
-    if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, 
-                       CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, work_dir, &si, &pi)) {
+    BOOL ok = CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE,
+                             CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, work_dir, &si, &pi);
+    if (hErrLog != INVALID_HANDLE_VALUE) CloseHandle(hErrLog);
+    if (hNul != INVALID_HANDLE_VALUE) CloseHandle(hNul);
+    if (!ok) {
         UI::print_error("Failed to create process for delta-server (Error: " + std::to_string(GetLastError()) + ")");
+        UI::print_info("Ensure server.exe and DLLs (e.g. libcurl.dll) are in: " + exe_dir);
         return false;
     }
-    
     CloseHandle(pi.hThread);
-    
-    // Store PID
     {
         std::lock_guard<std::mutex> lock(server_mutex_);
         llama_server_pid_ = pi.dwProcessId;
         current_model_path_ = model_path;
         current_port_ = port;
     }
-    
-    // Close process handle (we'll use OpenProcess when needed)
     CloseHandle(pi.hProcess);
-    
-    int result = 0; // Process created successfully
+    int result = 0;
 #else
     // Unix: Use fork/exec
     pid_t pid = fork();
@@ -519,13 +521,25 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     int result = 0; // Fork succeeded
 #endif
      
-     // Wait for server to start and verify it's running
-     // Give server time to initialize (especially for model loading)
-     // Models can take 30-60 seconds to load, so we wait up to 60 seconds
+     // Wait for server to start and verify it's listening (server writes to err_file on failure)
+#ifdef _WIN32
+     const int total_attempts = 240;   // 240 * 500ms = 120 seconds
+     const int progress_interval = 20; // Print progress every 10 seconds
+#else
+     const int total_attempts = 120;   // 120 * 500ms = 60 seconds
+     const int progress_interval = 0;
+#endif
      bool server_listening = false;
-     for (int attempt = 0; attempt < 120; attempt++) {  // 120 * 500ms = 60 seconds
+     bool progress_printed = false;
+     for (int attempt = 0; attempt < total_attempts; attempt++) {
          std::this_thread::sleep_for(std::chrono::milliseconds(500));
-         
+#ifdef _WIN32
+         if (attempt > 0 && progress_interval > 0 && attempt % progress_interval == 0) {
+             int elapsed_sec = (attempt * 500) / 1000;
+             std::cout << "\r   Waiting for model to load... " << elapsed_sec << "s (port " << port << ")" << std::flush;
+             progress_printed = true;
+         }
+#endif
          // Check if port is listening using socket connection
  #ifdef _WIN32
          WSADATA wsaData;
@@ -539,6 +553,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                  if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
                      server_listening = true;
                      closesocket(sock);
+                     if (progress_printed) std::cout << std::endl;
                  } else {
                      closesocket(sock);
                  }
@@ -564,22 +579,22 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
              break;
          }
      }
+#ifdef _WIN32
+     if (progress_printed && !server_listening) std::cout << std::endl;
+#endif
      
      
-     // Check error log for any startup errors BEFORE checking if listening
+     // Check error log for any startup errors (Windows and Unix both write to err_file now)
      bool has_startup_error = false;
      std::string error_message = "";
-#ifndef _WIN32
      std::ifstream err_log(err_file);
      if (err_log.is_open()) {
          std::string line;
          std::vector<std::string> error_lines;
          while (std::getline(err_log, line)) {
              if (!line.empty()) {
-                 // Filter out informational messages
                  std::string line_lower = line;
                  std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
-                 // Look for actual error messages (not just info)
                  if (line_lower.find("error") != std::string::npos ||
                      line_lower.find("failed") != std::string::npos ||
                      line_lower.find("fatal") != std::string::npos ||
@@ -591,20 +606,21 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
              }
          }
          err_log.close();
-         
          if (!error_lines.empty()) {
              has_startup_error = true;
-             error_message = error_lines[0];  // Show first error
-             // Show errors - these indicate the server failed to start
+             error_message = error_lines[0];
              UI::print_error("Server startup errors detected:");
              for (size_t i = 0; i < error_lines.size() && i < 5; i++) {
                  std::cerr << "  " << error_lines[i] << std::endl;
              }
              std::cerr << "\nFull error log: " << err_file << std::endl;
+#ifdef _WIN32
+             std::cerr << "\nTip: Check that server.exe and DLLs (libcurl.dll, etc.) are in the same folder as delta.exe." << std::endl;
+#else
              std::cerr << "\nTip: If you see 'unknown option' errors, your delta-server build may not support all flags." << std::endl;
+#endif
          }
      }
-#endif
      
      if (result != 0) {
          UI::print_error("Failed to start server process");
@@ -617,10 +633,12 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      }
      
      if (!server_listening) {
+#ifdef _WIN32
+         UI::print_error("Server process started but port " + std::to_string(port) + " is not listening.");
+#else
          UI::print_error("Server process started but port " + std::to_string(port) + " is not listening after 60 seconds");
+#endif
          UI::print_info("Error log: " + err_file);
-         // Dump error log contents so user can see what went wrong
-#ifndef _WIN32
          std::ifstream err_read(err_file);
          if (err_read.is_open()) {
              std::string line;
@@ -630,7 +648,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
              }
              err_read.close();
              if (!lines.empty()) {
-                 UI::print_info("--- Last 40 lines of server log ---");
+                 UI::print_info("--- Server log (last 40 lines) ---");
                  size_t start = (lines.size() > 40) ? (lines.size() - 40) : 0;
                  for (size_t i = start; i < lines.size(); i++) {
                      std::cerr << "  " << lines[i] << std::endl;
@@ -638,9 +656,13 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                  UI::print_info("--- End of server log ---");
              }
          }
-#endif
+#ifdef _WIN32
+         UI::print_info("Run manually to see errors: server.exe -m <model-path> --port " + std::to_string(port));
+         UI::print_info("Check port in use: netstat -an | findstr " + std::to_string(port));
+#else
          UI::print_info("You can run the server manually to see errors: delta-server -m <model-path> --port " + std::to_string(port));
          UI::print_info("Or check if the server is running: ps aux | grep delta-server");
+#endif
          return false;
      }
      
@@ -904,85 +926,109 @@ void Commands::stop_llama_server() {
      
      // Start delta-server
 #ifdef _WIN32
-    // Windows: Use CreateProcess
+    // Redirect server stdout/stderr to a log file so we can show why it failed to start
+    char temp_path[MAX_PATH];
+    GetTempPathA(MAX_PATH, temp_path);
+    std::string err_file = std::string(temp_path) + "delta-server-err-" + std::to_string(current_port_) + ".log";
+    std::remove(err_file.c_str());
+    SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
+    HANDLE hErrLog = CreateFileA(err_file.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE hNul = INVALID_HANDLE_VALUE;
+    if (hErrLog != INVALID_HANDLE_VALUE)
+        hNul = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ, &sa, OPEN_EXISTING, 0, NULL);
     STARTUPINFOA si = {0};
-     PROCESS_INFORMATION pi = {0};
-     si.cb = sizeof(si);
-     si.dwFlags = STARTF_USESTDHANDLES;
-     si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-     si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-     si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-     
-     std::vector<char> cmd_line(cmd_str.begin(), cmd_str.end());
-     cmd_line.push_back('\0');
-     
-     const char* work_dir_switch = exe_dir.empty() ? NULL : exe_dir.c_str();
-     if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, 
+    PROCESS_INFORMATION pi = {0};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = (hNul != INVALID_HANDLE_VALUE) ? hNul : GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = (hErrLog != INVALID_HANDLE_VALUE) ? hErrLog : GetStdHandle(STD_OUTPUT_HANDLE);
+    si.hStdError = (hErrLog != INVALID_HANDLE_VALUE) ? hErrLog : GetStdHandle(STD_ERROR_HANDLE);
+
+    std::vector<char> cmd_line(cmd_str.begin(), cmd_str.end());
+    cmd_line.push_back('\0');
+    const char* work_dir_switch = exe_dir.empty() ? NULL : exe_dir.c_str();
+    if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE,
                         CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, work_dir_switch, &si, &pi)) {
-         DWORD err = GetLastError();
-         UI::print_error("   Failed to create process (Error " + std::to_string(err) + ")");
-         return false;
-     }
-     
-     CloseHandle(pi.hThread);
-     llama_server_pid_ = pi.dwProcessId;
-     current_model_path_ = model_path;
-     
-     // Wait for server to start and verify it's listening (up to 2 min; model loading can be slow on Windows)
-     bool server_listening = false;
-     DWORD exit_code = 0;
-     for (int attempt = 0; attempt < 240; attempt++) {  // 240 * 500ms = 120 seconds
-         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-         
-         if (!GetExitCodeProcess(pi.hProcess, &exit_code) || exit_code != STILL_ACTIVE) {
-             // Process exited
-             break;
-         }
-         
-         // Check if port is listening
-         WSADATA wsaData;
-         if (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0) {
-             SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-             if (sock != INVALID_SOCKET) {
-                 sockaddr_in addr;
-                 addr.sin_family = AF_INET;
-                 addr.sin_port = htons(current_port_);
-                 inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-                 if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
-                     server_listening = true;
-                     closesocket(sock);
-                     break;
-                 }
-                 closesocket(sock);
-             }
-             WSACleanup();
-         }
-     }
-     
-     // Check if process is still running
-     if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE && server_listening) {
-         UI::print_info("   [OK] Model loaded successfully!");
-         CloseHandle(pi.hProcess);
-         // If we migrated from UI-only mode, restart model API server on 8081
-         if (is_ui_only_mode) {
-             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-             delta::start_model_api_server(8081);
-             UI::print_info("   [OK] Model API server restarted on port 8081");
-         }
-         return true;
-     } else {
-#ifdef _WIN32
-         if (exit_code == STILL_ACTIVE) {  // Process still running but we timed out waiting for port
-             UI::print_error("   Server did not become ready in time (model may still be loading).");
-             UI::print_error("   Wait a minute and try again, or check if port " + std::to_string(current_port_) + " is in use.");
-         } else {
-             UI::print_error("   Failed to start delta-server (process exited with code " + std::to_string(exit_code) + ")");
-             UI::print_error("   Ensure " + exe_dir + " contains server.exe or llama-server.exe and required DLLs (libcurl.dll, etc.).");
-         }
-#else
-         UI::print_error("   Failed to start delta-server (process exited with code " + std::to_string(exit_code) + ")");
-#endif
-         CloseHandle(pi.hProcess);
+        DWORD err = GetLastError();
+        if (hErrLog != INVALID_HANDLE_VALUE) CloseHandle(hErrLog);
+        if (hNul != INVALID_HANDLE_VALUE) CloseHandle(hNul);
+        UI::print_error("   Failed to create process (Error " + std::to_string(err) + ")");
+        UI::print_info("   Ensure " + exe_dir + " has server.exe and DLLs (libcurl.dll, etc.).");
+        return false;
+    }
+    if (hErrLog != INVALID_HANDLE_VALUE) CloseHandle(hErrLog);
+    if (hNul != INVALID_HANDLE_VALUE) CloseHandle(hNul);
+
+    CloseHandle(pi.hThread);
+    llama_server_pid_ = pi.dwProcessId;
+    current_model_path_ = model_path;
+
+    const int total_attempts = 240;   // 120 seconds
+    const int progress_interval = 20;
+    bool server_listening = false;
+    DWORD exit_code = 0;
+    bool progress_printed = false;
+    for (int attempt = 0; attempt < total_attempts; attempt++) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (!GetExitCodeProcess(pi.hProcess, &exit_code) || exit_code != STILL_ACTIVE) {
+            break;
+        }
+        if (attempt > 0 && progress_interval > 0 && attempt % progress_interval == 0) {
+            int elapsed_sec = (attempt * 500) / 1000;
+            std::cout << "\r   Waiting for server... " << elapsed_sec << "s (port " << current_port_ << ")" << std::flush;
+            progress_printed = true;
+        }
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0) {
+            SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (sock != INVALID_SOCKET) {
+                sockaddr_in addr;
+                addr.sin_family = AF_INET;
+                addr.sin_port = htons(current_port_);
+                inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+                if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
+                    server_listening = true;
+                    closesocket(sock);
+                    if (progress_printed) std::cout << std::endl;
+                    break;
+                }
+                closesocket(sock);
+            }
+            WSACleanup();
+        }
+    }
+    if (progress_printed && !server_listening) std::cout << std::endl;
+
+    if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE && server_listening) {
+        UI::print_info("   [OK] Model loaded successfully!");
+        CloseHandle(pi.hProcess);
+        if (is_ui_only_mode) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            delta::start_model_api_server(8081);
+            UI::print_info("   [OK] Model API server restarted on port 8081");
+        }
+        return true;
+    } else {
+        if (exit_code == STILL_ACTIVE) {
+            UI::print_error("   Server did not become ready in time. Check the server log for the cause:");
+            UI::print_info("   " + err_file);
+        } else {
+            UI::print_error("   Server process exited (code " + std::to_string(exit_code) + "). See log: " + err_file);
+        }
+        std::ifstream err_read(err_file);
+        if (err_read.is_open()) {
+            std::string line;
+            std::vector<std::string> lines;
+            while (std::getline(err_read, line)) lines.push_back(line);
+            err_read.close();
+            if (!lines.empty()) {
+                size_t start = (lines.size() > 30) ? (lines.size() - 30) : 0;
+                for (size_t i = start; i < lines.size(); i++)
+                    std::cerr << "  " << lines[i] << std::endl;
+            }
+        }
+        UI::print_info("   Ensure server.exe and DLLs are in: " + exe_dir);
+        CloseHandle(pi.hProcess);
          llama_server_pid_ = 0;
          // If we were migrating from UI-only mode, restore model API server on 8080
          if (is_ui_only_mode) {
@@ -1252,22 +1298,26 @@ void Commands::stop_llama_server() {
      std::string model_name = args[0];
      UI::print_info("Downloading model: " + model_name);
      
-     // Set progress callback for download with visual progress bar
+     // Set progress callback for download with visual progress bar (ASCII on Windows to avoid garbled output)
      session.model_mgr->set_progress_callback([](double progress, long long current, long long total) {
-         // Calculate MB
          double current_mb = current / (1024.0 * 1024.0);
          double total_mb = total / (1024.0 * 1024.0);
-         
-         // Create progress bar
          int bar_width = 50;
          int pos = (int)(progress / 100.0 * bar_width);
-         
          std::cout << "\r  [";
+#ifdef _WIN32
+         for (int i = 0; i < bar_width; i++) {
+             if (i < pos) std::cout << "#";
+             else if (i == pos) std::cout << ">";
+             else std::cout << "-";
+         }
+#else
          for (int i = 0; i < bar_width; i++) {
              if (i < pos) std::cout << "█";
              else if (i == pos) std::cout << "▓";
              else std::cout << "░";
          }
+#endif
          std::cout << "] " << std::fixed << std::setprecision(1) << progress << "% ";
          std::cout << "(" << std::fixed << std::setprecision(1) << current_mb << " / ";
          std::cout << total_mb << " MB)";
@@ -1279,11 +1329,11 @@ void Commands::stop_llama_server() {
      
      if (success) {
          std::cout << std::endl;
-         UI::print_info("✓ Model downloaded successfully!");
+         UI::print_success("Model downloaded successfully!");
          UI::print_info("You can now use: /use " + model_name);
      } else {
          std::cout << std::endl;
-         UI::print_error("✗ Download failed");
+         UI::print_error("Download failed");
          UI::print_info("Check your internet connection and try again");
      }
      
