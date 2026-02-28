@@ -521,9 +521,10 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     int result = 0; // Fork succeeded
 #endif
      
-     // Wait for server to start and verify it's listening (server writes to err_file on failure)
+     // Wait for server to start and verify it's listening (server writes to err_file on failure).
+     // On Windows model load can take 2–5+ minutes; use longer timeout and one final check.
 #ifdef _WIN32
-     const int total_attempts = 240;   // 240 * 500ms = 120 seconds
+     const int total_attempts = 600;   // 600 * 500ms = 300 seconds (5 min)
      const int progress_interval = 20; // Print progress every 10 seconds
 #else
      const int total_attempts = 120;   // 120 * 500ms = 60 seconds
@@ -580,9 +581,28 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
          }
      }
 #ifdef _WIN32
+     if (!server_listening) {
+         std::this_thread::sleep_for(std::chrono::milliseconds(500));
+         WSADATA wsaData2;
+         if (WSAStartup(MAKEWORD(2, 2), &wsaData2) == 0) {
+             SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+             if (sock != INVALID_SOCKET) {
+                 sockaddr_in addr;
+                 addr.sin_family = AF_INET;
+                 addr.sin_port = htons(port);
+                 inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+                 if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
+                     server_listening = true;
+                     closesocket(sock);
+                 } else {
+                     closesocket(sock);
+                 }
+             }
+             WSACleanup();
+         }
+     }
      if (progress_printed && !server_listening) std::cout << std::endl;
 #endif
-     
      
      // Check error log for any startup errors (Windows and Unix both write to err_file now)
      bool has_startup_error = false;
@@ -634,11 +654,11 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      
      if (!server_listening) {
 #ifdef _WIN32
-         UI::print_error("Server process started but port " + std::to_string(port) + " is not listening.");
+         UI::print_error("Server did not become ready in time (port " + std::to_string(port) + ").");
 #else
          UI::print_error("Server process started but port " + std::to_string(port) + " is not listening after 60 seconds");
 #endif
-         UI::print_info("Error log: " + err_file);
+         UI::print_info("Full log: " + err_file);
          std::ifstream err_read(err_file);
          if (err_read.is_open()) {
              std::string line;
@@ -647,18 +667,23 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                  lines.push_back(line);
              }
              err_read.close();
-             if (!lines.empty()) {
-                 UI::print_info("--- Server log (last 40 lines) ---");
-                 size_t start = (lines.size() > 40) ? (lines.size() - 40) : 0;
-                 for (size_t i = start; i < lines.size(); i++) {
-                     std::cerr << "  " << lines[i] << std::endl;
+             std::vector<std::string> filtered;
+             size_t start = (lines.size() > 50) ? (lines.size() - 50) : 0;
+             for (size_t i = start; i < lines.size(); i++) {
+                 if (!is_server_log_noise(lines[i])) filtered.push_back(lines[i]);
+             }
+             if (!filtered.empty()) {
+                 UI::print_info("--- Relevant log lines ---");
+                 for (size_t i = 0; i < filtered.size() && i < 25; i++) {
+                     std::cerr << "  " << filtered[i] << std::endl;
                  }
-                 UI::print_info("--- End of server log ---");
+                 UI::print_info("--- End ---");
              }
          }
 #ifdef _WIN32
-         UI::print_info("Run manually to see errors: server.exe -m <model-path> --port " + std::to_string(port));
-         UI::print_info("Check port in use: netstat -an | findstr " + std::to_string(port));
+         UI::print_info("Install folder should contain: delta.exe, llama-server.exe (or server.exe), libcurl.dll, zlib1.dll, public/");
+         UI::print_info("Run manually: llama-server.exe -m <model-path> --port " + std::to_string(port));
+         UI::print_info("Check port: netstat -an | findstr " + std::to_string(port));
 #else
          UI::print_info("You can run the server manually to see errors: delta-server -m <model-path> --port " + std::to_string(port));
          UI::print_info("Or check if the server is running: ps aux | grep delta-server");
@@ -677,7 +702,26 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
      });
      return true;
  }
- 
+
+ // Skip noisy llama-server log lines (speculative decoding, slot load_model, init chat template, etc.) when showing failure to user.
+ static bool is_server_log_noise(const std::string& line) {
+     if (line.empty()) return true;
+     std::string line_lower = line;
+     std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
+     if (line_lower.find("speculative decoding") != std::string::npos) return true;
+     if (line_lower.find("slot load_model:") != std::string::npos && line_lower.find("new slot") != std::string::npos) return true;
+     if (line_lower.find("srv load_model: prompt cache") != std::string::npos) return true;
+     if (line_lower.find("srv load_model: use ") != std::string::npos) return true;
+     if (line_lower.find("srv load_model: for more info") != std::string::npos) return true;
+     if (line_lower.find("srv init:") != std::string::npos) return true;
+     if (line_lower.find("init: chat template") != std::string::npos) return true;
+     if (line_lower.find("main: model loaded") != std::string::npos) return true;
+     if (line_lower.find("main: server is listening") != std::string::npos) return true;
+     if (line_lower.find("main: starting the main loop") != std::string::npos) return true;
+     if (line_lower.find("srv update_slots:") != std::string::npos) return true;
+     return false;
+ }
+
  // Helper to build llama-server command: -m <path> when we have a model, else --models-dir so UI opens (user can install model from web UI).
 std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path,
                                               int port, int ctx_size, const std::string& model_alias,
@@ -963,7 +1007,7 @@ void Commands::stop_llama_server() {
     llama_server_pid_ = pi.dwProcessId;
     current_model_path_ = model_path;
 
-    const int total_attempts = 240;   // 120 seconds
+    const int total_attempts = 600;   // 300 seconds (5 min) on Windows; model load can be slow
     const int progress_interval = 20;
     bool server_listening = false;
     DWORD exit_code = 0;
@@ -997,6 +1041,26 @@ void Commands::stop_llama_server() {
             WSACleanup();
         }
     }
+    if (!server_listening) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        WSADATA wsaData2;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData2) == 0) {
+            SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (sock != INVALID_SOCKET) {
+                sockaddr_in addr;
+                addr.sin_family = AF_INET;
+                addr.sin_port = htons(current_port_);
+                inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+                if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
+                    server_listening = true;
+                    closesocket(sock);
+                } else {
+                    closesocket(sock);
+                }
+            }
+            WSACleanup();
+        }
+    }
     if (progress_printed && !server_listening) std::cout << std::endl;
 
     if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE && server_listening) {
@@ -1010,8 +1074,7 @@ void Commands::stop_llama_server() {
         return true;
     } else {
         if (exit_code == STILL_ACTIVE) {
-            UI::print_error("   Server did not become ready in time. Check the server log for the cause:");
-            UI::print_info("   " + err_file);
+            UI::print_error("   Server did not become ready in time. Full log: " + err_file);
         } else {
             UI::print_error("   Server process exited (code " + std::to_string(exit_code) + "). See log: " + err_file);
         }
@@ -1021,13 +1084,21 @@ void Commands::stop_llama_server() {
             std::vector<std::string> lines;
             while (std::getline(err_read, line)) lines.push_back(line);
             err_read.close();
-            if (!lines.empty()) {
-                size_t start = (lines.size() > 30) ? (lines.size() - 30) : 0;
-                for (size_t i = start; i < lines.size(); i++)
-                    std::cerr << "  " << lines[i] << std::endl;
+            std::vector<std::string> filtered;
+            size_t start = (lines.size() > 50) ? (lines.size() - 50) : 0;
+            for (size_t i = start; i < lines.size(); i++) {
+                if (!is_server_log_noise(lines[i])) filtered.push_back(lines[i]);
+            }
+            if (!filtered.empty()) {
+                UI::print_info("   --- Relevant log lines ---");
+                for (size_t i = 0; i < filtered.size() && i < 20; i++)
+                    std::cerr << "  " << filtered[i] << std::endl;
+                UI::print_info("   --- End ---");
             }
         }
-        UI::print_info("   Ensure server.exe and DLLs are in: " + exe_dir);
+        if (exit_code != STILL_ACTIVE) {
+            UI::print_info("   Install folder must contain: delta.exe, llama-server.exe (or server.exe), libcurl.dll, zlib1.dll, public/");
+        }
         CloseHandle(pi.hProcess);
          llama_server_pid_ = 0;
          // If we were migrating from UI-only mode, restore model API server on 8080
