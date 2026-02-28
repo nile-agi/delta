@@ -335,26 +335,32 @@ private:
                         g_current_progress = progress;
                         g_current_model_name = model_name;
                         
-                        // Static progress callback function
+                        // Static progress callback function (ASCII bar on Windows so it never garbles)
                         static auto progress_cb = [](double prog, long long current, long long total) {
                             if (g_current_progress) {
                                 g_current_progress->progress.store(prog);
                                 g_current_progress->current_bytes.store(current);
                                 g_current_progress->total_bytes.store(total);
                                 
-                                // Terminal progress output
                                 double current_mb = current / (1024.0 * 1024.0);
                                 double total_mb = total / (1024.0 * 1024.0);
-                                
                                 int bar_width = 50;
                                 int pos = (int)(prog / 100.0 * bar_width);
                                 
                                 std::cout << "\r[Download " << g_current_model_name << "] [";
+#ifdef _WIN32
+                                for (int i = 0; i < bar_width; i++) {
+                                    if (i < pos) std::cout << "#";
+                                    else if (i == pos) std::cout << ">";
+                                    else std::cout << "-";
+                                }
+#else
                                 for (int i = 0; i < bar_width; i++) {
                                     if (i < pos) std::cout << "█";
                                     else if (i == pos) std::cout << "▓";
                                     else std::cout << "░";
                                 }
+#endif
                                 std::cout << "] " << std::fixed << std::setprecision(1) << prog << "% ";
                                 std::cout << "(" << std::fixed << std::setprecision(1) << current_mb << " / ";
                                 std::cout << total_mb << " MB)";
@@ -376,12 +382,16 @@ private:
                             progress->completed.store(true);
                             progress->progress.store(100.0);
                             std::cout << std::endl;
+#ifdef _WIN32
+                            std::cout << "[Download " << model_name << "] [OK] Download completed successfully!" << std::endl;
+#else
                             std::cout << "[Download " << model_name << "] ✓ Download completed successfully!" << std::endl;
+#endif
                         } else {
                             progress->failed.store(true);
                             progress->error_message = "Download failed";
                             std::cout << std::endl;
-                            std::cout << "[Download " << model_name << "] ✗ Download failed" << std::endl;
+                            std::cout << "[Download " << model_name << "] Download failed" << std::endl;
                         }
                     } catch (const std::exception& e) {
                         progress->failed.store(true);
@@ -389,7 +399,7 @@ private:
                         model_mgr_.set_progress_callback(nullptr);
                         g_current_progress = nullptr;
                         std::cout << std::endl;
-                        std::cout << "[Download " << model_name << "] ✗ Error: " << e.what() << std::endl;
+                        std::cout << "[Download " << model_name << "] Error: " << e.what() << std::endl;
                     }
                 });
                 download_thread.detach();
