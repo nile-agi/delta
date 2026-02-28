@@ -761,7 +761,7 @@ void Commands::stop_llama_server() {
  
  bool Commands::restart_llama_server(const std::string& model_path, const std::string& model_name, 
                                       int ctx_size, const std::string& model_alias) {
-     UI::print_info("🔄 Switching to model: " + model_name);
+     UI::print_info(">> Switching to model: " + model_name);
      UI::print_info("   Path: " + model_path);
      
      // Check if we're in UI-only mode (model API server on 8080, no llama-server)
@@ -920,7 +920,7 @@ void Commands::stop_llama_server() {
      if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, 
                         CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, work_dir_switch, &si, &pi)) {
          DWORD err = GetLastError();
-         UI::print_error("   ✗ Failed to create process (Error " + std::to_string(err) + ")");
+         UI::print_error("   Failed to create process (Error " + std::to_string(err) + ")");
          return false;
      }
      
@@ -928,10 +928,10 @@ void Commands::stop_llama_server() {
      llama_server_pid_ = pi.dwProcessId;
      current_model_path_ = model_path;
      
-     // Wait for server to start and verify it's listening (up to 30 seconds)
+     // Wait for server to start and verify it's listening (up to 90 seconds; model loading can be slow)
      bool server_listening = false;
      DWORD exit_code = 0;
-     for (int attempt = 0; attempt < 60; attempt++) {  // 60 * 500ms = 30 seconds
+     for (int attempt = 0; attempt < 180; attempt++) {  // 180 * 500ms = 90 seconds
          std::this_thread::sleep_for(std::chrono::milliseconds(500));
          
          if (!GetExitCodeProcess(pi.hProcess, &exit_code) || exit_code != STILL_ACTIVE) {
@@ -961,19 +961,26 @@ void Commands::stop_llama_server() {
      
      // Check if process is still running
      if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE && server_listening) {
-         UI::print_info("   ✓ Model loaded successfully!");
+         UI::print_info("   [OK] Model loaded successfully!");
          CloseHandle(pi.hProcess);
          // If we migrated from UI-only mode, restart model API server on 8081
          if (is_ui_only_mode) {
              std::this_thread::sleep_for(std::chrono::milliseconds(500));
              delta::start_model_api_server(8081);
-             UI::print_info("   ✓ Model API server restarted on port 8081");
+             UI::print_info("   [OK] Model API server restarted on port 8081");
          }
          return true;
      } else {
-         UI::print_error("   ✗ Failed to start delta-server (process exited with code " + std::to_string(exit_code) + ")");
 #ifdef _WIN32
-         UI::print_error("   Ensure " + exe_dir + " contains server.exe or llama-server.exe and required DLLs (libcurl.dll, etc.).");
+         if (exit_code == STILL_ACTIVE) {  // Process still running but we timed out waiting for port
+             UI::print_error("   Server did not become ready in time (model may still be loading).");
+             UI::print_error("   Wait a minute and try again, or check if port " + std::to_string(current_port_) + " is in use.");
+         } else {
+             UI::print_error("   Failed to start delta-server (process exited with code " + std::to_string(exit_code) + ")");
+             UI::print_error("   Ensure " + exe_dir + " contains server.exe or llama-server.exe and required DLLs (libcurl.dll, etc.).");
+         }
+#else
+         UI::print_error("   Failed to start delta-server (process exited with code " + std::to_string(exit_code) + ")");
 #endif
          CloseHandle(pi.hProcess);
          llama_server_pid_ = 0;
@@ -1080,16 +1087,16 @@ void Commands::stop_llama_server() {
          // Check if process is still running
          int status;
          if (waitpid(pid, &status, WNOHANG) == 0 && server_listening) {
-             UI::print_info("   ✓ Model loaded successfully!");
+             UI::print_info("   [OK] Model loaded successfully!");
              // If we migrated from UI-only mode, restart model API server on 8081
              if (is_ui_only_mode) {
                  std::this_thread::sleep_for(std::chrono::milliseconds(500));
                  delta::start_model_api_server(8081);
-                 UI::print_info("   ✓ Model API server restarted on port 8081");
+                 UI::print_info("   [OK] Model API server restarted on port 8081");
              }
              return true;
          } else {
-             UI::print_error("   ✗ Failed to start delta-server");
+             UI::print_error("   Failed to start delta-server");
              llama_server_pid_ = 0;
              // If we were migrating from UI-only mode, restore model API server on 8080
              if (is_ui_only_mode) {
@@ -1120,7 +1127,7 @@ void Commands::stop_llama_server() {
              return false;
          }
      } else {
-         UI::print_error("   ✗ Failed to fork process");
+         UI::print_error("   Failed to fork process");
          // If we were migrating from UI-only mode, restore model API server on 8080
          if (is_ui_only_mode) {
              std::string exe_dir = tools::FileOps::get_executable_dir();
