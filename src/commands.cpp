@@ -928,10 +928,10 @@ void Commands::stop_llama_server() {
      llama_server_pid_ = pi.dwProcessId;
      current_model_path_ = model_path;
      
-     // Wait for server to start and verify it's listening (up to 90 seconds; model loading can be slow)
+     // Wait for server to start and verify it's listening (up to 2 min; model loading can be slow on Windows)
      bool server_listening = false;
      DWORD exit_code = 0;
-     for (int attempt = 0; attempt < 180; attempt++) {  // 180 * 500ms = 90 seconds
+     for (int attempt = 0; attempt < 240; attempt++) {  // 240 * 500ms = 120 seconds
          std::this_thread::sleep_for(std::chrono::milliseconds(500));
          
          if (!GetExitCodeProcess(pi.hProcess, &exit_code) || exit_code != STILL_ACTIVE) {

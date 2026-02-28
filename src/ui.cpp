@@ -75,7 +75,11 @@ void UI::print_banner() {
 // Δ
 
 void UI::print_prompt() {
+#ifdef _WIN32
+    std::cout << DELTA_RED << BOLD << "delta> " << RESET << std::flush;
+#else
     std::cout << DELTA_RED << BOLD << "δ> " << RESET << std::flush;
+#endif
 }
 
 void UI::print_response(const std::string& text) {
@@ -83,19 +87,35 @@ void UI::print_response(const std::string& text) {
 }
 
 void UI::print_error(const std::string& error) {
+#ifdef _WIN32
+    std::cout << RED << "Error: " << error << RESET << std::endl;
+#else
     std::cout << RED << "✗ Error: " << error << RESET << std::endl;
+#endif
 }
 
 void UI::print_info(const std::string& info) {
+#ifdef _WIN32
+    std::cout << YELLOW << ">> " << info << RESET << std::endl;
+#else
     std::cout << YELLOW << "ℹ " << info << RESET << std::endl;
+#endif
 }
 
 void UI::print_warning(const std::string& warning) {
+#ifdef _WIN32
+    std::cout << YELLOW << "[!] " << warning << RESET << std::endl;
+#else
     std::cout << YELLOW << "⚠ " << warning << RESET << std::endl;
+#endif
 }
 
 void UI::print_success(const std::string& success) {
+#ifdef _WIN32
+    std::cout << GREEN << "[OK] " << success << RESET << std::endl;
+#else
     std::cout << GREEN << "✓ " << success << RESET << std::endl;
+#endif
 }
 
 void UI::print_border(const std::string& title) {
