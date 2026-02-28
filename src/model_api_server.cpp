@@ -326,6 +326,11 @@ private:
                 // Start download in background thread
                 std::thread download_thread([this, model_name, progress]() {
                     try {
+#ifdef _WIN32
+                        // Ensure UTF-8 so progress bar (█ ▓ ▙) and ✓/✗ display correctly in console
+                        SetConsoleOutputCP(65001);
+                        SetConsoleCP(65001);
+#endif
                         // Set thread-local variables for callback
                         g_current_progress = progress;
                         g_current_model_name = model_name;

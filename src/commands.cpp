@@ -870,6 +870,10 @@ void Commands::stop_llama_server() {
 
      if (server_bin.empty()) {
          UI::print_error("Server binary not found for model switch");
+#ifdef _WIN32
+         UI::print_error("   Looked in: " + exe_dir + " (need server.exe or llama-server.exe next to delta.exe)");
+         UI::print_error("   Reinstall Delta or run build-amd64.ps1 so server.exe is copied to the output folder.");
+#endif
          return false;
      }
      
@@ -968,6 +972,9 @@ void Commands::stop_llama_server() {
          return true;
      } else {
          UI::print_error("   ✗ Failed to start delta-server (process exited with code " + std::to_string(exit_code) + ")");
+#ifdef _WIN32
+         UI::print_error("   Ensure " + exe_dir + " contains server.exe or llama-server.exe and required DLLs (libcurl.dll, etc.).");
+#endif
          CloseHandle(pi.hProcess);
          llama_server_pid_ = 0;
          // If we were migrating from UI-only mode, restore model API server on 8080
