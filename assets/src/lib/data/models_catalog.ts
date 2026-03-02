@@ -353,6 +353,53 @@ export const modelsCatalog: ModelFamily[] = [
 			}
 		]
 	},
+
+	{
+		id: 'qwen3.5',
+		name: 'Qwen3.5',
+		description:
+			"Qwen 3.5 is a family of open-source multimodal models that delivers exceptional utility and performance.",
+		icon: 'qwen logo.jpeg',
+		models: [
+			{
+				name: 'qwen3.5:0.8b',
+				display_name: 'Qwen3.5 0.8B',
+				download_url: 'unsloth/Qwen3.5-0.8B-GGUF',
+				file_size_gb: 0.812,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(0.812),
+				quantization: 'Q8_0'
+			},
+			{
+				name: 'qwen3.5:2b',
+				display_name: 'Qwen3.5 2B',
+				download_url: 'unsloth/Qwen3.5-2B-GGUF',
+				file_size_gb: 2.01,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(2.01),
+				quantization: 'Q8_0'
+			},
+			{
+				name: 'qwen3:4b',
+				display_name: 'Qwen3 4B',
+				download_url: 'unsloth/Qwen3.5-4B-GGUF',
+				file_size_gb: 2.74,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(2.74),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'qwen3.5:8b',
+				display_name: 'Qwen3.5 9B',
+				download_url: 'unsloth/Qwen3.5-9B-GGUF',
+				file_size_gb: 5.68,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(5.68),
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
+
 	{
 		id: 'glm',
 		name: 'GLM',

@@ -842,6 +842,55 @@ void ModelManager::init_model_registry() {
         0  // use model default (-c from model)
     };
     
+    // ===== QWEN 3.5 =====
+    model_registry_["qwen3.5:0.8b"] = {
+        "qwen3.5:0.8b",
+        "qwen3.5-0.8b",
+        "unsloth/Qwen3.5-0.8B-GGUF",
+        "Qwen3.5-0.8B-Q8_0.gguf",
+        "Q8_0",
+        812LL * 1024 * 1024,     // ~0.812 GB
+        "Multimodal model",
+        "Qwen3.5 0.8B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["qwen3.5:2b"] = {
+        "qwen3.5:2b",
+        "qwen3.5-2b",
+        "unsloth/Qwen3.5-2B-GGUF",
+        "Qwen3.5-2B-Q8_0.gguf",
+        "Q8_0",
+        2016LL * 1024 * 1024,     // ~2.01 GB
+        "Multimodal model",
+        "Qwen3.5 2B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["qwen3.5:4b"] = {
+        "qwen3.5:4b",
+        "qwen3.5-4b",
+        "unsloth/Qwen3.5-4B-GGUF",
+        "Qwen3.5-4B-Q4_K_M.gguf",
+        "Q4_K_M",
+        2740LL * 1024 * 1024,     // ~2.74 GB
+        "Multimodal model",
+        "Qwen3.5 4B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["qwen3.5:9b"] = {
+        "qwen3.5:9b",
+        "qwen3.5-9b",
+        "unsloth/Qwen3.5-9B-GGUF",
+        "Qwen3.5-9B-Q4_K_M.gguf",
+        "Q4_K_M",
+        5680LL * 1024 * 1024,     // ~5.68 GB
+        "Multimodal model",
+        "Qwen3.5 9B",
+        0  // use model default (-c from model)
+    };
+        
     // ===== GEMMA SERIES (8K) =====
     model_registry_["gemma1.1:2b"] = {
         "gemma1.1:2b",
