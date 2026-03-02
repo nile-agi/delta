@@ -652,44 +652,55 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
          return false;
      }
      
-     if (!server_listening) {
+    if (!server_listening) {
+        // As a safety net, if our local TCP probe fails but the server log says
+        // "server is listening on ...", treat that as success instead of error.
+        std::ifstream err_read(err_file);
+        bool log_says_listening = false;
+        std::vector<std::string> lines;
+        if (err_read.is_open()) {
+            std::string line;
+            while (std::getline(err_read, line)) {
+                if (line.find("server is listening on") != std::string::npos) {
+                    log_says_listening = true;
+                }
+                lines.push_back(line);
+            }
+            err_read.close();
+        }
+        if (log_says_listening) {
+            UI::print_info("Server log indicates it is listening; continuing even though the local port probe failed.");
+            server_listening = true;
+        } else {
 #ifdef _WIN32
-         UI::print_error("Server did not become ready in time (port " + std::to_string(port) + ").");
+            UI::print_error("Server did not become ready in time (port " + std::to_string(port) + ").");
 #else
-         UI::print_error("Server process started but port " + std::to_string(port) + " is not listening after 60 seconds");
+            UI::print_error("Server process started but port " + std::to_string(port) + " is not listening after 60 seconds");
 #endif
-         UI::print_info("Full log: " + err_file);
-         std::ifstream err_read(err_file);
-         if (err_read.is_open()) {
-             std::string line;
-             std::vector<std::string> lines;
-             while (std::getline(err_read, line)) {
-                 lines.push_back(line);
-             }
-             err_read.close();
-             std::vector<std::string> filtered;
-             size_t start = (lines.size() > 50) ? (lines.size() - 50) : 0;
-             for (size_t i = start; i < lines.size(); i++) {
-                 if (!is_server_log_noise(lines[i])) filtered.push_back(lines[i]);
-             }
-             if (!filtered.empty()) {
-                 UI::print_info("--- Relevant log lines ---");
-                 for (size_t i = 0; i < filtered.size() && i < 25; i++) {
-                     std::cerr << "  " << filtered[i] << std::endl;
-                 }
-                 UI::print_info("--- End ---");
-             }
-         }
+            UI::print_info("Full log: " + err_file);
+            std::vector<std::string> filtered;
+            size_t start = (lines.size() > 50) ? (lines.size() - 50) : 0;
+            for (size_t i = start; i < lines.size(); i++) {
+                if (!is_server_log_noise(lines[i])) filtered.push_back(lines[i]);
+            }
+            if (!filtered.empty()) {
+                UI::print_info("--- Relevant log lines ---");
+                for (size_t i = 0; i < filtered.size() && i < 25; i++) {
+                    std::cerr << "  " << filtered[i] << std::endl;
+                }
+                UI::print_info("--- End ---");
+            }
 #ifdef _WIN32
-         UI::print_info("Install folder should contain: delta.exe, llama-server.exe (or server.exe), libcurl.dll, zlib1.dll, public/");
-         UI::print_info("Run manually: llama-server.exe -m <model-path> --port " + std::to_string(port));
-         UI::print_info("Check port: netstat -an | findstr " + std::to_string(port));
+            UI::print_info("Install folder should contain: delta.exe, llama-server.exe (or server.exe), libcurl.dll, zlib1.dll, public/");
+            UI::print_info("Run manually: llama-server.exe -m <model-path> --port " + std::to_string(port));
+            UI::print_info("Check port: netstat -an | findstr " + std::to_string(port));
 #else
-         UI::print_info("You can run the server manually to see errors: delta-server -m <model-path> --port " + std::to_string(port));
-         UI::print_info("Or check if the server is running: ps aux | grep delta-server");
+            UI::print_info("You can run the server manually to see errors: delta-server -m <model-path> --port " + std::to_string(port));
+            UI::print_info("Or check if the server is running: ps aux | grep delta-server");
 #endif
-         return false;
-     }
+            return false;
+        }
+    }
      
      // Server is confirmed listening - proceed with setup
      delta::start_model_api_server(8081);
@@ -1073,28 +1084,46 @@ void Commands::stop_llama_server() {
         }
         return true;
     } else {
+        // If the TCP probe failed but the log says "server is listening on ...",
+        // treat that as success rather than a hard error.
+        bool log_says_listening = false;
+        std::ifstream err_read(err_file);
+        std::vector<std::string> lines;
+        if (err_read.is_open()) {
+            std::string line;
+            while (std::getline(err_read, line)) {
+                if (line.find("server is listening on") != std::string::npos) {
+                    log_says_listening = true;
+                }
+                lines.push_back(line);
+            }
+            err_read.close();
+        }
+        if (log_says_listening) {
+            UI::print_info("   Server log indicates it is listening; continuing even though the local port probe failed.");
+            CloseHandle(pi.hProcess);
+            if (is_ui_only_mode) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                delta::start_model_api_server(8081);
+                UI::print_info("   [OK] Model API server restarted on port 8081");
+            }
+            return true;
+        }
         if (exit_code == STILL_ACTIVE) {
             UI::print_error("   Server did not become ready in time. Full log: " + err_file);
         } else {
             UI::print_error("   Server process exited (code " + std::to_string(exit_code) + "). See log: " + err_file);
         }
-        std::ifstream err_read(err_file);
-        if (err_read.is_open()) {
-            std::string line;
-            std::vector<std::string> lines;
-            while (std::getline(err_read, line)) lines.push_back(line);
-            err_read.close();
-            std::vector<std::string> filtered;
-            size_t start = (lines.size() > 50) ? (lines.size() - 50) : 0;
-            for (size_t i = start; i < lines.size(); i++) {
-                if (!is_server_log_noise(lines[i])) filtered.push_back(lines[i]);
-            }
-            if (!filtered.empty()) {
-                UI::print_info("   --- Relevant log lines ---");
-                for (size_t i = 0; i < filtered.size() && i < 20; i++)
-                    std::cerr << "  " << filtered[i] << std::endl;
-                UI::print_info("   --- End ---");
-            }
+        std::vector<std::string> filtered;
+        size_t start = (lines.size() > 50) ? (lines.size() - 50) : 0;
+        for (size_t i = start; i < lines.size(); i++) {
+            if (!is_server_log_noise(lines[i])) filtered.push_back(lines[i]);
+        }
+        if (!filtered.empty()) {
+            UI::print_info("   --- Relevant log lines ---");
+            for (size_t i = 0; i < filtered.size() && i < 20; i++)
+                std::cerr << "  " << filtered[i] << std::endl;
+            UI::print_info("   --- End ---");
         }
         if (exit_code != STILL_ACTIVE) {
             UI::print_info("   Install folder must contain: delta.exe, llama-server.exe (or server.exe), libcurl.dll, zlib1.dll, public/");
