@@ -47,8 +47,11 @@
      #endif
  #endif
  
- namespace delta {
- 
+namespace delta {
+
+// Forward declaration for log filtering helper implemented later in this file.
+static bool is_server_log_noise(const std::string& line);
+
 // Static member initialization
 std::map<std::string, CommandHandler> Commands::command_map_;
 bool Commands::initialized_ = false;
