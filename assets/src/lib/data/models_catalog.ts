@@ -380,8 +380,8 @@ export const modelsCatalog: ModelFamily[] = [
 				quantization: 'Q8_0'
 			},
 			{
-				name: 'qwen3:4b',
-				display_name: 'Qwen3 4B',
+				name: 'qwen3.5:4b',
+				display_name: 'Qwen3.5 4B',
 				download_url: 'unsloth/Qwen3.5-4B-GGUF',
 				file_size_gb: 2.74,
 				context_size: 32768,
