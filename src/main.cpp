@@ -224,25 +224,35 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             }
         }
         
-        // On WSL, automatic server startup can hit OS thread limits and fail noisily.
-        // Instead, print guidance and let the user start the server explicitly.
+        // On WSL, automatic server startup can hit OS thread limits and browser
+        // integration is unreliable. Be explicit and friendly instead of noisy.
         if (is_running_in_wsl()) {
-            UI::print_info("Running under WSL - web UI server is optional.");
-            UI::print_info("To use the web UI, run: delta --server");
-            UI::print_info("Then open: http://localhost:8080 in your Windows browser.");
+            std::string url = "http://localhost:8080";
+            UI::print_info("Web UI is available when the Delta Server is running.");
+            UI::print_info("To start it, run: delta --server");
+            UI::print_info("Then open this link in your Windows browser:");
+            UI::print_info("  " + url);
         } else {
             // Try to launch server - if it fails, it's okay (server might not be built)
+            std::string url = "http://localhost:8080";
             if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
                 UI::print_success("Delta Server started in background");
-                std::string url = "http://localhost:8080";
-                UI::print_info("Open: " + url);
+                UI::print_info("You can use the web UI at:");
+                UI::print_info("  " + url);
                 // Open browser after a short delay to ensure server is ready
                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
                 if (tools::Browser::open_url(url)) {
-                    UI::print_info("Browser opened automatically");
+                    UI::print_info("Browser opened automatically.");
+                } else {
+                    UI::print_info("If your browser did not open, copy this link into your browser:");
+                    UI::print_info("  " + url);
                 }
+            } else {
+                // If launch fails, keep it friendly and actionable
+                UI::print_info("Delta Server could not be started automatically.");
+                UI::print_info("You can still start it manually with: delta --server");
+                UI::print_info("Then open: http://localhost:8080 in your browser.");
             }
-            // If launch fails, don't show error - server is optional
         }
     } else {
         // Model not found - can't start server
