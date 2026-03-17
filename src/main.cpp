@@ -18,8 +18,25 @@
 #include <limits.h>
 #include <algorithm>
 #include <cctype>
+#include <fstream>
 
 using namespace delta;
+
+// Detect if running under WSL (Windows Subsystem for Linux)
+static bool is_running_in_wsl() {
+#if defined(__linux__) && !defined(__APPLE__) && !defined(_WIN32)
+    std::ifstream f("/proc/sys/kernel/osrelease");
+    if (!f.is_open()) {
+        return false;
+    }
+    std::string line;
+    std::getline(f, line);
+    std::transform(line.begin(), line.end(), line.begin(), ::tolower);
+    return line.find("microsoft") != std::string::npos || line.find("wsl") != std::string::npos;
+#else
+    return false;
+#endif
+}
 
 // Command handlers
 void print_help() {
@@ -207,18 +224,26 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             }
         }
         
-        // Try to launch server - if it fails, it's okay (server might not be built)
-        if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
-            UI::print_success("Delta Server started in background");
-            std::string url = "http://localhost:8080";
-            UI::print_info("Open: " + url);
-            // Open browser after a short delay to ensure server is ready
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-            if (tools::Browser::open_url(url)) {
-                UI::print_info("Browser opened automatically");
+        // On WSL, automatic server startup can hit OS thread limits and fail noisily.
+        // Instead, print guidance and let the user start the server explicitly.
+        if (is_running_in_wsl()) {
+            UI::print_info("Running under WSL - web UI server is optional.");
+            UI::print_info("To use the web UI, run: delta --server");
+            UI::print_info("Then open: http://localhost:8080 in your Windows browser.");
+        } else {
+            // Try to launch server - if it fails, it's okay (server might not be built)
+            if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
+                UI::print_success("Delta Server started in background");
+                std::string url = "http://localhost:8080";
+                UI::print_info("Open: " + url);
+                // Open browser after a short delay to ensure server is ready
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                if (tools::Browser::open_url(url)) {
+                    UI::print_info("Browser opened automatically");
+                }
             }
+            // If launch fails, don't show error - server is optional
         }
-        // If launch fails, don't show error - server is optional
     } else {
         // Model not found - can't start server
     }
@@ -616,8 +641,15 @@ int main(int argc, char** argv) {
     
     // Handle no-args case: Display banner first, then start interactive mode
     if (no_args) {
+#if defined(_WIN32) || defined(__APPLE__)
+        // Keep rich banner on desktop platforms
         UI::print_banner();
         std::cout << std::endl;
+#else
+        // On Linux (including WSL), keep startup output minimal
+        UI::print_info("Delta CLI v1.0.0 - type '/help' for commands.");
+        std::cout << std::endl;
+#endif
     }
     
     // Handle first-time authentication
