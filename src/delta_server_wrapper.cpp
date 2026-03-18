@@ -195,10 +195,16 @@ public:
             }
             
             if (std::filesystem::exists(abs_path) && std::filesystem::is_directory(abs_path)) {
-                std::filesystem::path index_file = abs_path / "index.html.gz";
-                std::filesystem::path index_file2 = abs_path / "index.html";
-                if (std::filesystem::exists(index_file) || std::filesystem::exists(index_file2)) {
-                    return abs_path.string();
+                const std::filesystem::path bases[] = { abs_path, abs_path / "public" };
+                for (const auto& base : bases) {
+                    if (!std::filesystem::is_directory(base)) {
+                        continue;
+                    }
+                    std::filesystem::path index_file = base / "index.html.gz";
+                    std::filesystem::path index_file2 = base / "index.html";
+                    if (std::filesystem::exists(index_file) || std::filesystem::exists(index_file2)) {
+                        return base.string();
+                    }
                 }
             }
         }

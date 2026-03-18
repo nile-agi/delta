@@ -6,6 +6,9 @@
 #include "../delta_cli.h"
 #include <cstdlib>
 #include <string>
+#include <fstream>
+#include <algorithm>
+#include <cctype>
 
 #ifdef _WIN32
     #include <windows.h>
@@ -72,7 +75,40 @@ bool Browser::open_url(const std::string& url) {
             }
         }
     }
-    
+
+    // WSL: no Linux GUI browser — open the URL in the Windows default browser
+    {
+        std::ifstream rel("/proc/sys/kernel/osrelease");
+        std::string osrel;
+        if (std::getline(rel, osrel)) {
+            std::string low = osrel;
+            std::transform(low.begin(), low.end(), low.begin(),
+                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (low.find("microsoft") != std::string::npos ||
+                low.find("wsl") != std::string::npos) {
+                std::string esc;
+                for (char c : url) {
+                    if (c == '"')
+                        esc += "\\\"";
+                    else
+                        esc += c;
+                }
+                const char* cmd_paths[] = {
+                    "cmd.exe",
+                    "/mnt/c/Windows/System32/cmd.exe",
+                    "/mnt/c/WINDOWS/System32/cmd.exe"
+                };
+                for (const char* cmd_base : cmd_paths) {
+                    std::string wcmd = std::string(cmd_base) +
+                        " /c start \"\" \"" + esc + "\"";
+                    if (system(wcmd.c_str()) == 0) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
     return false;
 #endif
 }

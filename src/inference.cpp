@@ -9,6 +9,8 @@
 #include <memory>
 #include <vector>
 #include <list>
+#include <thread>
+#include <algorithm>
 
 // Modern llama.cpp headers
 #include "llama.h"
@@ -75,13 +77,39 @@ bool InferenceEngine::load_model(const InferenceConfig& config) {
         UI::print_error("Failed to load model: " + config.model_path);
         return false;
     }
+
+    // Context size cannot exceed the model's trained context (common cause of load failure)
+    int32_t n_ctx_train = llama_model_n_ctx_train(model_);
+    uint32_t n_ctx_use = static_cast<uint32_t>(config.n_ctx);
+    if (n_ctx_train > 0 && n_ctx_use > static_cast<uint32_t>(n_ctx_train)) {
+        n_ctx_use = static_cast<uint32_t>(n_ctx_train);
+        UI::print_info("Context size set to model maximum: " + std::to_string(n_ctx_use));
+    }
+    if (n_ctx_use < 512u) {
+        n_ctx_use = 512u;
+    }
+
+    unsigned hc = std::thread::hardware_concurrency();
+    int nthr = config.n_threads;
+    if (nthr < 1) {
+        nthr = 1;
+    }
+    if (hc > 0) {
+        int cap = static_cast<int>(hc);
+        nthr = std::min(nthr, std::max(1, cap));
+    } else {
+        nthr = std::min(nthr, 8);
+    }
     
     // Set up context parameters
     llama_context_params ctx_params = llama_context_default_params();
-    ctx_params.n_ctx = config.n_ctx;
-    ctx_params.n_batch = config.n_batch;
-    ctx_params.n_threads = config.n_threads;
-    ctx_params.n_threads_batch = config.n_threads;
+    ctx_params.n_ctx = n_ctx_use;
+    ctx_params.n_batch = std::min(config.n_batch, static_cast<int>(n_ctx_use));
+    if (ctx_params.n_batch < 1) {
+        ctx_params.n_batch = 512;
+    }
+    ctx_params.n_threads = nthr;
+    ctx_params.n_threads_batch = nthr;
     
     // Create context
     ctx_ = llama_init_from_model(model_, ctx_params);

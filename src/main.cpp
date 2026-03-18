@@ -224,34 +224,25 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             }
         }
         
-        // On WSL, automatic server startup can hit OS thread limits and browser
-        // integration is unreliable. Be explicit and friendly instead of noisy.
-        if (is_running_in_wsl()) {
-            std::string url = "http://localhost:8080";
-            UI::print_info("Web UI is available when the Delta Server is running.");
-            UI::print_info("To start it, run: delta --server");
-            UI::print_info("Then open this link in your Windows browser:");
-            UI::print_info("  " + url);
-        } else {
-            // Try to launch server - if it fails, it's okay (server might not be built)
+        {
             std::string url = "http://localhost:8080";
             if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
                 UI::print_success("Delta Server started in background");
-                UI::print_info("You can use the web UI at:");
-                UI::print_info("  " + url);
-                // Open browser after a short delay to ensure server is ready
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                UI::print_info("Web UI: " + url);
+                std::this_thread::sleep_for(std::chrono::milliseconds(
+                    is_running_in_wsl() ? 2000 : 1000));
                 if (tools::Browser::open_url(url)) {
                     UI::print_info("Browser opened automatically.");
                 } else {
-                    UI::print_info("If your browser did not open, copy this link into your browser:");
+                    UI::print_info("If the browser did not open, paste this URL:");
                     UI::print_info("  " + url);
+                    if (is_running_in_wsl()) {
+                        UI::print_info("(On WSL, use your Windows browser with that address.)");
+                    }
                 }
             } else {
-                // If launch fails, keep it friendly and actionable
                 UI::print_info("Delta Server could not be started automatically.");
-                UI::print_info("You can still start it manually with: delta --server");
-                UI::print_info("Then open: http://localhost:8080 in your browser.");
+                UI::print_info("Try: delta --server   then open " + url + " in your browser.");
             }
         }
     } else {
@@ -822,13 +813,21 @@ int main(int argc, char** argv) {
         };
         
         for (const auto& candidate : public_candidates) {
-            if (tools::FileOps::dir_exists(candidate)) {
-                std::string index_file = tools::FileOps::join_path(candidate, "index.html.gz");
-                if (tools::FileOps::file_exists(index_file) || 
-                    tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
-                    public_path = candidate;
+            const std::string subdirs[] = { std::string(), std::string("public") };
+            for (const auto& sub : subdirs) {
+                std::string try_dir = sub.empty() ? candidate : tools::FileOps::join_path(candidate, sub);
+                if (!tools::FileOps::dir_exists(try_dir)) {
+                    continue;
+                }
+                std::string index_file = tools::FileOps::join_path(try_dir, "index.html.gz");
+                if (tools::FileOps::file_exists(index_file) ||
+                    tools::FileOps::file_exists(tools::FileOps::join_path(try_dir, "index.html"))) {
+                    public_path = try_dir;
                     break;
                 }
+            }
+            if (!public_path.empty()) {
+                break;
             }
         }
         

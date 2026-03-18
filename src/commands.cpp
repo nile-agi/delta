@@ -39,6 +39,19 @@
  #endif
  
  namespace delta {
+
+ #ifndef _WIN32
+ static bool commands_is_wsl() {
+     std::ifstream f("/proc/sys/kernel/osrelease");
+     std::string line;
+     if (!std::getline(f, line)) {
+         return false;
+     }
+     std::string low = line;
+     std::transform(low.begin(), low.end(), low.begin(), ::tolower);
+     return low.find("microsoft") != std::string::npos || low.find("wsl") != std::string::npos;
+ }
+ #endif
  
  // Static member initialization
  std::map<std::string, CommandHandler> Commands::command_map_;
@@ -132,6 +145,14 @@
          // Model path is invalid
          return false;
      }
+
+ #ifndef _WIN32
+     // WSL: very large context + default server threading can exhaust resources
+     if (commands_is_wsl() && ctx_size > 8192) {
+         UI::print_info("WSL: reducing server context size for stability (8192).");
+         ctx_size = 8192;
+     }
+ #endif
      
      // Get the path to the web UI directory (use Delta web UI from public/ only)
      std::string public_path;
@@ -168,19 +189,21 @@
      };
      
      for (const auto& candidate : public_candidates) {
-         if (tools::FileOps::dir_exists(candidate)) {
-             // Check for index.html.gz first (preferred), then index.html
-             std::string index_file_gz = tools::FileOps::join_path(candidate, "index.html.gz");
-             std::string index_file = tools::FileOps::join_path(candidate, "index.html");
+         const std::string subdirs[] = { std::string(), std::string("public") };
+         for (const auto& sub : subdirs) {
+             std::string try_dir = sub.empty() ? candidate : tools::FileOps::join_path(candidate, sub);
+             if (!tools::FileOps::dir_exists(try_dir)) {
+                 continue;
+             }
+             std::string index_file_gz = tools::FileOps::join_path(try_dir, "index.html.gz");
+             std::string index_file = tools::FileOps::join_path(try_dir, "index.html");
              if (tools::FileOps::file_exists(index_file_gz) || tools::FileOps::file_exists(index_file)) {
-                 public_path = candidate;
-                 // Convert to absolute path for reliability
+                 public_path = try_dir;
                  if (!public_path.empty() && public_path[0] != '/') {
                      char resolved[PATH_MAX];
                      if (realpath(public_path.c_str(), resolved) != nullptr) {
                          public_path = std::string(resolved);
                      } else {
-                         // Try relative to current working directory
                          char cwd[PATH_MAX];
                          if (getcwd(cwd, sizeof(cwd)) != nullptr) {
                              std::string full_path = tools::FileOps::join_path(std::string(cwd), public_path);
@@ -192,6 +215,9 @@
                  }
                  break;
              }
+         }
+         if (!public_path.empty()) {
+             break;
          }
      }
      
@@ -301,14 +327,26 @@
          UI::print_error("Failed to fork process for delta-server");
          return false;
      }
+
+     const pid_t shell_pid = pid;
      
      int result = 0; // Fork succeeded
      
      // Wait for server to start and verify it's running
      // Give server time to initialize (especially for model loading)
      bool server_listening = false;
-     for (int attempt = 0; attempt < 20; attempt++) {
+     bool child_exited_fail = false;
+     for (int attempt = 0; attempt < 90; attempt++) {
          std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+         int st = 0;
+         pid_t w = waitpid(shell_pid, &st, WNOHANG);
+         if (w == shell_pid) {
+             if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) {
+                 child_exited_fail = true;
+             }
+             break;
+         }
          
          // Check if port is listening using socket connection
  #ifdef _WIN32
@@ -349,38 +387,50 @@
          }
      }
      
-     // Check error log for any startup errors
+     // Only treat stderr as fatal if the server is not listening or the process died.
+     // Many benign llama.cpp lines contain "error" or "failed" and caused false failures.
  #ifndef _WIN32
+     auto line_is_fatal = [](const std::string& line_lower) -> bool {
+         return line_lower.find("terminate called") != std::string::npos ||
+                line_lower.find("std::system_error") != std::string::npos ||
+                line_lower.find("aborted (core dumped)") != std::string::npos ||
+                line_lower.find("core dumped") != std::string::npos ||
+                line_lower.find("ggml_abort") != std::string::npos ||
+                line_lower.find("failed to load model") != std::string::npos ||
+                line_lower.find("cannot load model") != std::string::npos ||
+                (line_lower.find("unknown") != std::string::npos &&
+                 line_lower.find("option") != std::string::npos);
+     };
+     std::vector<std::string> fatal_lines;
      std::ifstream err_log(err_file);
      if (err_log.is_open()) {
          std::string line;
-         std::vector<std::string> error_lines;
          while (std::getline(err_log, line)) {
-             if (!line.empty()) {
-                 // Filter out informational messages
-                 std::string line_lower = line;
-                 std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
-                 // Look for actual error messages (not just info)
-                 if (line_lower.find("error") != std::string::npos ||
-                     line_lower.find("failed") != std::string::npos ||
-                     line_lower.find("fatal") != std::string::npos ||
-                     (line_lower.find("unknown") != std::string::npos && line_lower.find("option") != std::string::npos)) {
-                     error_lines.push_back(line);
-                 }
+             if (line.empty()) {
+                 continue;
+             }
+             std::string line_lower = line;
+             std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
+             if (line_is_fatal(line_lower)) {
+                 fatal_lines.push_back(line);
              }
          }
          err_log.close();
-         
-         if (!error_lines.empty()) {
-             // Show errors - these indicate the server failed to start
-             UI::print_error("Server startup errors detected:");
-             for (size_t i = 0; i < error_lines.size() && i < 5; i++) {
-                 std::cerr << "  " << error_lines[i] << std::endl;
-             }
-             std::cerr << "\nFull error log: " << err_file << std::endl;
-             std::cerr << "\nTip: If you see 'unknown option' errors, your delta-server build may not support all flags." << std::endl;
-             return false;
+     }
+
+     if (!server_listening && (child_exited_fail || !fatal_lines.empty())) {
+         UI::print_error("Delta server failed to start.");
+         for (size_t i = 0; i < fatal_lines.size() && i < 8; i++) {
+             std::cerr << "  " << fatal_lines[i] << std::endl;
          }
+         if (fatal_lines.empty() && child_exited_fail) {
+             std::cerr << "  (process exited before the server port opened)" << std::endl;
+         }
+         std::cerr << "\nFull log: " << err_file << std::endl;
+         return false;
+     }
+     if (server_listening && !fatal_lines.empty()) {
+         UI::print_info("(Server is up; startup log had warnings — see " + err_file + " if needed.)");
      }
  #endif
      
