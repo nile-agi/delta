@@ -39,6 +39,24 @@ function calculateRequiredRAM(fileSizeGB: number): number {
  */
 export const modelsCatalog: ModelFamily[] = [
 	{
+		id: 'Nemotron-3-Nano',
+		name: 'Nemotron 3 Nano',
+		description:
+			"Nemotron-3-Nano is a new Standard for Efficient, Open, and Intelligent Agentic Models, now updated with a 4B parameter count model.",
+		icon: 'nvidia logo.webp',
+		models: [
+			{
+				name: 'Nemotron-3-Nano:4B',
+				display_name: 'Nemotron-3-Nano 4B',
+				download_url: 'nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF',
+				file_size_gb: 2.84,
+				context_size: 1048576,
+				required_ram_gb: calculateRequiredRAM(2.84),
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
+	{
 		id: 'HY-2Bit',
 		name: 'HY 2Bit',
 		description:
@@ -756,7 +774,8 @@ export const FAMILY_LOGO_FILES: Record<string, string> = {
 	deepseek: 'deepseek logo.webp',
 	angelslim: 'angelslim logo.webp',
 	llama: 'meta-llama logo.webp',
-	cohere: 'cohere logo.webp'
+	cohere: 'cohere logo.webp',
+	nvidia: 'nvidia logo.webp',
 };
 
 /** True if icon is a logo filename (has file extension). */
@@ -786,6 +805,7 @@ export function getFamilyIconForModelName(name: string): string {
 	if (lower.includes('angleslim')) return FAMILY_LOGO_FILES.angelslim;
 	if (lower.includes('llama')) return FAMILY_LOGO_FILES.llama;
 	if (lower.includes('cohere')) return FAMILY_LOGO_FILES.cohere;
+	if (lower.includes('nvidia')) return FAMILY_LOGO_FILES.nvidia;
 	return '●';
 }
 

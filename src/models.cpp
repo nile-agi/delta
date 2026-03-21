@@ -1739,13 +1739,14 @@ void ModelManager::init_model_registry() {
         32768
     };
 
-    model_registry_["Nemotron-3-Nano:30B-A3B"] = {
-        "Nemotron-3-Nano:30B-A3B",
-        "Nemotron-3-Nano-30B-A3B",
-        "unsloth/Nemotron-3-Nano-30B-A3B-GGUF",
-        "Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
+    // ===== NVIDIA MODEL NEMOTRON 3 NANO =====
+    model_registry_["Nemotron-3-Nano:4B"] = {
+        "Nemotron-3-Nano:4B",
+        "Nemotron-3-Nano-4B",
+        "nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF",
+        "NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
         "Q4_K_M",
-        24600LL * 1024 * 1024,        // 24.6
+        2840LL * 1024 * 1024,        // 2.84 GB
         "Reasoning and Non-Reasoning Task",
         "Nemotron-3-Nano-30B-A3B",
         1048576
