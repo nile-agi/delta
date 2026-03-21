@@ -26,6 +26,8 @@ export {};
 
 
 declare module "$app/types" {
+	type MatcherParam<M> = M extends (param : string) => param is (infer U extends string) ? U : string;
+
 	export interface AppTypes {
 		RouteId(): "/" | "/chat" | "/chat/[id]";
 		RouteParams(): {
@@ -38,6 +40,6 @@ declare module "$app/types" {
 		};
 		Pathname(): "/" | `/chat/${string}` & {};
 		ResolvedPathname(): `${"" | `/${string}`}${ReturnType<AppTypes['Pathname']>}`;
-		Asset(): "/GPT logo.png" | "/angleslim logo.webp" | "/cohere logo.webp" | "/deepseek logo.webp" | "/favicon.svg" | "/gemma logo.svg" | "/glm logo.svg" | "/glm.svg" | "/loading.html" | "/meta-llama logo.webp" | "/ministral logo.png" | "/nemotron logo.png" | "/qwen logo.jpeg" | string & {};
+		Asset(): "/GPT logo.png" | "/angleslim logo.webp" | "/cohere logo.webp" | "/deepseek logo.webp" | "/favicon.svg" | "/gemma logo.svg" | "/glm logo.svg" | "/glm.svg" | "/loading.html" | "/meta-llama logo.webp" | "/ministral logo.png" | "/nemotron logo.png" | "/nvidia logo.webp" | "/qwen logo.jpeg" | string & {};
 	}
 }
