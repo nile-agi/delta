@@ -1748,7 +1748,7 @@ void ModelManager::init_model_registry() {
         "Q4_K_M",
         2840LL * 1024 * 1024,        // 2.84 GB
         "Reasoning and Non-Reasoning Task",
-        "Nemotron-3-Nano-30B-A3B",
+        "Nemotron-3-Nano-4B",
         1048576
     };
 
