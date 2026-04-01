@@ -744,6 +744,42 @@ export const modelsCatalog: ModelFamily[] = [
 				quantization: 'Q4_K_M'	
 			}
 		]	
+	},
+	{
+		id: 'Bonsai',
+		name: 'Bonsai',
+		description:
+			"PrismML Bonsai series: A family of ultra-compact 1-bit quantized LLMs (Q1_0_g128) featuring Bonsai-8B (~1.15 GB), Bonsai-4B (~0.57 GB), and Bonsai-1.7B (~0.24 GB). These models deliver exceptional memory efficiency, high inference speed, and strong energy efficiency while maintaining competitive multilingual performance. Ideal for on-device AI, real-time agents, robotics, edge computing, and mobile deployments.",
+		icon: 'bonsai-logo.svg',
+		models: [
+			{
+				name: 'Bonsai-8B',
+				display_name: 'Bonsai 8B',
+				download_url: 'prism-ml/Bonsai-8B-gguf',
+				file_size_gb: 1.16,
+				context_size: 65536,
+				required_ram_gb: calculateRequiredRAM(1.16),
+				quantization: 'Q1_0_g128'	
+			},
+			{
+				name: 'Bonsai-4B',
+				display_name: 'Bonsai 4B',
+				download_url: 'prism-ml/Bonsai-4B-gguf',
+				file_size_gb: 0.572,
+				context_size: 65536,
+				required_ram_gb: calculateRequiredRAM(0.572),
+				quantization: 'Q1_0_g128'	
+			},
+			{
+				name: 'Bonsai-1.7B',
+				display_name: 'Bonsai 1.7B',
+				download_url: 'prism-ml/Bonsai-1.7B-gguf',
+				file_size_gb: 0.248,
+				context_size: 65536,
+				required_ram_gb: calculateRequiredRAM(0.248),
+				quantization: 'Q1_0_g128'	
+			},
+		]	
 	}
 ];
 
@@ -776,6 +812,7 @@ export const FAMILY_LOGO_FILES: Record<string, string> = {
 	llama: 'meta-llama logo.webp',
 	cohere: 'cohere logo.webp',
 	nvidia: 'nvidia logo.webp',
+	Bonsai: 'bonsai-logo.svg',
 };
 
 /** True if icon is a logo filename (has file extension). */
@@ -806,6 +843,7 @@ export function getFamilyIconForModelName(name: string): string {
 	if (lower.includes('llama')) return FAMILY_LOGO_FILES.llama;
 	if (lower.includes('cohere')) return FAMILY_LOGO_FILES.cohere;
 	if (lower.includes('nvidia')) return FAMILY_LOGO_FILES.nvidia;
+	if (lower.includes('Bonsai')) return FAMILY_LOGO_FILES.Bonsai;
 	return '●';
 }
 

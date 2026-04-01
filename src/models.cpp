@@ -1849,6 +1849,44 @@ void ModelManager::init_model_registry() {
         "Tiny Aya Water",
         0  // use model default (-c from model)
     };
+
+    // ===== Bonsai models from Prism ML =====
+
+    model_registry_["Bonsai-8B"] = {
+        "Bonsai-8B",
+        "Bonsai-8B",
+        "prism-ml/Bonsai-8B-gguf",
+        "Bonsai-8B.gguf",
+        "Q1_0_g128",
+        1160LL * 1024 * 1024,      // ~1.16 GB
+        "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~1.15 GB of memory, delivering strong performance with excellent speed and energy efficiency for edge devices, real-time applications, and robotics.",
+        "Bonsai 8B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["Bonsai-4B"] = {
+        "Bonsai-4B",
+        "Bonsai-4B",
+        "prism-ml/Bonsai-4B-gguf",
+        "Bonsai-4B.gguf",
+        "Q1_0_g128",
+        572LL * 1024 * 1024,      // ~572 MB
+        "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~0.57 GB of memory while delivering fast inference and strong multilingual performance with excellent energy efficiency.",
+        "Bonsai 4B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["Bonsai-1.7B"] = {
+        "Bonsai-1.7B",
+        "Bonsai-1.7B",
+        "prism-ml/Bonsai-1.7B-gguf",
+        "Bonsai-1.7B.gguf",
+        "Q1_0_g128",
+        248LL * 1024 * 1024,      // ~248 MB
+        "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~0.24 GB of memory, offering excellent speed and energy efficiency for on-device and mobile applications.",
+        "Bonsai 1.7B",
+        0  // use model default (-c from model)
+    };
 }
 
 std::vector<ModelRegistry> ModelManager::get_registry_models() {
