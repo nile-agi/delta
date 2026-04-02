@@ -456,17 +456,6 @@ void ModelManager::init_model_registry() {
         "Ministral 3 14B",
         16384
     };
-    model_registry_["gemma3:27b"] = {
-        "gemma3:27b",
-        "gemma3-27b",
-        "google/gemma-3-27b-it-GGUF",
-        "gemma-3-27b-it-Q4_K_M.gguf",
-        "Q4_K_M",
-        16500LL * 1024 * 1024,
-        "Gemma 3 27B Instruct",
-        "Gemma 3 27B",
-        32768
-    };
    
     model_registry_["devstral-2:24b"] = {
         "devstral-2:24b",
@@ -1012,6 +1001,17 @@ void ModelManager::init_model_registry() {
         "Gemma 3 1B",
         0  // use model default (-c from model)
     };
+    model_registry_["gemma3:27b"] = {
+        "gemma3:27b",
+        "gemma3-27b",
+        "google/gemma-3-27b-it-GGUF",
+        "gemma-3-27b-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        16500LL * 1024 * 1024,
+        "Gemma 3 27B Instruct",
+        "Gemma 3 27B",
+        32768
+    };
     
     model_registry_["gemma3:4b"] = {
         "gemma3:4b",
@@ -1096,6 +1096,31 @@ void ModelManager::init_model_registry() {
         16500LL * 1024 * 1024,     // ~16.5 GB
         "Balanced MedGemma",
         "MedGemma 27B",
+        0  // use model default (-c from model)
+    };
+
+    // ===== GEMMA4  SERIES (128K) =====
+    model_registry_["gemma4:e4b"] = {
+        "gemma4:e4b",
+        "gemma4-e4b",
+        "ggml-org/gemma-4-E4B-it-GGUF",
+        "gemma-4-e4b-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        5340LL * 1024 * 1024,     // ~5.34 GB
+        "A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, and Jetson Nano.",
+        "Gemma 4 E4B",
+        0  // use model default (-c from model)
+    };
+    
+    model_registry_["gemma4:e2b"] = {
+        "gemma4:e2b",
+        "gemma4-e2b",
+        "ggml-org/gemma-4-E2B-it-GGUF",
+        "ggml-org/gemma-4-E2B-it-GGUF",
+        "Q8_0",
+        4970LL * 1024 * 1024,     // ~4.97 GB
+        "A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, and Jetson Nano.",
+        "Gemma 4 E2B",
         0  // use model default (-c from model)
     };
 
@@ -1739,15 +1764,16 @@ void ModelManager::init_model_registry() {
         32768
     };
 
-    model_registry_["Nemotron-3-Nano:30B-A3B"] = {
-        "Nemotron-3-Nano:30B-A3B",
-        "Nemotron-3-Nano-30B-A3B",
-        "unsloth/Nemotron-3-Nano-30B-A3B-GGUF",
-        "Nemotron-3-Nano-30B-A3B-UD-Q4_K_XL.gguf",
+    // ===== NVIDIA MODEL NEMOTRON 3 NANO =====
+    model_registry_["Nemotron-3-Nano:4B"] = {
+        "Nemotron-3-Nano:4B",
+        "Nemotron-3-Nano-4B",
+        "nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF",
+        "NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
         "Q4_K_M",
-        24600LL * 1024 * 1024,        // 24.6
+        2840LL * 1024 * 1024,        // 2.84 GB
         "Reasoning and Non-Reasoning Task",
-        "Nemotron-3-Nano-30B-A3B",
+        "Nemotron-3-Nano-4B",
         1048576
     };
 
@@ -1846,6 +1872,44 @@ void ModelManager::init_model_registry() {
         2140LL * 1024 * 1024,      // ~2.14 GB
         "Strongest for the Asia-Pacific and Europe regions.",
         "Tiny Aya Water",
+        0  // use model default (-c from model)
+    };
+
+    // ===== Bonsai models from Prism ML =====
+
+    model_registry_["Bonsai-8B"] = {
+        "Bonsai-8B",
+        "Bonsai-8B",
+        "prism-ml/Bonsai-8B-gguf",
+        "Bonsai-8B.gguf",
+        "Q1_0_g128",
+        1160LL * 1024 * 1024,      // ~1.16 GB
+        "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~1.15 GB of memory, delivering strong performance with excellent speed and energy efficiency for edge devices, real-time applications, and robotics.",
+        "Bonsai 8B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["Bonsai-4B"] = {
+        "Bonsai-4B",
+        "Bonsai-4B",
+        "prism-ml/Bonsai-4B-gguf",
+        "Bonsai-4B.gguf",
+        "Q1_0_g128",
+        572LL * 1024 * 1024,      // ~572 MB
+        "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~0.57 GB of memory while delivering fast inference and strong multilingual performance with excellent energy efficiency.",
+        "Bonsai 4B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["Bonsai-1.7B"] = {
+        "Bonsai-1.7B",
+        "Bonsai-1.7B",
+        "prism-ml/Bonsai-1.7B-gguf",
+        "Bonsai-1.7B.gguf",
+        "Q1_0_g128",
+        248LL * 1024 * 1024,      // ~248 MB
+        "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~0.24 GB of memory, offering excellent speed and energy efficiency for on-device and mobile applications.",
+        "Bonsai 1.7B",
         0  // use model default (-c from model)
     };
 }

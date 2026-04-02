@@ -39,6 +39,24 @@ function calculateRequiredRAM(fileSizeGB: number): number {
  */
 export const modelsCatalog: ModelFamily[] = [
 	{
+		id: 'Nemotron-3-Nano',
+		name: 'Nemotron 3 Nano',
+		description:
+			"Nemotron-3-Nano is a new Standard for Efficient, Open, and Intelligent Agentic Models, now updated with a 4B parameter count model.",
+		icon: 'nvidia logo.webp',
+		models: [
+			{
+				name: 'Nemotron-3-Nano:4B',
+				display_name: 'Nemotron-3-Nano 4B',
+				download_url: 'nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF',
+				file_size_gb: 2.84,
+				context_size: 1048576,
+				required_ram_gb: calculateRequiredRAM(2.84),
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
+	{
 		id: 'HY-2Bit',
 		name: 'HY 2Bit',
 		description:
@@ -286,6 +304,33 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 16.5,
 				context_size: 32768,
 				required_ram_gb: calculateRequiredRAM(16.5),
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
+	{
+		id: 'gemma4',
+		name: 'Gemma 4',
+		description:
+			"A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, and Jetson Nano",
+		icon: 'gemma logo.svg',
+		models: [
+			{
+				name: 'gemma4:e2b',
+				display_name: 'Gemma 4 E2B',
+				download_url: 'ggml-org/gemma-4-E2B-it-GGUF',
+				file_size_gb: 4.97,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(4.97),
+				quantization: 'Q8_0'
+			},
+			{
+				name: 'gemma4:e4b',
+				display_name: 'Gemma 4 E4B',
+				download_url: 'ggml-org/gemma-4-E2B-it-GGUF',
+				file_size_gb: 5.34,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(5.34),
 				quantization: 'Q4_K_M'
 			}
 		]
@@ -726,7 +771,43 @@ export const modelsCatalog: ModelFamily[] = [
 				quantization: 'Q4_K_M'	
 			}
 		]	
-	}
+	},
+	// {
+	// 	id: 'Bonsai',
+	// 	name: 'Bonsai',
+	// 	description:
+	// 		"PrismML Bonsai series: A family of ultra-compact 1-bit quantized LLMs (Q1_0_g128) featuring Bonsai-8B (~1.15 GB), Bonsai-4B (~0.57 GB), and Bonsai-1.7B (~0.24 GB). These models deliver exceptional memory efficiency, high inference speed, and strong energy efficiency while maintaining competitive multilingual performance. Ideal for on-device AI, real-time agents, robotics, edge computing, and mobile deployments.",
+	// 	icon: 'bonsai-logo.svg',
+	// 	models: [
+	// 		{
+	// 			name: 'Bonsai-8B',
+	// 			display_name: 'Bonsai 8B',
+	// 			download_url: 'prism-ml/Bonsai-8B-gguf',
+	// 			file_size_gb: 1.16,
+	// 			context_size: 65536,
+	// 			required_ram_gb: calculateRequiredRAM(1.16),
+	// 			quantization: 'Q1_0_g128'	
+	// 		},
+	// 		{
+	// 			name: 'Bonsai-4B',
+	// 			display_name: 'Bonsai 4B',
+	// 			download_url: 'prism-ml/Bonsai-4B-gguf',
+	// 			file_size_gb: 0.572,
+	// 			context_size: 65536,
+	// 			required_ram_gb: calculateRequiredRAM(0.572),
+	// 			quantization: 'Q1_0_g128'	
+	// 		},
+	// 		{
+	// 			name: 'Bonsai-1.7B',
+	// 			display_name: 'Bonsai 1.7B',
+	// 			download_url: 'prism-ml/Bonsai-1.7B-gguf',
+	// 			file_size_gb: 0.248,
+	// 			context_size: 65536,
+	// 			required_ram_gb: calculateRequiredRAM(0.248),
+	// 			quantization: 'Q1_0_g128'	
+	// 		},
+	// 	]	
+	// }
 ];
 
 /**
@@ -756,7 +837,9 @@ export const FAMILY_LOGO_FILES: Record<string, string> = {
 	deepseek: 'deepseek logo.webp',
 	angelslim: 'angelslim logo.webp',
 	llama: 'meta-llama logo.webp',
-	cohere: 'cohere logo.webp'
+	cohere: 'cohere logo.webp',
+	nvidia: 'nvidia logo.webp',
+	// Bonsai: 'bonsai-logo.svg',
 };
 
 /** True if icon is a logo filename (has file extension). */
@@ -786,6 +869,8 @@ export function getFamilyIconForModelName(name: string): string {
 	if (lower.includes('angleslim')) return FAMILY_LOGO_FILES.angelslim;
 	if (lower.includes('llama')) return FAMILY_LOGO_FILES.llama;
 	if (lower.includes('cohere')) return FAMILY_LOGO_FILES.cohere;
+	if (lower.includes('nvidia')) return FAMILY_LOGO_FILES.nvidia;
+	// if (lower.includes('Bonsai')) return FAMILY_LOGO_FILES.Bonsai;
 	return '●';
 }
 

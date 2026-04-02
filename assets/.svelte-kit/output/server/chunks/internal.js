@@ -1,4 +1,4 @@
-import{r as i}from"./root.js";import"./environment.js";import"./server.js";let s={};function h(t){}function f(t){s=t}let l=null;function g(t){l=t}function u(t){}const v={app_template_contains_nonce:!1,async:!1,csp:{mode:"auto",directives:{"upgrade-insecure-requests":!1,"block-all-mixed-content":!1},reportOnly:{"upgrade-insecure-requests":!1,"block-all-mixed-content":!1}},csrf_check_origin:!0,csrf_trusted_origins:[],embedded:!1,env_public_prefix:"PUBLIC_",env_private_prefix:"",hash_routing:!0,hooks:null,preload_strategy:"modulepreload",root:i,service_worker:!1,service_worker_options:void 0,templates:{app:({head:t,body:n,assets:e,nonce:a,env:r})=>`<!doctype html>
+import{r as i}from"./root.js";import"./environment.js";import"./server.js";let s={};function h(t){}function f(t){s=t}let o=null;function g(t){o=t}function u(t){}const v={app_template_contains_nonce:!1,async:!1,csp:{mode:"auto",directives:{"upgrade-insecure-requests":!1,"block-all-mixed-content":!1},reportOnly:{"upgrade-insecure-requests":!1,"block-all-mixed-content":!1}},csrf_check_origin:!0,csrf_trusted_origins:[],embedded:!1,env_public_prefix:"PUBLIC_",env_private_prefix:"",hash_routing:!0,hooks:null,preload_strategy:"modulepreload",root:i,service_worker:!1,service_worker_options:void 0,server_error_boundaries:!1,templates:{app:({head:t,body:e,assets:n,nonce:r,env:a})=>`<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
@@ -7,14 +7,14 @@ import{r as i}from"./root.js";import"./environment.js";import"./server.js";let s
 		`+t+`
 	</head>
 	<body data-sveltekit-preload-data="hover">
-		<div style="display: contents">`+n+`</div>
+		<div style="display: contents">`+e+`</div>
 	</body>
 </html>
-`,error:({status:t,message:n})=>`<!doctype html>
+`,error:({status:t,message:e})=>`<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<title>`+n+`</title>
+		<title>`+e+`</title>
 
 		<style>
 			body {
@@ -85,9 +85,9 @@ import{r as i}from"./root.js";import"./environment.js";import"./server.js";let s
 		<div class="error">
 			<span class="status">`+t+`</span>
 			<div class="message">
-				<h1>`+n+`</h1>
+				<h1>`+e+`</h1>
 			</div>
 		</div>
 	</body>
 </html>
-`},version_hash:"1leeo2k"};async function _(){return{handle:void 0,handleFetch:void 0,handleError:void 0,handleValidationError:void 0,init:void 0,reroute:void 0,transport:void 0}}export{f as a,g as b,u as c,_ as g,v as o,s as p,l as r,h as s};
+`},version_hash:"inoljk"};async function _(){return{handle:void 0,handleFetch:void 0,handleError:void 0,handleValidationError:void 0,init:void 0,reroute:void 0,transport:void 0}}export{f as a,g as b,u as c,_ as g,v as o,s as p,o as r,h as s};
