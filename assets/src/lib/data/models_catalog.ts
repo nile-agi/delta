@@ -327,7 +327,7 @@ export const modelsCatalog: ModelFamily[] = [
 			{
 				name: 'gemma4:e4b',
 				display_name: 'Gemma 4 E4B',
-				download_url: 'ggml-org/gemma-4-E2B-it-GGUF',
+				download_url: 'ggml-org/gemma-4-E4B-it-GGUF',
 				file_size_gb: 5.34,
 				context_size: 32768,
 				required_ram_gb: calculateRequiredRAM(5.34),
