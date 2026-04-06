@@ -1100,27 +1100,27 @@ void ModelManager::init_model_registry() {
     };
 
     // ===== GEMMA4  SERIES (128K) =====
-    model_registry_["gemma4:e4b"] = {
-        "gemma4:e4b",
-        "gemma4-e4b",
-        "ggml-org/gemma-4-E4B-it-GGUF",
-        "gemma-4-e4b-it-Q4_K_M.gguf",
-        "Q4_K_M",
-        5340LL * 1024 * 1024,     // ~5.34 GB
-        "A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, and Jetson Nano.",
-        "Gemma 4 E4B",
-        0  // use model default (-c from model)
-    };
-    
     model_registry_["gemma4:e2b"] = {
         "gemma4:e2b",
         "gemma4-e2b",
-        "ggml-org/gemma-4-E2B-it-GGUF",
-        "gemma-4-e2b-it-Q8_0.gguf",
-        "Q8_0",
-        4970LL * 1024 * 1024,     // ~4.97 GB
+        "unsloth/gemma-4-E2B-it-GGUF",
+        "gemma-4-E2B-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        3110LL * 1024 * 1024,     // ~3.11 GB
         "A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, and Jetson Nano.",
         "Gemma 4 E2B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["gemma4:e4b"] = {
+        "gemma4:e4b",
+        "gemma4-e4b",
+        "unsloth/gemma-4-E4B-it-GGUF",
+        "gemma-4-E4B-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        4980LL * 1024 * 1024,     // ~4.98 GB
+        "A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, and Jetson Nano.",
+        "Gemma 4 E4B",
         0  // use model default (-c from model)
     };
 

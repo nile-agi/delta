@@ -318,19 +318,19 @@ export const modelsCatalog: ModelFamily[] = [
 			{
 				name: 'gemma4:e2b',
 				display_name: 'Gemma 4 E2B',
-				download_url: 'ggml-org/gemma-4-E2B-it-GGUF',
-				file_size_gb: 4.97,
+				download_url: 'unsloth/gemma-4-E2B-it-GGUF',
+				file_size_gb: 3.11,
 				context_size: 32768,
-				required_ram_gb: calculateRequiredRAM(4.97),
-				quantization: 'Q8_0'
+				required_ram_gb: calculateRequiredRAM(3.11),
+				quantization: 'Q4_K_M'
 			},
 			{
 				name: 'gemma4:e4b',
 				display_name: 'Gemma 4 E4B',
-				download_url: 'ggml-org/gemma-4-E4B-it-GGUF',
-				file_size_gb: 5.34,
+				download_url: 'unsloth/gemma-4-E4B-it-GGUF',
+				file_size_gb: 4.98,
 				context_size: 32768,
-				required_ram_gb: calculateRequiredRAM(5.34),
+				required_ram_gb: calculateRequiredRAM(4.98),
 				quantization: 'Q4_K_M'
 			}
 		]
