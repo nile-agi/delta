@@ -786,7 +786,7 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 1.16,
 				context_size: 65536,
 				required_ram_gb: calculateRequiredRAM(1.16),
-				quantization: 'Q1_0_g128'	
+				quantization: 'Q1_0'	
 			},
 			{
 				name: 'Bonsai-4B',
@@ -795,7 +795,7 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 0.572,
 				context_size: 65536,
 				required_ram_gb: calculateRequiredRAM(0.572),
-				quantization: 'Q1_0_g128'	
+				quantization: 'Q1_0'	
 			},
 			{
 				name: 'Bonsai-1.7B',
@@ -804,7 +804,7 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 0.248,
 				context_size: 65536,
 				required_ram_gb: calculateRequiredRAM(0.248),
-				quantization: 'Q1_0_g128'	
+				quantization: 'Q1_0'	
 			},
 		]	
 	}
