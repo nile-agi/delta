@@ -839,7 +839,7 @@ export const FAMILY_LOGO_FILES: Record<string, string> = {
 	llama: 'meta-llama logo.webp',
 	cohere: 'cohere logo.webp',
 	nvidia: 'nvidia logo.webp',
-	// Bonsai: 'bonsai-logo.svg',
+	Bonsai: 'bonsai-logo.svg',
 };
 
 /** True if icon is a logo filename (has file extension). */
@@ -870,7 +870,7 @@ export function getFamilyIconForModelName(name: string): string {
 	if (lower.includes('llama')) return FAMILY_LOGO_FILES.llama;
 	if (lower.includes('cohere')) return FAMILY_LOGO_FILES.cohere;
 	if (lower.includes('nvidia')) return FAMILY_LOGO_FILES.nvidia;
-	// if (lower.includes('Bonsai')) return FAMILY_LOGO_FILES.Bonsai;
+	if (lower.includes('Bonsai')) return FAMILY_LOGO_FILES.Bonsai;
 	return '●';
 }
 
