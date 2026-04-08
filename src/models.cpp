@@ -456,17 +456,6 @@ void ModelManager::init_model_registry() {
         "Ministral 3 14B",
         16384
     };
-    model_registry_["gemma3:27b"] = {
-        "gemma3:27b",
-        "gemma3-27b",
-        "google/gemma-3-27b-it-GGUF",
-        "gemma-3-27b-it-Q4_K_M.gguf",
-        "Q4_K_M",
-        16500LL * 1024 * 1024,
-        "Gemma 3 27B Instruct",
-        "Gemma 3 27B",
-        32768
-    };
    
     model_registry_["devstral-2:24b"] = {
         "devstral-2:24b",
@@ -1012,6 +1001,17 @@ void ModelManager::init_model_registry() {
         "Gemma 3 1B",
         0  // use model default (-c from model)
     };
+    model_registry_["gemma3:27b"] = {
+        "gemma3:27b",
+        "gemma3-27b",
+        "google/gemma-3-27b-it-GGUF",
+        "gemma-3-27b-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        16500LL * 1024 * 1024,
+        "Gemma 3 27B Instruct",
+        "Gemma 3 27B",
+        32768
+    };
     
     model_registry_["gemma3:4b"] = {
         "gemma3:4b",
@@ -1096,6 +1096,31 @@ void ModelManager::init_model_registry() {
         16500LL * 1024 * 1024,     // ~16.5 GB
         "Balanced MedGemma",
         "MedGemma 27B",
+        0  // use model default (-c from model)
+    };
+
+    // ===== GEMMA4  SERIES (128K) =====
+    model_registry_["gemma4:e2b"] = {
+        "gemma4:e2b",
+        "gemma4-e2b",
+        "unsloth/gemma-4-E2B-it-GGUF",
+        "gemma-4-E2B-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        3110LL * 1024 * 1024,     // ~3.11 GB
+        "A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, and Jetson Nano.",
+        "Gemma 4 E2B",
+        0  // use model default (-c from model)
+    };
+
+    model_registry_["gemma4:e4b"] = {
+        "gemma4:e4b",
+        "gemma4-e4b",
+        "unsloth/gemma-4-E4B-it-GGUF",
+        "gemma-4-E4B-it-Q4_K_M.gguf",
+        "Q4_K_M",
+        4980LL * 1024 * 1024,     // ~4.98 GB
+        "A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, and Jetson Nano.",
+        "Gemma 4 E4B",
         0  // use model default (-c from model)
     };
 
