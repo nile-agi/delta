@@ -277,6 +277,18 @@ void ModelManager::init_model_registry() {
         0  // use model default (-c from model)
     };
 
+    model_registry_["HY-MT1.5-2Bit:1.8b"] = {
+        "HY-MT1.5-2Bit:1.8b",
+        "hy-MT1.5-2Bit-1.8b",
+        "AngelSlim/Hy-MT1.5-1.8B-2bit-GGUF",
+        "Hy-MT1.5-1.8B-2bit.gguf",
+        "Q1_0",
+        601LL * 1024 * 1024,      // ~601 MB
+        "HY-MT1.5-1.8B-2Bit, on device translation model supporting 33 languages",
+        "HY-MT1.5-2Bit 1.8B",
+        0  // use model default (-c from model)
+    };
+
 
     // ===== QWEN 3 SERIES (Latest generation) =====
     model_registry_["tinygemma3"] = {
@@ -1881,7 +1893,7 @@ void ModelManager::init_model_registry() {
         "Bonsai-8B",
         "Bonsai-8B",
         "prism-ml/Bonsai-8B-gguf",
-        "Bonsai-8B.gguf",
+        "Bonsai-8B-Q1_0.gguf",
         "Q1_0",
         1160LL * 1024 * 1024,      // ~1.16 GB
         "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~1.15 GB of memory, delivering strong performance with excellent speed and energy efficiency for edge devices, real-time applications, and robotics.",
@@ -1893,7 +1905,7 @@ void ModelManager::init_model_registry() {
         "Bonsai-4B",
         "Bonsai-4B",
         "prism-ml/Bonsai-4B-gguf",
-        "Bonsai-4B.gguf",
+        "Bonsai-4B-Q1_0.gguf",
         "Q1_0",
         572LL * 1024 * 1024,      // ~572 MB
         "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~0.57 GB of memory while delivering fast inference and strong multilingual performance with excellent energy efficiency.",
@@ -1905,7 +1917,7 @@ void ModelManager::init_model_registry() {
         "Bonsai-1.7B",
         "Bonsai-1.7B",
         "prism-ml/Bonsai-1.7B-gguf",
-        "Bonsai-1.7B.gguf",
+        "Bonsai-1.7B-Q1_0.gguf",
         "Q1_0",
         248LL * 1024 * 1024,      // ~248 MB
         "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~0.24 GB of memory, offering excellent speed and energy efficiency for on-device and mobile applications.",
