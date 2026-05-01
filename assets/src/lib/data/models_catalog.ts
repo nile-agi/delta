@@ -71,15 +71,6 @@ export const modelsCatalog: ModelFamily[] = [
 				context_size: 8192,
 				required_ram_gb: calculateRequiredRAM(1.08),
 				quantization: 'Q4_0'
-			},
-			{
-				name: 'HY-MT1.5-2Bit:1.8b',
-				display_name: 'HY-MT1.5-2Bit 1.8B',
-				download_url: 'AngelSlim/Hy-MT1.5-1.8B-2bit-GGUF',
-				file_size_gb: 0.601,
-				context_size: 8192,
-				required_ram_gb: calculateRequiredRAM(0.601),
-				quantization: 'Q1_0'
 			}
 		]
 	},
