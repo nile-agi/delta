@@ -20,9 +20,9 @@ add_executable(delta_tests ${TEST_SOURCES})
 
 # Include directories
 target_include_directories(delta_tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/include
-    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/common
+    ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/include
+    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/common
 )
 
 # Link libraries

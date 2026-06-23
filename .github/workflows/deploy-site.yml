@@ -3,7 +3,7 @@ name: Deploy Homepage
 on:
   push:
     branches: [main]
-    paths: ['site/**']
+    paths: ['web/site/**']
   workflow_dispatch:
 
 permissions:
@@ -25,18 +25,22 @@ jobs:
         with:
           node-version: 22
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Install dependencies
-        working-directory: site
-        run: npm install
+        working-directory: web/site
+        run: pnpm install
 
       - name: Build
-        working-directory: site
-        run: npm run build
+        working-directory: web/site
+        run: pnpm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: site/build
+          path: web/site/build
 
   deploy:
     environment:

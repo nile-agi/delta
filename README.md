@@ -41,7 +41,7 @@ Delta CLI is an **open-source, offline-first and local first AI assistant** that
 - 📦 **Easy Model Management**: One-command downloads from Hugging Face -->
 - 🚀 **Zero-Setup**: Auto-downloads default model on first run
 - 🔧 **llama.cpp Integration**: Access to all llama.cpp features and optimizations
-- 🌐 **Web UI**: Built-in web interface, help user to simply interat with models(built from `assets/` directory)
+- 🌐 **Web UI**: Built-in web interface, help user to simply interat with models(built from `web/app/` directory)
 
 ### What Problem Does Delta Solve?
 
@@ -96,11 +96,11 @@ xcode-select --install
 - ✅ Automatically clones repository (git happens in background)
 - ✅ Automatically installs dependencies (including Node.js for web UI)
 - ✅ Automatically builds from source (~40 seconds)
-- ✅ Automatically builds custom web UI from `assets/` directory
+- ✅ Automatically builds custom web UI from `web/app/` directory
 - ✅ Automatically configures PATH
 - ✅ Users don't need to know about git
 
-**Note:** The Homebrew formula automatically installs Node.js as a build dependency to build the custom Delta web UI from the `assets/` directory. The web UI includes the Delta favicon, model name display improvements, and other customizations.
+**Note:** The Homebrew formula automatically installs Node.js as a build dependency to build the custom Delta web UI from the `web/app/` directory. The web UI includes the Delta favicon, model name display improvements, and other customizations.
 
 **Installation Script (No Build Tools Required)**
 ```bash
@@ -113,12 +113,12 @@ This downloads and installs pre-built binaries without requiring Xcode Command L
 
 **Debian/Ubuntu:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/packaging/linux/install-deb.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/dist/linux/install-deb.sh | sudo bash
 ```
 
 **RHEL/CentOS/Fedora:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/packaging/linux/install-rpm.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/nile-agi/delta/main/dist/linux/install-rpm.sh | sudo bash
 ```
 
 **Homebrew (Linux):**
@@ -139,13 +139,13 @@ winget install DeltaCLI.DeltaCLI
 
 > **Note:** If you get "No package found matching input criteria", the package may not be published to the winget repository yet. 
 > - To submit the package to winget, use the automated script: `.\packaging\winget\submit-to-winget.ps1 -Version 1.0.0 -GitHubUsername YOUR_USERNAME`
-> - Or see [packaging/winget/AUTOMATION.md](packaging/winget/AUTOMATION.md) for automated submission guide
-> - Or see [packaging/winget/SUBMIT.md](packaging/winget/SUBMIT.md) for manual submission instructions
+> - Or see [dist/winget/AUTOMATION.md](dist/winget/AUTOMATION.md) for automated submission guide
+> - Or see [dist/winget/SUBMIT.md](dist/winget/SUBMIT.md) for manual submission instructions
 > - In the meantime, use the PowerShell installation script below
 
 **PowerShell Installation Script:**
 ```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/packaging/windows/install.ps1" -OutFile install.ps1; .\install.ps1
+Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/dist/windows/install.ps1" -OutFile install.ps1; .\install.ps1
 ```
 
 > **Note:** This script requires a GitHub release with a Windows package to exist. If you get a "Not Found" error, it means:
@@ -420,7 +420,7 @@ delta pull qwen2.5:0.5b
 - Ensure all dependencies are installed
 - Check CMake version (3.14+ required)
 - Verify C++ compiler is installed
-- **For web UI**: Install Node.js and npm (required to build custom web UI from `assets/`)
+- **For web UI**: Install Node.js and npm (required to build custom web UI from `web/app/`)
   - macOS: `brew install node`
   - Linux: `sudo apt install nodejs npm` (Debian/Ubuntu) or `sudo dnf install nodejs npm` (RHEL/Fedora)
   - Windows: Download from [nodejs.org](https://nodejs.org/)
@@ -428,7 +428,7 @@ delta pull qwen2.5:0.5b
 
 **Note:** If Node.js/npm is not available during build, CMake will skip building the web UI and fall back to the original llama.cpp web UI (if available). The custom Delta web UI (with favicon, model name improvements, etc.) requires Node.js to build.
 
-**Reinstalling and custom web UI:** If you changed the web UI in `assets/` and then reinstall Delta (e.g. `brew reinstall delta-cli`), the app will use the **upstream** web UI, not your changes. To install Delta so it uses your built web UI, build and install from your local clone; see [INSTALL_LOCAL.md](INSTALL_LOCAL.md#keeping-your-web-ui-changes-after-reinstall) → "Keeping your web UI changes after reinstall" (e.g. run `./scripts/build-webui-and-install.sh` from the repo root).
+**Reinstalling and custom web UI:** If you changed the web UI in `web/app/` and then reinstall Delta (e.g. `brew reinstall delta-cli`), the app will use the **upstream** web UI, not your changes. To install Delta so it uses your built web UI, build and install from your local clone (e.g. run `./scripts/build-webui-and-install.sh` from the repo root).
 
 --- -->
 
@@ -472,13 +472,13 @@ winget uninstall DeltaCLI.DeltaCLI
 >
 > For complete cleanup including PATH removal and user data, you can run the uninstall script after winget uninstall:
 > ```powershell
-> Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/packaging/windows/uninstall.ps1" -OutFile uninstall.ps1; .\uninstall.ps1
+> Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/dist/windows/uninstall.ps1" -OutFile uninstall.ps1; .\uninstall.ps1
 > ```
 
 **If installed via PowerShell script:**
 ```powershell
 # Option 1: Use the uninstall script (Recommended)
-Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/packaging/windows/uninstall.ps1" -OutFile uninstall.ps1; .\uninstall.ps1
+Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/dist/windows/uninstall.ps1" -OutFile uninstall.ps1; .\uninstall.ps1
 
 # Option 2: Manual removal
 # Remove installation directory
@@ -518,7 +518,7 @@ rm -rf ~/.delta ~/.config/delta-cli
 winget uninstall DeltaCLI.DeltaCLI
 
 # Then run the uninstall script for complete cleanup (PATH, shortcuts, user data):
-Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/packaging/windows/uninstall.ps1" -OutFile uninstall.ps1; .\uninstall.ps1
+Set-ExecutionPolicy Bypass -Scope Process -Force; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nile-agi/delta/main/dist/windows/uninstall.ps1" -OutFile uninstall.ps1; .\uninstall.ps1
 
 # Or manually remove everything:
 Remove-Item -Recurse -Force "C:\Program Files\Delta CLI" -ErrorAction SilentlyContinue

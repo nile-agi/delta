@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../public",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "cd assets && npm install && npm run build",
-    "beforeDevCommand": "cd assets && npm run dev"
+    "beforeBuildCommand": "cd web/app && pnpm install && pnpm run build",
+    "beforeDevCommand": "cd web/app && pnpm run dev"
   },
   "app": {
     "windows": [
