@@ -13,8 +13,12 @@ let cachedBaseUrl: string = '';
 let resolved = false;
 let resolvePromise: Promise<void> | null = null;
 
+function isTauri(): boolean {
+	return typeof window !== 'undefined' && '__TAURI__' in window;
+}
+
 function build8081Url(): string {
-	if (typeof window === 'undefined') {
+	if (typeof window === 'undefined' || isTauri()) {
 		return `http://localhost:${MODEL_API_PORT}`;
 	}
 	const { protocol, hostname } = window.location;

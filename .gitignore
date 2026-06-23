@@ -55,3 +55,7 @@ homebrew-delta-cli/
 # Nested repos that shouldn't be submodules
 vendor/ios-cmake/.git
 
+# Tauri
+src-tauri/target/
+src-tauri/binaries/
+

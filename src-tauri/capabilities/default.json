@@ -1,0 +1,14 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for the Delta app",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "shell:allow-spawn",
+    "shell:allow-stdin-write",
+    "shell:allow-kill",
+    "shell:default",
+    "process:default"
+  ]
+}

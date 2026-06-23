@@ -1,4 +1,5 @@
 import { config } from '$lib/stores/settings.svelte';
+import { getServerBaseUrl } from '$lib/utils/server-base-url';
 
 /**
  * SlotsService - Real-time processing state monitoring and token rate calculation
@@ -230,7 +231,7 @@ export class SlotsService {
 			const currentConfig = config();
 			const apiKey = currentConfig.apiKey?.toString().trim();
 
-			const response = await fetch(`./slots`, {
+			const response = await fetch(`${getServerBaseUrl()}/slots`, {
 				headers: {
 					...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
 				}

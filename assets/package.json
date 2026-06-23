@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "bash scripts/dev.sh",
 		"build": "vite build && ./scripts/post-build.sh",
+		"tauri": "tauri",
 		"build:quiet": "vite build 2>&1 | grep -v 'Deprecation Warning' | grep -v 'fork.*is not exported' | grep -v 'node_modules/@sveltejs/kit' || true && ./scripts/post-build.sh",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
@@ -25,6 +26,8 @@
 		"cleanup": "rm -rf .svelte-kit build node_modules test-results"
 	},
 	"devDependencies": {
+		"@tauri-apps/cli": "^2",
+		"@tauri-apps/api": "^2",
 		"@chromatic-com/storybook": "^4.1.2",
 		"@eslint/compat": "^1.2.5",
 		"@eslint/js": "^9.18.0",

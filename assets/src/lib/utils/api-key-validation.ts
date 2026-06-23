@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { browser } from '$app/environment';
 import { config } from '$lib/stores/settings.svelte';
+import { getServerBaseUrl } from '$lib/utils/server-base-url';
 
 /**
  * Validates API key by making a request to the server props endpoint
@@ -22,7 +23,7 @@ export async function validateApiKey(fetch: typeof globalThis.fetch): Promise<vo
 			headers.Authorization = `Bearer ${apiKey}`;
 		}
 
-		const response = await fetch(`./props`, { headers });
+		const response = await fetch(`${getServerBaseUrl()}/props`, { headers });
 
 		if (!response.ok) {
 			if (response.status === 401 || response.status === 403) {

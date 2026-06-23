@@ -1,6 +1,7 @@
 import { config } from '$lib/stores/settings.svelte';
 import { selectedModelName, selectedModelOption } from '$lib/stores/models.svelte';
 import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
+import { getServerBaseUrl } from '$lib/utils/server-base-url';
 import { slotsService } from './slots';
 /**
  * ChatService - Low-level API communication layer for Delta server interactions
@@ -180,7 +181,7 @@ export class ChatService {
 		try {
 			const apiKey = currentConfig.apiKey?.toString().trim();
 
-			const response = await fetch(`./v1/chat/completions`, {
+			const response = await fetch(`${getServerBaseUrl()}/v1/chat/completions`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -572,7 +573,7 @@ export class ChatService {
 		};
 
 		try {
-			const response = await fetch(`./props`, { headers });
+			const response = await fetch(`${getServerBaseUrl()}/props`, { headers });
 			if (response.ok) {
 				return await response.json();
 			}

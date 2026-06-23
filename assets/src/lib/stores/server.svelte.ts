@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import { SERVER_PROPS_LOCALSTORAGE_KEY } from '$lib/constants/localstorage-keys';
 import { ChatService } from '$lib/services/chat';
 import { config } from '$lib/stores/settings.svelte';
+import { getServerBaseUrl } from '$lib/utils/server-base-url';
 
 /**
  * ServerStore - Server state management and capability detection
@@ -153,7 +154,7 @@ class ServerStore {
 			const currentConfig = config();
 			const apiKey = currentConfig.apiKey?.toString().trim();
 
-			const response = await fetch(`./slots`, {
+			const response = await fetch(`${getServerBaseUrl()}/slots`, {
 				headers: {
 					...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
 				}
