@@ -45,13 +45,17 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev
+          sudo apt-get install -y build-essential cmake libcurl4-openssl-dev
 
       - name: Build web UI
         working-directory: web/app
         run: |
           pnpm install
           pnpm run build
+
+      - name: Verify web UI build
+        run: |
+          test -f public/index.html || { echo "ERROR: public/index.html not found"; exit 1; }
 
       - name: Build CLI binaries
         shell: bash
@@ -221,6 +225,10 @@ jobs:
         run: |
           pnpm install
           pnpm run build
+
+      - name: Verify web UI build
+        run: |
+          test -f public/index.html || { echo "ERROR: public/index.html not found"; exit 1; }
 
       - name: Build C++ sidecars
         shell: bash

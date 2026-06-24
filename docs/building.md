@@ -1,196 +1,173 @@
-# Build and Test Instructions for Batch Size Optimization
+# Building Delta
 
-## Summary of Changes
+## Prerequisites
 
-Added batch size optimization to improve prompt processing performance for large PDFs:
-- **Files Modified**: `src/commands.cpp`, `src/delta_server_wrapper.cpp`
-- **Performance Improvement**: Expected ~4x faster (683s → ~170s for 20k token prompts)
+| Tool | Version | Purpose |
+|------|---------|---------|
+| CMake | 3.14+ | C++ build system |
+| C++17 compiler | clang or gcc | Engine compilation |
+| Node.js | 18+ | Web UI build |
+| pnpm | 9+ | Package manager |
+| Rust | stable | Desktop app (Tauri) |
 
-## Build Instructions
+### Platform-specific
 
-### Prerequisites
+**macOS:**
+```bash
+xcode-select --install       # C++ toolchain
+brew install cmake node pnpm
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh  # Rust (for desktop)
+```
 
-1. **CMake** (version 3.14+)
-2. **C++17 compatible compiler**
-3. **llama.cpp submodule** (should already be present)
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt-get install -y \
+  build-essential cmake \
+  libcurl4-openssl-dev \
+  libwebkit2gtk-4.1-dev \
+  libappindicator3-dev \
+  librsvg2-dev patchelf
+npm install -g pnpm
+```
 
-### Build Steps
+**Windows:**
+- Visual Studio 2022 with C++ workload
+- CMake (bundled with VS or standalone)
+- Node.js from [nodejs.org](https://nodejs.org/)
+- `npm install -g pnpm`
 
-#### macOS
+## Project Structure
+
+```
+delta/
+├── engine/              # C++ source (CLI + delta-server)
+│   ├── vendor/llama.cpp # llama.cpp submodule
+│   └── ...
+├── web/app/             # SvelteKit web UI
+├── src-tauri/           # Tauri desktop app wrapper
+│   ├── binaries/        # Sidecar binaries (delta-server, llama-server)
+│   ├── frontend/        # Splash screen shown during startup
+│   └── src/lib.rs       # Tauri setup (spawns delta-server, navigates webview)
+├── public/              # Built web UI output (from web/app)
+├── scripts/             # Build helper scripts
+└── VERSION              # Single source of truth for version
+```
+
+## Initialize Submodules
 
 ```bash
-# Navigate to project root
-cd /Users/suzanodero/io/GITHUB/delta
-
-# Create build directory (if not exists)
-mkdir -p build_macos
-cd build_macos
-
-# Configure with CMake
-cmake ..
-
-# Build
-make -j$(sysctl -n hw.ncpu)
-
-# The binaries will be in build_macos/
-# - delta (main CLI)
-# - delta-server (server wrapper)
+git submodule update --init --recursive
 ```
 
-#### Linux
+## Build the Web UI
 
 ```bash
-cd /Users/suzanodero/io/GITHUB/delta
-
-mkdir -p build_linux
-cd build_linux
-
-cmake ..
-
-make -j$(nproc)
+cd web/app
+pnpm install
+pnpm run build       # outputs to ../../public/
 ```
 
-#### Windows
-
-```powershell
-cd C:\path\to\delta
-
-mkdir build_windows
-cd build_windows
-
-cmake ..
-
-cmake --build . --config Release
-```
-
-## Testing the Fix
-
-### Step 1: Stop Current Delta Server
-
-If Delta is currently running, stop it:
+## Build CLI Binaries
 
 ```bash
-# Find and kill existing delta-server processes
-pkill -f delta-server
-# or
-pkill -f llama-server
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON  # macOS
+# cmake .. -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=OFF  # Linux/Windows
+cmake --build . -j$(nproc) --target delta --target delta-server
 ```
 
-### Step 2: Start Delta with New Build
+Outputs:
+- `build/delta` — CLI binary
+- `build/delta-server` — Server wrapper (manages llama-server + model API)
+
+Also build llama-server:
+```bash
+cmake --build . -j$(nproc) --target llama-server
+```
+
+### Cross-compile macOS architectures
 
 ```bash
-# From build directory
-./delta --server --port 8080
-
-# Or if installed system-wide
-delta --server --port 8080
+# arm64
+cmake .. -DCMAKE_OSX_ARCHITECTURES=arm64 -DGGML_METAL=ON
+# x86_64
+cmake .. -DCMAKE_OSX_ARCHITECTURES=x86_64 -DGGML_METAL=ON
 ```
 
-### Step 3: Verify Batch Size Parameters
+## Build Desktop App (Tauri)
 
-Check that llama-server is started with the new batch size parameters:
+### 1. Build sidecar binaries
 
 ```bash
-# Check running processes
-ps aux | grep llama-server
-
-# You should see something like:
-# llama-server ... --ubatch-size 2048 --batch-size 4096 ...
+chmod +x scripts/build-sidecars.sh
+scripts/build-sidecars.sh --release
 ```
 
-**Note**: The batch size parameters are only added if `ctx_size >= 8192`. Check your model's context size.
+This builds delta-server and llama-server and copies them to `src-tauri/binaries/` with the correct target-triple suffix.
 
-### Step 4: Test with Large PDF
-
-1. **Open Delta Web UI**: `http://localhost:8080`
-
-2. **Upload the same PDF** that previously took 683 seconds
-
-3. **Send a message** with the PDF attached
-
-4. **Monitor Processing Time**:
-   - Check browser console for timing information
-   - Look for `prompt_progress` updates
-   - Expected: ~170-175 seconds (vs previous 683 seconds)
-
-### Step 5: Verify Performance Improvement
-
-Compare the results:
-
-| Metric | Before | After (Expected) | Improvement |
-|--------|--------|------------------|-------------|
-| Processing Time | 683.63s | ~170-175s | ~4x faster |
-| Tokens/Second | ~30 | ~117-120 | ~4x faster |
-
-## Troubleshooting
-
-### Issue: Batch size parameters not appearing
-
-**Check context size**:
-- Batch sizes are only set if `ctx_size >= 4096`
-- For `ctx_size >= 8192`: `--ubatch-size 2048 --batch-size 4096`
-- For `ctx_size >= 4096`: `--ubatch-size 1024 --batch-size 2048`
-
-**Verify model context size**:
-```bash
-# Check model registry or model info
-delta --models
-```
-
-### Issue: Still slow processing
-
-1. **Verify llama-server version**: Ensure you're using a recent version that supports `--ubatch-size`
-2. **Check system resources**: Large batch sizes require more memory
-3. **Monitor CPU/GPU usage**: Should see higher utilization with larger batches
-
-### Issue: Build errors
-
-1. **Clean build**:
-   ```bash
-   rm -rf build_macos
-   mkdir build_macos
-   cd build_macos
-   cmake ..
-   make -j
-   ```
-
-2. **Check submodules**:
-   ```bash
-   git submodule update --init --recursive
-   ```
-
-## Verification Checklist
-
-- [ ] Code compiles without errors
-- [ ] Delta server starts successfully
-- [ ] llama-server process shows batch size parameters (for ctx_size >= 4096)
-- [ ] Large PDF processing time reduced from ~683s to ~170-175s
-- [ ] No regressions for small prompts (<4096 context)
-
-## Rollback Instructions
-
-If needed, revert the changes:
+### 2. Build the Tauri app
 
 ```bash
-git checkout src/commands.cpp src/delta_server_wrapper.cpp
+cd src-tauri
+cargo tauri build
 ```
 
-Then rebuild.
+Outputs:
+- `src-tauri/target/release/bundle/macos/Delta.app` — macOS app bundle
+- `src-tauri/target/release/bundle/dmg/Delta_*.dmg` — macOS disk image
 
-## Next Steps
+### How the desktop app works
 
-After verifying the fix works:
+1. Tauri opens a webview showing `src-tauri/frontend/index.html` (animated Delta splash screen)
+2. The Tauri setup spawns `delta-server` as a sidecar process
+3. `delta-server` starts llama-server on the chosen port and a model management API on port + 1
+4. Once the server is reachable, the webview navigates to `http://localhost:{port}`
+5. The web UI is served by llama-server from `Contents/Resources/webui/` (bundled from `public/`)
 
-1. **Commit the changes**:
-   ```bash
-   git add src/commands.cpp src/delta_server_wrapper.cpp
-   git commit -m "Optimize batch sizes for large prompt processing
+## Run Locally
 
-   - Add --ubatch-size and --batch-size parameters based on context size
-   - Improves prompt processing speed by ~4x for large prompts (20k+ tokens)
-   - Matches LlamaBarn's performance optimization approach"
-   ```
+### CLI
+```bash
+./build/delta                    # Interactive mode
+./build/delta-server --port 8080 --models-dir ~/.delta-cli/models
+```
 
-2. **Test with different PDF sizes** to ensure no regressions
+### Desktop app
+```bash
+open src-tauri/target/release/bundle/macos/Delta.app
+```
 
-3. **Monitor production usage** to verify performance improvements
+## Release Workflow
+
+The CI release is triggered by pushing a version tag:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The workflow (`.github/workflows/release.yml`) runs two parallel jobs:
+
+| Job | Builds | Platforms |
+|-----|--------|-----------|
+| `build-cli` | CLI archives (delta + delta-server + llama-server) | macOS arm64/x86_64, Linux x86_64, Windows x64 |
+| `build-tauri` | Desktop installers (dmg, deb, AppImage, exe) | macOS arm64/x86_64, Linux x86_64, Windows x64 |
+
+After both complete, `attach-cli` uploads CLI archives + SHA-256 checksums to the GitHub Release.
+
+### Version bumping
+
+Update version in three places (must match):
+1. `VERSION`
+2. `src-tauri/tauri.conf.json` → `"version"`
+3. `src-tauri/Cargo.toml` → `version`
+
+### macOS code signing
+
+Set these GitHub repository secrets for notarized macOS builds:
+- `APPLE_CERTIFICATE` — Base64-encoded .p12 certificate
+- `APPLE_CERTIFICATE_PASSWORD`
+- `APPLE_SIGNING_IDENTITY`
+- `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`
+
+Without these, builds still succeed but won't be signed/notarized.
