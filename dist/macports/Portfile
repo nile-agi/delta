@@ -1,8 +1,8 @@
 # -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4
-# Delta CLI Portfile
 
 PortSystem          1.0
 PortGroup           github 1.0
+PortGroup           cmake 1.1
 
 name                delta-cli
 version             1.0.0
@@ -18,34 +18,59 @@ description         Offline AI Assistant powered by llama.cpp
 long_description    \
     Delta CLI is an open-source, offline-first AI assistant that runs \
     large language models (LLMs) directly on your device. Built on top \
-    of llama.cpp, Delta CLI provides a simple command-line interface \
-    to interact with AI models without requiring internet connectivity \
-    or cloud services.
+    of llama.cpp with a custom web UI and GPU acceleration.
 
 depends_build       port:cmake \
                     port:curl \
-                    port:pkgconfig
+                    port:pkgconfig \
+                    port:nodejs22 \
+                    port:pnpm
 
 depends_lib         port:curl
 
-# Ensure submodules are updated before building
-# This is automatic - users don't need to know about git
+# Fetch submodules
 pre-build {
     system -W ${worksrcpath} "git submodule update --init --recursive"
 }
 
-build.cmd           ${worksrcpath}/scripts/build-sidecars.sh --release
+# Build web UI before C++ compilation
+pre-configure {
+    system -W ${worksrcpath}/web/app "pnpm install && pnpm run build"
+}
+
+configure.args-append \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DGGML_METAL=ON \
+    -DLLAMA_CUDA=OFF \
+    -DLLAMA_VULKAN=OFF \
+    -DLLAMA_HIPBLAS=OFF \
+    -DBUILD_TESTS=OFF \
+    -DUSE_CURL=ON
+
+build.target        delta delta-server llama-server
 
 destroot {
-    xinstall -m 755 ${worksrcpath}/build_macos_arm64/delta ${destroot}${prefix}/bin/delta
-    xinstall -m 755 ${worksrcpath}/build_macos_arm64/delta-server ${destroot}${prefix}/bin/delta-server
-    
-    if {[file exists ${worksrcpath}/engine/vendor/llama.cpp/tools/server/public]} {
+    xinstall -m 755 ${cmake.build_dir}/delta ${destroot}${prefix}/bin/delta
+    xinstall -m 755 ${cmake.build_dir}/delta-server ${destroot}${prefix}/bin/delta-server
+
+    # Install llama-server
+    foreach candidate [list \
+        ${cmake.build_dir}/bin/llama-server \
+        ${cmake.build_dir}/llama-server \
+        ${cmake.build_dir}/bin/server \
+    ] {
+        if {[file exists $candidate]} {
+            xinstall -m 755 $candidate ${destroot}${prefix}/bin/llama-server
+            break
+        }
+    }
+
+    # Install web UI
+    if {[file exists ${worksrcpath}/public/index.html]} {
         xinstall -d ${destroot}${prefix}/share/delta-cli
-        copy ${worksrcpath}/engine/vendor/llama.cpp/tools/server/public ${destroot}${prefix}/share/delta-cli/webui
+        copy ${worksrcpath}/public ${destroot}${prefix}/share/delta-cli/webui
     }
 }
 
 livecheck.url       ${github.livecheck.url}
 livecheck.regex     v([0-9.]+)
-

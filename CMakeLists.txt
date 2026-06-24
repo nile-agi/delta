@@ -1,14 +1,16 @@
 cmake_minimum_required(VERSION 3.14)
 
-# On macOS, use system Apple Clang to avoid libc++ ABI mismatch when Homebrew LLVM is in PATH
-# (undefined symbol std::__1::__hash_memory when mixing Homebrew LLVM with system libc++).
-# If you previously built with Homebrew LLVM, do a clean build: rm -rf build_macos && mkdir build_macos && cd build_macos && cmake .. && make -j
-if(APPLE)
+option(FORCE_SYSTEM_CLANG "Force /usr/bin/clang on macOS to avoid Homebrew ABI mismatch" ON)
+if(APPLE AND FORCE_SYSTEM_CLANG)
     set(CMAKE_C_COMPILER "/usr/bin/clang" CACHE FILEPATH "" FORCE)
     set(CMAKE_CXX_COMPILER "/usr/bin/clang++" CACHE FILEPATH "" FORCE)
 endif()
 
-project(delta-cli VERSION 1.0.0 LANGUAGES C CXX)
+# Read version from VERSION file
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" DELTA_VERSION_STRING)
+string(STRIP "${DELTA_VERSION_STRING}" DELTA_VERSION_STRING)
+
+project(delta-cli VERSION ${DELTA_VERSION_STRING} LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -115,6 +117,9 @@ set(DELTA_SOURCES
 
 # Main executable
 add_executable(delta ${DELTA_SOURCES})
+target_compile_definitions(delta PRIVATE
+    DELTA_VERSION="${PROJECT_VERSION}"
+)
 
 # Include directories (with llama-cpp integration)
 target_include_directories(delta PRIVATE
@@ -160,12 +165,15 @@ endif()
 
 # Delta Server Wrapper (customized llama-server)
 # Need to include models.cpp for ModelManager
-add_executable(delta-server 
-    engine/delta_server_wrapper.cpp 
+add_executable(delta-server
+    engine/delta_server_wrapper.cpp
     engine/model_api_server.cpp
     engine/models.cpp
     engine/tools/file_ops.cpp
     engine/ui.cpp
+)
+target_compile_definitions(delta-server PRIVATE
+    DELTA_VERSION="${PROJECT_VERSION}"
 )
 
 # Include directories for delta-server

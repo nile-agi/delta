@@ -42,6 +42,20 @@ fn dirs_next() -> Option<std::path::PathBuf> {
     }
 }
 
+fn wait_for_server(port: u16) -> bool {
+    for _ in 0..120 {
+        if let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", port)) {
+            use std::io::{Read, Write};
+            let _ = stream.write_all(b"GET /props HTTP/1.0\r\nHost: localhost\r\n\r\n");
+            let mut buf = [0u8; 64];
+            let _ = stream.read(&mut buf);
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    false
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -54,11 +68,9 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
 
-            // Find available ports for the servers
             let server_port = find_available_port(8080);
-            let model_api_port = find_available_port(8081);
+            let model_api_port = find_available_port(server_port + 1);
 
-            // Update stored port
             {
                 let state = app.state::<Mutex<ServerState>>();
                 let mut s = state.lock().unwrap();
@@ -66,11 +78,8 @@ pub fn run() {
             }
 
             let models_dir = get_models_dir();
-
-            // Ensure models directory exists
             let _ = std::fs::create_dir_all(&models_dir);
 
-            // Spawn delta-server sidecar
             let shell = app_handle.shell();
             let sidecar_cmd = shell
                 .sidecar("delta-server")
@@ -100,6 +109,17 @@ pub fn run() {
                 }
             }
 
+            let port = server_port;
+            std::thread::spawn(move || {
+                if wait_for_server(port) {
+                    let url = format!("http://localhost:{}", port);
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let js = format!("window.location.replace('{}')", url);
+                        let _ = window.eval(&js);
+                    }
+                }
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -108,7 +128,6 @@ pub fn run() {
                 let state = app.state::<Mutex<ServerState>>();
                 let mut s = state.lock().unwrap();
 
-                // Kill sidecar process (delta-server handles killing llama-server internally)
                 if let Some(child) = s.child.take() {
                     log::info!("Shutting down delta-server...");
                     let _ = child.kill();

@@ -35,12 +35,12 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 REM Check for vendored llama-cpp
-if not exist "vendor\llama-cpp\CMakeLists.txt" (
-    echo Error: llama-cpp not found in vendor\llama-cpp\
-    echo Please ensure the vendored copy is present.
+if not exist "engine\vendor\llama.cpp\CMakeLists.txt" (
+    echo Error: llama.cpp not found in engine\vendor\llama.cpp\
+    echo Run: git submodule update --init --recursive
     exit /b 1
 )
-echo Vendored llama-cpp found
+echo Vendored llama.cpp found
 
 REM Create build directory
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
@@ -78,7 +78,7 @@ echo Build complete!
 echo Binary location: %BUILD_DIR%\%BUILD_TYPE%\delta.exe
 echo.
 echo To create installer:
-echo   installers\package_windows.bat
+echo   dist\windows\package_windows.bat
 echo.
 echo To run:
 echo   %BUILD_DIR%\%BUILD_TYPE%\delta.exe --help

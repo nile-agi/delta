@@ -233,11 +233,9 @@ class ModelsStore {
 					if (useResponse.ctx_size != null && useResponse.ctx_size > 0) {
 						slotsService.setLoadedContextTotal(useResponse.ctx_size);
 					}
-					// When model is loaded, llama-server is on 8080, so model API must be on 8081
-					// Force model API base URL to 8081 if we're on port 8080
-					if (typeof window !== 'undefined' && window.location.port === '8080') {
-						const { forceModelApi8081 } = await import('$lib/utils/model-api-url');
-						forceModelApi8081();
+					if (typeof window !== 'undefined') {
+						const { forceModelApiSeparatePort } = await import('$lib/utils/model-api-url');
+						forceModelApiSeparatePort();
 					}
 				} else {
 					// Migration in progress (UI-only -> llama-server). Poll so we show green dot once server is up.
@@ -251,12 +249,8 @@ class ModelsStore {
 								const list = await ModelsService.list();
 								if (list?.data?.length > 0) {
 									this._modelLoadedOnServer = true;
-									// Switch to 8081 for model API *before* refetch, so listInstalled() hits the right server.
-									// After migration, 8080 is llama-server; /api/models/list is only on 8081.
-									if (window.location.port === '8080') {
-										const { forceModelApi8081 } = await import('$lib/utils/model-api-url');
-										forceModelApi8081();
-									}
+									const { forceModelApiSeparatePort } = await import('$lib/utils/model-api-url');
+									forceModelApiSeparatePort();
 									await this.fetch(true);
 									return;
 								}

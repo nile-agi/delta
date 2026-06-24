@@ -4,14 +4,15 @@
   "version": "1.0.0",
   "identifier": "com.nileagi.delta",
   "build": {
-    "frontendDist": "../public",
+    "frontendDist": "frontend",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "cd web/app && pnpm install && pnpm run build",
-    "beforeDevCommand": "cd web/app && pnpm run dev"
+    "beforeBuildCommand": "",
+    "beforeDevCommand": "pnpm run dev"
   },
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Delta",
         "width": 1200,
         "height": 800,
@@ -21,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:*; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+      "csp": null
     }
   },
   "bundle": {
@@ -38,6 +39,9 @@
       "binaries/delta-server",
       "binaries/llama-server"
     ],
+    "resources": {
+      "../public": "webui"
+    },
     "macOS": {
       "minimumSystemVersion": "11.0"
     },
@@ -54,8 +58,7 @@
   },
   "plugins": {
     "shell": {
-      "open": true,
-      "sidecar": true
+      "open": true
     }
   }
 }

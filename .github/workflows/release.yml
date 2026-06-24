@@ -1,4 +1,4 @@
-name: Release Desktop App
+name: Release
 
 on:
   push:
@@ -6,6 +6,169 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # CLI release — standalone binaries (delta + delta-server + llama-server)
+  # ---------------------------------------------------------------------------
+  build-cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            archive: delta-cli-macos-arm64.tar.gz
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            archive: delta-cli-macos-x86_64.tar.gz
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            archive: delta-cli-linux-x86_64.tar.gz
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: delta-cli-windows-x64.zip
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcurl4-openssl-dev
+
+      - name: Build web UI
+        working-directory: web/app
+        run: |
+          pnpm install
+          pnpm run build
+
+      - name: Build CLI binaries
+        shell: bash
+        run: |
+          VERSION=$(cat VERSION)
+          BUILD_DIR="build_release"
+          mkdir -p "$BUILD_DIR"
+
+          CMAKE_ARGS=(
+            -DCMAKE_BUILD_TYPE=Release
+            -DBUILD_TESTS=OFF
+            -DUSE_CURL=ON
+          )
+
+          case "${{ matrix.platform }}" in
+            macos-*)
+              CMAKE_ARGS+=(-DGGML_METAL=ON)
+              case "${{ matrix.target }}" in
+                aarch64-apple-darwin) CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=arm64) ;;
+                x86_64-apple-darwin)  CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=x86_64) ;;
+              esac
+              ;;
+            ubuntu-*)
+              CMAKE_ARGS+=(-DGGML_METAL=OFF)
+              ;;
+            windows-*)
+              CMAKE_ARGS+=(-DGGML_METAL=OFF)
+              ;;
+          esac
+
+          cmake -S . -B "$BUILD_DIR" "${CMAKE_ARGS[@]}"
+          NPROC=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+          cmake --build "$BUILD_DIR" --config Release -j "$NPROC" --target delta --target delta-server
+          cmake --build "$BUILD_DIR" --config Release -j "$NPROC" --target llama-server || \
+          cmake --build "$BUILD_DIR" --config Release -j "$NPROC" --target server || true
+
+          # Collect binaries into staging dir
+          STAGE="delta-cli-${VERSION}"
+          mkdir -p "$STAGE/bin"
+
+          EXT=""
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then EXT=".exe"; fi
+
+          # MSVC puts binaries under Release/ subdir, others put them at root
+          BIN_ROOT="$BUILD_DIR"
+          if [[ -f "$BUILD_DIR/Release/delta${EXT}" ]]; then
+            BIN_ROOT="$BUILD_DIR/Release"
+          fi
+
+          cp "$BIN_ROOT/delta${EXT}" "$STAGE/bin/"
+          cp "$BIN_ROOT/delta-server${EXT}" "$STAGE/bin/"
+
+          # Find llama-server (varies by generator and llama.cpp version)
+          LLAMA_SERVER=""
+          for candidate in \
+            "$BIN_ROOT/llama-server${EXT}" \
+            "$BUILD_DIR/bin/llama-server${EXT}" \
+            "$BUILD_DIR/engine/vendor/llama.cpp/bin/llama-server${EXT}" \
+            "$BUILD_DIR/bin/server${EXT}"; do
+            if [[ -f "$candidate" ]]; then
+              LLAMA_SERVER="$candidate"
+              break
+            fi
+          done
+          if [[ -n "$LLAMA_SERVER" ]]; then
+            cp "$LLAMA_SERVER" "$STAGE/bin/llama-server${EXT}"
+          fi
+
+          # Include web UI
+          if [[ -d public ]]; then
+            cp -r public "$STAGE/webui"
+          fi
+
+          # Include Metal shaders on macOS
+          if [[ "${{ matrix.platform }}" == macos-* ]]; then
+            METALLIB=$(find "$BUILD_DIR" -name "*.metallib" 2>/dev/null | head -1)
+            if [[ -n "$METALLIB" ]]; then
+              cp "$METALLIB" "$STAGE/bin/"
+            fi
+          fi
+
+          # Write build info for traceability
+          {
+            echo "version: ${VERSION}"
+            echo "target: ${{ matrix.target }}"
+            echo "commit: ${GITHUB_SHA}"
+            echo "tag: ${GITHUB_REF_NAME}"
+            echo "date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "$STAGE/BUILD_INFO"
+
+          echo "STAGE_DIR=$STAGE" >> "$GITHUB_ENV"
+
+      - name: Package (tar.gz)
+        if: matrix.platform != 'windows-latest'
+        shell: bash
+        run: tar czf "${{ matrix.archive }}" "$STAGE_DIR"
+
+      - name: Package (zip)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: 7z a "${{ matrix.archive }}" "$STAGE_DIR"
+
+      - name: Generate checksum
+        shell: bash
+        run: sha256sum "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: |
+            ${{ matrix.archive }}
+            ${{ matrix.archive }}.sha256
+
+  # ---------------------------------------------------------------------------
+  # Desktop app release — Tauri bundles (dmg, deb, AppImage, exe)
+  # ---------------------------------------------------------------------------
   build-tauri:
     strategy:
       fail-fast: false
@@ -53,19 +216,17 @@ jobs:
             patchelf \
             libcurl4-openssl-dev
 
-      - name: Install macOS cross-compilation target
-        if: matrix.platform == 'macos-latest' && matrix.target == 'x86_64-apple-darwin'
-        run: rustup target add x86_64-apple-darwin
+      - name: Build web UI
+        working-directory: web/app
+        run: |
+          pnpm install
+          pnpm run build
 
       - name: Build C++ sidecars
         shell: bash
         run: |
           chmod +x scripts/build-sidecars.sh
-          scripts/build-sidecars.sh --release
-
-      - name: Install frontend dependencies
-        working-directory: web/app
-        run: pnpm install
+          scripts/build-sidecars.sh --release --target ${{ matrix.target }}
 
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -83,3 +244,46 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+  # ---------------------------------------------------------------------------
+  # Attach CLI binaries + checksums to the GitHub Release
+  # ---------------------------------------------------------------------------
+  attach-cli:
+    needs: [build-cli, build-tauri]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          merge-multiple: true
+
+      - name: Build combined checksum file
+        run: |
+          VERSION=$(cat VERSION)
+          {
+            echo "# Delta CLI ${{ github.ref_name }} — SHA-256 Checksums"
+            echo "# Verify: sha256sum -c checksums-${VERSION}.sha256"
+            echo "#"
+            echo "# Commit: ${GITHUB_SHA}"
+            echo "# Date:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo ""
+            cat *.sha256
+          } > "checksums-${VERSION}.sha256"
+          cat "checksums-${VERSION}.sha256"
+          echo "CHECKSUMS_FILE=checksums-${VERSION}.sha256" >> "$GITHUB_ENV"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          files: |
+            delta-cli-macos-arm64.tar.gz
+            delta-cli-macos-x86_64.tar.gz
+            delta-cli-linux-x86_64.tar.gz
+            delta-cli-windows-x64.zip
+            ${{ env.CHECKSUMS_FILE }}

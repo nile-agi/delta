@@ -1,43 +1,41 @@
 /**
  * Base URL for the Model Management API.
- * - When the app is on port 8080: the model API may be same-origin (UI-only mode:
- *   launch_ui_only_server() serves both UI and /api/models/* on 8080) or on 8081
- *   (delta-server mode: llama-server on 8080, model API on 8081). We probe
- *   /api/models/available once; if 200 we use same-origin, else 8081.
- * - When the app is on another port we use 8081.
- * Uses the current page host so the UI works from another device (e.g. http://192.168.1.5:8080).
+ * The model API runs on server_port + 1 (e.g. 8080 → 8081, 8082 → 8083).
+ * Probes same-origin first; if the model API is co-hosted (UI-only mode) we
+ * use same-origin, otherwise we fall back to port + 1.
  */
-const MODEL_API_PORT = 8081;
-
 let cachedBaseUrl: string = '';
 let resolved = false;
 let resolvePromise: Promise<void> | null = null;
 
 function isTauri(): boolean {
-	return typeof window !== 'undefined' && '__TAURI__' in window;
+	if (typeof window === 'undefined') return false;
+	return window.location.protocol === 'tauri:' ||
+		'__TAURI__' in window ||
+		'__TAURI_INTERNALS__' in window;
 }
 
-function build8081Url(): string {
+function getModelApiPort(): number {
+	if (typeof window === 'undefined') return 8081;
+	const serverPort = parseInt(window.location.port, 10);
+	return isNaN(serverPort) ? 8081 : serverPort + 1;
+}
+
+function buildModelApiUrl(): string {
 	if (typeof window === 'undefined' || isTauri()) {
-		return `http://localhost:${MODEL_API_PORT}`;
+		return `http://localhost:${getModelApiPort()}`;
 	}
 	const { protocol, hostname } = window.location;
-	return `${protocol}//${hostname}:${MODEL_API_PORT}`;
+	return `${protocol}//${hostname}:${getModelApiPort()}`;
 }
 
 /**
- * Resolves the model API base URL. When served from port 8080, probes same-origin
- * /api/models/available; if it returns 200 we use same-origin (UI-only mode), otherwise 8081.
- * Call once before model API calls (e.g. from root layout) so getModelApiBaseUrl() is correct.
+ * Resolves the model API base URL. Probes same-origin /api/models/available;
+ * if 200 we use same-origin (UI-only mode), otherwise port + 1.
  */
 export function resolveModelApiBaseUrl(): Promise<void> {
 	if (typeof window === 'undefined') {
-		cachedBaseUrl = build8081Url();
-		return Promise.resolve();
-	}
-	const port = window.location.port;
-	if (port !== '8080') {
-		cachedBaseUrl = build8081Url();
+		cachedBaseUrl = buildModelApiUrl();
 		return Promise.resolve();
 	}
 	if (resolvePromise !== null) {
@@ -49,11 +47,10 @@ export function resolveModelApiBaseUrl(): Promise<void> {
 			if (res.ok) {
 				cachedBaseUrl = '';
 			} else {
-				cachedBaseUrl = build8081Url();
+				cachedBaseUrl = buildModelApiUrl();
 			}
 		} catch {
-			// same-origin API not available (e.g. connection refused when llama-server on 8080)
-			cachedBaseUrl = build8081Url();
+			cachedBaseUrl = buildModelApiUrl();
 		}
 		resolved = true;
 	})();
@@ -61,28 +58,18 @@ export function resolveModelApiBaseUrl(): Promise<void> {
 }
 
 /**
- * Force model API to use 8081 (e.g. after llama-server starts on 8080)
+ * Force model API to use port + 1 (e.g. after llama-server starts on the same port)
  */
-export function forceModelApi8081(): void {
-	if (typeof window !== 'undefined' && window.location.port === '8080') {
-		cachedBaseUrl = build8081Url();
-		resolved = true;
-	}
+export function forceModelApiSeparatePort(): void {
+	cachedBaseUrl = buildModelApiUrl();
+	resolved = true;
 }
 
 /**
- * Returns the model API base URL ('' for same-origin or 'http://host:8081').
- * When on 8080, ensure resolveModelApiBaseUrl() has been awaited first.
+ * Returns the model API base URL ('' for same-origin or 'http://host:PORT+1').
+ * Ensure resolveModelApiBaseUrl() has been awaited first.
  */
 export function getModelApiBaseUrl(): string {
-	if (typeof window === 'undefined') {
-		return build8081Url();
-	}
-	const port = window.location.port;
-	if (port !== '8080') {
-		return build8081Url();
-	}
-	// When on 8080: use 8081 until probe has completed; then use same-origin ('') or 8081
-	if (!resolved) return build8081Url();
+	if (!resolved) return buildModelApiUrl();
 	return cachedBaseUrl === '' ? '' : cachedBaseUrl;
 }

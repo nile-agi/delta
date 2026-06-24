@@ -5,8 +5,9 @@
 , curl
 , pkg-config
 , makeWrapper
+, nodejs
+, nodePackages
 , darwin
-, buildPackages
 }:
 
 stdenv.mkDerivation rec {
@@ -17,9 +18,8 @@ stdenv.mkDerivation rec {
     owner = "nile-agi";
     repo = "delta";
     rev = "v${version}";
-    sha256 = "PLACEHOLDER_SHA256";  # Update with actual SHA256 when release is available
-    fetchSubmodules = true;  # Always fetch latest llama.cpp submodule
-    # Note: This automatically handles git and submodules - users don't need to know about it
+    sha256 = "PLACEHOLDER_SHA256";  # Update when release is published
+    fetchSubmodules = true;
   };
 
   nativeBuildInputs = [
@@ -27,6 +27,8 @@ stdenv.mkDerivation rec {
     curl
     pkg-config
     makeWrapper
+    nodejs
+    nodePackages.pnpm
   ] ++ lib.optionals stdenv.isDarwin [
     darwin.apple_sdk.frameworks.Metal
     darwin.apple_sdk.frameworks.Foundation
@@ -43,46 +45,48 @@ stdenv.mkDerivation rec {
     "-DLLAMA_CUDA=OFF"
     "-DLLAMA_VULKAN=OFF"
     "-DLLAMA_HIPBLAS=OFF"
-    "-DBUILD_SERVER=ON"
+    "-DBUILD_TESTS=OFF"
     "-DUSE_CURL=ON"
-  ] ++ lib.optionals stdenv.isDarwin [
-    "-DCMAKE_C_COMPILER=${buildPackages.clang}/bin/clang"
-    "-DCMAKE_CXX_COMPILER=${buildPackages.clang}/bin/clang++"
+    "-DFORCE_SYSTEM_CLANG=OFF"
   ];
 
-  buildPhase = ''
-    runHook preBuild
-    
-    mkdir -p build
-    cd build
-    cmake .. $cmakeFlags
-    make -j$NIX_BUILD_CORES
-    
-    runHook postBuild
+  preBuild = ''
+    # Build web UI before C++ compilation
+    cd $src/web/app
+    export HOME=$TMPDIR
+    pnpm install --frozen-lockfile
+    pnpm run build
+    cd $NIX_BUILD_TOP/$sourceRoot
   '';
 
   installPhase = ''
     runHook preInstall
-    
-    install -Dm755 build/delta $out/bin/delta
-    install -Dm755 build/delta-server $out/bin/delta-server
-    
-    if [ -d engine/vendor/llama.cpp/tools/server/public ]; then
-      mkdir -p $out/share/delta-cli
-      cp -r engine/vendor/llama.cpp/tools/server/public $out/share/delta-cli/webui
+
+    install -Dm755 delta $out/bin/delta
+    install -Dm755 delta-server $out/bin/delta-server
+
+    # Install llama-server
+    if [ -f bin/llama-server ]; then
+      install -Dm755 bin/llama-server $out/bin/llama-server
+    elif [ -f llama-server ]; then
+      install -Dm755 llama-server $out/bin/llama-server
     fi
-    
+
+    # Install Delta's custom web UI
+    if [ -f $NIX_BUILD_TOP/$sourceRoot/public/index.html ]; then
+      mkdir -p $out/share/delta-cli
+      cp -r $NIX_BUILD_TOP/$sourceRoot/public $out/share/delta-cli/webui
+    fi
+
     runHook postInstall
   '';
 
   meta = with lib; {
     description = "Offline AI Assistant powered by llama.cpp";
     longDescription = ''
-      Delta CLI is an open-source, offline-first AI assistant that runs
-      large language models (LLMs) directly on your device. Built on top
-      of llama.cpp, Delta CLI provides a simple command-line interface
-      to interact with AI models without requiring internet connectivity
-      or cloud services.
+      Delta CLI is an offline-first AI assistant that runs large language
+      models directly on your device via llama.cpp. Includes a web UI,
+      model management, and GPU acceleration (Metal, CUDA, Vulkan).
     '';
     homepage = "https://github.com/nile-agi/delta";
     license = licenses.mit;
@@ -91,4 +95,3 @@ stdenv.mkDerivation rec {
     mainProgram = "delta";
   };
 }
-

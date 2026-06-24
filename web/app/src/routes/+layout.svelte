@@ -12,20 +12,16 @@
 	import { serverStore } from '$lib/stores/server.svelte';
 	import { config, settingsStore } from '$lib/stores/settings.svelte';
 	import { resolveModelApiBaseUrl } from '$lib/utils/model-api-url';
+	import { getServerBaseUrl } from '$lib/utils/server-base-url';
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 
 	let { children } = $props();
 
-	// When served from port 8080, resolve whether API is same-origin (UI-only) or :8081 (with model) before rendering
 	let modelApiReady = $state(!browser || typeof window === 'undefined');
 	$effect(() => {
 		if (!browser || typeof window === 'undefined') {
-			modelApiReady = true;
-			return;
-		}
-		if (window.location.port !== '8080') {
 			modelApiReady = true;
 			return;
 		}
@@ -144,7 +140,7 @@
 				headers.Authorization = `Bearer ${apiKey.trim()}`;
 			}
 
-			fetch(`./props`, { headers })
+			fetch(`${getServerBaseUrl()}/props`, { headers })
 				.then((response) => {
 					if (response.status === 401 || response.status === 403) {
 						window.location.reload();

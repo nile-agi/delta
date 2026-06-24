@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Build the Delta web UI from app/ and then build + install Delta CLI.
-# Use this when you have local changes in app/ so that reinstalling Delta
-# uses YOUR built web UI (not an old or upstream copy).
+# Build the Delta web UI + C++ binaries and install locally.
 #
-# Usage: from repo root, run:
+# Usage:
 #   ./scripts/build-webui-and-install.sh [install-prefix]
-# Example:
 #   ./scripts/build-webui-and-install.sh              # install to /usr/local
 #   ./scripts/build-webui-and-install.sh /opt/homebrew # install to Homebrew prefix
 set -e

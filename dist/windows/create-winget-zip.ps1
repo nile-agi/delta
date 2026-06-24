@@ -1,11 +1,11 @@
 # PowerShell script to create Windows ZIP package for winget installation
-# Usage: .\installers\create-winget-zip.ps1 [-Version "1.0.0"] [-BuildDir "build_windows\Release"]
+# Usage: .\dist\windows\create-winget-zip.ps1 [-Version "1.0.0"] [-BuildDir "build_windows\Release"]
 # Note: This script is designed for Windows. For cross-platform use, ensure Windows executables are built.
 
 param(
     [string]$Version = "1.0.0",
     [string]$BuildDir = "build_windows\Release",
-    [string]$OutputDir = "installers\packages",
+    [string]$OutputDir = "dist\windows\packages",
     [string]$ZipName = "delta-cli-windows-x64.zip"
 )
 
@@ -78,7 +78,7 @@ if (-not (Test-Path $deltaExe)) {
     Write-Host ""
     Write-Host "Please build the project first:" -ForegroundColor Yellow
     if ($IsWindows -or $PSVersionTable.Platform -eq "Win32NT") {
-        Write-Host "  installers\build_windows.bat" -ForegroundColor Gray
+        Write-Host "  dist\windows\build_windows.bat" -ForegroundColor Gray
     } else {
         Write-Host "  Build on Windows, or ensure Windows executables exist at:" -ForegroundColor Gray
         Write-Host "  $deltaExe" -ForegroundColor Gray
@@ -204,7 +204,7 @@ try {
     Write-Host "Next steps:" -ForegroundColor Cyan
     Write-Host "  1. Upload $ZipName to GitHub release v$Version" -ForegroundColor Gray
     Write-Host "  2. Calculate SHA256 hash:" -ForegroundColor Gray
-    Write-Host "     .\installers\calculate-sha256.ps1 -FilePath `"$zipPathNormalized`"" -ForegroundColor DarkGray
+    Write-Host "     .\dist\windows\calculate-sha256.ps1 -FilePath `"$zipPathNormalized`"" -ForegroundColor DarkGray
     Write-Host "  3. Update winget manifest with SHA256 hash" -ForegroundColor Gray
     Write-Host ""
     Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan

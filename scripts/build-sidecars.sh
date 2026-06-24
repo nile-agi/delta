@@ -4,63 +4,68 @@
 # into src-tauri/binaries/ with the target-triple suffix that Tauri expects.
 #
 # Usage:
-#   ./scripts/build-sidecars.sh            # auto-detect platform
-#   ./scripts/build-sidecars.sh --release  # Release build (default)
-#   ./scripts/build-sidecars.sh --debug    # Debug build
+#   ./scripts/build-sidecars.sh                          # auto-detect platform, Release
+#   ./scripts/build-sidecars.sh --release                # Release build (default)
+#   ./scripts/build-sidecars.sh --debug                  # Debug build
+#   ./scripts/build-sidecars.sh --target x86_64-apple-darwin  # cross-compile for Intel Mac
 
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BINDIR="$PROJECT_ROOT/src-tauri/binaries"
-BUILD_TYPE="${1:-Release}"
+BUILD_TYPE="Release"
+TARGET_TRIPLE=""
 
-if [[ "$BUILD_TYPE" == "--debug" ]]; then
-    BUILD_TYPE="Debug"
-elif [[ "$BUILD_TYPE" == "--release" ]]; then
-    BUILD_TYPE="Release"
-fi
-
-# Detect target triple
-if command -v rustc &>/dev/null; then
-    TRIPLE=$(rustc -vV | grep host | cut -d' ' -f2)
-else
-    # Fallback detection
-    ARCH=$(uname -m)
-    case "$(uname -s)" in
-        Darwin)
-            case "$ARCH" in
-                arm64) TRIPLE="aarch64-apple-darwin" ;;
-                x86_64) TRIPLE="x86_64-apple-darwin" ;;
-            esac
-            ;;
-        Linux)
-            TRIPLE="${ARCH}-unknown-linux-gnu"
-            ;;
-        MINGW*|MSYS*|CYGWIN*)
-            TRIPLE="${ARCH}-pc-windows-msvc"
-            ;;
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --debug)   BUILD_TYPE="Debug"; shift ;;
+        --release) BUILD_TYPE="Release"; shift ;;
+        --target)  TARGET_TRIPLE="$2"; shift 2 ;;
+        *)         shift ;;
     esac
+done
+
+# Detect target triple if not specified
+if [[ -z "$TARGET_TRIPLE" ]]; then
+    if command -v rustc &>/dev/null; then
+        TARGET_TRIPLE=$(rustc -vV | grep host | cut -d' ' -f2)
+    else
+        ARCH=$(uname -m)
+        case "$(uname -s)" in
+            Darwin)
+                case "$ARCH" in
+                    arm64)  TARGET_TRIPLE="aarch64-apple-darwin" ;;
+                    x86_64) TARGET_TRIPLE="x86_64-apple-darwin" ;;
+                esac
+                ;;
+            Linux)   TARGET_TRIPLE="${ARCH}-unknown-linux-gnu" ;;
+            MINGW*|MSYS*|CYGWIN*) TARGET_TRIPLE="${ARCH}-pc-windows-msvc" ;;
+        esac
+    fi
 fi
 
 echo "=== Building Delta sidecars ==="
-echo "  Platform triple: $TRIPLE"
+echo "  Platform triple: $TARGET_TRIPLE"
 echo "  Build type: $BUILD_TYPE"
 echo ""
 
-# Determine build directory
-BUILDDIR="$PROJECT_ROOT/build_tauri_${BUILD_TYPE,,}"
+BUILD_TYPE_LOWER=$(echo "$BUILD_TYPE" | tr '[:upper:]' '[:lower:]')
+BUILDDIR="$PROJECT_ROOT/build_tauri_${BUILD_TYPE_LOWER}"
 mkdir -p "$BUILDDIR"
 
-# Configure CMake
 CMAKE_ARGS=(
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
     -DBUILD_TESTS=OFF
 )
 
-# Platform-specific flags
 case "$(uname -s)" in
     Darwin)
         CMAKE_ARGS+=(-DGGML_METAL=ON)
+        # Handle cross-compilation between arm64 and x86_64 on macOS
+        case "$TARGET_TRIPLE" in
+            aarch64-apple-darwin) CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=arm64) ;;
+            x86_64-apple-darwin)  CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=x86_64) ;;
+        esac
         ;;
     Linux)
         CMAKE_ARGS+=(-DGGML_METAL=OFF)
@@ -83,16 +88,15 @@ echo ""
 echo "Copying binaries to $BINDIR ..."
 mkdir -p "$BINDIR"
 
-# Determine exe suffix
 EXE_SUFFIX=""
-if [[ "$TRIPLE" == *"windows"* ]]; then
+if [[ "$TARGET_TRIPLE" == *"windows"* ]]; then
     EXE_SUFFIX=".exe"
 fi
 
 # Copy delta-server
 if [[ -f "$BUILDDIR/delta-server${EXE_SUFFIX}" ]]; then
-    cp "$BUILDDIR/delta-server${EXE_SUFFIX}" "$BINDIR/delta-server-${TRIPLE}${EXE_SUFFIX}"
-    echo "  delta-server -> delta-server-${TRIPLE}${EXE_SUFFIX}"
+    cp "$BUILDDIR/delta-server${EXE_SUFFIX}" "$BINDIR/delta-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
+    echo "  delta-server -> delta-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
 else
     echo "  ERROR: delta-server not found in $BUILDDIR"
     exit 1
@@ -114,14 +118,14 @@ for candidate in \
 done
 
 if [[ -n "$LLAMA_SERVER" ]]; then
-    cp "$LLAMA_SERVER" "$BINDIR/llama-server-${TRIPLE}${EXE_SUFFIX}"
-    echo "  llama-server -> llama-server-${TRIPLE}${EXE_SUFFIX}"
+    cp "$LLAMA_SERVER" "$BINDIR/llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
+    echo "  llama-server -> llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
 else
     echo "  WARNING: llama-server not found, searching..."
     FOUND=$(find "$BUILDDIR" -name "llama-server${EXE_SUFFIX}" -o -name "server${EXE_SUFFIX}" 2>/dev/null | head -1)
     if [[ -n "$FOUND" ]]; then
-        cp "$FOUND" "$BINDIR/llama-server-${TRIPLE}${EXE_SUFFIX}"
-        echo "  llama-server -> llama-server-${TRIPLE}${EXE_SUFFIX} (from $FOUND)"
+        cp "$FOUND" "$BINDIR/llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
+        echo "  llama-server -> llama-server-${TARGET_TRIPLE}${EXE_SUFFIX} (from $FOUND)"
     else
         echo "  ERROR: llama-server binary not found anywhere in build tree"
         exit 1
