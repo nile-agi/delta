@@ -67,6 +67,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release
             -DBUILD_TESTS=OFF
             -DUSE_CURL=ON
+            -DLLAMA_OPENSSL=OFF
+            -DFORCE_SYSTEM_CLANG=OFF
           )
 
           case "${{ matrix.platform }}" in

@@ -56,6 +56,8 @@ mkdir -p "$BUILDDIR"
 CMAKE_ARGS=(
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
     -DBUILD_TESTS=OFF
+    -DLLAMA_OPENSSL=OFF
+    -DFORCE_SYSTEM_CLANG=OFF
 )
 
 case "$(uname -s)" in
@@ -73,16 +75,16 @@ case "$(uname -s)" in
 esac
 
 echo "Configuring CMake..."
-cmake -S "$PROJECT_ROOT" -B "$BUILDDIR" "${CMAKE_ARGS[@]}" 2>&1 | tail -20
+cmake -S "$PROJECT_ROOT" -B "$BUILDDIR" "${CMAKE_ARGS[@]}"
 
 echo ""
 echo "Building..."
 NPROC=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
-cmake --build "$BUILDDIR" --config "$BUILD_TYPE" -j "$NPROC" -- delta-server 2>&1 | tail -10
+cmake --build "$BUILDDIR" --config "$BUILD_TYPE" -j "$NPROC" --target delta-server
 
 # Also build llama-server from the llama.cpp submodule
-cmake --build "$BUILDDIR" --config "$BUILD_TYPE" -j "$NPROC" -- llama-server 2>&1 | tail -10 || \
-cmake --build "$BUILDDIR" --config "$BUILD_TYPE" -j "$NPROC" -- server 2>&1 | tail -10 || true
+cmake --build "$BUILDDIR" --config "$BUILD_TYPE" -j "$NPROC" --target llama-server || \
+cmake --build "$BUILDDIR" --config "$BUILD_TYPE" -j "$NPROC" --target server || true
 
 echo ""
 echo "Copying binaries to $BINDIR ..."
