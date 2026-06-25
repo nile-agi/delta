@@ -291,24 +291,24 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'Delta ${{ github.ref_name }}'
           releaseBody: 'Download the installer for your platform from the assets below.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
 
-      - name: Build Tauri app (unsigned test)
+      - name: Build Tauri app (unsigned)
         if: steps.signing.outputs.available == 'false'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Delta ${{ github.ref_name }} (test - unsigned)'
+          releaseName: 'Delta ${{ github.ref_name }}'
           releaseBody: |
-            **Test build — not code-signed.**
-            macOS users: right-click > Open to bypass Gatekeeper.
             Download the installer for your platform from the assets below.
-          releaseDraft: true
-          prerelease: true
+
+            **Note:** macOS builds are not code-signed. Right-click > Open to bypass Gatekeeper.
+          releaseDraft: false
+          prerelease: false
           args: ${{ matrix.args }}
 
   # ---------------------------------------------------------------------------
@@ -346,7 +346,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          draft: true
+          draft: false
           files: |
             delta-cli-macos-arm64.tar.gz
             delta-cli-macos-x86_64.tar.gz
