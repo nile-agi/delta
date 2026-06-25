@@ -364,7 +364,7 @@ class DeltaServerWrapper {
         if (ctx_size > 0) {
             cmd += " -c " + std::to_string(ctx_size);
         }
-        // Minimal flags for compatibility; avoid --flash-attn/--jinja which some builds don't support
+        cmd += " --jinja";
         if (ctx_size > 16384) {
             cmd += " --gpu-layers 0";
         }

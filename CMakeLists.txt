@@ -75,6 +75,20 @@ endif()
 
 add_subdirectory(engine/vendor/llama.cpp)
 
+# SQLite amalgamation (embedded, no external dependency)
+add_library(sqlite3 STATIC engine/vendor/sqlite3/sqlite3.c)
+target_include_directories(sqlite3 PUBLIC engine/vendor/sqlite3)
+target_compile_definitions(sqlite3 PRIVATE
+    SQLITE_THREADSAFE=1
+    SQLITE_ENABLE_JSON1=1
+    SQLITE_OMIT_LOAD_EXTENSION=1
+)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(sqlite3 PUBLIC dl pthread)
+elseif(APPLE)
+    target_link_libraries(sqlite3 PUBLIC pthread)
+endif()
+
 # Find dependencies
 if(USE_CURL)
     find_package(CURL REQUIRED)
@@ -113,6 +127,11 @@ set(DELTA_SOURCES
     engine/tools/shell.cpp
     engine/tools/browser.cpp
     engine/model_api_server.cpp
+    engine/agent/agent_database.cpp
+    engine/agent/tool_registry.cpp
+    engine/agent/tool_calendar.cpp
+    engine/agent/tool_tasks.cpp
+    engine/agent/agent_loop.cpp
 )
 
 # Main executable
@@ -128,6 +147,7 @@ target_include_directories(delta PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp
     ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/common
     ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
+    ${CMAKE_SOURCE_DIR}/engine/agent
 )
 
 # Link libraries (with llama-cpp integration)
@@ -136,6 +156,7 @@ target_link_libraries(delta PRIVATE
     ggml
     common
     cpp-httplib
+    sqlite3
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
@@ -171,6 +192,11 @@ add_executable(delta-server
     engine/models.cpp
     engine/tools/file_ops.cpp
     engine/ui.cpp
+    engine/agent/agent_database.cpp
+    engine/agent/tool_registry.cpp
+    engine/agent/tool_calendar.cpp
+    engine/agent/tool_tasks.cpp
+    engine/agent/agent_loop.cpp
 )
 target_compile_definitions(delta-server PRIVATE
     DELTA_VERSION="${PROJECT_VERSION}"
@@ -183,6 +209,7 @@ target_include_directories(delta-server PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp
     ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/common
     ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
+    ${CMAKE_SOURCE_DIR}/engine/agent
 )
 
 # Link libraries for delta-server
@@ -192,9 +219,10 @@ endif()
 
 # Link httplib and json for model API server
 # Link to the same libraries that llama-server uses
-target_link_libraries(delta-server PRIVATE 
-    common 
-    cpp-httplib 
+target_link_libraries(delta-server PRIVATE
+    common
+    cpp-httplib
+    sqlite3
     ${CMAKE_THREAD_LIBS_INIT}
 )
 

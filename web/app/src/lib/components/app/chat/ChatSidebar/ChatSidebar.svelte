@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Trash2 } from '@lucide/svelte';
+	import { Trash2, Calendar, ListTodo } from '@lucide/svelte';
 	import { ChatSidebarConversationItem, ConfirmationDialog } from '$lib/components/app';
 	import ScrollArea from '$lib/components/ui/scroll-area/scroll-area.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar';
@@ -112,6 +112,34 @@
 
 		<ChatSidebarActions {handleMobileSidebarItemClick} bind:isSearchModeActive bind:searchQuery />
 	</Sidebar.Header>
+
+	<Sidebar.Group class="mt-2 space-y-1 p-0 px-4">
+		<Sidebar.GroupLabel>Tools</Sidebar.GroupLabel>
+		<Sidebar.GroupContent>
+			<Sidebar.Menu>
+				<Sidebar.MenuItem>
+					<Sidebar.MenuButton
+						class="flex items-center gap-2 text-sm"
+						data-active={page.url.hash === '#/calendar'}
+						onclick={() => { goto('#/calendar'); handleMobileSidebarItemClick(); }}
+					>
+						<Calendar class="h-4 w-4" />
+						Calendar
+					</Sidebar.MenuButton>
+				</Sidebar.MenuItem>
+				<Sidebar.MenuItem>
+					<Sidebar.MenuButton
+						class="flex items-center gap-2 text-sm"
+						data-active={page.url.hash === '#/tasks'}
+						onclick={() => { goto('#/tasks'); handleMobileSidebarItemClick(); }}
+					>
+						<ListTodo class="h-4 w-4" />
+						Tasks
+					</Sidebar.MenuButton>
+				</Sidebar.MenuItem>
+			</Sidebar.Menu>
+		</Sidebar.GroupContent>
+	</Sidebar.Group>
 
 	<Sidebar.Group class="mt-4 space-y-2 p-0 px-4">
 		{#if (filteredConversations.length > 0 && isSearchModeActive) || !isSearchModeActive}
