@@ -62,15 +62,22 @@ CMAKE_ARGS=(
 
 case "$(uname -s)" in
     Darwin)
-        CMAKE_ARGS+=(-DGGML_METAL=ON)
-        # Handle cross-compilation between arm64 and x86_64 on macOS
+        CMAKE_ARGS+=(-DGGML_METAL=ON -DUSE_CURL=ON)
         case "$TARGET_TRIPLE" in
             aarch64-apple-darwin) CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=arm64) ;;
-            x86_64-apple-darwin)  CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=x86_64) ;;
+            x86_64-apple-darwin)
+                CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=x86_64 -DGGML_NATIVE=OFF)
+                ;;
         esac
         ;;
     Linux)
-        CMAKE_ARGS+=(-DGGML_METAL=OFF)
+        CMAKE_ARGS+=(-DGGML_METAL=OFF -DUSE_CURL=ON)
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        CMAKE_ARGS+=(-DGGML_METAL=OFF -DUSE_CURL=ON)
+        if [[ -n "${VCPKG_INSTALLATION_ROOT:-}" ]]; then
+            CMAKE_ARGS+=("-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake")
+        fi
         ;;
 esac
 
@@ -95,9 +102,20 @@ if [[ "$TARGET_TRIPLE" == *"windows"* ]]; then
     EXE_SUFFIX=".exe"
 fi
 
-# Copy delta-server
-if [[ -f "$BUILDDIR/delta-server${EXE_SUFFIX}" ]]; then
-    cp "$BUILDDIR/delta-server${EXE_SUFFIX}" "$BINDIR/delta-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
+# Copy delta-server (check multiple locations for MSVC generators)
+DELTA_SERVER=""
+for candidate in \
+    "$BUILDDIR/delta-server${EXE_SUFFIX}" \
+    "$BUILDDIR/Release/delta-server${EXE_SUFFIX}" \
+    "$BUILDDIR/Debug/delta-server${EXE_SUFFIX}"; do
+    if [[ -f "$candidate" ]]; then
+        DELTA_SERVER="$candidate"
+        break
+    fi
+done
+
+if [[ -n "$DELTA_SERVER" ]]; then
+    cp "$DELTA_SERVER" "$BINDIR/delta-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
     echo "  delta-server -> delta-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
 else
     echo "  ERROR: delta-server not found in $BUILDDIR"
@@ -111,6 +129,7 @@ for candidate in \
     "$BUILDDIR/engine/vendor/llama.cpp/bin/llama-server${EXE_SUFFIX}" \
     "$BUILDDIR/engine/vendor/llama.cpp/tools/server/llama-server${EXE_SUFFIX}" \
     "$BUILDDIR/llama-server${EXE_SUFFIX}" \
+    "$BUILDDIR/Release/llama-server${EXE_SUFFIX}" \
     "$BUILDDIR/bin/server${EXE_SUFFIX}" \
     "$BUILDDIR/server${EXE_SUFFIX}"; do
     if [[ -f "$candidate" ]]; then

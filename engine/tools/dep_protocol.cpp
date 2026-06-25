@@ -7,30 +7,34 @@
 #include <memory>
 #include <array>
 #include <sstream>
+#include <climits>
 
 #ifdef _WIN32
-    #include <windows.h>
+#include <windows.h>
 #else
-    #include <unistd.h>
-    #include <sys/wait.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
 #endif
 
 namespace delta {
 namespace tools {
 
-DepProtocol::Result DepProtocol::execute(const std::string& command,
-                                        const std::vector<std::string>& args,
-                                        const std::string& working_dir) {
+DepProtocol::Result DepProtocol::execute(const std::string& command, const std::vector<std::string>& args,
+                                         const std::string& working_dir) {
     Result result;
     result.exit_code = -1;
     result.success = false;
-    
+
     // Build full command
     std::string full_command = command;
     for (const auto& arg : args) {
         full_command += " \"" + arg + "\"";
     }
-    
+
     // Change directory if specified
     std::string original_dir;
     if (!working_dir.empty()) {
@@ -47,29 +51,29 @@ DepProtocol::Result DepProtocol::execute(const std::string& command,
         chdir(working_dir.c_str());
 #endif
     }
-    
+
     // Execute command and capture output
 #ifdef _WIN32
     FILE* pipe = _popen((full_command + " 2>&1").c_str(), "r");
 #else
     FILE* pipe = popen((full_command + " 2>&1").c_str(), "r");
 #endif
-    
+
     if (!pipe) {
         result.error = "Failed to execute command";
         return result;
     }
-    
+
     // Read output
     std::array<char, 128> buffer;
     std::stringstream ss;
-    
+
     while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
         ss << buffer.data();
     }
-    
+
     result.output = ss.str();
-    
+
     // Get exit code
 #ifdef _WIN32
     result.exit_code = _pclose(pipe);
@@ -79,9 +83,9 @@ DepProtocol::Result DepProtocol::execute(const std::string& command,
         result.exit_code = WEXITSTATUS(status);
     }
 #endif
-    
+
     result.success = (result.exit_code == 0);
-    
+
     // Restore directory
     if (!original_dir.empty()) {
 #ifdef _WIN32
@@ -90,10 +94,9 @@ DepProtocol::Result DepProtocol::execute(const std::string& command,
         chdir(original_dir.c_str());
 #endif
     }
-    
+
     return result;
 }
 
 } // namespace tools
 } // namespace delta
-

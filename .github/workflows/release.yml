@@ -47,6 +47,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libcurl4-openssl-dev
 
+      - name: Install Windows dependencies
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          vcpkg install curl:x64-windows
+
       - name: Build web UI
         run: |
           pnpm install --filter webui...
@@ -59,31 +65,36 @@ jobs:
       - name: Build CLI binaries
         shell: bash
         run: |
-          VERSION=$(cat VERSION)
+          VERSION=$(cat version.txt)
           BUILD_DIR="build_release"
           mkdir -p "$BUILD_DIR"
 
           CMAKE_ARGS=(
             -DCMAKE_BUILD_TYPE=Release
             -DBUILD_TESTS=OFF
-            -DUSE_CURL=ON
             -DLLAMA_OPENSSL=OFF
             -DFORCE_SYSTEM_CLANG=OFF
           )
 
           case "${{ matrix.platform }}" in
             macos-*)
-              CMAKE_ARGS+=(-DGGML_METAL=ON)
+              CMAKE_ARGS+=(-DGGML_METAL=ON -DUSE_CURL=ON)
               case "${{ matrix.target }}" in
                 aarch64-apple-darwin) CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=arm64) ;;
-                x86_64-apple-darwin)  CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=x86_64) ;;
+                x86_64-apple-darwin)
+                  CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=x86_64 -DGGML_NATIVE=OFF)
+                  ;;
               esac
               ;;
             ubuntu-*)
-              CMAKE_ARGS+=(-DGGML_METAL=OFF)
+              CMAKE_ARGS+=(-DGGML_METAL=OFF -DUSE_CURL=ON)
               ;;
             windows-*)
-              CMAKE_ARGS+=(-DGGML_METAL=OFF)
+              CMAKE_ARGS+=(
+                -DGGML_METAL=OFF
+                -DUSE_CURL=ON
+                "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+              )
               ;;
           esac
 
@@ -221,6 +232,12 @@ jobs:
             patchelf \
             libcurl4-openssl-dev
 
+      - name: Install Windows dependencies
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          vcpkg install curl:x64-windows
+
       - name: Build web UI
         run: |
           pnpm install --filter webui...
@@ -271,7 +288,7 @@ jobs:
 
       - name: Build combined checksum file
         run: |
-          VERSION=$(cat VERSION)
+          VERSION=$(cat version.txt)
           {
             echo "# Delta CLI ${{ github.ref_name }} — SHA-256 Checksums"
             echo "# Verify: sha256sum -c checksums-${VERSION}.sha256"
