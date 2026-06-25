@@ -264,7 +264,21 @@ jobs:
           chmod +x scripts/build-sidecars.sh
           scripts/build-sidecars.sh --release --target ${{ matrix.target }}
 
-      - uses: tauri-apps/tauri-action@v0
+      - name: Check signing availability
+        id: signing
+        shell: bash
+        run: |
+          if [[ -n "$APPLE_CERT" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE }}
+
+      - name: Build Tauri app (signed)
+        if: steps.signing.outputs.available == 'true'
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -279,6 +293,22 @@ jobs:
           releaseBody: 'Download the installer for your platform from the assets below.'
           releaseDraft: true
           prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: Build Tauri app (unsigned test)
+        if: steps.signing.outputs.available == 'false'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Delta ${{ github.ref_name }} (test - unsigned)'
+          releaseBody: |
+            **Test build — not code-signed.**
+            macOS users: right-click > Open to bypass Gatekeeper.
+            Download the installer for your platform from the assets below.
+          releaseDraft: true
+          prerelease: true
           args: ${{ matrix.args }}
 
   # ---------------------------------------------------------------------------
