@@ -307,7 +307,7 @@ jobs:
             echo "# Commit: ${GITHUB_SHA}"
             echo "# Date:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo ""
-            cat *.sha256
+            cat delta-cli-*.sha256
           } > "checksums-${VERSION}.sha256"
           cat "checksums-${VERSION}.sha256"
           echo "CHECKSUMS_FILE=checksums-${VERSION}.sha256" >> "$GITHUB_ENV"
