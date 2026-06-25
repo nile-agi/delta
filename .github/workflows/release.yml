@@ -257,7 +257,7 @@ jobs:
   # Attach CLI binaries + checksums to the GitHub Release
   # ---------------------------------------------------------------------------
   attach-cli:
-    needs: [build-cli, build-tauri]
+    needs: [build-cli]
     runs-on: ubuntu-latest
     permissions:
       contents: write
