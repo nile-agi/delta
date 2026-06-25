@@ -47,11 +47,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libcurl4-openssl-dev
 
+      - name: Install web UI dependencies
+        run: pnpm install
+
       - name: Build web UI
         working-directory: web/app
-        run: |
-          pnpm install
-          pnpm run build
+        run: pnpm run build
 
       - name: Verify web UI build
         run: |
@@ -220,11 +221,12 @@ jobs:
             patchelf \
             libcurl4-openssl-dev
 
+      - name: Install web UI dependencies
+        run: pnpm install
+
       - name: Build web UI
         working-directory: web/app
-        run: |
-          pnpm install
-          pnpm run build
+        run: pnpm run build
 
       - name: Verify web UI build
         run: |
