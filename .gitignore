@@ -44,6 +44,12 @@ __pycache__/
 # Node modules
 node_modules/
 
+# SvelteKit build outputs (recreated by pnpm run build)
+public/_app/
+public/index.html
+public/index.html.gz
+.svelte-kit/
+
 # Test artifacts
 *.gcda
 *.gcno
@@ -52,6 +58,10 @@ node_modules/
 # Homebrew tap (separate repository)
 homebrew-delta-cli/
 
-# Nested repos that shouldn't be submodules
-vendor/ios-cmake/.git
+# IDE cache
+.cache/
+
+# Tauri
+src-tauri/target/
+src-tauri/binaries/
 

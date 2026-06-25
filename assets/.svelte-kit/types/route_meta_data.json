@@ -1,8 +1,0 @@
-{
-	"/": [
-		"src/routes/+page.ts"
-	],
-	"/chat/[id]": [
-		"src/routes/chat/[id]/+page.ts"
-	]
-}

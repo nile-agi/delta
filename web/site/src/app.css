@@ -1,0 +1,9 @@
+@import 'tailwindcss';
+
+@theme {
+	--color-delta-blue: #001F3F;
+	--color-delta-blue-light: #003366;
+	--color-delta-red: #FF4136;
+	--color-delta-green: #2ECC40;
+	--font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}

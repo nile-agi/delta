@@ -1,0 +1,76 @@
+# -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4
+
+PortSystem          1.0
+PortGroup           github 1.0
+PortGroup           cmake 1.1
+
+name                delta-cli
+version             1.0.0
+revision            0
+github.setup        nile-agi delta v${version}
+
+categories          ai llm machine-learning
+platforms           darwin
+license             MIT
+maintainers         openmaintainer
+
+description         Offline AI Assistant powered by llama.cpp
+long_description    \
+    Delta CLI is an open-source, offline-first AI assistant that runs \
+    large language models (LLMs) directly on your device. Built on top \
+    of llama.cpp with a custom web UI and GPU acceleration.
+
+depends_build       port:cmake \
+                    port:curl \
+                    port:pkgconfig \
+                    port:nodejs22 \
+                    port:pnpm
+
+depends_lib         port:curl
+
+# Fetch submodules
+pre-build {
+    system -W ${worksrcpath} "git submodule update --init --recursive"
+}
+
+# Build web UI before C++ compilation
+pre-configure {
+    system -W ${worksrcpath}/web/app "pnpm install && pnpm run build"
+}
+
+configure.args-append \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DGGML_METAL=ON \
+    -DLLAMA_CUDA=OFF \
+    -DLLAMA_VULKAN=OFF \
+    -DLLAMA_HIPBLAS=OFF \
+    -DBUILD_TESTS=OFF \
+    -DUSE_CURL=ON
+
+build.target        delta delta-server llama-server
+
+destroot {
+    xinstall -m 755 ${cmake.build_dir}/delta ${destroot}${prefix}/bin/delta
+    xinstall -m 755 ${cmake.build_dir}/delta-server ${destroot}${prefix}/bin/delta-server
+
+    # Install llama-server
+    foreach candidate [list \
+        ${cmake.build_dir}/bin/llama-server \
+        ${cmake.build_dir}/llama-server \
+        ${cmake.build_dir}/bin/server \
+    ] {
+        if {[file exists $candidate]} {
+            xinstall -m 755 $candidate ${destroot}${prefix}/bin/llama-server
+            break
+        }
+    }
+
+    # Install web UI
+    if {[file exists ${worksrcpath}/public/index.html]} {
+        xinstall -d ${destroot}${prefix}/share/delta-cli
+        copy ${worksrcpath}/public ${destroot}${prefix}/share/delta-cli/webui
+    }
+}
+
+livecheck.url       ${github.livecheck.url}
+livecheck.regex     v([0-9.]+)

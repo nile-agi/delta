@@ -1,14 +1,16 @@
 cmake_minimum_required(VERSION 3.14)
 
-# On macOS, use system Apple Clang to avoid libc++ ABI mismatch when Homebrew LLVM is in PATH
-# (undefined symbol std::__1::__hash_memory when mixing Homebrew LLVM with system libc++).
-# If you previously built with Homebrew LLVM, do a clean build: rm -rf build_macos && mkdir build_macos && cd build_macos && cmake .. && make -j
-if(APPLE)
+option(FORCE_SYSTEM_CLANG "Force /usr/bin/clang on macOS to avoid Homebrew ABI mismatch" ON)
+if(APPLE AND FORCE_SYSTEM_CLANG)
     set(CMAKE_C_COMPILER "/usr/bin/clang" CACHE FILEPATH "" FORCE)
     set(CMAKE_CXX_COMPILER "/usr/bin/clang++" CACHE FILEPATH "" FORCE)
 endif()
 
-project(delta-cli VERSION 1.0.0 LANGUAGES C CXX)
+# Read version from VERSION file
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" DELTA_VERSION_STRING)
+string(STRIP "${DELTA_VERSION_STRING}" DELTA_VERSION_STRING)
+
+project(delta-cli VERSION ${DELTA_VERSION_STRING} LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -49,9 +51,9 @@ elseif(UNIX)
 endif()
 
 # Include llama.cpp
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/vendor/llama.cpp/CMakeLists.txt")
-    message(FATAL_ERROR 
-        "llama.cpp not found in vendor/llama.cpp/. Please ensure the vendored copy is present.")
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/CMakeLists.txt")
+    message(FATAL_ERROR
+        "llama.cpp not found in engine/vendor/llama.cpp/. Please ensure the vendored copy is present.")
 endif()
 
 # Set llama-cpp options before adding subdirectory
@@ -71,7 +73,7 @@ if(APPLE)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++" CACHE STRING "" FORCE)
 endif()
 
-add_subdirectory(vendor/llama.cpp)
+add_subdirectory(engine/vendor/llama.cpp)
 
 # Find dependencies
 if(USE_CURL)
@@ -98,31 +100,34 @@ endif()
 
 # Source files for Delta CLI with llama.cpp integration
 set(DELTA_SOURCES
-    src/main.cpp
-    src/ui.cpp
-    src/auth.cpp
-    src/models.cpp
-    src/inference.cpp
-    src/update.cpp
-    src/commands.cpp
-    src/history.cpp
-    src/tools/file_ops.cpp
-    src/tools/dep_protocol.cpp
-    src/tools/shell.cpp
-    src/tools/browser.cpp
-    src/model_api_server.cpp
+    engine/main.cpp
+    engine/ui.cpp
+    engine/auth.cpp
+    engine/models.cpp
+    engine/inference.cpp
+    engine/update.cpp
+    engine/commands.cpp
+    engine/history.cpp
+    engine/tools/file_ops.cpp
+    engine/tools/dep_protocol.cpp
+    engine/tools/shell.cpp
+    engine/tools/browser.cpp
+    engine/model_api_server.cpp
 )
 
 # Main executable
 add_executable(delta ${DELTA_SOURCES})
+target_compile_definitions(delta PRIVATE
+    DELTA_VERSION="${PROJECT_VERSION}"
+)
 
 # Include directories (with llama-cpp integration)
 target_include_directories(delta PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/vendor
-    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp
-    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/common
-    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/tools/server
+    ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_SOURCE_DIR}/engine/vendor
+    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp
+    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/common
+    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
 )
 
 # Link libraries (with llama-cpp integration)
@@ -160,21 +165,24 @@ endif()
 
 # Delta Server Wrapper (customized llama-server)
 # Need to include models.cpp for ModelManager
-add_executable(delta-server 
-    src/delta_server_wrapper.cpp 
-    src/model_api_server.cpp
-    src/models.cpp
-    src/tools/file_ops.cpp
-    src/ui.cpp
+add_executable(delta-server
+    engine/delta_server_wrapper.cpp
+    engine/model_api_server.cpp
+    engine/models.cpp
+    engine/tools/file_ops.cpp
+    engine/ui.cpp
+)
+target_compile_definitions(delta-server PRIVATE
+    DELTA_VERSION="${PROJECT_VERSION}"
 )
 
 # Include directories for delta-server
 target_include_directories(delta-server PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/vendor
-    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp
-    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/common
-    ${CMAKE_SOURCE_DIR}/vendor/llama.cpp/tools/server
+    ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_SOURCE_DIR}/engine/vendor
+    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp
+    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/common
+    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
 )
 
 # Link libraries for delta-server
@@ -248,78 +256,80 @@ if(BUILD_TESTS)
     endif()
 endif()
 
-# Build Web UI from assets/ directory
+# Build Web UI from web/app/ directory
 # This builds the custom Delta web UI (SvelteKit) and outputs to public/
-# Option: -DFORCE_BUILD_WEBUI=ON to always rebuild (use after editing assets/ so install uses your changes)
-option(FORCE_BUILD_WEBUI "Always run npm run build for web UI (ignores timestamp)" OFF)
+# Option: -DFORCE_BUILD_WEBUI=ON to always rebuild (use after editing web/app/ so install uses your changes)
+option(FORCE_BUILD_WEBUI "Always run pnpm run build for web UI (ignores timestamp)" OFF)
 message(STATUS "")
-message(STATUS "Building Web UI from assets/...")
+message(STATUS "Building Web UI from web/app/...")
 
-# Check if npm is available
+# Check if pnpm is available (fall back to npm)
+find_program(PNPM_EXECUTABLE pnpm)
 find_program(NPM_EXECUTABLE npm)
-if(NPM_EXECUTABLE)
-    message(STATUS "  npm found: ${NPM_EXECUTABLE}")
-    
-    # Check if assets directory exists
-    if(EXISTS "${CMAKE_SOURCE_DIR}/assets/package.json")
-        message(STATUS "  assets/ directory found")
-        
-        # Check if public/index.html exists and if it's older than assets/package.json
-        # Skip timestamp check if FORCE_BUILD_WEBUI is ON (so your local changes get installed)
+if(PNPM_EXECUTABLE)
+    set(PKG_MANAGER ${PNPM_EXECUTABLE})
+    message(STATUS "  pnpm found: ${PNPM_EXECUTABLE}")
+elseif(NPM_EXECUTABLE)
+    set(PKG_MANAGER ${NPM_EXECUTABLE})
+    message(STATUS "  npm found: ${NPM_EXECUTABLE} (pnpm preferred)")
+endif()
+
+if(PKG_MANAGER)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/web/app/package.json")
+        message(STATUS "  app/ directory found")
+
         set(PUBLIC_INDEX "${CMAKE_SOURCE_DIR}/public/index.html")
-        set(ASSETS_PACKAGE_JSON "${CMAKE_SOURCE_DIR}/assets/package.json")
-        
+        set(APP_PACKAGE_JSON "${CMAKE_SOURCE_DIR}/web/app/package.json")
+
         set(SHOULD_BUILD_WEBUI TRUE)
         if(FORCE_BUILD_WEBUI)
             message(STATUS "  FORCE_BUILD_WEBUI=ON, rebuilding web UI")
         elseif(EXISTS "${PUBLIC_INDEX}")
             file(TIMESTAMP "${PUBLIC_INDEX}" INDEX_TIME)
-            file(TIMESTAMP "${ASSETS_PACKAGE_JSON}" PACKAGE_TIME)
+            file(TIMESTAMP "${APP_PACKAGE_JSON}" PACKAGE_TIME)
             if(INDEX_TIME GREATER_EQUAL PACKAGE_TIME)
                 message(STATUS "  public/index.html is up to date, skipping build")
                 set(SHOULD_BUILD_WEBUI FALSE)
             endif()
         endif()
-        
+
         if(SHOULD_BUILD_WEBUI)
             message(STATUS "  Building web UI (this may take a minute)...")
-            
-            # Run npm install if node_modules doesn't exist
-            if(NOT EXISTS "${CMAKE_SOURCE_DIR}/assets/node_modules")
-                message(STATUS "    Installing npm dependencies...")
+
+            if(NOT EXISTS "${CMAKE_SOURCE_DIR}/web/app/node_modules")
+                message(STATUS "    Installing dependencies...")
                 execute_process(
-                    COMMAND ${NPM_EXECUTABLE} install
-                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/assets"
+                    COMMAND ${PKG_MANAGER} install
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/web/app"
                     OUTPUT_QUIET
                     ERROR_QUIET
-                    RESULT_VARIABLE NPM_INSTALL_RESULT
+                    RESULT_VARIABLE PKG_INSTALL_RESULT
                 )
-                if(NOT NPM_INSTALL_RESULT EQUAL 0)
-                    message(WARNING "  npm install failed, web UI may not be available")
+                if(NOT PKG_INSTALL_RESULT EQUAL 0)
+                    message(WARNING "  Install failed, web UI may not be available")
                 endif()
             endif()
-            
-            # Run npm run build
+
             message(STATUS "    Building SvelteKit app...")
             execute_process(
-                COMMAND ${NPM_EXECUTABLE} run build
-                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/assets"
+                COMMAND ${PKG_MANAGER} run build
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/web/app"
                 OUTPUT_QUIET
                 ERROR_QUIET
-                RESULT_VARIABLE NPM_BUILD_RESULT
+                RESULT_VARIABLE PKG_BUILD_RESULT
             )
-            if(NPM_BUILD_RESULT EQUAL 0)
-                message(STATUS "  ✓ Web UI built successfully")
+            if(PKG_BUILD_RESULT EQUAL 0)
+                message(STATUS "  Web UI built successfully")
             else()
-                message(WARNING "  npm build failed, web UI may not be available")
+                message(WARNING "  Build failed, web UI may not be available")
             endif()
         endif()
     else()
-        message(WARNING "  assets/package.json not found, skipping web UI build")
+        message(WARNING "  app/package.json not found, skipping web UI build")
     endif()
 else()
-    message(WARNING "  npm not found, web UI will not be built")
-    message(WARNING "  Install Node.js and npm to build the web UI")
+    message(WARNING "  Neither pnpm nor npm found, web UI will not be built")
+    message(WARNING "  Install pnpm (https://pnpm.io) to build the web UI")
 endif()
 
 # Installation
@@ -335,7 +345,7 @@ elseif(TARGET llama-server)
   install(TARGETS llama-server RUNTIME DESTINATION bin)
   message(STATUS "  Will install llama.cpp 'llama-server' to bin")
 else()
-  message(STATUS "  Note: llama.cpp server target not found; ensure LLAMA_BUILD_SERVER=ON and vendor/llama.cpp is present")
+  message(STATUS "  Note: llama.cpp server target not found; ensure LLAMA_BUILD_SERVER=ON and engine/vendor/llama.cpp is present")
 endif()
 
 # Server functionality is provided by llama-server from llama-cpp
@@ -343,7 +353,7 @@ endif()
 # Install models directory structure
 install(DIRECTORY DESTINATION share/delta-cli/models)
 
-# Install Web UI from public/ directory (built from assets/)
+# Install Web UI from public/ directory (built from app/)
 if(EXISTS "${CMAKE_SOURCE_DIR}/public/index.html.gz")
     message(STATUS "  Installing web UI from public/...")
     install(DIRECTORY "${CMAKE_SOURCE_DIR}/public"

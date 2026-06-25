@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.schema.2.0
+PackageIdentifier: DeltaCLI.DeltaCLI
+PackageVersion: 1.0.0
+PackageName: Delta CLI
+Publisher: Delta CLI
+PublisherUrl: https://github.com/nile-agi/delta
+PublisherSupportUrl: https://github.com/nile-agi/delta/issues
+License: MIT
+LicenseUrl: https://github.com/nile-agi/delta/blob/main/LICENSE
+Copyright: Copyright (c) 2026 Nile AGI
+CopyrightUrl: https://github.com/nile-agi/delta
+ShortDescription: Offline AI Assistant powered by llama.cpp
+Description: |
+  Delta CLI is an open-source, offline-first AI assistant that runs large 
+  language models (LLMs) directly on your device. Built on top of llama.cpp, 
+  Delta CLI provides a simple command-line interface to interact with AI 
+  models without requiring internet connectivity or cloud services.
+  
+  Features:
+  - 100% Offline: Works completely offline after initial model download
+  - High Performance: Full GPU acceleration (CUDA, Metal, Vulkan, ROCm)
+  - Cross-Platform: Runs on desktop, mobile, and edge devices
+  - Beautiful Terminal UI: Retro-green interface with custom styling
+  - Easy Model Management: One-command downloads from Hugging Face
+  - Zero-Setup: Auto-downloads default model on first run
+  - Always Up-to-Date: Automatically uses the latest llama.cpp version
+Tags:
+  - ai
+  - llm
+  - machine-learning
+  - offline
+  - llama
+  - cli
+  - terminal
+Moniker: delta
+Commands:
+  - delta
+  - delta-server
+Installers:
+  - Architecture: x64
+    InstallerType: zip
+    InstallerUrl: https://github.com/nile-agi/delta/releases/download/v1.0.0/delta-cli-windows-x64.zip
+    InstallerSha256: UPDATE_SHA256_FOR_RELEASE
+    Scope: machine
+    InstallLocation: "C:\\Program Files\\Delta CLI"
+    InstallModes:
+      - silent
+      - interactive
+ManifestType: version
+ManifestVersion: 1.4.0
+

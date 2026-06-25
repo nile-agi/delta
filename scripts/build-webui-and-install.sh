@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Build the Delta web UI from assets/ and then build + install Delta CLI.
-# Use this when you have local changes in assets/ so that reinstalling Delta
-# uses YOUR built web UI (not an old or upstream copy).
+# Build the Delta web UI + C++ binaries and install locally.
 #
-# Usage: from repo root, run:
+# Usage:
 #   ./scripts/build-webui-and-install.sh [install-prefix]
-# Example:
 #   ./scripts/build-webui-and-install.sh              # install to /usr/local
 #   ./scripts/build-webui-and-install.sh /opt/homebrew # install to Homebrew prefix
 set -e
@@ -16,21 +13,21 @@ cd "$REPO_ROOT"
 PREFIX="${1:-/usr/local}"
 BUILD_DIR="${BUILD_DIR:-build}"
 
-echo "=== 1. Building web UI from assets/ (output -> public/) ==="
-if [[ ! -f assets/package.json ]]; then
-  echo "Error: assets/package.json not found. Run from Delta repo root." >&2
+echo "=== 1. Building web UI from web/app/ (output -> public/) ==="
+if [[ ! -f web/app/package.json ]]; then
+  echo "Error: web/app/package.json not found. Run from Delta repo root." >&2
   exit 1
 fi
-if ! command -v npm &>/dev/null; then
-  echo "Error: npm not found. Install Node.js and npm to build the web UI." >&2
+if ! command -v pnpm &>/dev/null; then
+  echo "Error: pnpm not found. Install pnpm: https://pnpm.io/installation" >&2
   exit 1
 fi
-cd assets
+cd web/app
 if [[ ! -d node_modules ]]; then
-  echo "Installing npm dependencies..."
-  npm install
+  echo "Installing dependencies..."
+  pnpm install
 fi
-npm run build
+pnpm run build
 cd "$REPO_ROOT"
 
 if [[ ! -f public/index.html ]]; then
@@ -58,7 +55,7 @@ echo "This may ask for your password (sudo)."
 cmake --install . --prefix "$PREFIX"
 
 echo ""
-echo "Done. Delta CLI and the web UI (from your assets/) are installed to $PREFIX."
+echo "Done. Delta CLI and the web UI (from your web/app/) are installed to $PREFIX."
 echo "  Binaries: $PREFIX/bin/delta, $PREFIX/bin/delta-server"
 echo "  Web UI:   $PREFIX/share/delta-cli/webui"
 echo "Run: delta --version  (or $PREFIX/bin/delta --version)"
