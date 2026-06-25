@@ -54,11 +54,13 @@ jobs:
           vcpkg install curl:x64-windows
 
       - name: Build web UI
+        shell: bash
         run: |
           pnpm install --filter webui...
           pnpm --filter webui run build
 
       - name: Verify web UI build
+        shell: bash
         run: |
           test -f public/index.html || { echo "ERROR: public/index.html not found"; exit 1; }
 
@@ -125,6 +127,7 @@ jobs:
           for candidate in \
             "$BIN_ROOT/llama-server${EXT}" \
             "$BUILD_DIR/bin/llama-server${EXT}" \
+            "$BUILD_DIR/bin/Release/llama-server${EXT}" \
             "$BUILD_DIR/engine/vendor/llama.cpp/bin/llama-server${EXT}" \
             "$BUILD_DIR/bin/server${EXT}"; do
             if [[ -f "$candidate" ]]; then
@@ -172,7 +175,12 @@ jobs:
 
       - name: Generate checksum
         shell: bash
-        run: sha256sum "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+        run: |
+          if command -v sha256sum &>/dev/null; then
+            sha256sum "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+          else
+            shasum -a 256 "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+          fi
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@v4
@@ -226,6 +234,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            build-essential cmake \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
@@ -239,11 +248,13 @@ jobs:
           vcpkg install curl:x64-windows
 
       - name: Build web UI
+        shell: bash
         run: |
           pnpm install --filter webui...
           pnpm --filter webui run build
 
       - name: Verify web UI build
+        shell: bash
         run: |
           test -f public/index.html || { echo "ERROR: public/index.html not found"; exit 1; }
 

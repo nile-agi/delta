@@ -126,6 +126,7 @@ fi
 LLAMA_SERVER=""
 for candidate in \
     "$BUILDDIR/bin/llama-server${EXE_SUFFIX}" \
+    "$BUILDDIR/bin/Release/llama-server${EXE_SUFFIX}" \
     "$BUILDDIR/engine/vendor/llama.cpp/bin/llama-server${EXE_SUFFIX}" \
     "$BUILDDIR/engine/vendor/llama.cpp/tools/server/llama-server${EXE_SUFFIX}" \
     "$BUILDDIR/llama-server${EXE_SUFFIX}" \

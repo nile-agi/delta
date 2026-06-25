@@ -6,7 +6,7 @@ if(APPLE AND FORCE_SYSTEM_CLANG)
     set(CMAKE_CXX_COMPILER "/usr/bin/clang++" CACHE FILEPATH "" FORCE)
 endif()
 
-# Read version from VERSION file
+# Read version from version.txt
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" DELTA_VERSION_STRING)
 string(STRIP "${DELTA_VERSION_STRING}" DELTA_VERSION_STRING)
 
@@ -186,7 +186,7 @@ target_include_directories(delta-server PRIVATE
 )
 
 # Link libraries for delta-server
-if(NOT APPLE)
+if(NOT APPLE AND NOT MSVC)
     target_link_libraries(delta-server PRIVATE stdc++fs)
 endif()
 
