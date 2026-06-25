@@ -194,6 +194,8 @@ jobs:
   # Desktop app release — Tauri bundles (dmg, deb, AppImage, exe)
   # ---------------------------------------------------------------------------
   build-tauri:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -224,6 +226,12 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 9
+
+      - name: Sync version from version.txt
+        shell: bash
+        run: |
+          chmod +x scripts/bump-version.sh
+          ./scripts/bump-version.sh
 
       - uses: dtolnay/rust-toolchain@stable
         with:

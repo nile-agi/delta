@@ -144,7 +144,7 @@ if [[ -n "$LLAMA_SERVER" ]]; then
     echo "  llama-server -> llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
 else
     echo "  WARNING: llama-server not found, searching..."
-    FOUND=$(find "$BUILDDIR" -name "llama-server${EXE_SUFFIX}" -o -name "server${EXE_SUFFIX}" 2>/dev/null | head -1)
+    FOUND=$(find "$BUILDDIR" -type f \( -name "llama-server${EXE_SUFFIX}" -o -name "server${EXE_SUFFIX}" \) 2>/dev/null | head -1)
     if [[ -n "$FOUND" ]]; then
         cp "$FOUND" "$BINDIR/llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
         echo "  llama-server -> llama-server-${TARGET_TRIPLE}${EXE_SUFFIX} (from $FOUND)"
