@@ -298,7 +298,24 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Delta ${{ github.ref_name }}'
-          releaseBody: 'Download the installer for your platform from the assets below.'
+          releaseBody: |
+            Download the installer for your platform from the assets below.
+
+            ### Which file to download
+
+            | File | OS | Notes |
+            |------|----|-------|
+            | `.dmg` | macOS | Disk image installer |
+            | `.deb` | Linux (Ubuntu/Debian) | Install with `sudo dpkg -i` |
+            | `.AppImage` | Linux (any distro) | Portable, no install needed |
+            | `.msi` or `.exe` | Windows | Standard installer |
+
+            ---
+
+            ### Linux AppImage Setup
+
+            1. Make the file executable: `chmod +x Delta_*.AppImage`
+            2. Run it: `./Delta_*.AppImage`
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
@@ -314,7 +331,33 @@ jobs:
           releaseBody: |
             Download the installer for your platform from the assets below.
 
-            **Note:** macOS builds are not code-signed. Right-click > Open to bypass Gatekeeper.
+            ### Which file to download
+
+            | File | OS | Notes |
+            |------|----|-------|
+            | `.dmg` | macOS | Disk image installer |
+            | `.deb` | Linux (Ubuntu/Debian) | Install with `sudo dpkg -i` |
+            | `.AppImage` | Linux (any distro) | Portable, no install needed |
+            | `.msi` or `.exe` | Windows | Standard installer |
+
+            ---
+
+            ### macOS Setup (unsigned build)
+
+            1. Open the `.dmg` file and drag **Delta** into the **Applications** folder.
+            2. Open Delta from Applications. macOS will show a warning and block it. Click **Done**.
+            3. Go to **System Settings > Privacy & Security**, scroll down, and click **Open Anyway** next to the Delta blocked message.
+            4. Enter your password. Delta will now launch normally.
+
+            > Or run this in Terminal to skip the above:
+            > ```
+            > xattr -cr /Applications/Delta.app
+            > ```
+
+            ### Linux AppImage Setup
+
+            1. Make the file executable: `chmod +x Delta_*.AppImage`
+            2. Run it: `./Delta_*.AppImage`
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
