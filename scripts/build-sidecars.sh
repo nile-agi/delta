@@ -76,7 +76,10 @@ case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
         CMAKE_ARGS+=(-DGGML_METAL=OFF -DUSE_CURL=ON)
         if [[ -n "${VCPKG_INSTALLATION_ROOT:-}" ]]; then
-            CMAKE_ARGS+=("-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake")
+            CMAKE_ARGS+=(
+                "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+                -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+            )
         fi
         ;;
 esac

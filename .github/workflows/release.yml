@@ -51,7 +51,7 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: bash
         run: |
-          vcpkg install curl:x64-windows
+          vcpkg install curl:x64-windows-static-md
 
       - name: Build web UI
         shell: bash
@@ -96,6 +96,7 @@ jobs:
                 -DGGML_METAL=OFF
                 -DUSE_CURL=ON
                 "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+                -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
               )
               ;;
           esac
@@ -253,7 +254,7 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: bash
         run: |
-          vcpkg install curl:x64-windows
+          vcpkg install curl:x64-windows-static-md
 
       - name: Build web UI
         shell: bash
