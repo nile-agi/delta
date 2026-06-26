@@ -76,7 +76,10 @@ case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*)
         CMAKE_ARGS+=(-DGGML_METAL=OFF -DUSE_CURL=ON)
         if [[ -n "${VCPKG_INSTALLATION_ROOT:-}" ]]; then
-            CMAKE_ARGS+=("-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake")
+            CMAKE_ARGS+=(
+                "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+                -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+            )
         fi
         ;;
 esac
@@ -144,7 +147,7 @@ if [[ -n "$LLAMA_SERVER" ]]; then
     echo "  llama-server -> llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
 else
     echo "  WARNING: llama-server not found, searching..."
-    FOUND=$(find "$BUILDDIR" -name "llama-server${EXE_SUFFIX}" -o -name "server${EXE_SUFFIX}" 2>/dev/null | head -1)
+    FOUND=$(find "$BUILDDIR" -type f \( -name "llama-server${EXE_SUFFIX}" -o -name "server${EXE_SUFFIX}" \) 2>/dev/null | head -1)
     if [[ -n "$FOUND" ]]; then
         cp "$FOUND" "$BINDIR/llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
         echo "  llama-server -> llama-server-${TARGET_TRIPLE}${EXE_SUFFIX} (from $FOUND)"
