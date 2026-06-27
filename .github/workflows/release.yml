@@ -47,42 +47,57 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libcurl4-openssl-dev
 
-      - name: Build web UI
-        working-directory: web/app
+      - name: Install Windows dependencies
+        if: matrix.platform == 'windows-latest'
+        shell: bash
         run: |
-          pnpm install
-          pnpm run build
+          vcpkg install curl:x64-windows-static-md
+
+      - name: Build web UI
+        shell: bash
+        run: |
+          pnpm install --filter webui...
+          pnpm --filter webui run build
 
       - name: Verify web UI build
+        shell: bash
         run: |
           test -f public/index.html || { echo "ERROR: public/index.html not found"; exit 1; }
 
       - name: Build CLI binaries
         shell: bash
         run: |
-          VERSION=$(cat VERSION)
+          VERSION=$(cat version.txt)
           BUILD_DIR="build_release"
           mkdir -p "$BUILD_DIR"
 
           CMAKE_ARGS=(
             -DCMAKE_BUILD_TYPE=Release
             -DBUILD_TESTS=OFF
-            -DUSE_CURL=ON
+            -DLLAMA_OPENSSL=OFF
+            -DFORCE_SYSTEM_CLANG=OFF
           )
 
           case "${{ matrix.platform }}" in
             macos-*)
-              CMAKE_ARGS+=(-DGGML_METAL=ON)
+              CMAKE_ARGS+=(-DGGML_METAL=ON -DUSE_CURL=ON)
               case "${{ matrix.target }}" in
                 aarch64-apple-darwin) CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=arm64) ;;
-                x86_64-apple-darwin)  CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=x86_64) ;;
+                x86_64-apple-darwin)
+                  CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=x86_64 -DGGML_NATIVE=OFF)
+                  ;;
               esac
               ;;
             ubuntu-*)
-              CMAKE_ARGS+=(-DGGML_METAL=OFF)
+              CMAKE_ARGS+=(-DGGML_METAL=OFF -DUSE_CURL=ON)
               ;;
             windows-*)
-              CMAKE_ARGS+=(-DGGML_METAL=OFF)
+              CMAKE_ARGS+=(
+                -DGGML_METAL=OFF
+                -DUSE_CURL=ON
+                "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+                -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+              )
               ;;
           esac
 
@@ -113,6 +128,7 @@ jobs:
           for candidate in \
             "$BIN_ROOT/llama-server${EXT}" \
             "$BUILD_DIR/bin/llama-server${EXT}" \
+            "$BUILD_DIR/bin/Release/llama-server${EXT}" \
             "$BUILD_DIR/engine/vendor/llama.cpp/bin/llama-server${EXT}" \
             "$BUILD_DIR/bin/server${EXT}"; do
             if [[ -f "$candidate" ]]; then
@@ -160,7 +176,12 @@ jobs:
 
       - name: Generate checksum
         shell: bash
-        run: sha256sum "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+        run: |
+          if command -v sha256sum &>/dev/null; then
+            sha256sum "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+          else
+            shasum -a 256 "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+          fi
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@v4
@@ -174,6 +195,8 @@ jobs:
   # Desktop app release — Tauri bundles (dmg, deb, AppImage, exe)
   # ---------------------------------------------------------------------------
   build-tauri:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -205,6 +228,12 @@ jobs:
         with:
           version: 9
 
+      - name: Sync version from version.txt
+        shell: bash
+        run: |
+          chmod +x scripts/bump-version.sh
+          ./scripts/bump-version.sh
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -214,19 +243,27 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            build-essential cmake \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
             libcurl4-openssl-dev
 
-      - name: Build web UI
-        working-directory: web/app
+      - name: Install Windows dependencies
+        if: matrix.platform == 'windows-latest'
+        shell: bash
         run: |
-          pnpm install
-          pnpm run build
+          vcpkg install curl:x64-windows-static-md
+
+      - name: Build web UI
+        shell: bash
+        run: |
+          pnpm install --filter webui...
+          pnpm --filter webui run build
 
       - name: Verify web UI build
+        shell: bash
         run: |
           test -f public/index.html || { echo "ERROR: public/index.html not found"; exit 1; }
 
@@ -236,7 +273,21 @@ jobs:
           chmod +x scripts/build-sidecars.sh
           scripts/build-sidecars.sh --release --target ${{ matrix.target }}
 
-      - uses: tauri-apps/tauri-action@v0
+      - name: Check signing availability
+        id: signing
+        shell: bash
+        run: |
+          if [[ -n "$APPLE_CERT" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE }}
+
+      - name: Build Tauri app (signed)
+        if: steps.signing.outputs.available == 'true'
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -248,8 +299,67 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Delta ${{ github.ref_name }}'
-          releaseBody: 'Download the installer for your platform from the assets below.'
-          releaseDraft: true
+          releaseBody: |
+            Download the installer for your platform from the assets below.
+
+            ### Which file to download
+
+            | File | OS | Notes |
+            |------|----|-------|
+            | `.dmg` | macOS | Disk image installer |
+            | `.deb` | Linux (Ubuntu/Debian) | Install with `sudo dpkg -i` |
+            | `.AppImage` | Linux (any distro) | Portable, no install needed |
+            | `.msi` or `.exe` | Windows | Standard installer |
+
+            ---
+
+            ### Linux AppImage Setup
+
+            1. Make the file executable: `chmod +x Delta_*.AppImage`
+            2. Run it: `./Delta_*.AppImage`
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: Build Tauri app (unsigned)
+        if: steps.signing.outputs.available == 'false'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Delta ${{ github.ref_name }}'
+          releaseBody: |
+            Download the installer for your platform from the assets below.
+
+            ### Which file to download
+
+            | File | OS | Notes |
+            |------|----|-------|
+            | `.dmg` | macOS | Disk image installer |
+            | `.deb` | Linux (Ubuntu/Debian) | Install with `sudo dpkg -i` |
+            | `.AppImage` | Linux (any distro) | Portable, no install needed |
+            | `.msi` or `.exe` | Windows | Standard installer |
+
+            ---
+
+            ### macOS Setup (unsigned build)
+
+            1. Open the `.dmg` file and drag **Delta** into the **Applications** folder.
+            2. Open Delta from Applications. macOS will show a warning and block it. Click **Done**.
+            3. Go to **System Settings > Privacy & Security**, scroll down, and click **Open Anyway** next to the Delta blocked message.
+            4. Enter your password. Delta will now launch normally.
+
+            > Or run this in Terminal to skip the above:
+            > ```
+            > xattr -cr /Applications/Delta.app
+            > ```
+
+            ### Linux AppImage Setup
+
+            1. Make the file executable: `chmod +x Delta_*.AppImage`
+            2. Run it: `./Delta_*.AppImage`
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
 
@@ -257,7 +367,7 @@ jobs:
   # Attach CLI binaries + checksums to the GitHub Release
   # ---------------------------------------------------------------------------
   attach-cli:
-    needs: [build-cli, build-tauri]
+    needs: [build-cli]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -271,7 +381,7 @@ jobs:
 
       - name: Build combined checksum file
         run: |
-          VERSION=$(cat VERSION)
+          VERSION=$(cat version.txt)
           {
             echo "# Delta CLI ${{ github.ref_name }} — SHA-256 Checksums"
             echo "# Verify: sha256sum -c checksums-${VERSION}.sha256"
@@ -279,7 +389,7 @@ jobs:
             echo "# Commit: ${GITHUB_SHA}"
             echo "# Date:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo ""
-            cat *.sha256
+            cat delta-cli-*.sha256
           } > "checksums-${VERSION}.sha256"
           cat "checksums-${VERSION}.sha256"
           echo "CHECKSUMS_FILE=checksums-${VERSION}.sha256" >> "$GITHUB_ENV"
@@ -288,7 +398,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          draft: true
+          draft: false
           files: |
             delta-cli-macos-arm64.tar.gz
             delta-cli-macos-x86_64.tar.gz

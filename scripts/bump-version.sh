@@ -9,7 +9,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION_FILE="$REPO_ROOT/VERSION"
+VERSION_FILE="$REPO_ROOT/version.txt"
 
 if [[ $# -ge 1 ]]; then
     echo "$1" > "$VERSION_FILE"

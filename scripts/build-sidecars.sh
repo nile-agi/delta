@@ -56,33 +56,45 @@ mkdir -p "$BUILDDIR"
 CMAKE_ARGS=(
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
     -DBUILD_TESTS=OFF
+    -DLLAMA_OPENSSL=OFF
+    -DFORCE_SYSTEM_CLANG=OFF
 )
 
 case "$(uname -s)" in
     Darwin)
-        CMAKE_ARGS+=(-DGGML_METAL=ON)
-        # Handle cross-compilation between arm64 and x86_64 on macOS
+        CMAKE_ARGS+=(-DGGML_METAL=ON -DUSE_CURL=ON)
         case "$TARGET_TRIPLE" in
             aarch64-apple-darwin) CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=arm64) ;;
-            x86_64-apple-darwin)  CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=x86_64) ;;
+            x86_64-apple-darwin)
+                CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=x86_64 -DGGML_NATIVE=OFF)
+                ;;
         esac
         ;;
     Linux)
-        CMAKE_ARGS+=(-DGGML_METAL=OFF)
+        CMAKE_ARGS+=(-DGGML_METAL=OFF -DUSE_CURL=ON)
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        CMAKE_ARGS+=(-DGGML_METAL=OFF -DUSE_CURL=ON)
+        if [[ -n "${VCPKG_INSTALLATION_ROOT:-}" ]]; then
+            CMAKE_ARGS+=(
+                "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+                -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+            )
+        fi
         ;;
 esac
 
 echo "Configuring CMake..."
-cmake -S "$PROJECT_ROOT" -B "$BUILDDIR" "${CMAKE_ARGS[@]}" 2>&1 | tail -20
+cmake -S "$PROJECT_ROOT" -B "$BUILDDIR" "${CMAKE_ARGS[@]}"
 
 echo ""
 echo "Building..."
 NPROC=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
-cmake --build "$BUILDDIR" --config "$BUILD_TYPE" -j "$NPROC" -- delta-server 2>&1 | tail -10
+cmake --build "$BUILDDIR" --config "$BUILD_TYPE" -j "$NPROC" --target delta-server
 
 # Also build llama-server from the llama.cpp submodule
-cmake --build "$BUILDDIR" --config "$BUILD_TYPE" -j "$NPROC" -- llama-server 2>&1 | tail -10 || \
-cmake --build "$BUILDDIR" --config "$BUILD_TYPE" -j "$NPROC" -- server 2>&1 | tail -10 || true
+cmake --build "$BUILDDIR" --config "$BUILD_TYPE" -j "$NPROC" --target llama-server || \
+cmake --build "$BUILDDIR" --config "$BUILD_TYPE" -j "$NPROC" --target server || true
 
 echo ""
 echo "Copying binaries to $BINDIR ..."
@@ -93,9 +105,20 @@ if [[ "$TARGET_TRIPLE" == *"windows"* ]]; then
     EXE_SUFFIX=".exe"
 fi
 
-# Copy delta-server
-if [[ -f "$BUILDDIR/delta-server${EXE_SUFFIX}" ]]; then
-    cp "$BUILDDIR/delta-server${EXE_SUFFIX}" "$BINDIR/delta-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
+# Copy delta-server (check multiple locations for MSVC generators)
+DELTA_SERVER=""
+for candidate in \
+    "$BUILDDIR/delta-server${EXE_SUFFIX}" \
+    "$BUILDDIR/Release/delta-server${EXE_SUFFIX}" \
+    "$BUILDDIR/Debug/delta-server${EXE_SUFFIX}"; do
+    if [[ -f "$candidate" ]]; then
+        DELTA_SERVER="$candidate"
+        break
+    fi
+done
+
+if [[ -n "$DELTA_SERVER" ]]; then
+    cp "$DELTA_SERVER" "$BINDIR/delta-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
     echo "  delta-server -> delta-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
 else
     echo "  ERROR: delta-server not found in $BUILDDIR"
@@ -106,9 +129,11 @@ fi
 LLAMA_SERVER=""
 for candidate in \
     "$BUILDDIR/bin/llama-server${EXE_SUFFIX}" \
+    "$BUILDDIR/bin/Release/llama-server${EXE_SUFFIX}" \
     "$BUILDDIR/engine/vendor/llama.cpp/bin/llama-server${EXE_SUFFIX}" \
     "$BUILDDIR/engine/vendor/llama.cpp/tools/server/llama-server${EXE_SUFFIX}" \
     "$BUILDDIR/llama-server${EXE_SUFFIX}" \
+    "$BUILDDIR/Release/llama-server${EXE_SUFFIX}" \
     "$BUILDDIR/bin/server${EXE_SUFFIX}" \
     "$BUILDDIR/server${EXE_SUFFIX}"; do
     if [[ -f "$candidate" ]]; then
@@ -122,7 +147,7 @@ if [[ -n "$LLAMA_SERVER" ]]; then
     echo "  llama-server -> llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
 else
     echo "  WARNING: llama-server not found, searching..."
-    FOUND=$(find "$BUILDDIR" -name "llama-server${EXE_SUFFIX}" -o -name "server${EXE_SUFFIX}" 2>/dev/null | head -1)
+    FOUND=$(find "$BUILDDIR" -type f \( -name "llama-server${EXE_SUFFIX}" -o -name "server${EXE_SUFFIX}" \) 2>/dev/null | head -1)
     if [[ -n "$FOUND" ]]; then
         cp "$FOUND" "$BINDIR/llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
         echo "  llama-server -> llama-server-${TARGET_TRIPLE}${EXE_SUFFIX} (from $FOUND)"

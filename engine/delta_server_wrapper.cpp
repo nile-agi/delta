@@ -18,6 +18,7 @@
 #include <thread>
 #include <chrono>
 #include <mutex>
+#include <atomic>
 #ifdef _WIN32
 #include <windows.h>
 #include <shlwapi.h>
