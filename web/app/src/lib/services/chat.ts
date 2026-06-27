@@ -179,7 +179,7 @@ export class ChatService {
 		try {
 			const apiKey = currentConfig.apiKey?.toString().trim();
 
-			const response = await fetch(`${getServerBaseUrl()}/v1/chat/completions`, {
+			const response = await fetch(`${getModelApiBaseUrl()}/v1/chat/completions`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',

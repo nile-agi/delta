@@ -86,6 +86,12 @@
 
 	onMount(() => {
 		loadMonthEvents(month);
+
+		function onVisible() {
+			if (document.visibilityState === 'visible') loadMonthEvents(month);
+		}
+		document.addEventListener('visibilitychange', onVisible);
+		return () => document.removeEventListener('visibilitychange', onVisible);
 	});
 </script>
 

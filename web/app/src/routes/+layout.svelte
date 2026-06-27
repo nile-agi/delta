@@ -36,6 +36,7 @@
 
 	let isChatRoute = $derived(page.route.id === '/chat/[id]');
 	let isHomeRoute = $derived(page.route.id === '/');
+	let isToolRoute = $derived(page.route.id === '/calendar' || page.route.id === '/tasks');
 	let isNewChatMode = $derived(page.url.searchParams.get('new_chat') === 'true');
 	let showSidebarByDefault = $derived(activeMessages().length > 0 || isLoading());
 	let currentConfig = $derived(config());
@@ -102,7 +103,7 @@
 			sidebarOpen = false;
 		} else if (isHomeRoute && isNewChatMode) {
 			sidebarOpen = autoShowOnNewChat;
-		} else if (isChatRoute) {
+		} else if (isChatRoute || isToolRoute) {
 			sidebarOpen = true;
 		} else {
 			sidebarOpen = showSidebarByDefault;

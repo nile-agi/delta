@@ -120,8 +120,8 @@
 				<Sidebar.MenuItem>
 					<Sidebar.MenuButton
 						class="flex items-center gap-2 text-sm"
-						data-active={page.url.hash === '#/calendar'}
-						onclick={() => { goto('#/calendar'); handleMobileSidebarItemClick(); }}
+						data-active={page.url.pathname === '/calendar'}
+						onclick={() => { goto('/calendar'); handleMobileSidebarItemClick(); }}
 					>
 						<Calendar class="h-4 w-4" />
 						Calendar
@@ -130,8 +130,8 @@
 				<Sidebar.MenuItem>
 					<Sidebar.MenuButton
 						class="flex items-center gap-2 text-sm"
-						data-active={page.url.hash === '#/tasks'}
-						onclick={() => { goto('#/tasks'); handleMobileSidebarItemClick(); }}
+						data-active={page.url.pathname === '/tasks'}
+						onclick={() => { goto('/tasks'); handleMobileSidebarItemClick(); }}
 					>
 						<ListTodo class="h-4 w-4" />
 						Tasks

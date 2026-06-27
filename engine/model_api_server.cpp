@@ -166,7 +166,7 @@ class ModelAPIServer {
         // CORS headers
         server_->set_default_headers({{"Access-Control-Allow-Origin", "*"},
                                       {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-                                      {"Access-Control-Allow-Headers", "Content-Type"}});
+                                      {"Access-Control-Allow-Headers", "Content-Type, Authorization"}});
 
         // Handle OPTIONS (CORS preflight)
         server_->Options(".*", [](const httplib::Request&, httplib::Response&) { return; });
@@ -617,12 +617,46 @@ class ModelAPIServer {
             try {
                 json body = json::parse(req.body);
                 json messages = body.value("messages", json::array());
+                bool stream = body.value("stream", false);
 
                 std::string llama_url = "http://127.0.0.1:" + std::to_string(llama_port);
                 agent::AgentLoop loop(llama_url);
                 auto result = loop.process(messages);
 
-                if (result.success) {
+                if (!result.success) {
+                    json err = {{"error", {{"message", result.error}, {"type", "server_error"}}}};
+                    res.status = 500;
+                    res.set_content(err.dump(), "application/json");
+                    return;
+                }
+
+                if (stream) {
+                    std::string sse_body;
+
+                    // Emit content line-by-line to preserve formatting (newlines, indentation)
+                    std::istringstream iss(result.content);
+                    std::string line;
+                    bool first_line = true;
+                    while (std::getline(iss, line)) {
+                        std::string token = first_line ? line : "\n" + line;
+                        first_line = false;
+                        json chunk = {
+                            {"id", "chatcmpl-delta"},
+                            {"object", "chat.completion.chunk"},
+                            {"choices", {{{"index", 0}, {"delta", {{"content", token}}}, {"finish_reason", nullptr}}}}};
+                        sse_body += "data: " + chunk.dump() + "\n\n";
+                    }
+
+                    json finish = {{"id", "chatcmpl-delta"},
+                                   {"object", "chat.completion.chunk"},
+                                   {"choices", {{{"index", 0}, {"delta", json::object()}, {"finish_reason", "stop"}}}}};
+                    sse_body += "data: " + finish.dump() + "\n\n";
+                    sse_body += "data: [DONE]\n\n";
+
+                    res.set_header("Cache-Control", "no-cache");
+                    res.set_header("Connection", "keep-alive");
+                    res.set_content(sse_body, "text/event-stream");
+                } else {
                     json response = {{"id", "chatcmpl-delta"},
                                      {"object", "chat.completion"},
                                      {"choices",
@@ -634,10 +668,6 @@ class ModelAPIServer {
                         response["tool_calls_made"] = result.tool_calls_made;
                     }
                     res.set_content(response.dump(), "application/json");
-                } else {
-                    json err = {{"error", {{"message", result.error}, {"type", "server_error"}}}};
-                    res.status = 500;
-                    res.set_content(err.dump(), "application/json");
                 }
             } catch (const json::parse_error&) {
                 json err = {

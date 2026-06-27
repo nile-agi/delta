@@ -130,16 +130,19 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
     auto& registry = ToolRegistry::instance();
     nlohmann::json tools = registry.get_tools_array();
 
-    // Inject system prompt if not already present
-    bool has_system = false;
+    // Ensure agent tool instructions are in the system prompt
+    std::string agent_prompt = build_system_prompt();
+    bool found_system = false;
     for (auto& msg : messages) {
         if (msg.value("role", "") == "system") {
-            has_system = true;
+            std::string existing = msg.value("content", "");
+            msg["content"] = existing + "\n\n" + agent_prompt;
+            found_system = true;
             break;
         }
     }
-    if (!has_system) {
-        messages.insert(messages.begin(), {{"role", "system"}, {"content", build_system_prompt()}});
+    if (!found_system) {
+        messages.insert(messages.begin(), {{"role", "system"}, {"content", agent_prompt}});
     }
 
     int total_tool_calls = 0;

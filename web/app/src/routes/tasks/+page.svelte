@@ -75,6 +75,12 @@
 
 	onMount(() => {
 		loadTasks();
+
+		function onVisible() {
+			if (document.visibilityState === 'visible') loadTasks(filterStatus || undefined, filterPriority || undefined);
+		}
+		document.addEventListener('visibilitychange', onVisible);
+		return () => document.removeEventListener('visibilitychange', onVisible);
 	});
 </script>
 
