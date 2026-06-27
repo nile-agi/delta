@@ -20,6 +20,8 @@
 #include <mutex>
 #include <atomic>
 #ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <shlwapi.h>
 #include <io.h>
@@ -287,6 +289,9 @@ class DeltaServerWrapper {
             // Executable is at Contents/MacOS/delta, web UI is at Contents/Resources/webui
             candidates.push_back(exe_path + "/../Resources/webui");
             candidates.push_back(exe_path + "/../../Resources/webui");
+            // Check same directory as executable (Windows Tauri bundles)
+            candidates.push_back(exe_path + "/webui");
+            candidates.push_back(exe_path + "/public");
             // Check relative to executable (Delta web UI from public/)
             candidates.push_back(exe_path + "/../public");
             candidates.push_back(exe_path + "/../../public");
@@ -445,9 +450,17 @@ class DeltaServerWrapper {
         // In router mode, no restart needed — router loads models on demand
         if (llama_server_running_ && !models_dir_.empty() && !new_model_path.empty()) {
             try {
-                auto model_dir = std::filesystem::canonical(std::filesystem::path(new_model_path).parent_path());
-                auto models_dir = std::filesystem::canonical(std::filesystem::path(models_dir_));
-                if (model_dir == models_dir) {
+                std::filesystem::path model_parent = std::filesystem::path(new_model_path).parent_path();
+                std::filesystem::path models_dir_p = std::filesystem::path(models_dir_);
+                bool same_dir = false;
+                try {
+                    same_dir = std::filesystem::canonical(model_parent) == std::filesystem::canonical(models_dir_p);
+                } catch (...) {
+                    auto abs1 = std::filesystem::absolute(model_parent).lexically_normal();
+                    auto abs2 = std::filesystem::absolute(models_dir_p).lexically_normal();
+                    same_dir = abs1 == abs2;
+                }
+                if (same_dir) {
                     if (!model_name.empty()) {
                         std::cout << "Selected model: " << model_name << std::endl;
                     }
@@ -514,20 +527,45 @@ class DeltaServerWrapper {
             llama_server_pid_ = pi.dwProcessId;
             llama_server_running_ = true;
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+            WSADATA wsaData;
+            WSAStartup(MAKEWORD(2, 2), &wsaData);
+            bool port_ok = false;
+            for (int attempt = 0; attempt < 120; ++attempt) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                DWORD ec;
+                if (GetExitCodeProcess(pi.hProcess, &ec) && ec != STILL_ACTIVE)
+                    break;
+                SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+                if (sock == INVALID_SOCKET)
+                    continue;
+                struct sockaddr_in addr{};
+                addr.sin_family = AF_INET;
+                addr.sin_port = htons(static_cast<u_short>(port_));
+                addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+                if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
+                    closesocket(sock);
+                    port_ok = true;
+                    break;
+                }
+                closesocket(sock);
+            }
+            WSACleanup();
 
-            DWORD exit_code;
-            if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
+            if (port_ok) {
                 std::cout << "Server ready" << std::endl;
                 return true;
-            } else {
-                std::cerr << "Failed to start server" << std::endl;
-                CloseHandle(pi.hProcess);
-                llama_server_process_ = NULL;
-                llama_server_pid_ = 0;
-                llama_server_running_ = false;
-                return false;
             }
+            DWORD exit_code;
+            if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
+                std::cout << "Server ready (process running)" << std::endl;
+                return true;
+            }
+            std::cerr << "Failed to start server" << std::endl;
+            CloseHandle(pi.hProcess);
+            llama_server_process_ = NULL;
+            llama_server_pid_ = 0;
+            llama_server_running_ = false;
+            return false;
         } else {
             std::cerr << "Failed to create process" << std::endl;
             return false;

@@ -111,10 +111,19 @@ pub fn run() {
 
             let port = server_port;
             std::thread::spawn(move || {
+                let url = format!("http://localhost:{}", port);
                 if wait_for_server(port) {
-                    let url = format!("http://localhost:{}", port);
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let js = format!("window.location.replace('{}')", url);
+                        let _ = window.eval(&js);
+                    }
+                } else {
+                    log::warn!("Server did not respond within timeout, showing retry");
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let js = format!(
+                            "if(typeof showError==='function')showError('{}');",
+                            url
+                        );
                         let _ = window.eval(&js);
                     }
                 }
