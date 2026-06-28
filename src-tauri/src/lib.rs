@@ -56,7 +56,25 @@ fn wait_for_server(port: u16) -> bool {
     false
 }
 
+#[cfg(target_os = "windows")]
+fn kill_stale_server_processes() {
+    use std::process::Command;
+    let _ = Command::new("taskkill").args(["/F", "/FI", "IMAGENAME eq llama-server*"]).output();
+    let _ = Command::new("taskkill").args(["/F", "/FI", "IMAGENAME eq delta-server*"]).output();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+}
+
+#[cfg(not(target_os = "windows"))]
+fn kill_stale_server_processes() {
+    use std::process::Command;
+    let _ = Command::new("pkill").args(["-9", "llama-server"]).output();
+    let _ = Command::new("pkill").args(["-9", "delta-server"]).output();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+}
+
 pub fn run() {
+    kill_stale_server_processes();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
@@ -135,14 +153,28 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 let app = window.app_handle();
                 let state = app.state::<Mutex<ServerState>>();
-                let mut s = state.lock().unwrap();
-
-                if let Some(child) = s.child.take() {
+                let child = {
+                    let mut s = state.lock().unwrap();
+                    s.child.take()
+                };
+                if let Some(child) = child {
                     log::info!("Shutting down delta-server...");
                     let _ = child.kill();
                 }
+                kill_stale_server_processes();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Delta");
+        .build(tauri::generate_context!())
+        .expect("error while building Delta")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                let state = app_handle.state::<Mutex<ServerState>>();
+                if let Ok(mut s) = state.lock() {
+                    if let Some(child) = s.child.take() {
+                        let _ = child.kill();
+                    }
+                }
+                kill_stale_server_processes();
+            }
+        });
 }

@@ -2,51 +2,51 @@
  * Interactive Commands - Slash command system implementation
  */
 
- #include "commands.h"
- #include "update.h"
- #include "history.h"
- #include "model_api_server.h"
- #include <iostream>
- #include <sstream>
- #include <thread>
- #include <chrono>
- #include <fstream>
- #include <map>
- #include <iomanip>
- #include <algorithm>
- #include <cctype>
- #include <cstdio>
- #include <memory>
- #include <vector>
- #include <mutex>
+#include "commands.h"
+#include "update.h"
+#include "history.h"
+#include "model_api_server.h"
+#include <iostream>
+#include <sstream>
+#include <thread>
+#include <chrono>
+#include <fstream>
+#include <map>
+#include <iomanip>
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <memory>
+#include <vector>
+#include <mutex>
 #ifdef _WIN32
-    #include <windows.h>
-    #include <limits.h>
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-    #include <io.h>
-    #include <direct.h>
-    #include <process.h>
-    typedef DWORD pid_t;
-    #define WNOHANG 1
-    #define WIFEXITED(status) ((status) != STILL_ACTIVE)
-    #define WEXITSTATUS(status) (status)
-    #define SIGTERM 15
-    #define SIGKILL 9
+#include <windows.h>
+#include <limits.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
+#include <direct.h>
+#include <process.h>
+typedef DWORD pid_t;
+#define WNOHANG 1
+#define WIFEXITED(status) ((status) != STILL_ACTIVE)
+#define WEXITSTATUS(status) (status)
+#define SIGTERM 15
+#define SIGKILL 9
 #else
-     #include <signal.h>
-     #include <sys/wait.h>
-     #include <fcntl.h>
-     #include <unistd.h>
-     #include <limits.h>
-     #include <sys/socket.h>
-     #include <netinet/in.h>
-     #include <arpa/inet.h>
-     #ifndef PATH_MAX
-         #define PATH_MAX 4096
-     #endif
- #endif
- 
+#include <signal.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <limits.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
+#endif
+
 namespace delta {
 
 // Forward declaration for log filtering helper implemented later in this file.
@@ -86,7 +86,8 @@ std::string Commands::get_webui_public_path() {
     public_candidates.push_back("public");
     public_candidates.push_back("./public");
     for (const auto& candidate : public_candidates) {
-        if (!tools::FileOps::dir_exists(candidate)) continue;
+        if (!tools::FileOps::dir_exists(candidate))
+            continue;
         std::string idx = tools::FileOps::join_path(candidate, "index.html");
         std::string idx_gz = tools::FileOps::join_path(candidate, "index.html.gz");
         if (tools::FileOps::file_exists(idx_gz) || tools::FileOps::file_exists(idx)) {
@@ -99,7 +100,8 @@ std::string Commands::get_webui_public_path() {
 
 void Commands::start_ui_only_server_on_8080() {
     std::string public_path = get_webui_public_path();
-    if (public_path.empty()) return;
+    if (public_path.empty())
+        return;
     delta::stop_model_api_server();
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
     delta::start_model_api_server(8080, public_path);
@@ -111,7 +113,8 @@ void Commands::start_ui_only_server_on_8080() {
 
 bool Commands::launch_ui_only_server() {
     std::string public_path = get_webui_public_path();
-    if (public_path.empty()) return false;
+    if (public_path.empty())
+        return false;
     stop_llama_server();
     delta::start_model_api_server(8080, public_path);
     {
@@ -119,8 +122,8 @@ bool Commands::launch_ui_only_server() {
         current_port_ = 8080;
     }
     // Set up model switch callback so when user selects a model, llama-server starts
-    delta::set_model_switch_callback([](const std::string& model_path, const std::string& model_name,
-                                         int ctx_size, const std::string& model_alias) -> bool {
+    delta::set_model_switch_callback([](const std::string& model_path, const std::string& model_name, int ctx_size,
+                                        const std::string& model_alias) -> bool {
         return Commands::restart_llama_server(model_path, model_name, ctx_size, model_alias);
     });
     // Set up model unload callback: stop llama-server then restore UI-only server so refresh keeps working
@@ -135,8 +138,9 @@ bool Commands::launch_ui_only_server() {
     return true;
 }
 
-bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size, const std::string& model_alias, const std::string& models_dir) {
-    port = 8080;  // Single port for macOS, Linux, Windows
+bool Commands::launch_server_auto(const std::string& model_path, int port, int ctx_size, const std::string& model_alias,
+                                  const std::string& models_dir) {
+    port = 8080; // Single port for macOS, Linux, Windows
     // Prefer "server" (llama.cpp HTTP server); fallback to delta-server wrapper
     std::vector<std::string> server_candidates;
     std::string exe_dir = tools::FileOps::get_executable_dir();
@@ -173,96 +177,100 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     server_candidates.push_back("delta-server");
 
     std::string server_bin;
-     for (const auto& candidate : server_candidates) {
-         if (tools::FileOps::file_exists(candidate)) {
-             server_bin = candidate;
-             break;
-         }
-     }
-     
-     if (server_bin.empty()) {
-         UI::print_error("HTTP server binary not found. Looked for 'server' and 'delta-server' in PATH and install locations.");
-         UI::print_info("From source: run 'make install' so the 'server' binary is installed. Homebrew: run 'brew reinstall delta-cli'.");
-         UI::print_info("Ensure vendor/llama.cpp exists (git submodule update --init vendor/llama.cpp) and rebuild.");
-         return false;
-     }
-     
-     // When no model path: use first .gguf in models_dir if any; else start with --models-dir so llama-server serves web UI and user can install a model from the UI.
-     std::string effective_model = model_path;
-     if (effective_model.empty() && !models_dir.empty()) {
-         effective_model = tools::FileOps::first_gguf_in_dir(models_dir);
-     }
-     if (effective_model.empty() && models_dir.empty()) {
-         UI::print_error("No model or models directory. Use -m <path> or --models-dir <dir>, or ensure ~/.delta-cli/models exists.");
-         return false;
-     }
-     if (!effective_model.empty() && !tools::FileOps::file_exists(effective_model)) {
-         UI::print_error("Model file not found: " + effective_model);
-         return false;
-     }
-     
-     // Get the path to the web UI directory (use Delta web UI from public/ only)
-     std::string public_path;
-     
-     // Get executable directory and project root
-     std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
-     std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
-     
-     // CWD-based candidates first so "delta server" from project root or build/ finds public/
-     std::vector<std::string> public_candidates;
+    for (const auto& candidate : server_candidates) {
+        if (tools::FileOps::file_exists(candidate)) {
+            server_bin = candidate;
+            break;
+        }
+    }
+
+    if (server_bin.empty()) {
+        UI::print_error(
+            "HTTP server binary not found. Looked for 'server' and 'delta-server' in PATH and install locations.");
+        UI::print_info("From source: run 'make install' so the 'server' binary is installed. Homebrew: run 'brew "
+                       "reinstall delta-cli'.");
+        UI::print_info("Ensure vendor/llama.cpp exists (git submodule update --init vendor/llama.cpp) and rebuild.");
+        return false;
+    }
+
+    // When no model path: use first .gguf in models_dir if any; else start with --models-dir so llama-server serves web
+    // UI and user can install a model from the UI.
+    std::string effective_model = model_path;
+    if (effective_model.empty() && !models_dir.empty()) {
+        effective_model = tools::FileOps::first_gguf_in_dir(models_dir);
+    }
+    if (effective_model.empty() && models_dir.empty()) {
+        UI::print_error(
+            "No model or models directory. Use -m <path> or --models-dir <dir>, or ensure ~/.delta-cli/models exists.");
+        return false;
+    }
+    if (!effective_model.empty() && !tools::FileOps::file_exists(effective_model)) {
+        UI::print_error("Model file not found: " + effective_model);
+        return false;
+    }
+
+    // Get the path to the web UI directory (use Delta web UI from public/ only)
+    std::string public_path;
+
+    // Get executable directory and project root
+    std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
+    std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
+
+    // CWD-based candidates first so "delta server" from project root or build/ finds public/
+    std::vector<std::string> public_candidates;
 #ifdef _WIN32
-     {
-         char cwd[MAX_PATH];
-         if (_getcwd(cwd, MAX_PATH) != nullptr) {
-             std::string cwd_str(cwd);
-             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "public"));
-             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "..\\public"));
-             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "webui"));
-             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "..\\webui"));
-         }
-     }
+    {
+        char cwd[MAX_PATH];
+        if (_getcwd(cwd, MAX_PATH) != nullptr) {
+            std::string cwd_str(cwd);
+            public_candidates.push_back(tools::FileOps::join_path(cwd_str, "public"));
+            public_candidates.push_back(tools::FileOps::join_path(cwd_str, "..\\public"));
+            public_candidates.push_back(tools::FileOps::join_path(cwd_str, "webui"));
+            public_candidates.push_back(tools::FileOps::join_path(cwd_str, "..\\webui"));
+        }
+    }
 #else
-     {
-         char cwd[PATH_MAX];
-         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
-             std::string cwd_str(cwd);
-             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "public"));
-             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "../public"));
-             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "webui"));
-             public_candidates.push_back(tools::FileOps::join_path(cwd_str, "../webui"));
-         }
-     }
+    {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+            std::string cwd_str(cwd);
+            public_candidates.push_back(tools::FileOps::join_path(cwd_str, "public"));
+            public_candidates.push_back(tools::FileOps::join_path(cwd_str, "../public"));
+            public_candidates.push_back(tools::FileOps::join_path(cwd_str, "webui"));
+            public_candidates.push_back(tools::FileOps::join_path(cwd_str, "../webui"));
+        }
+    }
 #endif
-     // Relative to executable (Delta web UI from public/)
-     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../public"));
-     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../public"));
-     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../../public"));
-     public_candidates.push_back(tools::FileOps::join_path(exe_grandparent, "public"));
-     // Current directory (when running from project root)
-     public_candidates.push_back("public");
-     public_candidates.push_back("./public");
-     public_candidates.push_back("../public");
-     // Homebrew / install locations
-     public_candidates.push_back("/opt/homebrew/share/delta-cli/webui");
-     public_candidates.push_back("/usr/local/share/delta-cli/webui");
-     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"));
-     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../../share/delta-cli/webui"));
-     // macOS app bundle
-     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../Resources/webui"));
-     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../Resources/webui"));
-     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../webui"));
-     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../webui"));
-     public_candidates.push_back("webui");
-     public_candidates.push_back("./webui");
-     public_candidates.push_back("../webui");
-     
-     for (const auto& candidate : public_candidates) {
-         if (tools::FileOps::dir_exists(candidate)) {
-             // Check for index.html.gz first (preferred), then index.html
-             std::string index_file_gz = tools::FileOps::join_path(candidate, "index.html.gz");
-             std::string index_file = tools::FileOps::join_path(candidate, "index.html");
-             if (tools::FileOps::file_exists(index_file_gz) || tools::FileOps::file_exists(index_file)) {
-                 public_path = candidate;
+    // Relative to executable (Delta web UI from public/)
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../public"));
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../public"));
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../../public"));
+    public_candidates.push_back(tools::FileOps::join_path(exe_grandparent, "public"));
+    // Current directory (when running from project root)
+    public_candidates.push_back("public");
+    public_candidates.push_back("./public");
+    public_candidates.push_back("../public");
+    // Homebrew / install locations
+    public_candidates.push_back("/opt/homebrew/share/delta-cli/webui");
+    public_candidates.push_back("/usr/local/share/delta-cli/webui");
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"));
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../../share/delta-cli/webui"));
+    // macOS app bundle
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../Resources/webui"));
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../Resources/webui"));
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../webui"));
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../webui"));
+    public_candidates.push_back("webui");
+    public_candidates.push_back("./webui");
+    public_candidates.push_back("../webui");
+
+    for (const auto& candidate : public_candidates) {
+        if (tools::FileOps::dir_exists(candidate)) {
+            // Check for index.html.gz first (preferred), then index.html
+            std::string index_file_gz = tools::FileOps::join_path(candidate, "index.html.gz");
+            std::string index_file = tools::FileOps::join_path(candidate, "index.html");
+            if (tools::FileOps::file_exists(index_file_gz) || tools::FileOps::file_exists(index_file)) {
+                public_path = candidate;
                 // Convert to absolute path for reliability
 #ifdef _WIN32
                 if (!public_path.empty() && !(public_path.length() >= 2 && public_path[1] == ':')) {
@@ -297,24 +305,24 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                     }
                 }
 #endif
-                 break;
-             }
-         }
-     }
-     
+                break;
+            }
+        }
+    }
+
     // Convert relative path to absolute path for delta-server
 #ifdef _WIN32
     if (!public_path.empty() && !(public_path.length() >= 2 && public_path[1] == ':')) {
         // Try multiple strategies to get absolute path
         char resolved_path[MAX_PATH];
         bool resolved = false;
-        
+
         // Strategy 1: Try _fullpath on the path directly (if it exists from current dir)
         if (_fullpath(resolved_path, public_path.c_str(), MAX_PATH) != nullptr) {
             public_path = std::string(resolved_path);
             resolved = true;
         }
-        
+
         // Strategy 2: Try relative to current working directory
         if (!resolved) {
             char cwd[MAX_PATH];
@@ -326,7 +334,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                 }
             }
         }
-        
+
         // Strategy 3: Try relative to executable directory
         if (!resolved) {
             std::string exe_based_path = tools::FileOps::join_path(exe_dir, public_path);
@@ -335,7 +343,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                 resolved = true;
             }
         }
-        
+
         // Strategy 4: Try relative to project root (exe_grandparent)
         if (!resolved) {
             std::string project_path = tools::FileOps::join_path(exe_grandparent, public_path);
@@ -344,7 +352,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                 resolved = true;
             }
         }
-        
+
         // If all else fails, construct absolute path manually from exe_dir
         if (!resolved) {
             // Build absolute path from executable directory
@@ -367,13 +375,13 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
         // Try multiple strategies to get absolute path
         char resolved_path[PATH_MAX];
         bool resolved = false;
-        
+
         // Strategy 1: Try realpath on the path directly (if it exists from current dir)
         if (realpath(public_path.c_str(), resolved_path) != nullptr) {
             public_path = std::string(resolved_path);
             resolved = true;
         }
-        
+
         // Strategy 2: Try relative to current working directory
         if (!resolved) {
             char cwd[PATH_MAX];
@@ -385,7 +393,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                 }
             }
         }
-        
+
         // Strategy 3: Try relative to executable directory
         if (!resolved) {
             std::string exe_based_path = tools::FileOps::join_path(exe_dir, public_path);
@@ -394,7 +402,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                 resolved = true;
             }
         }
-        
+
         // Strategy 4: Try relative to project root (exe_grandparent)
         if (!resolved) {
             std::string project_path = tools::FileOps::join_path(exe_grandparent, public_path);
@@ -403,7 +411,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                 resolved = true;
             }
         }
-        
+
         // If all else fails, construct absolute path manually from exe_dir
         if (!resolved) {
             // Build absolute path from executable directory
@@ -420,23 +428,25 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                 }
             }
         }
-     }
+    }
 #endif
-     
-     // Server must have a web UI path or it returns 404 for / and all static requests
-     if (public_path.empty()) {
-         UI::print_error("Web UI directory not found. Looked for public/ or share/delta-cli/webui.");
-         UI::print_info("Run from project root (where public/ exists) or install delta-cli so the web UI is in share/delta-cli/webui.");
-         UI::print_info("Build the web UI first: cd assets && npm install && npm run build");
-         return false;
-     }
-     
-     // Stop existing llama-server if running
-     stop_llama_server();
-     
-     // Build command: -m when we have a model, else --models-dir so web UI opens and user can install a model
-     std::string cmd_str = build_llama_server_cmd(server_bin, effective_model, port, ctx_size, model_alias, public_path, models_dir);
-     
+
+    // Server must have a web UI path or it returns 404 for / and all static requests
+    if (public_path.empty()) {
+        UI::print_error("Web UI directory not found. Looked for public/ or share/delta-cli/webui.");
+        UI::print_info("Run from project root (where public/ exists) or install delta-cli so the web UI is in "
+                       "share/delta-cli/webui.");
+        UI::print_info("Build the web UI first: cd assets && npm install && npm run build");
+        return false;
+    }
+
+    // Stop existing llama-server if running
+    stop_llama_server();
+
+    // Build command: -m when we have a model, else --models-dir so web UI opens and user can install a model
+    std::string cmd_str =
+        build_llama_server_cmd(server_bin, effective_model, port, ctx_size, model_alias, public_path, models_dir);
+
     // Create error log file path
 #ifdef _WIN32
     char temp_path[MAX_PATH];
@@ -446,12 +456,13 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     std::string err_file = "/tmp/delta-server-err-" + std::to_string(port) + ".log";
 #endif
     std::remove(err_file.c_str());
-    
+
     // Start delta-server
 #ifdef _WIN32
     // Windows: Use CreateProcess with stderr redirected to log file so we can see why the server fails to start
-    SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
-    HANDLE hErrLog = CreateFileA(err_file.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+    HANDLE hErrLog =
+        CreateFileA(err_file.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     HANDLE hNul = INVALID_HANDLE_VALUE;
     if (hErrLog != INVALID_HANDLE_VALUE) {
         hNul = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ, &sa, OPEN_EXISTING, 0, NULL);
@@ -467,10 +478,12 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     std::vector<char> cmd_line(cmd_str.begin(), cmd_str.end());
     cmd_line.push_back('\0');
     const char* work_dir = exe_dir.empty() ? NULL : exe_dir.c_str();
-    BOOL ok = CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE,
-                             CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, work_dir, &si, &pi);
-    if (hErrLog != INVALID_HANDLE_VALUE) CloseHandle(hErrLog);
-    if (hNul != INVALID_HANDLE_VALUE) CloseHandle(hNul);
+    BOOL ok = CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, CREATE_NO_WINDOW | DETACHED_PROCESS, NULL,
+                             work_dir, &si, &pi);
+    if (hErrLog != INVALID_HANDLE_VALUE)
+        CloseHandle(hErrLog);
+    if (hNul != INVALID_HANDLE_VALUE)
+        CloseHandle(hNul);
     if (!ok) {
         UI::print_error("Failed to create process for delta-server (Error: " + std::to_string(GetLastError()) + ")");
         UI::print_info("Ensure server.exe and DLLs (e.g. libcurl.dll) are in: " + exe_dir);
@@ -491,7 +504,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     if (pid == 0) {
         // Child process: create new process group
         setsid();
-        
+
         // Redirect output to error log file
         int devnull = open("/dev/null", O_WRONLY);
         int err_fd = open(err_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -506,7 +519,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
             close(devnull);
         }
         close(STDIN_FILENO);
-        
+
         // Execute delta-server
         execl("/bin/sh", "sh", "-c", cmd_str.c_str(), (char*)NULL);
         _exit(1);
@@ -520,141 +533,145 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
         UI::print_error("Failed to fork process for delta-server");
         return false;
     }
-    
+
     int result = 0; // Fork succeeded
 #endif
-     
-     // Wait for server to start and verify it's listening (server writes to err_file on failure).
-     // On Windows model load can take 2–5+ minutes; use longer timeout and one final check.
+
+    // Wait for server to start and verify it's listening (server writes to err_file on failure).
+    // On Windows model load can take 2–5+ minutes; use longer timeout and one final check.
 #ifdef _WIN32
-     const int total_attempts = 600;   // 600 * 500ms = 300 seconds (5 min)
-     const int progress_interval = 20; // Print progress every 10 seconds
+    const int total_attempts = 600;   // 600 * 500ms = 300 seconds (5 min)
+    const int progress_interval = 20; // Print progress every 10 seconds
 #else
-     const int total_attempts = 120;   // 120 * 500ms = 60 seconds
-     const int progress_interval = 0;
+    const int total_attempts = 120; // 120 * 500ms = 60 seconds
+    const int progress_interval = 0;
 #endif
-     bool server_listening = false;
-     bool progress_printed = false;
-     for (int attempt = 0; attempt < total_attempts; attempt++) {
-         std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    bool server_listening = false;
+    bool progress_printed = false;
+    for (int attempt = 0; attempt < total_attempts; attempt++) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
 #ifdef _WIN32
-         if (attempt > 0 && progress_interval > 0 && attempt % progress_interval == 0) {
-             int elapsed_sec = (attempt * 500) / 1000;
-             std::cout << "\r   Waiting for model to load... " << elapsed_sec << "s (port " << port << ")" << std::flush;
-             progress_printed = true;
-         }
+        if (attempt > 0 && progress_interval > 0 && attempt % progress_interval == 0) {
+            int elapsed_sec = (attempt * 500) / 1000;
+            std::cout << "\r   Waiting for model to load... " << elapsed_sec << "s (port " << port << ")" << std::flush;
+            progress_printed = true;
+        }
 #endif
-         // Check if port is listening using socket connection
- #ifdef _WIN32
-         WSADATA wsaData;
-         if (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0) {
-             SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-             if (sock != INVALID_SOCKET) {
-                 sockaddr_in addr;
-                 addr.sin_family = AF_INET;
-                 addr.sin_port = htons(port);
-                 inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-                 if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
-                     server_listening = true;
-                     closesocket(sock);
-                     if (progress_printed) std::cout << std::endl;
-                 } else {
-                     closesocket(sock);
-                 }
-             }
-             WSACleanup();
-         }
- #else
-         int sock = socket(AF_INET, SOCK_STREAM, 0);
-         if (sock >= 0) {
-             struct sockaddr_in addr;
-             addr.sin_family = AF_INET;
-             addr.sin_port = htons(port);
-             inet_aton("127.0.0.1", &addr.sin_addr);
-             if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
-                 server_listening = true;
-                 close(sock);
-             } else {
-                 close(sock);
-             }
-         }
- #endif
-         if (server_listening) {
-             break;
-         }
-     }
+        // Check if port is listening using socket connection
 #ifdef _WIN32
-     if (!server_listening) {
-         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-         WSADATA wsaData2;
-         if (WSAStartup(MAKEWORD(2, 2), &wsaData2) == 0) {
-             SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-             if (sock != INVALID_SOCKET) {
-                 sockaddr_in addr;
-                 addr.sin_family = AF_INET;
-                 addr.sin_port = htons(port);
-                 inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-                 if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
-                     server_listening = true;
-                     closesocket(sock);
-                 } else {
-                     closesocket(sock);
-                 }
-             }
-             WSACleanup();
-         }
-     }
-     if (progress_printed && !server_listening) std::cout << std::endl;
-#endif
-     
-     // Check error log for any startup errors (Windows and Unix both write to err_file now)
-     bool has_startup_error = false;
-     std::string error_message = "";
-     std::ifstream err_log(err_file);
-     if (err_log.is_open()) {
-         std::string line;
-         std::vector<std::string> error_lines;
-         while (std::getline(err_log, line)) {
-             if (!line.empty()) {
-                 std::string line_lower = line;
-                 std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
-                 if (line_lower.find("error") != std::string::npos ||
-                     line_lower.find("failed") != std::string::npos ||
-                     line_lower.find("fatal") != std::string::npos ||
-                     (line_lower.find("unknown") != std::string::npos && line_lower.find("option") != std::string::npos) ||
-                     line_lower.find("cannot") != std::string::npos ||
-                     line_lower.find("unable") != std::string::npos) {
-                     error_lines.push_back(line);
-                 }
-             }
-         }
-         err_log.close();
-         if (!error_lines.empty()) {
-             has_startup_error = true;
-             error_message = error_lines[0];
-             UI::print_error("Server startup errors detected:");
-             for (size_t i = 0; i < error_lines.size() && i < 5; i++) {
-                 std::cerr << "  " << error_lines[i] << std::endl;
-             }
-             std::cerr << "\nFull error log: " << err_file << std::endl;
-#ifdef _WIN32
-             std::cerr << "\nTip: Check that server.exe and DLLs (libcurl.dll, etc.) are in the same folder as delta.exe." << std::endl;
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0) {
+            SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (sock != INVALID_SOCKET) {
+                sockaddr_in addr;
+                addr.sin_family = AF_INET;
+                addr.sin_port = htons(port);
+                inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+                if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
+                    server_listening = true;
+                    closesocket(sock);
+                    if (progress_printed)
+                        std::cout << std::endl;
+                } else {
+                    closesocket(sock);
+                }
+            }
+            WSACleanup();
+        }
 #else
-             std::cerr << "\nTip: If you see 'unknown option' errors, your delta-server build may not support all flags." << std::endl;
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock >= 0) {
+            struct sockaddr_in addr;
+            addr.sin_family = AF_INET;
+            addr.sin_port = htons(port);
+            inet_aton("127.0.0.1", &addr.sin_addr);
+            if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
+                server_listening = true;
+                close(sock);
+            } else {
+                close(sock);
+            }
+        }
 #endif
-         }
-     }
-     
-     if (result != 0) {
-         UI::print_error("Failed to start server process");
-         return false;
-     }
-     
-     if (has_startup_error) {
-         UI::print_error("Server failed to start due to errors. Check the error log above.");
-         return false;
-     }
-     
+        if (server_listening) {
+            break;
+        }
+    }
+#ifdef _WIN32
+    if (!server_listening) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        WSADATA wsaData2;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData2) == 0) {
+            SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (sock != INVALID_SOCKET) {
+                sockaddr_in addr;
+                addr.sin_family = AF_INET;
+                addr.sin_port = htons(port);
+                inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+                if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
+                    server_listening = true;
+                    closesocket(sock);
+                } else {
+                    closesocket(sock);
+                }
+            }
+            WSACleanup();
+        }
+    }
+    if (progress_printed && !server_listening)
+        std::cout << std::endl;
+#endif
+
+    // Check error log for any startup errors (Windows and Unix both write to err_file now)
+    bool has_startup_error = false;
+    std::string error_message = "";
+    std::ifstream err_log(err_file);
+    if (err_log.is_open()) {
+        std::string line;
+        std::vector<std::string> error_lines;
+        while (std::getline(err_log, line)) {
+            if (!line.empty()) {
+                std::string line_lower = line;
+                std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
+                if (line_lower.find("error") != std::string::npos || line_lower.find("failed") != std::string::npos ||
+                    line_lower.find("fatal") != std::string::npos ||
+                    (line_lower.find("unknown") != std::string::npos &&
+                     line_lower.find("option") != std::string::npos) ||
+                    line_lower.find("cannot") != std::string::npos || line_lower.find("unable") != std::string::npos) {
+                    error_lines.push_back(line);
+                }
+            }
+        }
+        err_log.close();
+        if (!error_lines.empty()) {
+            has_startup_error = true;
+            error_message = error_lines[0];
+            UI::print_error("Server startup errors detected:");
+            for (size_t i = 0; i < error_lines.size() && i < 5; i++) {
+                std::cerr << "  " << error_lines[i] << std::endl;
+            }
+            std::cerr << "\nFull error log: " << err_file << std::endl;
+#ifdef _WIN32
+            std::cerr
+                << "\nTip: Check that server.exe and DLLs (libcurl.dll, etc.) are in the same folder as delta.exe."
+                << std::endl;
+#else
+            std::cerr << "\nTip: If you see 'unknown option' errors, your delta-server build may not support all flags."
+                      << std::endl;
+#endif
+        }
+    }
+
+    if (result != 0) {
+        UI::print_error("Failed to start server process");
+        return false;
+    }
+
+    if (has_startup_error) {
+        UI::print_error("Server failed to start due to errors. Check the error log above.");
+        return false;
+    }
+
     if (!server_listening) {
         // As a safety net, if our local TCP probe fails but the server log says
         // "server is listening on ...", treat that as success instead of error.
@@ -678,13 +695,15 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
 #ifdef _WIN32
             UI::print_error("Server did not become ready in time (port " + std::to_string(port) + ").");
 #else
-            UI::print_error("Server process started but port " + std::to_string(port) + " is not listening after 60 seconds");
+            UI::print_error("Server process started but port " + std::to_string(port) +
+                            " is not listening after 60 seconds");
 #endif
             UI::print_info("Full log: " + err_file);
             std::vector<std::string> filtered;
             size_t start = (lines.size() > 50) ? (lines.size() - 50) : 0;
             for (size_t i = start; i < lines.size(); i++) {
-                if (!is_server_log_noise(lines[i])) filtered.push_back(lines[i]);
+                if (!is_server_log_noise(lines[i]))
+                    filtered.push_back(lines[i]);
             }
             if (!filtered.empty()) {
                 UI::print_info("--- Relevant log lines ---");
@@ -694,52 +713,66 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
                 UI::print_info("--- End ---");
             }
 #ifdef _WIN32
-            UI::print_info("Install folder should contain: delta.exe, llama-server.exe (or server.exe), libcurl.dll, zlib1.dll, public/");
+            UI::print_info("Install folder should contain: delta.exe, llama-server.exe (or server.exe), libcurl.dll, "
+                           "zlib1.dll, public/");
             UI::print_info("Run manually: llama-server.exe -m <model-path> --port " + std::to_string(port));
             UI::print_info("Check port: netstat -an | findstr " + std::to_string(port));
 #else
-            UI::print_info("You can run the server manually to see errors: delta-server -m <model-path> --port " + std::to_string(port));
+            UI::print_info("You can run the server manually to see errors: delta-server -m <model-path> --port " +
+                           std::to_string(port));
             UI::print_info("Or check if the server is running: ps aux | grep delta-server");
 #endif
             return false;
         }
     }
-     
-     // Server is confirmed listening - proceed with setup
-     delta::start_model_api_server(8081);
-     delta::set_model_switch_callback([](const std::string& model_path, const std::string& model_name,
-                                          int ctx_size, const std::string& model_alias) -> bool {
-         return Commands::restart_llama_server(model_path, model_name, ctx_size, model_alias);
-     });
-     delta::set_model_unload_callback([]() {
-         Commands::stop_llama_server();
-     });
-     return true;
- }
 
- // Skip noisy llama-server log lines (speculative decoding, slot load_model, init chat template, etc.) when showing failure to user.
- static bool is_server_log_noise(const std::string& line) {
-     if (line.empty()) return true;
-     std::string line_lower = line;
-     std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
-     if (line_lower.find("speculative decoding") != std::string::npos) return true;
-     if (line_lower.find("slot load_model:") != std::string::npos && line_lower.find("new slot") != std::string::npos) return true;
-     if (line_lower.find("srv load_model: prompt cache") != std::string::npos) return true;
-     if (line_lower.find("srv load_model: use ") != std::string::npos) return true;
-     if (line_lower.find("srv load_model: for more info") != std::string::npos) return true;
-     if (line_lower.find("srv init:") != std::string::npos) return true;
-     if (line_lower.find("init: chat template") != std::string::npos) return true;
-     if (line_lower.find("main: model loaded") != std::string::npos) return true;
-     if (line_lower.find("main: server is listening") != std::string::npos) return true;
-     if (line_lower.find("main: starting the main loop") != std::string::npos) return true;
-     if (line_lower.find("srv update_slots:") != std::string::npos) return true;
-     return false;
- }
+    // Server is confirmed listening - proceed with setup
+    delta::start_model_api_server(8081);
+    delta::set_model_switch_callback([](const std::string& model_path, const std::string& model_name, int ctx_size,
+                                        const std::string& model_alias) -> bool {
+        return Commands::restart_llama_server(model_path, model_name, ctx_size, model_alias);
+    });
+    delta::set_model_unload_callback([]() { Commands::stop_llama_server(); });
+    return true;
+}
 
- // Helper to build llama-server command: -m <path> when we have a model, else --models-dir so UI opens (user can install model from web UI).
-std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path,
-                                              int port, int ctx_size, const std::string& model_alias,
-                                              const std::string& public_path, const std::string& models_dir) {
+// Skip noisy llama-server log lines (speculative decoding, slot load_model, init chat template, etc.) when showing
+// failure to user.
+static bool is_server_log_noise(const std::string& line) {
+    if (line.empty())
+        return true;
+    std::string line_lower = line;
+    std::transform(line_lower.begin(), line_lower.end(), line_lower.begin(), ::tolower);
+    if (line_lower.find("speculative decoding") != std::string::npos)
+        return true;
+    if (line_lower.find("slot load_model:") != std::string::npos && line_lower.find("new slot") != std::string::npos)
+        return true;
+    if (line_lower.find("srv load_model: prompt cache") != std::string::npos)
+        return true;
+    if (line_lower.find("srv load_model: use ") != std::string::npos)
+        return true;
+    if (line_lower.find("srv load_model: for more info") != std::string::npos)
+        return true;
+    if (line_lower.find("srv init:") != std::string::npos)
+        return true;
+    if (line_lower.find("init: chat template") != std::string::npos)
+        return true;
+    if (line_lower.find("main: model loaded") != std::string::npos)
+        return true;
+    if (line_lower.find("main: server is listening") != std::string::npos)
+        return true;
+    if (line_lower.find("main: starting the main loop") != std::string::npos)
+        return true;
+    if (line_lower.find("srv update_slots:") != std::string::npos)
+        return true;
+    return false;
+}
+
+// Helper to build llama-server command: -m <path> when we have a model, else --models-dir so UI opens (user can install
+// model from web UI).
+std::string Commands::build_llama_server_cmd(const std::string& server_bin, const std::string& model_path, int port,
+                                             int ctx_size, const std::string& model_alias,
+                                             const std::string& public_path, const std::string& models_dir) {
     std::stringstream cmd;
 #ifdef _WIN32
     // Quote so CreateProcess parses correctly when path has spaces (e.g. C:\Program Files\Delta\server.exe)
@@ -753,50 +786,52 @@ std::string Commands::build_llama_server_cmd(const std::string& server_bin, cons
     }
     if (!effective_model.empty()) {
         std::string abs_model = tools::FileOps::absolute_path(effective_model);
-        if (!abs_model.empty()) effective_model = abs_model;
+        if (!abs_model.empty())
+            effective_model = abs_model;
         cmd << " -m \"" << effective_model << "\"";
     } else if (!models_dir.empty()) {
         std::string dir_arg = tools::FileOps::absolute_path(models_dir);
-        if (dir_arg.empty()) dir_arg = models_dir;
+        if (dir_arg.empty())
+            dir_arg = models_dir;
         cmd << " --models-dir \"" << dir_arg << "\"";
     }
-    cmd << " --host 0.0.0.0"
+    cmd << " --host 127.0.0.1"
         << " --port " << port;
     if (ctx_size > 0) {
         cmd << " -c " << ctx_size;
     }
-    
+
     // Add --path flag to use Delta web UI if found (required for UI to load)
     if (!public_path.empty()) {
         cmd << " --path \"" << public_path << "\"";
     }
-    
+
     // Optional flags - some llama.cpp builds support these
     if (ctx_size > 16384) {
         cmd << " --gpu-layers 0";
     }
-    
+
     // Optimize batch sizes for large prompt processing (like LlamaBarn)
     // Larger ubatch-size significantly improves prompt processing speed for large prompts
     // Default ubatch-size is 512, but 1024-2048 provides better throughput for 20k+ token prompts
     if (ctx_size >= 8192) {
         // For large contexts, use larger batch sizes to improve prompt processing speed
-        cmd << " --ubatch-size 2048";  // Physical batch size - processes more tokens per batch
-        cmd << " --batch-size 4096";   // Logical batch size - allows larger batches
+        cmd << " --ubatch-size 2048"; // Physical batch size - processes more tokens per batch
+        cmd << " --batch-size 4096";  // Logical batch size - allows larger batches
     } else if (ctx_size >= 4096) {
         // Medium contexts get moderate batch size increase
         cmd << " --ubatch-size 1024";
         cmd << " --batch-size 2048";
     }
-     
-     // Add --alias if provided
-     if (!model_alias.empty()) {
-         cmd << " --alias \"" << model_alias << "\"";
-     }
-     
-     return cmd.str();
- }
- 
+
+    // Add --alias if provided
+    if (!model_alias.empty()) {
+        cmd << " --alias \"" << model_alias << "\"";
+    }
+
+    return cmd.str();
+}
+
 void Commands::stop_llama_server() {
     std::lock_guard<std::mutex> lock(server_mutex_);
     if (llama_server_pid_ != 0) {
@@ -808,7 +843,7 @@ void Commands::stop_llama_server() {
             TerminateProcess(hProcess, 0);
             // Wait a bit for it to terminate
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            
+
             // Check if still running
             DWORD exit_code;
             if (GetExitCodeProcess(hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
@@ -838,159 +873,159 @@ void Commands::stop_llama_server() {
         current_model_path_ = "";
     }
 }
- 
- bool Commands::restart_llama_server(const std::string& model_path, const std::string& model_name, 
-                                      int ctx_size, const std::string& model_alias) {
-     UI::print_info(">> Switching to model: " + model_name);
-     UI::print_info("   Path: " + model_path);
-     
-     // Check if we're in UI-only mode (model API server on 8080, no llama-server)
-     // If so, we need to stop model API server, start llama-server on 8080, then restart model API on 8081
-     bool is_ui_only_mode = false;
-     {
-         std::lock_guard<std::mutex> lock(server_mutex_);
-         is_ui_only_mode = (llama_server_pid_ == 0 && current_port_ == 8080);
-     }
-     
-     if (is_ui_only_mode) {
-         UI::print_info("   Detected UI-only mode - migrating to full server mode...");
-         // CRITICAL: Don't stop model API server synchronously here - it causes deadlock
-         // because we're called from within the server's request handler thread.
-         // The migration thread (spawned from /api/models/use handler) will handle stopping
-         // the old server after the request completes. We just proceed with starting llama-server.
-         // Note: llama-server will fail to bind to 8080 initially, but that's handled in the migration thread.
-     }
-     
-     // Stop current delta-server (check and stop with lock)
-     {
-         std::lock_guard<std::mutex> lock(server_mutex_);
-         if (llama_server_pid_ != 0) {
-#ifdef _WIN32
-             // Windows: Use TerminateProcess
-             HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, llama_server_pid_);
-             if (hProcess != NULL) {
-                 TerminateProcess(hProcess, 0);
-                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                 DWORD exit_code;
-                 if (GetExitCodeProcess(hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
-                     TerminateProcess(hProcess, 1);
-                     WaitForSingleObject(hProcess, 5000);
-                 }
-                 CloseHandle(hProcess);
-             }
-#else
-             // Unix: Use kill/waitpid
-             pid_t pid_to_kill = (llama_server_pid_ < 0) ? llama_server_pid_ : llama_server_pid_;
-             // Kill the delta-server process (or process group if negative)
-             kill(pid_to_kill, SIGTERM);
-             // Wait a bit for it to terminate
-             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-             // Force kill if still running
-             int status;
-             pid_t actual_pid = (llama_server_pid_ < 0) ? -llama_server_pid_ : llama_server_pid_;
-             if (waitpid(actual_pid, &status, WNOHANG) == 0) {
-                 // Process still running, force kill
-                 kill(pid_to_kill, SIGKILL);
-                 waitpid(actual_pid, &status, 0); // Wait for it to die
-             }
-#endif
-             llama_server_pid_ = 0;
-             current_model_path_ = "";
-             UI::print_info("   Stopping current model...");
-         }
-     }
-     
-     // Wait a bit more to ensure port is free
-     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-     
-     // Now acquire lock for the rest of the function
-     std::lock_guard<std::mutex> lock(server_mutex_);
-     
-     // Use same server binary as launch_server_auto (prefer "server", then delta-server)
-     std::vector<std::string> server_candidates;
-     std::string exe_dir = tools::FileOps::get_executable_dir();
-#ifdef _WIN32
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "server.exe"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server.exe"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../server.exe"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server.exe"));
-#else
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "server"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "llama-server"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../server"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../llama-server"));
-     server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server"));
-#endif
-     server_candidates.push_back("/opt/homebrew/bin/server");
-     server_candidates.push_back("/opt/homebrew/bin/llama-server");
-     server_candidates.push_back("/opt/homebrew/bin/delta-server");
-     server_candidates.push_back("/usr/local/bin/server");
-     server_candidates.push_back("/usr/local/bin/llama-server");
-     server_candidates.push_back("/usr/local/bin/delta-server");
-     server_candidates.push_back("/usr/bin/server");
-     server_candidates.push_back("/usr/bin/llama-server");
-     server_candidates.push_back("/usr/bin/delta-server");
-#ifdef _WIN32
-     server_candidates.push_back("server.exe");
-     server_candidates.push_back("llama-server.exe");
-#else
-     server_candidates.push_back("server");
-     server_candidates.push_back("llama-server");
-#endif
-     server_candidates.push_back("delta-server");
 
-     std::string server_bin;
-     for (const auto& candidate : server_candidates) {
-         if (tools::FileOps::file_exists(candidate)) {
-             server_bin = candidate;
-             break;
-         }
-     }
+bool Commands::restart_llama_server(const std::string& model_path, const std::string& model_name, int ctx_size,
+                                    const std::string& model_alias) {
+    UI::print_info(">> Switching to model: " + model_name);
+    UI::print_info("   Path: " + model_path);
 
-     if (server_bin.empty()) {
-         UI::print_error("Server binary not found for model switch");
+    // Check if we're in UI-only mode (model API server on 8080, no llama-server)
+    // If so, we need to stop model API server, start llama-server on 8080, then restart model API on 8081
+    bool is_ui_only_mode = false;
+    {
+        std::lock_guard<std::mutex> lock(server_mutex_);
+        is_ui_only_mode = (llama_server_pid_ == 0 && current_port_ == 8080);
+    }
+
+    if (is_ui_only_mode) {
+        UI::print_info("   Detected UI-only mode - migrating to full server mode...");
+        // CRITICAL: Don't stop model API server synchronously here - it causes deadlock
+        // because we're called from within the server's request handler thread.
+        // The migration thread (spawned from /api/models/use handler) will handle stopping
+        // the old server after the request completes. We just proceed with starting llama-server.
+        // Note: llama-server will fail to bind to 8080 initially, but that's handled in the migration thread.
+    }
+
+    // Stop current delta-server (check and stop with lock)
+    {
+        std::lock_guard<std::mutex> lock(server_mutex_);
+        if (llama_server_pid_ != 0) {
 #ifdef _WIN32
-         UI::print_error("   Looked in: " + exe_dir + " (need server.exe or llama-server.exe next to delta.exe)");
-         UI::print_error("   Reinstall Delta or run build-amd64.ps1 so server.exe is copied to the output folder.");
+            // Windows: Use TerminateProcess
+            HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, llama_server_pid_);
+            if (hProcess != NULL) {
+                TerminateProcess(hProcess, 0);
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                DWORD exit_code;
+                if (GetExitCodeProcess(hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
+                    TerminateProcess(hProcess, 1);
+                    WaitForSingleObject(hProcess, 5000);
+                }
+                CloseHandle(hProcess);
+            }
+#else
+            // Unix: Use kill/waitpid
+            pid_t pid_to_kill = (llama_server_pid_ < 0) ? llama_server_pid_ : llama_server_pid_;
+            // Kill the delta-server process (or process group if negative)
+            kill(pid_to_kill, SIGTERM);
+            // Wait a bit for it to terminate
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            // Force kill if still running
+            int status;
+            pid_t actual_pid = (llama_server_pid_ < 0) ? -llama_server_pid_ : llama_server_pid_;
+            if (waitpid(actual_pid, &status, WNOHANG) == 0) {
+                // Process still running, force kill
+                kill(pid_to_kill, SIGKILL);
+                waitpid(actual_pid, &status, 0); // Wait for it to die
+            }
 #endif
-         return false;
-     }
-     
-     // Find web UI path (reuse logic from launch_server_auto)
-     std::string public_path;
-     std::vector<std::string> public_candidates = {
-         tools::FileOps::join_path(exe_dir, "../public"),
-         tools::FileOps::join_path(exe_dir, "../../public"),
-         "public",
-         "./public",
-         "/opt/homebrew/share/delta-cli/webui",
-         "/usr/local/share/delta-cli/webui"
-     };
-     
-     for (const auto& candidate : public_candidates) {
-         if (tools::FileOps::dir_exists(candidate)) {
-             std::string index_file = tools::FileOps::join_path(candidate, "index.html.gz");
-             if (tools::FileOps::file_exists(index_file) || 
-                 tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
-                 public_path = candidate;
-                 break;
-             }
-         }
-     }
-     
-     // Build command
-     std::string cmd_str = build_llama_server_cmd(server_bin, model_path, current_port_, ctx_size, model_alias, public_path);
-     
-     // Start delta-server
+            llama_server_pid_ = 0;
+            current_model_path_ = "";
+            UI::print_info("   Stopping current model...");
+        }
+    }
+
+    // Wait a bit more to ensure port is free
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+    // Now acquire lock for the rest of the function
+    std::lock_guard<std::mutex> lock(server_mutex_);
+
+    // Use same server binary as launch_server_auto (prefer "server", then delta-server)
+    std::vector<std::string> server_candidates;
+    std::string exe_dir = tools::FileOps::get_executable_dir();
+#ifdef _WIN32
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "server.exe"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server.exe"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../server.exe"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server.exe"));
+#else
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "server"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "llama-server"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "delta-server"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../server"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../llama-server"));
+    server_candidates.push_back(tools::FileOps::join_path(exe_dir, "../delta-server"));
+#endif
+    server_candidates.push_back("/opt/homebrew/bin/server");
+    server_candidates.push_back("/opt/homebrew/bin/llama-server");
+    server_candidates.push_back("/opt/homebrew/bin/delta-server");
+    server_candidates.push_back("/usr/local/bin/server");
+    server_candidates.push_back("/usr/local/bin/llama-server");
+    server_candidates.push_back("/usr/local/bin/delta-server");
+    server_candidates.push_back("/usr/bin/server");
+    server_candidates.push_back("/usr/bin/llama-server");
+    server_candidates.push_back("/usr/bin/delta-server");
+#ifdef _WIN32
+    server_candidates.push_back("server.exe");
+    server_candidates.push_back("llama-server.exe");
+#else
+    server_candidates.push_back("server");
+    server_candidates.push_back("llama-server");
+#endif
+    server_candidates.push_back("delta-server");
+
+    std::string server_bin;
+    for (const auto& candidate : server_candidates) {
+        if (tools::FileOps::file_exists(candidate)) {
+            server_bin = candidate;
+            break;
+        }
+    }
+
+    if (server_bin.empty()) {
+        UI::print_error("Server binary not found for model switch");
+#ifdef _WIN32
+        UI::print_error("   Looked in: " + exe_dir + " (need server.exe or llama-server.exe next to delta.exe)");
+        UI::print_error("   Reinstall Delta or run build-amd64.ps1 so server.exe is copied to the output folder.");
+#endif
+        return false;
+    }
+
+    // Find web UI path (reuse logic from launch_server_auto)
+    std::string public_path;
+    std::vector<std::string> public_candidates = {tools::FileOps::join_path(exe_dir, "../public"),
+                                                  tools::FileOps::join_path(exe_dir, "../../public"),
+                                                  "public",
+                                                  "./public",
+                                                  "/opt/homebrew/share/delta-cli/webui",
+                                                  "/usr/local/share/delta-cli/webui"};
+
+    for (const auto& candidate : public_candidates) {
+        if (tools::FileOps::dir_exists(candidate)) {
+            std::string index_file = tools::FileOps::join_path(candidate, "index.html.gz");
+            if (tools::FileOps::file_exists(index_file) ||
+                tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
+                public_path = candidate;
+                break;
+            }
+        }
+    }
+
+    // Build command
+    std::string cmd_str =
+        build_llama_server_cmd(server_bin, model_path, current_port_, ctx_size, model_alias, public_path);
+
+    // Start delta-server
 #ifdef _WIN32
     // Redirect server stdout/stderr to a log file so we can show why it failed to start
     char temp_path[MAX_PATH];
     GetTempPathA(MAX_PATH, temp_path);
     std::string err_file = std::string(temp_path) + "delta-server-err-" + std::to_string(current_port_) + ".log";
     std::remove(err_file.c_str());
-    SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
-    HANDLE hErrLog = CreateFileA(err_file.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+    HANDLE hErrLog =
+        CreateFileA(err_file.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     HANDLE hNul = INVALID_HANDLE_VALUE;
     if (hErrLog != INVALID_HANDLE_VALUE)
         hNul = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ, &sa, OPEN_EXISTING, 0, NULL);
@@ -1005,23 +1040,27 @@ void Commands::stop_llama_server() {
     std::vector<char> cmd_line(cmd_str.begin(), cmd_str.end());
     cmd_line.push_back('\0');
     const char* work_dir_switch = exe_dir.empty() ? NULL : exe_dir.c_str();
-    if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE,
-                        CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, work_dir_switch, &si, &pi)) {
+    if (!CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, CREATE_NO_WINDOW | DETACHED_PROCESS, NULL,
+                        work_dir_switch, &si, &pi)) {
         DWORD err = GetLastError();
-        if (hErrLog != INVALID_HANDLE_VALUE) CloseHandle(hErrLog);
-        if (hNul != INVALID_HANDLE_VALUE) CloseHandle(hNul);
+        if (hErrLog != INVALID_HANDLE_VALUE)
+            CloseHandle(hErrLog);
+        if (hNul != INVALID_HANDLE_VALUE)
+            CloseHandle(hNul);
         UI::print_error("   Failed to create process (Error " + std::to_string(err) + ")");
         UI::print_info("   Ensure " + exe_dir + " has server.exe and DLLs (libcurl.dll, etc.).");
         return false;
     }
-    if (hErrLog != INVALID_HANDLE_VALUE) CloseHandle(hErrLog);
-    if (hNul != INVALID_HANDLE_VALUE) CloseHandle(hNul);
+    if (hErrLog != INVALID_HANDLE_VALUE)
+        CloseHandle(hErrLog);
+    if (hNul != INVALID_HANDLE_VALUE)
+        CloseHandle(hNul);
 
     CloseHandle(pi.hThread);
     llama_server_pid_ = pi.dwProcessId;
     current_model_path_ = model_path;
 
-    const int total_attempts = 600;   // 300 seconds (5 min) on Windows; model load can be slow
+    const int total_attempts = 600; // 300 seconds (5 min) on Windows; model load can be slow
     const int progress_interval = 20;
     bool server_listening = false;
     DWORD exit_code = 0;
@@ -1033,7 +1072,8 @@ void Commands::stop_llama_server() {
         }
         if (attempt > 0 && progress_interval > 0 && attempt % progress_interval == 0) {
             int elapsed_sec = (attempt * 500) / 1000;
-            std::cout << "\r   Waiting for server... " << elapsed_sec << "s (port " << current_port_ << ")" << std::flush;
+            std::cout << "\r   Waiting for server... " << elapsed_sec << "s (port " << current_port_ << ")"
+                      << std::flush;
             progress_printed = true;
         }
         WSADATA wsaData;
@@ -1047,7 +1087,8 @@ void Commands::stop_llama_server() {
                 if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
                     server_listening = true;
                     closesocket(sock);
-                    if (progress_printed) std::cout << std::endl;
+                    if (progress_printed)
+                        std::cout << std::endl;
                     break;
                 }
                 closesocket(sock);
@@ -1075,7 +1116,8 @@ void Commands::stop_llama_server() {
             WSACleanup();
         }
     }
-    if (progress_printed && !server_listening) std::cout << std::endl;
+    if (progress_printed && !server_listening)
+        std::cout << std::endl;
 
     if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE && server_listening) {
         UI::print_info("   [OK] Model loaded successfully!");
@@ -1103,7 +1145,8 @@ void Commands::stop_llama_server() {
             err_read.close();
         }
         if (log_says_listening) {
-            UI::print_info("   Server log indicates it is listening; continuing even though the local port probe failed.");
+            UI::print_info(
+                "   Server log indicates it is listening; continuing even though the local port probe failed.");
             CloseHandle(pi.hProcess);
             if (is_ui_only_mode) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -1120,7 +1163,8 @@ void Commands::stop_llama_server() {
         std::vector<std::string> filtered;
         size_t start = (lines.size() > 50) ? (lines.size() - 50) : 0;
         for (size_t i = start; i < lines.size(); i++) {
-            if (!is_server_log_noise(lines[i])) filtered.push_back(lines[i]);
+            if (!is_server_log_noise(lines[i]))
+                filtered.push_back(lines[i]);
         }
         if (!filtered.empty()) {
             UI::print_info("   --- Relevant log lines ---");
@@ -1129,546 +1173,544 @@ void Commands::stop_llama_server() {
             UI::print_info("   --- End ---");
         }
         if (exit_code != STILL_ACTIVE) {
-            UI::print_info("   Install folder must contain: delta.exe, llama-server.exe (or server.exe), libcurl.dll, zlib1.dll, public/");
+            UI::print_info("   Install folder must contain: delta.exe, llama-server.exe (or server.exe), libcurl.dll, "
+                           "zlib1.dll, public/");
         }
         CloseHandle(pi.hProcess);
-         llama_server_pid_ = 0;
-         // If we were migrating from UI-only mode, restore model API server on 8080
-         if (is_ui_only_mode) {
-             std::string exe_dir = tools::FileOps::get_executable_dir();
-             std::vector<std::string> public_candidates = {
-                 tools::FileOps::join_path(exe_dir, "../public"),
-                 tools::FileOps::join_path(exe_dir, "../../public"),
-                 "public",
-                 "./public",
-                 "/opt/homebrew/share/delta-cli/webui",
-                 "/usr/local/share/delta-cli/webui"
-             };
-             std::string public_path;
-             for (const auto& candidate : public_candidates) {
-                 if (tools::FileOps::dir_exists(candidate)) {
-                     std::string idx = tools::FileOps::join_path(candidate, "index.html.gz");
-                     if (tools::FileOps::file_exists(idx) || 
-                         tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
-                         public_path = candidate;
-                         break;
-                     }
-                 }
-             }
-             if (!public_path.empty()) {
-                 delta::start_model_api_server(8080, public_path);
-             }
-         }
-         return false;
-     }
+        llama_server_pid_ = 0;
+        // If we were migrating from UI-only mode, restore model API server on 8080
+        if (is_ui_only_mode) {
+            std::string exe_dir = tools::FileOps::get_executable_dir();
+            std::vector<std::string> public_candidates = {tools::FileOps::join_path(exe_dir, "../public"),
+                                                          tools::FileOps::join_path(exe_dir, "../../public"),
+                                                          "public",
+                                                          "./public",
+                                                          "/opt/homebrew/share/delta-cli/webui",
+                                                          "/usr/local/share/delta-cli/webui"};
+            std::string public_path;
+            for (const auto& candidate : public_candidates) {
+                if (tools::FileOps::dir_exists(candidate)) {
+                    std::string idx = tools::FileOps::join_path(candidate, "index.html.gz");
+                    if (tools::FileOps::file_exists(idx) ||
+                        tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
+                        public_path = candidate;
+                        break;
+                    }
+                }
+            }
+            if (!public_path.empty()) {
+                delta::start_model_api_server(8080, public_path);
+            }
+        }
+        return false;
+    }
 #else
-     // Unix: Use fork/exec
-     pid_t pid = fork();
-     if (pid == 0) {
-         // Child process: create new process group
-         setsid();
-         
-         // Redirect output
-         int devnull = open("/dev/null", O_WRONLY);
-         if (devnull >= 0) {
-             dup2(devnull, STDOUT_FILENO);
-             dup2(devnull, STDERR_FILENO);
-             close(devnull);
-         }
-         close(STDIN_FILENO);
-         
-         // Execute delta-server
-         execl("/bin/sh", "sh", "-c", cmd_str.c_str(), (char*)NULL);
-         _exit(1);
-     } else if (pid > 0) {
-         // Parent process: store PID
-         llama_server_pid_ = -pid; // Store negative for process group
-         current_model_path_ = model_path;
-         
-         // Wait for server to start and verify it's listening (up to 30 seconds)
-         bool server_listening = false;
-         for (int attempt = 0; attempt < 60; attempt++) {  // 60 * 500ms = 30 seconds
-             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-             
-             // Check if process is still running
-             int status;
-             if (waitpid(pid, &status, WNOHANG) != 0) {
-                 // Process exited
-                 break;
-             }
-             
-             // Check if port is listening
+    // Unix: Use fork/exec
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child process: create new process group
+        setsid();
+
+        // Redirect output
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
+        }
+        close(STDIN_FILENO);
+
+        // Execute delta-server
+        execl("/bin/sh", "sh", "-c", cmd_str.c_str(), (char*)NULL);
+        _exit(1);
+    } else if (pid > 0) {
+        // Parent process: store PID
+        llama_server_pid_ = -pid; // Store negative for process group
+        current_model_path_ = model_path;
+
+        // Wait for server to start and verify it's listening (up to 30 seconds)
+        bool server_listening = false;
+        for (int attempt = 0; attempt < 60; attempt++) { // 60 * 500ms = 30 seconds
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+            // Check if process is still running
+            int status;
+            if (waitpid(pid, &status, WNOHANG) != 0) {
+                // Process exited
+                break;
+            }
+
+            // Check if port is listening
 #ifdef _WIN32
-             WSADATA wsaData;
-             if (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0) {
-                 SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-                 if (sock != INVALID_SOCKET) {
-                     sockaddr_in addr;
-                     addr.sin_family = AF_INET;
-                     addr.sin_port = htons(current_port_);
-                     inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-                     if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
-                         server_listening = true;
-                         closesocket(sock);
-                         break;
-                     }
-                     closesocket(sock);
-                 }
-                 WSACleanup();
-             }
+            WSADATA wsaData;
+            if (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0) {
+                SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+                if (sock != INVALID_SOCKET) {
+                    sockaddr_in addr;
+                    addr.sin_family = AF_INET;
+                    addr.sin_port = htons(current_port_);
+                    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+                    if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
+                        server_listening = true;
+                        closesocket(sock);
+                        break;
+                    }
+                    closesocket(sock);
+                }
+                WSACleanup();
+            }
 #else
-             int sock = socket(AF_INET, SOCK_STREAM, 0);
-             if (sock >= 0) {
-                 struct sockaddr_in addr;
-                 addr.sin_family = AF_INET;
-                 addr.sin_port = htons(current_port_);
-                 inet_aton("127.0.0.1", &addr.sin_addr);
-                 if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
-                     server_listening = true;
-                     close(sock);
-                     break;
-                 }
-                 close(sock);
-             }
+            int sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (sock >= 0) {
+                struct sockaddr_in addr;
+                addr.sin_family = AF_INET;
+                addr.sin_port = htons(current_port_);
+                inet_aton("127.0.0.1", &addr.sin_addr);
+                if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
+                    server_listening = true;
+                    close(sock);
+                    break;
+                }
+                close(sock);
+            }
 #endif
-         }
-         
-         // Check if process is still running
-         int status;
-         if (waitpid(pid, &status, WNOHANG) == 0 && server_listening) {
-             UI::print_info("   [OK] Model loaded successfully!");
-             // If we migrated from UI-only mode, restart model API server on 8081
-             if (is_ui_only_mode) {
-                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                 delta::start_model_api_server(8081);
-                 UI::print_info("   [OK] Model API server restarted on port 8081");
-             }
-             return true;
-         } else {
-             UI::print_error("   Failed to start delta-server");
-             llama_server_pid_ = 0;
-             // If we were migrating from UI-only mode, restore model API server on 8080
-             if (is_ui_only_mode) {
-                 std::string exe_dir = tools::FileOps::get_executable_dir();
-                 std::vector<std::string> public_candidates = {
-                     tools::FileOps::join_path(exe_dir, "../public"),
-                     tools::FileOps::join_path(exe_dir, "../../public"),
-                     "public",
-                     "./public",
-                     "/opt/homebrew/share/delta-cli/webui",
-                     "/usr/local/share/delta-cli/webui"
-                 };
-                 std::string public_path;
-                 for (const auto& candidate : public_candidates) {
-                     if (tools::FileOps::dir_exists(candidate)) {
-                         std::string idx = tools::FileOps::join_path(candidate, "index.html.gz");
-                         if (tools::FileOps::file_exists(idx) || 
-                             tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
-                             public_path = candidate;
-                             break;
-                         }
-                     }
-                 }
-                 if (!public_path.empty()) {
-                     delta::start_model_api_server(8080, public_path);
-                 }
-             }
-             return false;
-         }
-     } else {
-         UI::print_error("   Failed to fork process");
-         // If we were migrating from UI-only mode, restore model API server on 8080
-         if (is_ui_only_mode) {
-             std::string exe_dir = tools::FileOps::get_executable_dir();
-             std::vector<std::string> public_candidates = {
-                 tools::FileOps::join_path(exe_dir, "../public"),
-                 tools::FileOps::join_path(exe_dir, "../../public"),
-                 "public",
-                 "./public",
-                 "/opt/homebrew/share/delta-cli/webui",
-                 "/usr/local/share/delta-cli/webui"
-             };
-             std::string public_path;
-             for (const auto& candidate : public_candidates) {
-                 if (tools::FileOps::dir_exists(candidate)) {
-                     std::string idx = tools::FileOps::join_path(candidate, "index.html.gz");
-                     if (tools::FileOps::file_exists(idx) || 
-                         tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
-                         public_path = candidate;
-                         break;
-                     }
-                 }
-             }
-             if (!public_path.empty()) {
-                 delta::start_model_api_server(8080, public_path);
-             }
-         }
-         return false;
-     }
+        }
+
+        // Check if process is still running
+        int status;
+        if (waitpid(pid, &status, WNOHANG) == 0 && server_listening) {
+            UI::print_info("   [OK] Model loaded successfully!");
+            // If we migrated from UI-only mode, restart model API server on 8081
+            if (is_ui_only_mode) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                delta::start_model_api_server(8081);
+                UI::print_info("   [OK] Model API server restarted on port 8081");
+            }
+            return true;
+        } else {
+            UI::print_error("   Failed to start delta-server");
+            llama_server_pid_ = 0;
+            // If we were migrating from UI-only mode, restore model API server on 8080
+            if (is_ui_only_mode) {
+                std::string exe_dir = tools::FileOps::get_executable_dir();
+                std::vector<std::string> public_candidates = {tools::FileOps::join_path(exe_dir, "../public"),
+                                                              tools::FileOps::join_path(exe_dir, "../../public"),
+                                                              "public",
+                                                              "./public",
+                                                              "/opt/homebrew/share/delta-cli/webui",
+                                                              "/usr/local/share/delta-cli/webui"};
+                std::string public_path;
+                for (const auto& candidate : public_candidates) {
+                    if (tools::FileOps::dir_exists(candidate)) {
+                        std::string idx = tools::FileOps::join_path(candidate, "index.html.gz");
+                        if (tools::FileOps::file_exists(idx) ||
+                            tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
+                            public_path = candidate;
+                            break;
+                        }
+                    }
+                }
+                if (!public_path.empty()) {
+                    delta::start_model_api_server(8080, public_path);
+                }
+            }
+            return false;
+        }
+    } else {
+        UI::print_error("   Failed to fork process");
+        // If we were migrating from UI-only mode, restore model API server on 8080
+        if (is_ui_only_mode) {
+            std::string exe_dir = tools::FileOps::get_executable_dir();
+            std::vector<std::string> public_candidates = {tools::FileOps::join_path(exe_dir, "../public"),
+                                                          tools::FileOps::join_path(exe_dir, "../../public"),
+                                                          "public",
+                                                          "./public",
+                                                          "/opt/homebrew/share/delta-cli/webui",
+                                                          "/usr/local/share/delta-cli/webui"};
+            std::string public_path;
+            for (const auto& candidate : public_candidates) {
+                if (tools::FileOps::dir_exists(candidate)) {
+                    std::string idx = tools::FileOps::join_path(candidate, "index.html.gz");
+                    if (tools::FileOps::file_exists(idx) ||
+                        tools::FileOps::file_exists(tools::FileOps::join_path(candidate, "index.html"))) {
+                        public_path = candidate;
+                        break;
+                    }
+                }
+            }
+            if (!public_path.empty()) {
+                delta::start_model_api_server(8080, public_path);
+            }
+        }
+        return false;
+    }
 #endif
- }
- 
- void Commands::init() {
-     if (initialized_) return;
-     
-     // Register all commands
-     command_map_["download"] = handle_download;
-     command_map_["pull"] = handle_download;
-     command_map_["remove"] = handle_remove;
-     command_map_["delete"] = handle_remove;
-     command_map_["list"] = handle_list;
-     command_map_["list-models"] = handle_list;
-     command_map_["models"] = handle_list;
-     command_map_["list-local"] = handle_list;
-     command_map_["use"] = handle_use;
-     command_map_["available"] = handle_available;
-     command_map_["list-available"] = handle_available;
-     command_map_["clear-screen"] = handle_clear_screen;
-     command_map_["help"] = handle_help;
-     
-     initialized_ = true;
- }
- 
- bool Commands::process_command(const std::string& input, InteractiveSession& session) {
-     // Parse command and arguments
-     std::vector<std::string> args = parse_args(input);
-     if (args.empty()) return false;
-     
-     std::string command = args[0];
-     args.erase(args.begin()); // Remove command from args
-     
-     // Check if command exists
-     auto it = command_map_.find(command);
-     if (it == command_map_.end()) {
-         UI::print_info("ℹ Type /help to see available commands");
-         return true;
-     }
-     
-     // Check if online command and we're offline
-     if (is_online_command(command)) {
-         // For now, we'll try the command and let it handle offline gracefully
-         // In a real implementation, you'd check network connectivity here
-     }
-     
-     // Execute command
-     return it->second(args, session);
- }
- 
- std::vector<std::string> Commands::parse_args(const std::string& input) {
-     std::vector<std::string> args;
-     std::istringstream iss(input);
-     std::string arg;
-     
-     while (iss >> arg) {
-         args.push_back(arg);
-     }
-     
-     return args;
- }
- 
- void Commands::show_help() {
-     std::cout << "\n" << UI::BRIGHT_GREEN << UI::BOLD << "Interactive Commands:" << UI::RESET << std::endl;
-     std::cout << "  " << UI::GREEN << "/download <model>" << UI::RESET << "     - Download a model" << std::endl;
-     std::cout << "  " << UI::GREEN << "/remove <model>" << UI::RESET << "       - Remove a model (alias: /delete)" << std::endl;
-     std::cout << "  " << UI::GREEN << "/list" << UI::RESET << "                 - List local models" << std::endl;
-     std::cout << "  " << UI::GREEN << "/available" << UI::RESET << "            - List available models" << std::endl;
-     std::cout << "  " << UI::GREEN << "/use <model>" << UI::RESET << "          - Switch to another model" << std::endl;
-     std::cout << "  " << UI::GREEN << "/clear-screen" << UI::RESET << "         - Clear the terminal screen" << std::endl;
-     std::cout << "  " << UI::GREEN << "/help" << UI::RESET << "                 - Show this help" << std::endl;
-     std::cout << std::endl;
-     std::cout << "  " << UI::YELLOW << "exit, quit" << UI::RESET << "           - Exit interactive mode" << std::endl;
-     std::cout << std::endl;
- }
- 
- bool Commands::is_online_command(const std::string& command) {
-     return (command == "download" || command == "pull");
- }
- 
- void Commands::show_offline_message(const std::string& command) {
-     UI::print_error("Command /" + command + " requires internet connection");
-     UI::print_info("Please check your connection and try again");
- }
- 
- // Command implementations
- bool Commands::handle_download(const std::vector<std::string>& args, InteractiveSession& session) {
-     if (args.empty()) {
-         UI::print_error("Please specify a model name");
-         UI::print_info("Usage: /download <model-name>");
-         UI::print_info("Example: /download qwen3:0.6b");
-         return true;
-     }
-     
-     std::string model_name = args[0];
-     UI::print_info("Downloading model: " + model_name);
-     
-     // Set progress callback for download with visual progress bar (ASCII on Windows to avoid garbled output)
-     session.model_mgr->set_progress_callback([](double progress, long long current, long long total) {
-         double current_mb = current / (1024.0 * 1024.0);
-         double total_mb = total / (1024.0 * 1024.0);
-         int bar_width = 50;
-         int pos = (int)(progress / 100.0 * bar_width);
-         std::cout << "\r  [";
+}
+
+void Commands::init() {
+    if (initialized_)
+        return;
+
+    // Register all commands
+    command_map_["download"] = handle_download;
+    command_map_["pull"] = handle_download;
+    command_map_["remove"] = handle_remove;
+    command_map_["delete"] = handle_remove;
+    command_map_["list"] = handle_list;
+    command_map_["list-models"] = handle_list;
+    command_map_["models"] = handle_list;
+    command_map_["list-local"] = handle_list;
+    command_map_["use"] = handle_use;
+    command_map_["available"] = handle_available;
+    command_map_["list-available"] = handle_available;
+    command_map_["clear-screen"] = handle_clear_screen;
+    command_map_["help"] = handle_help;
+
+    initialized_ = true;
+}
+
+bool Commands::process_command(const std::string& input, InteractiveSession& session) {
+    // Parse command and arguments
+    std::vector<std::string> args = parse_args(input);
+    if (args.empty())
+        return false;
+
+    std::string command = args[0];
+    args.erase(args.begin()); // Remove command from args
+
+    // Check if command exists
+    auto it = command_map_.find(command);
+    if (it == command_map_.end()) {
+        UI::print_info("ℹ Type /help to see available commands");
+        return true;
+    }
+
+    // Check if online command and we're offline
+    if (is_online_command(command)) {
+        // For now, we'll try the command and let it handle offline gracefully
+        // In a real implementation, you'd check network connectivity here
+    }
+
+    // Execute command
+    return it->second(args, session);
+}
+
+std::vector<std::string> Commands::parse_args(const std::string& input) {
+    std::vector<std::string> args;
+    std::istringstream iss(input);
+    std::string arg;
+
+    while (iss >> arg) {
+        args.push_back(arg);
+    }
+
+    return args;
+}
+
+void Commands::show_help() {
+    std::cout << "\n" << UI::BRIGHT_GREEN << UI::BOLD << "Interactive Commands:" << UI::RESET << std::endl;
+    std::cout << "  " << UI::GREEN << "/download <model>" << UI::RESET << "     - Download a model" << std::endl;
+    std::cout << "  " << UI::GREEN << "/remove <model>" << UI::RESET << "       - Remove a model (alias: /delete)"
+              << std::endl;
+    std::cout << "  " << UI::GREEN << "/list" << UI::RESET << "                 - List local models" << std::endl;
+    std::cout << "  " << UI::GREEN << "/available" << UI::RESET << "            - List available models" << std::endl;
+    std::cout << "  " << UI::GREEN << "/use <model>" << UI::RESET << "          - Switch to another model" << std::endl;
+    std::cout << "  " << UI::GREEN << "/clear-screen" << UI::RESET << "         - Clear the terminal screen"
+              << std::endl;
+    std::cout << "  " << UI::GREEN << "/help" << UI::RESET << "                 - Show this help" << std::endl;
+    std::cout << std::endl;
+    std::cout << "  " << UI::YELLOW << "exit, quit" << UI::RESET << "           - Exit interactive mode" << std::endl;
+    std::cout << std::endl;
+}
+
+bool Commands::is_online_command(const std::string& command) {
+    return (command == "download" || command == "pull");
+}
+
+void Commands::show_offline_message(const std::string& command) {
+    UI::print_error("Command /" + command + " requires internet connection");
+    UI::print_info("Please check your connection and try again");
+}
+
+// Command implementations
+bool Commands::handle_download(const std::vector<std::string>& args, InteractiveSession& session) {
+    if (args.empty()) {
+        UI::print_error("Please specify a model name");
+        UI::print_info("Usage: /download <model-name>");
+        UI::print_info("Example: /download qwen3:0.6b");
+        return true;
+    }
+
+    std::string model_name = args[0];
+    UI::print_info("Downloading model: " + model_name);
+
+    // Set progress callback for download with visual progress bar (ASCII on Windows to avoid garbled output)
+    session.model_mgr->set_progress_callback([](double progress, long long current, long long total) {
+        double current_mb = current / (1024.0 * 1024.0);
+        double total_mb = total / (1024.0 * 1024.0);
+        int bar_width = 50;
+        int pos = (int)(progress / 100.0 * bar_width);
+        std::cout << "\r  [";
 #ifdef _WIN32
-         for (int i = 0; i < bar_width; i++) {
-             if (i < pos) std::cout << "#";
-             else if (i == pos) std::cout << ">";
-             else std::cout << "-";
-         }
+        for (int i = 0; i < bar_width; i++) {
+            if (i < pos)
+                std::cout << "#";
+            else if (i == pos)
+                std::cout << ">";
+            else
+                std::cout << "-";
+        }
 #else
-         for (int i = 0; i < bar_width; i++) {
-             if (i < pos) std::cout << "█";
-             else if (i == pos) std::cout << "▓";
-             else std::cout << "░";
-         }
+        for (int i = 0; i < bar_width; i++) {
+            if (i < pos)
+                std::cout << "█";
+            else if (i == pos)
+                std::cout << "▓";
+            else
+                std::cout << "░";
+        }
 #endif
-         std::cout << "] " << std::fixed << std::setprecision(1) << progress << "% ";
-         std::cout << "(" << std::fixed << std::setprecision(1) << current_mb << " / ";
-         std::cout << total_mb << " MB)";
-         std::cout << std::flush;
-     });
-     
-     bool success = session.model_mgr->pull_model(model_name);
-     session.model_mgr->set_progress_callback(nullptr);
-     
-     if (success) {
-         std::cout << std::endl;
-         UI::print_success("Model downloaded successfully!");
-         UI::print_info("You can now use: /use " + model_name);
-     } else {
-         std::cout << std::endl;
-         UI::print_error("Download failed");
-         UI::print_info("Check your internet connection and try again");
-     }
-     
-     return true;
- }
- 
- bool Commands::handle_list(const std::vector<std::string>& args, InteractiveSession& session) {
-     (void)args; // Suppress unused parameter warning
-     // Get friendly model list (local models only)
-     auto models = session.model_mgr->get_friendly_model_list(false);
-     
-     if (models.empty()) {
-         UI::print_info("No models found locally.");
-         UI::print_info("Download a model with: /download <model-name>");
-         UI::print_info("See available models: /available");
-         return true;
-     }
-     
-     UI::print_border("Locally Cached Models");
-     
-     for (const auto& model : models) {
-         std::string current_indicator = (model.name == session.current_model) ? " [CURRENT]" : "";
-         std::cout << "  • " << model.name << current_indicator << std::endl;
-         std::cout << "      " << model.display_name << " - " << model.description << std::endl;
-         std::cout << "      Size: " << model.size_str << " | Quant: " << model.quantization << std::endl;
-         std::cout << std::endl;
-     }
-     
-     UI::print_info("Use '/use " + models[0].name + "' to switch to a model");
-     return true;
- }
- 
- 
- bool Commands::handle_use(const std::vector<std::string>& args, InteractiveSession& session) {
-     if (args.empty()) {
-         UI::print_error("Please specify a model name");
-         UI::print_info("Usage: /use <model-name>");
-         UI::print_info("Example: /use qwen3:0.6b");
-         return true;
-     }
-     
-     std::string model_name = args[0];
-     
-     // Check if model is installed
-     if (!session.model_mgr->is_model_installed(model_name)) {
-         UI::print_error("Model not found: " + model_name);
-         UI::print_info("Use /list to see available models");
-         UI::print_info("Use /download to download a model");
-         return true;
-     }
-     
-     // Get model path
-     std::string model_path = session.model_mgr->get_model_path(model_name);
-     if (model_path.empty()) {
-         UI::print_error("Could not find model path for: " + model_name);
-         return true;
-     }
-     
-     UI::print_info("Switching to model: " + model_name);
-     UI::print_info("Loading model...");
-     
-     // Update config
-     session.config->model_path = model_path;
-     session.current_model = model_name;
-     
-     // Reload model
-     if (!session.engine->load_model(*session.config)) {
-         UI::print_error("Failed to load model: " + model_name);
-         return true;
-     }
-     
-     UI::print_info("✓ Model loaded successfully!");
-     UI::print_info("Current model: " + session.current_model);
-     
-// Automatically launch web UI server with the new model
+        std::cout << "] " << std::fixed << std::setprecision(1) << progress << "% ";
+        std::cout << "(" << std::fixed << std::setprecision(1) << current_mb << " / ";
+        std::cout << total_mb << " MB)";
+        std::cout << std::flush;
+    });
+
+    bool success = session.model_mgr->pull_model(model_name);
+    session.model_mgr->set_progress_callback(nullptr);
+
+    if (success) {
+        std::cout << std::endl;
+        UI::print_success("Model downloaded successfully!");
+        UI::print_info("You can now use: /use " + model_name);
+    } else {
+        std::cout << std::endl;
+        UI::print_error("Download failed");
+        UI::print_info("Check your internet connection and try again");
+    }
+
+    return true;
+}
+
+bool Commands::handle_list(const std::vector<std::string>& args, InteractiveSession& session) {
+    (void)args; // Suppress unused parameter warning
+    // Get friendly model list (local models only)
+    auto models = session.model_mgr->get_friendly_model_list(false);
+
+    if (models.empty()) {
+        UI::print_info("No models found locally.");
+        UI::print_info("Download a model with: /download <model-name>");
+        UI::print_info("See available models: /available");
+        return true;
+    }
+
+    UI::print_border("Locally Cached Models");
+
+    for (const auto& model : models) {
+        std::string current_indicator = (model.name == session.current_model) ? " [CURRENT]" : "";
+        std::cout << "  • " << model.name << current_indicator << std::endl;
+        std::cout << "      " << model.display_name << " - " << model.description << std::endl;
+        std::cout << "      Size: " << model.size_str << " | Quant: " << model.quantization << std::endl;
+        std::cout << std::endl;
+    }
+
+    UI::print_info("Use '/use " + models[0].name + "' to switch to a model");
+    return true;
+}
+
+bool Commands::handle_use(const std::vector<std::string>& args, InteractiveSession& session) {
+    if (args.empty()) {
+        UI::print_error("Please specify a model name");
+        UI::print_info("Usage: /use <model-name>");
+        UI::print_info("Example: /use qwen3:0.6b");
+        return true;
+    }
+
+    std::string model_name = args[0];
+
+    // Check if model is installed
+    if (!session.model_mgr->is_model_installed(model_name)) {
+        UI::print_error("Model not found: " + model_name);
+        UI::print_info("Use /list to see available models");
+        UI::print_info("Use /download to download a model");
+        return true;
+    }
+
+    // Get model path
+    std::string model_path = session.model_mgr->get_model_path(model_name);
+    if (model_path.empty()) {
+        UI::print_error("Could not find model path for: " + model_name);
+        return true;
+    }
+
+    UI::print_info("Switching to model: " + model_name);
+    UI::print_info("Loading model...");
+
+    // Update config
+    session.config->model_path = model_path;
+    session.current_model = model_name;
+
+    // Reload model
+    if (!session.engine->load_model(*session.config)) {
+        UI::print_error("Failed to load model: " + model_name);
+        return true;
+    }
+
+    UI::print_info("✓ Model loaded successfully!");
+    UI::print_info("Current model: " + session.current_model);
+
+    // Automatically launch web UI server with the new model
     int ctx_size = session.model_mgr->get_max_context_for_model(model_name);
     if (ctx_size <= 0 && session.config->n_ctx > 0) {
         ctx_size = session.config->n_ctx;
     }
-     
-     // Get short_name for model alias in web UI
-     std::string model_alias;
-     std::string registry_name_for_alias = model_name;
-     if (session.model_mgr->is_in_registry(registry_name_for_alias)) {
-         auto entry = session.model_mgr->get_registry_entry(registry_name_for_alias);
-         if (!entry.short_name.empty()) {
-             model_alias = entry.short_name;
-         }
-     } else {
-         // Try converting dash to colon format
-         size_t last_dash = registry_name_for_alias.find_last_of('-');
-         if (last_dash != std::string::npos) {
-             std::string colon_name = registry_name_for_alias.substr(0, last_dash) + ":" + 
-                                      registry_name_for_alias.substr(last_dash + 1);
-             if (session.model_mgr->is_in_registry(colon_name)) {
-                 auto entry = session.model_mgr->get_registry_entry(colon_name);
-                 if (!entry.short_name.empty()) {
-                     model_alias = entry.short_name;
-                 }
-             }
-         }
-     }
-     
-     // If still not found, try to get short_name from filename
-     if (model_alias.empty()) {
-         // Extract filename from model_path
-         std::string filename = model_path;
-         size_t last_slash = filename.find_last_of("/\\");
-         if (last_slash != std::string::npos) {
-             filename = filename.substr(last_slash + 1);
-         }
-         model_alias = session.model_mgr->get_short_name_from_filename(filename);
-     }
-     
-     // Restart delta-server with new model (if it's running)
-     if (llama_server_pid_ != 0) {
-         // Server is already running, restart it with new model
-         if (restart_llama_server(model_path, model_name, ctx_size, model_alias)) {
-             UI::print_success("Delta Server restarted with new model");
-         } else {
-             UI::print_error("Failed to restart server with new model");
-         }
-     } else {
-         // Server not running, start it
-         // launch_server_auto now waits for server to be ready before returning
-         if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
-             int actual_port = Commands::get_current_port();
-             std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
-             std::this_thread::sleep_for(std::chrono::milliseconds(500));
-             tools::Browser::open_url(url);
-         } else {
-             UI::print_error("Failed to start server. Check error messages above.");
-         }
-     }
-     
-     return true;
- }
- 
- 
- bool Commands::handle_available(const std::vector<std::string>& args, InteractiveSession& session) {
-     (void)args; // Suppress unused parameter warning
-     // Get friendly model list (all available models)
-     auto models = session.model_mgr->get_friendly_model_list(true);
-     
-     if (models.empty()) {
-         UI::print_error("No models available in registry");
-         return true;
-     }
-     
-     UI::print_border("Available Models to Download");
-     UI::print_info("Use '/download <model-name>' to download");
-     std::cout << std::endl;
-     
-     for (const auto& model : models) {
-         std::string status = model.installed ? "[✓ Installed]" : "[ Download  ]";
-         std::string current_indicator = (model.name == session.current_model) ? " [CURRENT]" : "";
-         
-         std::cout << "  " << status << " " << model.name << current_indicator << std::endl;
-         std::cout << "      " << model.display_name << " - " << model.description << std::endl;
-         std::cout << "      Size: " << model.size_str << " | Quant: " << model.quantization << std::endl;
-         std::cout << std::endl;
-     }
-     
-     int installed_count = 0;
-     for (const auto& m : models) {
-         if (m.installed) installed_count++;
-     }
-     
-     UI::print_info("Total: " + std::to_string(models.size()) + " models available (" + 
-                   std::to_string(installed_count) + " installed)");
-     return true;
- }
- 
- 
- 
- 
- 
- 
- // Removed: handle_server - command removed for simplicity
- 
- // Removed: handle_update, handle_no_color - commands removed for simplicity
- 
- bool Commands::handle_help(const std::vector<std::string>& args, InteractiveSession& session) {
-     (void)args; // Suppress unused parameter warning
-     (void)session; // Suppress unused parameter warning
-     show_help();
-     return true;
- }
- 
- bool Commands::handle_remove(const std::vector<std::string>& args, InteractiveSession& session) {
-     if (args.empty()) {
-         UI::print_error("Please specify a model name");
-         UI::print_info("Usage: /remove <model-name>");
-         UI::print_info("Example: /remove qwen2.5:0.6b");
-         UI::print_info("Use /list to see installed models");
-         return true;
-     }
-     
-     std::string model_name = args[0];
-     
-     // Check if model is currently in use
-     if (!session.current_model.empty() && session.current_model == model_name) {
-         UI::print_error("Cannot delete model '" + model_name + "' - it is currently in use");
-         UI::print_info("Switch to another model first with /use <model-name>");
-         return true;
-     }
-     
-     // Perform deletion with confirmation
-     bool success = session.model_mgr->remove_model_with_confirmation(model_name);
-     
-     if (success) {
-         UI::print_success("Model '" + model_name + "' removed successfully");
-     }
-     
-     return true;
- }
- 
- // ============================================================================
- // HISTORY AND SESSION MANAGEMENT COMMANDS
- // ============================================================================
- 
- bool Commands::handle_clear_screen(const std::vector<std::string>& args, InteractiveSession& session) {
-     (void)args;
-     (void)session;
-     
-     UI::clear_screen();
-     return true;
- }
- 
- // Removed: handle_history, handle_delete_history, handle_new_session, handle_list_sessions,
- //          handle_switch_session, handle_delete_session, handle_active_session, handle_export_session
- //          - commands removed for simplicity
- 
- } // namespace delta
- 
+
+    // Get short_name for model alias in web UI
+    std::string model_alias;
+    std::string registry_name_for_alias = model_name;
+    if (session.model_mgr->is_in_registry(registry_name_for_alias)) {
+        auto entry = session.model_mgr->get_registry_entry(registry_name_for_alias);
+        if (!entry.short_name.empty()) {
+            model_alias = entry.short_name;
+        }
+    } else {
+        // Try converting dash to colon format
+        size_t last_dash = registry_name_for_alias.find_last_of('-');
+        if (last_dash != std::string::npos) {
+            std::string colon_name =
+                registry_name_for_alias.substr(0, last_dash) + ":" + registry_name_for_alias.substr(last_dash + 1);
+            if (session.model_mgr->is_in_registry(colon_name)) {
+                auto entry = session.model_mgr->get_registry_entry(colon_name);
+                if (!entry.short_name.empty()) {
+                    model_alias = entry.short_name;
+                }
+            }
+        }
+    }
+
+    // If still not found, try to get short_name from filename
+    if (model_alias.empty()) {
+        // Extract filename from model_path
+        std::string filename = model_path;
+        size_t last_slash = filename.find_last_of("/\\");
+        if (last_slash != std::string::npos) {
+            filename = filename.substr(last_slash + 1);
+        }
+        model_alias = session.model_mgr->get_short_name_from_filename(filename);
+    }
+
+    // Restart delta-server with new model (if it's running)
+    if (llama_server_pid_ != 0) {
+        // Server is already running, restart it with new model
+        if (restart_llama_server(model_path, model_name, ctx_size, model_alias)) {
+            UI::print_success("Delta Server restarted with new model");
+        } else {
+            UI::print_error("Failed to restart server with new model");
+        }
+    } else {
+        // Server not running, start it
+        // launch_server_auto now waits for server to be ready before returning
+        if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
+            int actual_port = Commands::get_current_port();
+            std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            tools::Browser::open_url(url);
+        } else {
+            UI::print_error("Failed to start server. Check error messages above.");
+        }
+    }
+
+    return true;
+}
+
+bool Commands::handle_available(const std::vector<std::string>& args, InteractiveSession& session) {
+    (void)args; // Suppress unused parameter warning
+    // Get friendly model list (all available models)
+    auto models = session.model_mgr->get_friendly_model_list(true);
+
+    if (models.empty()) {
+        UI::print_error("No models available in registry");
+        return true;
+    }
+
+    UI::print_border("Available Models to Download");
+    UI::print_info("Use '/download <model-name>' to download");
+    std::cout << std::endl;
+
+    for (const auto& model : models) {
+        std::string status = model.installed ? "[✓ Installed]" : "[ Download  ]";
+        std::string current_indicator = (model.name == session.current_model) ? " [CURRENT]" : "";
+
+        std::cout << "  " << status << " " << model.name << current_indicator << std::endl;
+        std::cout << "      " << model.display_name << " - " << model.description << std::endl;
+        std::cout << "      Size: " << model.size_str << " | Quant: " << model.quantization << std::endl;
+        std::cout << std::endl;
+    }
+
+    int installed_count = 0;
+    for (const auto& m : models) {
+        if (m.installed)
+            installed_count++;
+    }
+
+    UI::print_info("Total: " + std::to_string(models.size()) + " models available (" + std::to_string(installed_count) +
+                   " installed)");
+    return true;
+}
+
+// Removed: handle_server - command removed for simplicity
+
+// Removed: handle_update, handle_no_color - commands removed for simplicity
+
+bool Commands::handle_help(const std::vector<std::string>& args, InteractiveSession& session) {
+    (void)args;    // Suppress unused parameter warning
+    (void)session; // Suppress unused parameter warning
+    show_help();
+    return true;
+}
+
+bool Commands::handle_remove(const std::vector<std::string>& args, InteractiveSession& session) {
+    if (args.empty()) {
+        UI::print_error("Please specify a model name");
+        UI::print_info("Usage: /remove <model-name>");
+        UI::print_info("Example: /remove qwen2.5:0.6b");
+        UI::print_info("Use /list to see installed models");
+        return true;
+    }
+
+    std::string model_name = args[0];
+
+    // Check if model is currently in use
+    if (!session.current_model.empty() && session.current_model == model_name) {
+        UI::print_error("Cannot delete model '" + model_name + "' - it is currently in use");
+        UI::print_info("Switch to another model first with /use <model-name>");
+        return true;
+    }
+
+    // Perform deletion with confirmation
+    bool success = session.model_mgr->remove_model_with_confirmation(model_name);
+
+    if (success) {
+        UI::print_success("Model '" + model_name + "' removed successfully");
+    }
+
+    return true;
+}
+
+// ============================================================================
+// HISTORY AND SESSION MANAGEMENT COMMANDS
+// ============================================================================
+
+bool Commands::handle_clear_screen(const std::vector<std::string>& args, InteractiveSession& session) {
+    (void)args;
+    (void)session;
+
+    UI::clear_screen();
+    return true;
+}
+
+// Removed: handle_history, handle_delete_history, handle_new_session, handle_list_sessions,
+//          handle_switch_session, handle_delete_session, handle_active_session, handle_export_session
+//          - commands removed for simplicity
+
+} // namespace delta

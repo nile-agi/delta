@@ -46,6 +46,9 @@
       "minimumSystemVersion": "11.0"
     },
     "windows": {
+      "nsis": {
+        "installerHooks": "installer-hooks.nsi"
+      },
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
       }
