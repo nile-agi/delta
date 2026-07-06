@@ -178,28 +178,17 @@ export class ChatService {
 
 		try {
 			const apiKey = currentConfig.apiKey?.toString().trim();
-
-			const response = await fetch(`${getServerBaseUrl()}/v1/chat/completions`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
-				},
-				body: JSON.stringify(requestBody),
-				signal: abortController.signal
-			});
-
-			if (!response.ok) {
-				const error = await this.parseErrorResponse(response);
-				if (onError) {
-					onError(error);
-				}
-				throw error;
-			}
+			const url = `${getServerBaseUrl()}/v1/chat/completions`;
+			const headers: Record<string, string> = {
+				'Content-Type': 'application/json',
+				...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+			};
 
 			if (stream) {
-				await this.handleStreamResponse(
-					response,
+				await this.handleStreamResponseXHR(
+					url,
+					headers,
+					JSON.stringify(requestBody),
 					onChunk,
 					onComplete,
 					onError,
@@ -211,11 +200,23 @@ export class ChatService {
 				);
 				return;
 			} else {
-				return this.handleNonStreamResponse(response, onComplete, onError, onModel);
+				const response = await fetch(url, {
+					method: 'POST',
+					headers,
+					body: JSON.stringify(requestBody),
+					signal: abortController.signal
+				});
+
+				if (!response.ok) {
+					throw await this.parseErrorResponse(response);
+				}
+
+				return this.handleNonStreamResponse(response, onComplete, onModel);
 			}
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
 				console.log('Chat completion request was aborted');
+				if (onError) onError(error);
 				return;
 			}
 
@@ -250,19 +251,10 @@ export class ChatService {
 		}
 	}
 
-	/**
-	 * Handles streaming response from the chat completion API
-	 * @param response - The Response object from the fetch request
-	 * @param onChunk - Optional callback invoked for each content chunk received
-	 * @param onComplete - Optional callback invoked when the stream is complete with full response
-	 * @param onError - Optional callback invoked if an error occurs during streaming
-	 * @param onReasoningChunk - Optional callback invoked for each reasoning content chunk
-	 * @param conversationId - Optional conversation ID for per-conversation state tracking
-	 * @returns {Promise<void>} Promise that resolves when streaming is complete
-	 * @throws {Error} if the stream cannot be read or parsed
-	 */
-	private async handleStreamResponse(
-		response: Response,
+	private handleStreamResponseXHR(
+		url: string,
+		headers: Record<string, string>,
+		body: string,
 		onChunk?: (chunk: string) => void,
 		onComplete?: (
 			response: string,
@@ -276,34 +268,36 @@ export class ChatService {
 		conversationId?: string,
 		abortSignal?: AbortSignal
 	): Promise<void> {
-		const reader = response.body?.getReader();
+		return new Promise<void>((resolve, reject) => {
+			if (abortSignal?.aborted) {
+				resolve();
+				return;
+			}
 
-		if (!reader) {
-			throw new Error('No response body');
-		}
+			const xhr = new XMLHttpRequest();
+			xhr.open('POST', url, true);
+			for (const [key, value] of Object.entries(headers)) {
+				xhr.setRequestHeader(key, value);
+			}
 
-		const decoder = new TextDecoder();
-		let aggregatedContent = '';
-		let fullReasoningContent = '';
-		let hasReceivedData = false;
-		let lastTimings: ChatMessageTimings | undefined;
-		let streamFinished = false;
-		let modelEmitted = false;
-		let firstValidChunkEmitted = false;
+			let aggregatedContent = '';
+			let fullReasoningContent = '';
+			let hasReceivedData = false;
+			let lastTimings: ChatMessageTimings | undefined;
+			let streamFinished = false;
+			let modelEmitted = false;
+			let firstValidChunkEmitted = false;
+			let lastProcessedIndex = 0;
+			let partialLine = '';
 
-		try {
-			let chunk = '';
-			while (true) {
-				if (abortSignal?.aborted) break;
+			const processNewData = (responseText: string) => {
+				const newData = responseText.substring(lastProcessedIndex);
+				lastProcessedIndex = responseText.length;
+				if (!newData) return;
 
-				const { done, value } = await reader.read();
-				if (done) break;
-
-				if (abortSignal?.aborted) break;
-
-				chunk += decoder.decode(value, { stream: true });
-				const lines = chunk.split('\n');
-				chunk = lines.pop() || '';
+				const text = partialLine + newData;
+				const lines = text.split('\n');
+				partialLine = lines.pop() || '';
 
 				for (const line of lines) {
 					if (abortSignal?.aborted) break;
@@ -320,7 +314,6 @@ export class ChatService {
 
 							if (!firstValidChunkEmitted && parsed.object === 'chat.completion.chunk') {
 								firstValidChunkEmitted = true;
-
 								if (!abortSignal?.aborted) {
 									onFirstValidChunk?.();
 								}
@@ -364,29 +357,74 @@ export class ChatService {
 						}
 					}
 				}
+			};
 
-				if (abortSignal?.aborted) break;
-			}
+			const onAbort = () => xhr.abort();
+			abortSignal?.addEventListener('abort', onAbort);
 
-			if (abortSignal?.aborted) return;
+			const cleanup = () => {
+				abortSignal?.removeEventListener('abort', onAbort);
+			};
 
-			if (streamFinished) {
+			xhr.onprogress = () => {
+				if (abortSignal?.aborted) return;
+				processNewData(xhr.responseText);
+			};
+
+			xhr.onload = () => {
+				processNewData(xhr.responseText);
+				cleanup();
+
+				if (xhr.status < 200 || xhr.status >= 300) {
+					let error: Error;
+					try {
+						const errorData = JSON.parse(xhr.responseText);
+						const message = errorData.error?.message || 'Unknown server error';
+						error = new Error(message);
+						error.name = xhr.status === 400 ? 'ServerError' : 'HttpError';
+					} catch {
+						error = new Error(`Server error (${xhr.status}): ${xhr.statusText}`);
+						error.name = 'HttpError';
+					}
+					reject(error);
+					return;
+				}
+
 				if (!hasReceivedData && aggregatedContent.length === 0) {
-					const noResponseError = new Error('No response received from server. Please try again.');
-					throw noResponseError;
+					const error = new Error('No response received from server. Please try again.');
+					reject(error);
+					return;
 				}
 
 				onComplete?.(aggregatedContent, fullReasoningContent || undefined, lastTimings);
-			}
-		} catch (error) {
-			const err = error instanceof Error ? error : new Error('Stream error');
+				resolve();
+			};
 
-			onError?.(err);
+			xhr.onerror = () => {
+				cleanup();
+				const error = new Error(
+					'Unable to connect to server - please check if the server is running'
+				);
+				error.name = 'NetworkError';
+				reject(error);
+			};
 
-			throw err;
-		} finally {
-			reader.releaseLock();
-		}
+			xhr.ontimeout = () => {
+				cleanup();
+				const error = new Error('Request timed out - the server took too long to respond');
+				error.name = 'TimeoutError';
+				reject(error);
+			};
+
+			xhr.onabort = () => {
+				cleanup();
+				const error = new Error('Request aborted');
+				error.name = 'AbortError';
+				reject(error);
+			};
+
+			xhr.send(body);
+		});
 	}
 
 	/**
@@ -406,7 +444,6 @@ export class ChatService {
 			reasoningContent?: string,
 			timings?: ChatMessageTimings
 		) => void,
-		onError?: (error: Error) => void,
 		onModel?: (model: string) => void
 	): Promise<string> {
 		try {
@@ -440,11 +477,7 @@ export class ChatService {
 
 			return content;
 		} catch (error) {
-			const err = error instanceof Error ? error : new Error('Parse error');
-
-			onError?.(err);
-
-			throw err;
+			throw error instanceof Error ? error : new Error('Parse error');
 		}
 	}
 
