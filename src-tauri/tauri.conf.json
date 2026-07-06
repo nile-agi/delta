@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "identifier": "com.nileagi.delta",
   "build": {
-    "frontendDist": "frontend",
+    "frontendDist": "../public",
     "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "",
     "beforeDevCommand": "pnpm run dev"
@@ -39,9 +39,7 @@
       "binaries/delta-server",
       "binaries/llama-server"
     ],
-    "resources": {
-      "../public": "webui"
-    },
+    "resources": {},
     "macOS": {
       "minimumSystemVersion": "11.0"
     },

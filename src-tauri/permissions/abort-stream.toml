@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-abort-stream"
+description = "Allows the abort_stream command for stopping a streaming chat request."
+commands.allow = ["abort_stream"]
+
+[[permission]]
+identifier = "deny-abort-stream"
+description = "Denies the abort_stream command."
+commands.deny = ["abort_stream"]

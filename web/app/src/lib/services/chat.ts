@@ -3,6 +3,10 @@ import { selectedModelName, selectedModelOption } from '$lib/stores/models.svelt
 import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
 import { getServerBaseUrl } from '$lib/utils/server-base-url';
 import { slotsService } from './slots';
+
+const IS_TAURI =
+	typeof window !== 'undefined' &&
+	('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 /**
  * ChatService - Low-level API communication layer for Delta server interactions
  *
@@ -185,18 +189,25 @@ export class ChatService {
 			};
 
 			if (stream) {
+				const body = JSON.stringify(requestBody);
+
+				if (IS_TAURI) {
+					try {
+						await this.handleStreamResponseTauri(
+							url, headers, body, onChunk, onComplete, onError,
+							onReasoningChunk, onModel, onFirstValidChunk,
+							conversationId, abortController.signal
+						);
+						return;
+					} catch (tauriErr) {
+						if (tauriErr instanceof Error && tauriErr.name === 'AbortError') throw tauriErr;
+						console.warn('[Delta] Tauri IPC streaming failed, falling back to XHR:', tauriErr);
+					}
+				}
 				await this.handleStreamResponseXHR(
-					url,
-					headers,
-					JSON.stringify(requestBody),
-					onChunk,
-					onComplete,
-					onError,
-					onReasoningChunk,
-					onModel,
-					onFirstValidChunk,
-					conversationId,
-					abortController.signal
+					url, headers, body, onChunk, onComplete, onError,
+					onReasoningChunk, onModel, onFirstValidChunk,
+					conversationId, abortController.signal
 				);
 				return;
 			} else {
@@ -425,6 +436,140 @@ export class ChatService {
 
 			xhr.send(body);
 		});
+	}
+
+	private async handleStreamResponseTauri(
+		url: string,
+		headers: Record<string, string>,
+		body: string,
+		onChunk?: (chunk: string) => void,
+		onComplete?: (
+			response: string,
+			reasoningContent?: string,
+			timings?: ChatMessageTimings
+		) => void,
+		onError?: (error: Error) => void,
+		onReasoningChunk?: (chunk: string) => void,
+		onModel?: (model: string) => void,
+		onFirstValidChunk?: () => void,
+		conversationId?: string,
+		abortSignal?: AbortSignal
+	): Promise<void> {
+		if (abortSignal?.aborted) return;
+
+		const { invoke, Channel } = await import('@tauri-apps/api/core');
+
+		const absoluteUrl = url.startsWith('/')
+			? `${getServerBaseUrl()}${url}`
+			: url;
+		const streamId = conversationId || crypto.randomUUID();
+		let aggregatedContent = '';
+		let fullReasoningContent = '';
+		let hasReceivedData = false;
+		let lastTimings: ChatMessageTimings | undefined;
+		let modelEmitted = false;
+		let firstValidChunkEmitted = false;
+
+		const onAbort = () => {
+			invoke('abort_stream', { streamId }).catch(() => {});
+		};
+		abortSignal?.addEventListener('abort', onAbort);
+
+		const channel = new Channel<string>();
+		channel.onmessage = (line: string) => {
+			if (abortSignal?.aborted) return;
+
+			if (!line.startsWith('data: ')) return;
+			const data = line.slice(6);
+			if (data === '[DONE]') return;
+
+			try {
+				const parsed: ApiChatCompletionStreamChunk = JSON.parse(data);
+
+				if (!firstValidChunkEmitted && parsed.object === 'chat.completion.chunk') {
+					firstValidChunkEmitted = true;
+					onFirstValidChunk?.();
+				}
+
+				const content = parsed.choices[0]?.delta?.content;
+				const reasoningContent = parsed.choices[0]?.delta?.reasoning_content;
+				const timings = parsed.timings;
+				const promptProgress = parsed.prompt_progress;
+
+				const chunkModel = this.extractModelName(parsed);
+				if (chunkModel && !modelEmitted) {
+					modelEmitted = true;
+					onModel?.(chunkModel);
+				}
+
+				if (timings || promptProgress) {
+					this.updateProcessingState(timings, promptProgress, conversationId);
+					if (timings) lastTimings = timings;
+				}
+
+				if (content) {
+					hasReceivedData = true;
+					aggregatedContent += content;
+					if (!abortSignal?.aborted) onChunk?.(content);
+				}
+
+				if (reasoningContent) {
+					hasReceivedData = true;
+					fullReasoningContent += reasoningContent;
+					if (!abortSignal?.aborted) onReasoningChunk?.(reasoningContent);
+				}
+			} catch (e) {
+				console.error('Error parsing JSON chunk:', e);
+			}
+		};
+
+		try {
+			const status = await invoke<number>('stream_chat', {
+				streamId,
+				url: absoluteUrl,
+				headers,
+				body,
+				onChunk: channel
+			});
+
+			abortSignal?.removeEventListener('abort', onAbort);
+
+			if (abortSignal?.aborted) {
+				const error = new Error('Request aborted');
+				error.name = 'AbortError';
+				throw error;
+			}
+
+			if (status < 200 || status >= 300) {
+				const error = new Error(`Server error (${status})`);
+				error.name = 'HttpError';
+				throw error;
+			}
+
+			if (!hasReceivedData && aggregatedContent.length === 0) {
+				throw new Error('No response received from server. Please try again.');
+			}
+
+			onComplete?.(aggregatedContent, fullReasoningContent || undefined, lastTimings);
+		} catch (error) {
+			abortSignal?.removeEventListener('abort', onAbort);
+
+			if (abortSignal?.aborted) {
+				const abortError = new Error('Request aborted');
+				abortError.name = 'AbortError';
+				throw abortError;
+			}
+
+			const msg =
+				typeof error === 'string'
+					? error
+					: error instanceof Error
+						? error.message
+						: 'Unable to connect to server';
+			const err = new Error(msg);
+			err.name = error instanceof Error ? error.name : 'NetworkError';
+			throw err;
+		}
 	}
 
 	/**

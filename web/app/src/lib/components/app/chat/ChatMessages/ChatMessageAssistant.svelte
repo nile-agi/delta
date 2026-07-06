@@ -89,6 +89,17 @@
 	);
 	/** Id of the assistant message currently being streamed (so we can show live stats on it) */
 	const streamingMessageId = $derived(streamingState?.messageId ?? null);
+	const displayContent = $derived(
+		message.id === streamingMessageId && streamingState?.response
+			? streamingState.response
+			: messageContent
+	);
+	const isActivelyStreaming = $derived(
+		message.role === 'assistant' &&
+			isLoading() &&
+			message.id === streamingMessageId &&
+			!!displayContent?.trim()
+	);
 	/** When backend doesn't send timings, show at least elapsed time and ~tokens from stream */
 	const streamFallback = $derived(
 		message.role === 'assistant' &&
@@ -227,11 +238,11 @@
 		<ChatMessageThinkingBlock
 			reasoningContent={thinkingContent}
 			isStreaming={!message.timestamp}
-			hasRegularContent={!!messageContent?.trim()}
+			hasRegularContent={!!displayContent?.trim()}
 		/>
 	{/if}
 
-	{#if message?.role === 'assistant' && isLoading() && !message?.content?.trim()}
+	{#if message?.role === 'assistant' && isLoading() && !displayContent?.trim()}
 		<div class="mt-6 w-full max-w-[48rem]" in:fade>
 			<div class="processing-container">
 				<span class="processing-text">
@@ -280,11 +291,13 @@
 			</div>
 		</div>
 	{:else if message.role === 'assistant'}
-		{#if config().disableReasoningFormat}
-			<pre class="raw-output">{messageContent || ''}</pre>
-		{:else}
-			<MarkdownContent content={messageContent || ''} />
-		{/if}
+		<div class:streaming-content={isActivelyStreaming}>
+			{#if config().disableReasoningFormat}
+				<pre class="raw-output">{displayContent || ''}</pre>
+			{:else}
+				<MarkdownContent content={displayContent || ''} />
+			{/if}
+		</div>
 	{:else}
 		<div class="text-sm whitespace-pre-wrap">
 			{messageContent}
@@ -425,5 +438,19 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.streaming-content :global(:last-child)::after {
+		content: '▍';
+		display: inline;
+		color: var(--primary);
+		animation: cursorBlink 0.8s steps(2) infinite;
+		margin-left: 1px;
+		font-weight: 300;
+	}
+
+	@keyframes cursorBlink {
+		0% { opacity: 1; }
+		50% { opacity: 0; }
 	}
 </style>

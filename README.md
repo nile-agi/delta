@@ -56,11 +56,11 @@ delta server -m model.gguf  # Start with a specific model
 │  │  WebView                              │  │
 │  │  Shows splash → navigates to server   │  │
 │  └───────────────┬───────────────────────┘  │
-│                  │                           │
+│                  │                          │
 │  ┌───────────────▼───────────────────────┐  │
 │  │  delta-server (sidecar)               │  │
 │  │  ├─ llama-server (port N)   ← Web UI  │  │
-│  │  └─ Model API   (port N+1) ← manage  │  │
+│  │  └─ Model API   (port N+1) ← manage   │  │
 │  └───────────────────────────────────────┘  │
 └─────────────────────────────────────────────┘
 ```

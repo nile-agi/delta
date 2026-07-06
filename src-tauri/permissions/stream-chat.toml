@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-stream-chat"
+description = "Allows the stream_chat command for streaming chat completions via Tauri IPC."
+commands.allow = ["stream_chat"]
+
+[[permission]]
+identifier = "deny-stream-chat"
+description = "Denies the stream_chat command."
+commands.deny = ["stream_chat"]

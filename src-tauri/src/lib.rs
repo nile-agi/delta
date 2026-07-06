@@ -1,7 +1,11 @@
 use tauri::Manager;
+use tauri::ipc::Channel;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandChild;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::collections::HashMap;
 
 struct ServerState {
     child: Option<CommandChild>,
@@ -11,6 +15,80 @@ struct ServerState {
 #[tauri::command]
 fn get_server_port(state: tauri::State<'_, Mutex<ServerState>>) -> u16 {
     state.lock().unwrap().port
+}
+
+struct StreamAbortFlags {
+    flags: Mutex<HashMap<String, Arc<AtomicBool>>>,
+}
+
+#[tauri::command]
+async fn stream_chat(
+    state: tauri::State<'_, StreamAbortFlags>,
+    stream_id: String,
+    url: String,
+    headers: HashMap<String, String>,
+    body: String,
+    on_chunk: Channel<String>,
+) -> Result<u16, String> {
+    let abort_flag = Arc::new(AtomicBool::new(false));
+    {
+        state.flags.lock().unwrap().insert(stream_id.clone(), abort_flag.clone());
+    }
+
+    let abort = abort_flag.clone();
+    let result = tokio::task::spawn_blocking(move || -> Result<u16, String> {
+        let agent = ureq::AgentBuilder::new()
+            .timeout_read(std::time::Duration::from_secs(30))
+            .build();
+        let mut req = agent.post(&url);
+        for (key, value) in &headers {
+            req = req.set(key, value);
+        }
+
+        match req.send_string(&body) {
+            Ok(response) => {
+                let status = response.status();
+                use std::io::BufRead;
+                let reader = std::io::BufReader::new(response.into_reader());
+                for line_result in reader.lines() {
+                    if abort.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    match line_result {
+                        Ok(line) => {
+                            if on_chunk.send(line).is_err() {
+                                break;
+                            }
+                        }
+                        Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                            if abort.load(Ordering::Relaxed) {
+                                break;
+                            }
+                            continue;
+                        }
+                        Err(_) => break,
+                    }
+                }
+                Ok(status)
+            }
+            Err(ureq::Error::Status(code, response)) => {
+                let body = response.into_string().unwrap_or_default();
+                Err(format!("HTTP {}: {}", code, body))
+            }
+            Err(e) => Err(format!("Connection error: {}", e)),
+        }
+    })
+    .await;
+
+    state.flags.lock().unwrap().remove(&stream_id);
+    result.map_err(|_| "Stream task panicked".to_string())?
+}
+
+#[tauri::command]
+fn abort_stream(state: tauri::State<'_, StreamAbortFlags>, stream_id: String) {
+    if let Some(flag) = state.flags.lock().unwrap().get(&stream_id) {
+        flag.store(true, Ordering::Relaxed);
+    }
 }
 
 fn find_available_port(start: u16) -> u16 {
@@ -82,7 +160,10 @@ pub fn run() {
             child: None,
             port: 8080,
         }))
-        .invoke_handler(tauri::generate_handler![get_server_port])
+        .manage(StreamAbortFlags {
+            flags: Mutex::new(HashMap::new()),
+        })
+        .invoke_handler(tauri::generate_handler![get_server_port, stream_chat, abort_stream])
         .setup(|app| {
             let app_handle = app.handle().clone();
 
@@ -128,19 +209,22 @@ pub fn run() {
             }
 
             let port = server_port;
+            let mapi_port = model_api_port;
             std::thread::spawn(move || {
-                let url = format!("http://localhost:{}", port);
                 if wait_for_server(port) {
                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let js = format!("window.location.replace('{}')", url);
+                        let js = format!(
+                            "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.dispatchEvent(new CustomEvent('delta-server-ready'))",
+                            port, mapi_port
+                        );
                         let _ = window.eval(&js);
                     }
                 } else {
-                    log::warn!("Server did not respond within timeout, showing retry");
+                    log::warn!("Server did not respond within timeout");
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let js = format!(
-                            "if(typeof showError==='function')showError('{}');",
-                            url
+                            "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.dispatchEvent(new CustomEvent('delta-server-error'))",
+                            port, mapi_port
                         );
                         let _ = window.eval(&js);
                     }
