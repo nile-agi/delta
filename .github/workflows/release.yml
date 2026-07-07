@@ -346,13 +346,13 @@ jobs:
             ### macOS Setup (unsigned build)
 
             1. Open the `.dmg` file and drag **Delta** into the **Applications** folder.
-            2. Open Delta from Applications. macOS will show a warning and block it. Click **Done**.
-            3. Go to **System Settings > Privacy & Security**, scroll down, and click **Open Anyway** next to the Delta blocked message.
-            4. Enter your password. Delta will now launch normally.
+            2. Try to open Delta from Applications. macOS will show a warning and block it. Click **Done** or **Cancel**.
+            3. Open **System Settings > Privacy & Security**. Scroll to the **bottom** of the page. You will see a message about Delta being blocked. Click **Open Anyway**.
+            4. macOS asks to confirm. Click **Open**. Delta will launch normally after this.
 
             > Or run this in Terminal to skip the above:
             > ```
-            > xattr -cr /Applications/Delta.app
+            > sudo xattr -d com.apple.quarantine /Applications/Delta.app
             > ```
 
             ### Linux AppImage Setup

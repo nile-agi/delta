@@ -37,6 +37,7 @@
 
 	$effect(() => {
 		if (!streamFallback) return;
+		nowMs = Date.now();
 		const interval = setInterval(() => {
 			nowMs = Date.now();
 		}, 500);
@@ -65,7 +66,7 @@
 
 	// Reading fallback: elapsed time + estimated tokens/speed so all three stream (backend may not send prompt_progress)
 	const readingFallbackElapsedMs = $derived(
-		useReadingFallback && streamFallback ? nowMs - streamFallback.startTimeMs : 0
+		useReadingFallback && streamFallback ? Math.max(0, nowMs - streamFallback.startTimeMs) : 0
 	);
 	/** Approximate prompt tokens during reading when backend doesn't send (e.g. PDF): ~60 tokens/s */
 	const READING_FALLBACK_TOKENS_PER_SEC = 60;
@@ -79,7 +80,7 @@
 		streamFallback?.generationStartTimeMs ?? streamFallback?.startTimeMs ?? 0
 	);
 	const fallbackElapsedMs = $derived(
-		useGenerationFallback && streamFallback ? nowMs - generationStartMs : 0
+		useGenerationFallback && streamFallback ? Math.max(0, nowMs - generationStartMs) : 0
 	);
 	const fallbackApproxTokens = $derived(
 		useGenerationFallback && streamFallback
@@ -110,7 +111,7 @@
 	);
 	// Prefer client elapsed for generation time when we have generationStartTimeMs so it streams in real time (every 500ms)
 	const generationClientElapsedMs = $derived(
-		streamFallback?.generationStartTimeMs != null ? nowMs - streamFallback.generationStartTimeMs : null
+		streamFallback?.generationStartTimeMs != null ? Math.max(0, nowMs - streamFallback.generationStartTimeMs) : null
 	);
 	const effectivePredictedMs = $derived(
 		useGenerationFallback

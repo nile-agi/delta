@@ -387,6 +387,30 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Allows the abort_stream command for stopping a streaming chat request.",
+          "type": "string",
+          "const": "allow-abort-stream",
+          "markdownDescription": "Allows the abort_stream command for stopping a streaming chat request."
+        },
+        {
+          "description": "Allows the stream_chat command for streaming chat completions via Tauri IPC.",
+          "type": "string",
+          "const": "allow-stream-chat",
+          "markdownDescription": "Allows the stream_chat command for streaming chat completions via Tauri IPC."
+        },
+        {
+          "description": "Denies the abort_stream command.",
+          "type": "string",
+          "const": "deny-abort-stream",
+          "markdownDescription": "Denies the abort_stream command."
+        },
+        {
+          "description": "Denies the stream_chat command.",
+          "type": "string",
+          "const": "deny-stream-chat",
+          "markdownDescription": "Denies the stream_chat command."
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

@@ -20,6 +20,8 @@
 #include <mutex>
 #include <atomic>
 #ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <shlwapi.h>
 #include <io.h>
@@ -58,6 +60,17 @@ static DeltaServerWrapper* g_wrapper_instance = nullptr;
 static void wrapper_signal_handler(int) {
     g_wrapper_stop_requested = 1;
 }
+#else
+static std::atomic<bool>* g_win_should_stop = nullptr;
+
+static BOOL WINAPI ConsoleCtrlHandler(DWORD dwCtrlType) {
+    if (dwCtrlType == CTRL_C_EVENT || dwCtrlType == CTRL_CLOSE_EVENT || dwCtrlType == CTRL_BREAK_EVENT) {
+        if (g_win_should_stop)
+            g_win_should_stop->store(true);
+        return TRUE;
+    }
+    return FALSE;
+}
 #endif
 
 #ifdef _WIN32
@@ -88,6 +101,7 @@ class DeltaServerWrapper {
 #ifdef _WIN32
     HANDLE llama_server_process_;
     DWORD llama_server_pid_;
+    HANDLE job_object_;
 #else
     pid_t llama_server_pid_;
 #endif
@@ -99,12 +113,29 @@ class DeltaServerWrapper {
           enable_reranking_(false), llama_server_running_(false), should_stop_(false)
 #ifdef _WIN32
           ,
-          llama_server_process_(NULL), llama_server_pid_(0)
+          llama_server_process_(NULL), llama_server_pid_(0), job_object_(NULL)
 #else
           ,
           llama_server_pid_(0)
 #endif
     {
+#ifdef _WIN32
+        job_object_ = CreateJobObjectA(NULL, NULL);
+        if (job_object_) {
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = {};
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            SetInformationJobObject(job_object_, JobObjectExtendedLimitInformation, &info, sizeof(info));
+        }
+#endif
+    }
+
+    ~DeltaServerWrapper() {
+#ifdef _WIN32
+        if (job_object_) {
+            CloseHandle(job_object_);
+            job_object_ = NULL;
+        }
+#endif
     }
 
     std::string get_executable_path() {
@@ -176,17 +207,30 @@ class DeltaServerWrapper {
             possible_paths.push_back(exe_dir + "/../bin/server");
             possible_paths.push_back(exe_dir + "/../bin/llama-server");
 #endif
+            // Tauri bundles sidecars with target-triple suffix (e.g. llama-server-x86_64-pc-windows-msvc.exe)
+            try {
+                for (const auto& entry : std::filesystem::directory_iterator(exe_dir)) {
+                    std::string fname = entry.path().filename().string();
+                    if ((fname.find("llama-server-") == 0 || fname.find("server-") == 0) &&
+                        fname.find("delta-server") == std::string::npos) {
+                        possible_paths.push_back(entry.path().string());
+                    }
+                }
+            } catch (...) {
+            }
         }
         possible_paths.push_back("server");
         possible_paths.push_back("llama-server");
         possible_paths.push_back("./server");
         possible_paths.push_back("./llama-server");
+#ifndef _WIN32
         possible_paths.push_back("/opt/homebrew/bin/server");
         possible_paths.push_back("/opt/homebrew/bin/llama-server");
         possible_paths.push_back("/usr/local/bin/server");
         possible_paths.push_back("/usr/local/bin/llama-server");
         possible_paths.push_back("/usr/bin/server");
         possible_paths.push_back("/usr/bin/llama-server");
+#endif
 
         for (const auto& path : possible_paths) {
             if (!std::filesystem::exists(path))
@@ -287,6 +331,9 @@ class DeltaServerWrapper {
             // Executable is at Contents/MacOS/delta, web UI is at Contents/Resources/webui
             candidates.push_back(exe_path + "/../Resources/webui");
             candidates.push_back(exe_path + "/../../Resources/webui");
+            // Check same directory as executable (Windows Tauri bundles)
+            candidates.push_back(exe_path + "/webui");
+            candidates.push_back(exe_path + "/public");
             // Check relative to executable (Delta web UI from public/)
             candidates.push_back(exe_path + "/../public");
             candidates.push_back(exe_path + "/../../public");
@@ -360,7 +407,7 @@ class DeltaServerWrapper {
                 dir_arg = models_dir_;
             cmd += " --models-dir \"" + dir_arg + "\"";
         }
-        cmd += " --host 0.0.0.0";
+        cmd += " --host 127.0.0.1";
         cmd += " --port " + std::to_string(port_);
         if (ctx_size > 0) {
             cmd += " -c " + std::to_string(ctx_size);
@@ -406,6 +453,7 @@ class DeltaServerWrapper {
 #ifdef _WIN32
         if (llama_server_process_ != NULL) {
             TerminateProcess(llama_server_process_, 0);
+            WaitForSingleObject(llama_server_process_, 5000);
             CloseHandle(llama_server_process_);
             llama_server_process_ = NULL;
             llama_server_pid_ = 0;
@@ -445,9 +493,17 @@ class DeltaServerWrapper {
         // In router mode, no restart needed — router loads models on demand
         if (llama_server_running_ && !models_dir_.empty() && !new_model_path.empty()) {
             try {
-                auto model_dir = std::filesystem::canonical(std::filesystem::path(new_model_path).parent_path());
-                auto models_dir = std::filesystem::canonical(std::filesystem::path(models_dir_));
-                if (model_dir == models_dir) {
+                std::filesystem::path model_parent = std::filesystem::path(new_model_path).parent_path();
+                std::filesystem::path models_dir_p = std::filesystem::path(models_dir_);
+                bool same_dir = false;
+                try {
+                    same_dir = std::filesystem::canonical(model_parent) == std::filesystem::canonical(models_dir_p);
+                } catch (...) {
+                    auto abs1 = std::filesystem::absolute(model_parent).lexically_normal();
+                    auto abs2 = std::filesystem::absolute(models_dir_p).lexically_normal();
+                    same_dir = abs1 == abs2;
+                }
+                if (same_dir) {
                     if (!model_name.empty()) {
                         std::cout << "Selected model: " << model_name << std::endl;
                     }
@@ -513,21 +569,49 @@ class DeltaServerWrapper {
             llama_server_process_ = pi.hProcess;
             llama_server_pid_ = pi.dwProcessId;
             llama_server_running_ = true;
+            if (job_object_) {
+                AssignProcessToJobObject(job_object_, pi.hProcess);
+            }
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+            WSADATA wsaData;
+            WSAStartup(MAKEWORD(2, 2), &wsaData);
+            bool port_ok = false;
+            for (int attempt = 0; attempt < 120; ++attempt) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                DWORD ec;
+                if (GetExitCodeProcess(pi.hProcess, &ec) && ec != STILL_ACTIVE)
+                    break;
+                SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+                if (sock == INVALID_SOCKET)
+                    continue;
+                struct sockaddr_in addr{};
+                addr.sin_family = AF_INET;
+                addr.sin_port = htons(static_cast<u_short>(port_));
+                addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+                if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
+                    closesocket(sock);
+                    port_ok = true;
+                    break;
+                }
+                closesocket(sock);
+            }
+            WSACleanup();
 
-            DWORD exit_code;
-            if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
+            if (port_ok) {
                 std::cout << "Server ready" << std::endl;
                 return true;
-            } else {
-                std::cerr << "Failed to start server" << std::endl;
-                CloseHandle(pi.hProcess);
-                llama_server_process_ = NULL;
-                llama_server_pid_ = 0;
-                llama_server_running_ = false;
-                return false;
             }
+            DWORD exit_code;
+            if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
+                std::cout << "Server ready (process running)" << std::endl;
+                return true;
+            }
+            std::cerr << "Failed to start server" << std::endl;
+            CloseHandle(pi.hProcess);
+            llama_server_process_ = NULL;
+            llama_server_pid_ = 0;
+            llama_server_running_ = false;
+            return false;
         } else {
             std::cerr << "Failed to create process" << std::endl;
             return false;
@@ -728,7 +812,10 @@ class DeltaServerWrapper {
                       << std::endl;
         }
 
-#ifndef _WIN32
+#ifdef _WIN32
+        g_win_should_stop = &should_stop_;
+        SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+#else
         g_wrapper_instance = this;
         g_wrapper_stop_requested = 0;
         struct sigaction sa;
@@ -744,8 +831,7 @@ class DeltaServerWrapper {
         while (!should_stop_) {
 #ifndef _WIN32
             if (g_wrapper_stop_requested) {
-                std::cout << "\nStopping server..." << std::endl;
-                stop_llama_server();
+                should_stop_ = true;
                 break;
             }
 #endif
@@ -772,7 +858,12 @@ class DeltaServerWrapper {
 #endif
         }
 
-#ifndef _WIN32
+        std::cout << "\nStopping server..." << std::endl;
+        stop_llama_server();
+
+#ifdef _WIN32
+        g_win_should_stop = nullptr;
+#else
         g_wrapper_instance = nullptr;
 #endif
         // Stop model API server when delta-server exits

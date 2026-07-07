@@ -426,7 +426,34 @@ class ChatStore {
 	): Promise<void> {
 		let streamedContent = options?.initialContent ?? '';
 		let streamedReasoningContent = options?.initialThinking ?? '';
-		let streamRafPending = false;
+		const chunkQueue: string[] = [];
+		let isDrainingChunks = false;
+		let drainCompleteResolve: (() => void) | null = null;
+
+		const drainChunkQueue = () => {
+			if (chunkQueue.length === 0) {
+				isDrainingChunks = false;
+				if (drainCompleteResolve) {
+					const resolve = drainCompleteResolve;
+					drainCompleteResolve = null;
+					resolve();
+				}
+				return;
+			}
+			const batchSize = Math.max(1, Math.ceil(chunkQueue.length / 15));
+			streamedContent += chunkQueue.splice(0, batchSize).join('');
+			this.setConversationStreaming(
+				assistantMessage.convId,
+				streamedContent,
+				assistantMessage.id
+			);
+			const messageIndex = this.findMessageIndex(assistantMessage.id);
+			this.updateMessageAtIndex(messageIndex, {
+				content: streamedContent,
+				...(streamedReasoningContent ? { thinking: streamedReasoningContent } : {})
+			});
+			requestAnimationFrame(drainChunkQueue);
+		};
 
 		let resolvedModel: string | null = null;
 		let modelPersisted = false;
@@ -522,22 +549,10 @@ class ChatStore {
 					refreshServerPropsOnce();
 				},
 				onChunk: (chunk: string) => {
-					streamedContent += chunk;
-					if (!streamRafPending) {
-						streamRafPending = true;
-						requestAnimationFrame(() => {
-							streamRafPending = false;
-							this.setConversationStreaming(
-								assistantMessage.convId,
-								streamedContent,
-								assistantMessage.id
-							);
-							const messageIndex = this.findMessageIndex(assistantMessage.id);
-							this.updateMessageAtIndex(messageIndex, {
-								content: streamedContent,
-								...(streamedReasoningContent ? { thinking: streamedReasoningContent } : {})
-							});
-						});
+					chunkQueue.push(chunk);
+					if (!isDrainingChunks) {
+						isDrainingChunks = true;
+						drainChunkQueue();
 					}
 				},
 
@@ -554,52 +569,61 @@ class ChatStore {
 					reasoningContent?: string,
 					timings?: ChatMessageTimings
 				) => {
-					slotsService.stopStreaming();
+					const doComplete = async () => {
+						slotsService.stopStreaming();
 
-					const updateData: {
-						content: string;
-						thinking: string;
-						timings?: ChatMessageTimings;
-						model?: string;
-					} = {
-						content: finalContent || streamedContent,
-						thinking: reasoningContent || streamedReasoningContent,
-						timings: timings
+						const updateData: {
+							content: string;
+							thinking: string;
+							timings?: ChatMessageTimings;
+							model?: string;
+						} = {
+							content: finalContent || streamedContent,
+							thinking: reasoningContent || streamedReasoningContent,
+							timings: timings
+						};
+
+						if (resolvedModel && !modelPersisted) {
+							updateData.model = resolvedModel;
+							modelPersisted = true;
+						}
+
+						await DatabaseStore.updateMessage(assistantMessage.id, updateData);
+
+						const messageIndex = this.findMessageIndex(assistantMessage.id);
+
+						const localUpdateData: { timings?: ChatMessageTimings; model?: string } = {
+							timings: timings
+						};
+
+						if (updateData.model) {
+							localUpdateData.model = updateData.model;
+						}
+
+						this.updateMessageAtIndex(messageIndex, localUpdateData);
+
+						await DatabaseStore.updateCurrentNode(assistantMessage.convId, assistantMessage.id);
+
+						if (this.activeConversation?.id === assistantMessage.convId) {
+							this.activeConversation.currNode = assistantMessage.id;
+							await this.refreshActiveMessages();
+						}
+
+						if (onComplete) {
+							await onComplete(streamedContent);
+						}
+
+						this.setConversationLoading(assistantMessage.convId, false);
+						this.clearConversationStreaming(assistantMessage.convId);
+						slotsService.clearConversationState(assistantMessage.convId);
 					};
 
-					if (resolvedModel && !modelPersisted) {
-						updateData.model = resolvedModel;
-						modelPersisted = true;
+					if (isDrainingChunks) {
+						await new Promise<void>((resolve) => {
+							drainCompleteResolve = resolve;
+						});
 					}
-
-					await DatabaseStore.updateMessage(assistantMessage.id, updateData);
-
-					const messageIndex = this.findMessageIndex(assistantMessage.id);
-
-					const localUpdateData: { timings?: ChatMessageTimings; model?: string } = {
-						timings: timings
-					};
-
-					if (updateData.model) {
-						localUpdateData.model = updateData.model;
-					}
-
-					this.updateMessageAtIndex(messageIndex, localUpdateData);
-
-					await DatabaseStore.updateCurrentNode(assistantMessage.convId, assistantMessage.id);
-
-					if (this.activeConversation?.id === assistantMessage.convId) {
-						this.activeConversation.currNode = assistantMessage.id;
-						await this.refreshActiveMessages();
-					}
-
-					if (onComplete) {
-						await onComplete(streamedContent);
-					}
-
-					this.setConversationLoading(assistantMessage.convId, false);
-					this.clearConversationStreaming(assistantMessage.convId);
-					slotsService.clearConversationState(assistantMessage.convId);
+					await doComplete();
 				},
 
 				onError: (error: Error) => {

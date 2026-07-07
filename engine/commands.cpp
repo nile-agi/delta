@@ -795,7 +795,7 @@ std::string Commands::build_llama_server_cmd(const std::string& server_bin, cons
             dir_arg = models_dir;
         cmd << " --models-dir \"" << dir_arg << "\"";
     }
-    cmd << " --host 0.0.0.0"
+    cmd << " --host 127.0.0.1"
         << " --port " << port;
     if (ctx_size > 0) {
         cmd << " -c " << ctx_size;

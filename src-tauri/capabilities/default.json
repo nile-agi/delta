@@ -2,6 +2,9 @@
   "identifier": "default",
   "description": "Default capabilities for the Delta app",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:*", "http://127.0.0.1:*"]
+  },
   "permissions": [
     "core:default",
     "shell:allow-open",
@@ -9,6 +12,8 @@
     "shell:allow-stdin-write",
     "shell:allow-kill",
     "shell:default",
-    "process:default"
+    "process:default",
+    "allow-stream-chat",
+    "allow-abort-stream"
   ]
 }

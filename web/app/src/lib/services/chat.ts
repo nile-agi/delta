@@ -3,6 +3,10 @@ import { selectedModelName, selectedModelOption } from '$lib/stores/models.svelt
 import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
 import { getServerBaseUrl } from '$lib/utils/server-base-url';
 import { slotsService } from './slots';
+
+const IS_TAURI =
+	typeof window !== 'undefined' &&
+	('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 /**
  * ChatService - Low-level API communication layer for Delta server interactions
  *
@@ -178,44 +182,52 @@ export class ChatService {
 
 		try {
 			const apiKey = currentConfig.apiKey?.toString().trim();
-
-			const response = await fetch(`${getModelApiBaseUrl()}/v1/chat/completions`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
-				},
-				body: JSON.stringify(requestBody),
-				signal: abortController.signal
-			});
-
-			if (!response.ok) {
-				const error = await this.parseErrorResponse(response);
-				if (onError) {
-					onError(error);
-				}
-				throw error;
-			}
+			const url = `${getServerBaseUrl()}/v1/chat/completions`;
+			const headers: Record<string, string> = {
+				'Content-Type': 'application/json',
+				...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+			};
 
 			if (stream) {
-				await this.handleStreamResponse(
-					response,
-					onChunk,
-					onComplete,
-					onError,
-					onReasoningChunk,
-					onModel,
-					onFirstValidChunk,
-					conversationId,
-					abortController.signal
+				const body = JSON.stringify(requestBody);
+
+				if (IS_TAURI) {
+					try {
+						await this.handleStreamResponseTauri(
+							url, headers, body, onChunk, onComplete, onError,
+							onReasoningChunk, onModel, onFirstValidChunk,
+							conversationId, abortController.signal
+						);
+						return;
+					} catch (tauriErr) {
+						if (tauriErr instanceof Error && tauriErr.name === 'AbortError') throw tauriErr;
+						console.warn('[Delta] Tauri IPC streaming failed, falling back to XHR:', tauriErr);
+					}
+				}
+				await this.handleStreamResponseXHR(
+					url, headers, body, onChunk, onComplete, onError,
+					onReasoningChunk, onModel, onFirstValidChunk,
+					conversationId, abortController.signal
 				);
 				return;
 			} else {
-				return this.handleNonStreamResponse(response, onComplete, onError, onModel);
+				const response = await fetch(url, {
+					method: 'POST',
+					headers,
+					body: JSON.stringify(requestBody),
+					signal: abortController.signal
+				});
+
+				if (!response.ok) {
+					throw await this.parseErrorResponse(response);
+				}
+
+				return this.handleNonStreamResponse(response, onComplete, onModel);
 			}
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
 				console.log('Chat completion request was aborted');
+				if (onError) onError(error);
 				return;
 			}
 
@@ -250,19 +262,10 @@ export class ChatService {
 		}
 	}
 
-	/**
-	 * Handles streaming response from the chat completion API
-	 * @param response - The Response object from the fetch request
-	 * @param onChunk - Optional callback invoked for each content chunk received
-	 * @param onComplete - Optional callback invoked when the stream is complete with full response
-	 * @param onError - Optional callback invoked if an error occurs during streaming
-	 * @param onReasoningChunk - Optional callback invoked for each reasoning content chunk
-	 * @param conversationId - Optional conversation ID for per-conversation state tracking
-	 * @returns {Promise<void>} Promise that resolves when streaming is complete
-	 * @throws {Error} if the stream cannot be read or parsed
-	 */
-	private async handleStreamResponse(
-		response: Response,
+	private handleStreamResponseXHR(
+		url: string,
+		headers: Record<string, string>,
+		body: string,
 		onChunk?: (chunk: string) => void,
 		onComplete?: (
 			response: string,
@@ -276,34 +279,36 @@ export class ChatService {
 		conversationId?: string,
 		abortSignal?: AbortSignal
 	): Promise<void> {
-		const reader = response.body?.getReader();
+		return new Promise<void>((resolve, reject) => {
+			if (abortSignal?.aborted) {
+				resolve();
+				return;
+			}
 
-		if (!reader) {
-			throw new Error('No response body');
-		}
+			const xhr = new XMLHttpRequest();
+			xhr.open('POST', url, true);
+			for (const [key, value] of Object.entries(headers)) {
+				xhr.setRequestHeader(key, value);
+			}
 
-		const decoder = new TextDecoder();
-		let aggregatedContent = '';
-		let fullReasoningContent = '';
-		let hasReceivedData = false;
-		let lastTimings: ChatMessageTimings | undefined;
-		let streamFinished = false;
-		let modelEmitted = false;
-		let firstValidChunkEmitted = false;
+			let aggregatedContent = '';
+			let fullReasoningContent = '';
+			let hasReceivedData = false;
+			let lastTimings: ChatMessageTimings | undefined;
+			let streamFinished = false;
+			let modelEmitted = false;
+			let firstValidChunkEmitted = false;
+			let lastProcessedIndex = 0;
+			let partialLine = '';
 
-		try {
-			let chunk = '';
-			while (true) {
-				if (abortSignal?.aborted) break;
+			const processNewData = (responseText: string) => {
+				const newData = responseText.substring(lastProcessedIndex);
+				lastProcessedIndex = responseText.length;
+				if (!newData) return;
 
-				const { done, value } = await reader.read();
-				if (done) break;
-
-				if (abortSignal?.aborted) break;
-
-				chunk += decoder.decode(value, { stream: true });
-				const lines = chunk.split('\n');
-				chunk = lines.pop() || '';
+				const text = partialLine + newData;
+				const lines = text.split('\n');
+				partialLine = lines.pop() || '';
 
 				for (const line of lines) {
 					if (abortSignal?.aborted) break;
@@ -320,7 +325,6 @@ export class ChatService {
 
 							if (!firstValidChunkEmitted && parsed.object === 'chat.completion.chunk') {
 								firstValidChunkEmitted = true;
-
 								if (!abortSignal?.aborted) {
 									onFirstValidChunk?.();
 								}
@@ -364,28 +368,207 @@ export class ChatService {
 						}
 					}
 				}
+			};
 
-				if (abortSignal?.aborted) break;
-			}
+			const onAbort = () => xhr.abort();
+			abortSignal?.addEventListener('abort', onAbort);
 
-			if (abortSignal?.aborted) return;
+			const cleanup = () => {
+				abortSignal?.removeEventListener('abort', onAbort);
+			};
 
-			if (streamFinished) {
+			xhr.onprogress = () => {
+				if (abortSignal?.aborted) return;
+				processNewData(xhr.responseText);
+			};
+
+			xhr.onload = () => {
+				processNewData(xhr.responseText);
+				cleanup();
+
+				if (xhr.status < 200 || xhr.status >= 300) {
+					let error: Error;
+					try {
+						const errorData = JSON.parse(xhr.responseText);
+						const message = errorData.error?.message || 'Unknown server error';
+						error = new Error(message);
+						error.name = xhr.status === 400 ? 'ServerError' : 'HttpError';
+					} catch {
+						error = new Error(`Server error (${xhr.status}): ${xhr.statusText}`);
+						error.name = 'HttpError';
+					}
+					reject(error);
+					return;
+				}
+
 				if (!hasReceivedData && aggregatedContent.length === 0) {
-					const noResponseError = new Error('No response received from server. Please try again.');
-					throw noResponseError;
+					const error = new Error('No response received from server. Please try again.');
+					reject(error);
+					return;
 				}
 
 				onComplete?.(aggregatedContent, fullReasoningContent || undefined, lastTimings);
+				resolve();
+			};
+
+			xhr.onerror = () => {
+				cleanup();
+				const error = new Error(
+					'Unable to connect to server - please check if the server is running'
+				);
+				error.name = 'NetworkError';
+				reject(error);
+			};
+
+			xhr.ontimeout = () => {
+				cleanup();
+				const error = new Error('Request timed out - the server took too long to respond');
+				error.name = 'TimeoutError';
+				reject(error);
+			};
+
+			xhr.onabort = () => {
+				cleanup();
+				const error = new Error('Request aborted');
+				error.name = 'AbortError';
+				reject(error);
+			};
+
+			xhr.send(body);
+		});
+	}
+
+	private async handleStreamResponseTauri(
+		url: string,
+		headers: Record<string, string>,
+		body: string,
+		onChunk?: (chunk: string) => void,
+		onComplete?: (
+			response: string,
+			reasoningContent?: string,
+			timings?: ChatMessageTimings
+		) => void,
+		onError?: (error: Error) => void,
+		onReasoningChunk?: (chunk: string) => void,
+		onModel?: (model: string) => void,
+		onFirstValidChunk?: () => void,
+		conversationId?: string,
+		abortSignal?: AbortSignal
+	): Promise<void> {
+		if (abortSignal?.aborted) return;
+
+		const { invoke, Channel } = await import('@tauri-apps/api/core');
+
+		const absoluteUrl = url.startsWith('/')
+			? `${getServerBaseUrl()}${url}`
+			: url;
+		const streamId = conversationId || crypto.randomUUID();
+		let aggregatedContent = '';
+		let fullReasoningContent = '';
+		let hasReceivedData = false;
+		let lastTimings: ChatMessageTimings | undefined;
+		let modelEmitted = false;
+		let firstValidChunkEmitted = false;
+
+		const onAbort = () => {
+			invoke('abort_stream', { streamId }).catch(() => {});
+		};
+		abortSignal?.addEventListener('abort', onAbort);
+
+		const channel = new Channel<string>();
+		channel.onmessage = (line: string) => {
+			if (abortSignal?.aborted) return;
+
+			if (!line.startsWith('data: ')) return;
+			const data = line.slice(6);
+			if (data === '[DONE]') return;
+
+			try {
+				const parsed: ApiChatCompletionStreamChunk = JSON.parse(data);
+
+				if (!firstValidChunkEmitted && parsed.object === 'chat.completion.chunk') {
+					firstValidChunkEmitted = true;
+					onFirstValidChunk?.();
+				}
+
+				const content = parsed.choices[0]?.delta?.content;
+				const reasoningContent = parsed.choices[0]?.delta?.reasoning_content;
+				const timings = parsed.timings;
+				const promptProgress = parsed.prompt_progress;
+
+				const chunkModel = this.extractModelName(parsed);
+				if (chunkModel && !modelEmitted) {
+					modelEmitted = true;
+					onModel?.(chunkModel);
+				}
+
+				if (timings || promptProgress) {
+					this.updateProcessingState(timings, promptProgress, conversationId);
+					if (timings) lastTimings = timings;
+				}
+
+				if (content) {
+					hasReceivedData = true;
+					aggregatedContent += content;
+					if (!abortSignal?.aborted) onChunk?.(content);
+				}
+
+				if (reasoningContent) {
+					hasReceivedData = true;
+					fullReasoningContent += reasoningContent;
+					if (!abortSignal?.aborted) onReasoningChunk?.(reasoningContent);
+				}
+			} catch (e) {
+				console.error('Error parsing JSON chunk:', e);
 			}
+		};
+
+		try {
+			const status = await invoke<number>('stream_chat', {
+				streamId,
+				url: absoluteUrl,
+				headers,
+				body,
+				onChunk: channel
+			});
+
+			abortSignal?.removeEventListener('abort', onAbort);
+
+			if (abortSignal?.aborted) {
+				const error = new Error('Request aborted');
+				error.name = 'AbortError';
+				throw error;
+			}
+
+			if (status < 200 || status >= 300) {
+				const error = new Error(`Server error (${status})`);
+				error.name = 'HttpError';
+				throw error;
+			}
+
+			if (!hasReceivedData && aggregatedContent.length === 0) {
+				throw new Error('No response received from server. Please try again.');
+			}
+
+			onComplete?.(aggregatedContent, fullReasoningContent || undefined, lastTimings);
 		} catch (error) {
-			const err = error instanceof Error ? error : new Error('Stream error');
+			abortSignal?.removeEventListener('abort', onAbort);
 
-			onError?.(err);
+			if (abortSignal?.aborted) {
+				const abortError = new Error('Request aborted');
+				abortError.name = 'AbortError';
+				throw abortError;
+			}
 
+			const msg =
+				typeof error === 'string'
+					? error
+					: error instanceof Error
+						? error.message
+						: 'Unable to connect to server';
+			const err = new Error(msg);
+			err.name = error instanceof Error ? error.name : 'NetworkError';
 			throw err;
-		} finally {
-			reader.releaseLock();
 		}
 	}
 
@@ -406,7 +589,6 @@ export class ChatService {
 			reasoningContent?: string,
 			timings?: ChatMessageTimings
 		) => void,
-		onError?: (error: Error) => void,
 		onModel?: (model: string) => void
 	): Promise<string> {
 		try {
@@ -440,11 +622,7 @@ export class ChatService {
 
 			return content;
 		} catch (error) {
-			const err = error instanceof Error ? error : new Error('Parse error');
-
-			onError?.(err);
-
-			throw err;
+			throw error instanceof Error ? error : new Error('Parse error');
 		}
 	}
 

@@ -904,7 +904,7 @@ class ModelAPIServer {
     }
 
     void server_loop() {
-        if (!server_->bind_to_port("0.0.0.0", port_)) {
+        if (!server_->bind_to_port("127.0.0.1", port_)) {
             std::cerr << "Failed to bind model API server to port " << port_ << std::endl;
             return;
         }

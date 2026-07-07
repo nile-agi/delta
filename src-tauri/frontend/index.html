@@ -15,6 +15,9 @@ p{font-size:.875rem;opacity:.5}
 .dots span{animation:blink 1.4s infinite both}
 .dots span:nth-child(2){animation-delay:.2s}
 .dots span:nth-child(3){animation-delay:.4s}
+.error-msg{display:none;margin-top:1rem;font-size:.8rem;opacity:.6}
+.retry-btn{display:none;margin-top:1rem;padding:.5rem 1.25rem;background:#3898ec;color:#fff;border:none;border-radius:6px;font-size:.875rem;cursor:pointer;transition:opacity .2s}
+.retry-btn:hover{opacity:.8}
 @keyframes fadeIn{to{opacity:1}}
 @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.05);opacity:.8}}
 @keyframes blink{0%,80%,100%{opacity:0}40%{opacity:1}}
@@ -31,7 +34,44 @@ p{font-size:.875rem;opacity:.5}
 </svg>
 </div>
 <h1>Delta</h1>
-<p>Starting<span class="dots"><span>.</span><span>.</span><span>.</span></span></p>
+<p id="status">Starting<span class="dots"><span>.</span><span>.</span><span>.</span></span></p>
+<p id="error" class="error-msg"></p>
+<button id="retry" class="retry-btn" onclick="retryConnect()">Retry</button>
 </div>
+<script>
+var serverUrl = '';
+function showError(url) {
+  serverUrl = url;
+  document.getElementById('status').textContent = 'Server took too long to start';
+  document.getElementById('error').style.display = 'block';
+  document.getElementById('error').textContent = 'The server did not respond in time. Click Retry to try again.';
+  document.getElementById('retry').style.display = 'inline-block';
+  document.querySelector('.logo-wrap').style.animation = 'none';
+}
+function retryConnect() {
+  document.getElementById('status').innerHTML = 'Reconnecting<span class="dots"><span>.</span><span>.</span><span>.</span></span>';
+  document.getElementById('error').style.display = 'none';
+  document.getElementById('retry').style.display = 'none';
+  document.querySelector('.logo-wrap').style.animation = 'pulse 2s ease-in-out infinite';
+  if (serverUrl) {
+    var attempts = 0;
+    var maxAttempts = 120;
+    var timer = setInterval(function() {
+      attempts++;
+      fetch(serverUrl + '/props', { method: 'GET' })
+        .then(function() {
+          clearInterval(timer);
+          window.location.replace(serverUrl);
+        })
+        .catch(function() {
+          if (attempts >= maxAttempts) {
+            clearInterval(timer);
+            showError(serverUrl);
+          }
+        });
+    }, 250);
+  }
+}
+</script>
 </body>
 </html>

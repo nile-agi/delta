@@ -1,7 +1,7 @@
-import { base } from '$app/paths';
 import { config } from '$lib/stores/settings.svelte';
 import type { ApiModelListResponse } from '$lib/types/api';
 import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
+import { getServerBaseUrl } from '$lib/utils/server-base-url';
 
 export interface ModelInfo {
 	name: string;
@@ -43,7 +43,7 @@ export class ModelsService {
 			...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
 		};
 
-		const response = await fetch(`${base}/v1/models`, { headers });
+		const response = await fetch(`${getServerBaseUrl()}/v1/models`, { headers });
 		if (!response.ok) {
 			throw new Error(`Failed to fetch model list (status ${response.status})`);
 		}
@@ -51,7 +51,7 @@ export class ModelsService {
 		// Router mode: if v1/models returned empty, try /models (llama.cpp router endpoint)
 		if (data.data && data.data.length === 0) {
 			try {
-				const modelsRes = await fetch(`${base}/models`, { headers });
+				const modelsRes = await fetch(`${getServerBaseUrl()}/models`, { headers });
 				if (modelsRes.ok) {
 					const raw = (await modelsRes.json()) as unknown;
 					const items = Array.isArray(raw)

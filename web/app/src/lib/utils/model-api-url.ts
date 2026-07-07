@@ -1,9 +1,5 @@
-/**
- * Base URL for the Model Management API.
- * The model API runs on server_port + 1 (e.g. 8080 → 8081, 8082 → 8083).
- * Probes same-origin first; if the model API is co-hosted (UI-only mode) we
- * use same-origin, otherwise we fall back to port + 1.
- */
+import { getServerBaseUrl } from './server-base-url';
+
 let cachedBaseUrl: string = '';
 let resolved = false;
 let resolvePromise: Promise<void> | null = null;
@@ -16,6 +12,9 @@ function isTauri(): boolean {
 }
 
 function getModelApiPort(): number {
+	if (typeof window !== 'undefined' && (window as any).__DELTA_MODEL_API_PORT__ != null) {
+		return (window as any).__DELTA_MODEL_API_PORT__;
+	}
 	if (typeof window === 'undefined') return 8081;
 	const serverPort = parseInt(window.location.port, 10);
 	return isNaN(serverPort) ? 8081 : serverPort + 1;
@@ -43,7 +42,8 @@ export function resolveModelApiBaseUrl(): Promise<void> {
 	}
 	resolvePromise = (async () => {
 		try {
-			const res = await fetch('/api/models/available', { method: 'GET' });
+			const probeBase = getServerBaseUrl();
+			const res = await fetch(`${probeBase}/api/models/available`, { method: 'GET' });
 			if (res.ok) {
 				cachedBaseUrl = '';
 			} else {
@@ -63,6 +63,15 @@ export function resolveModelApiBaseUrl(): Promise<void> {
 export function forceModelApiSeparatePort(): void {
 	cachedBaseUrl = buildModelApiUrl();
 	resolved = true;
+}
+
+/**
+ * Reset cached resolution so resolveModelApiBaseUrl() re-probes on next call.
+ */
+export function resetModelApiResolution(): void {
+	resolvePromise = null;
+	resolved = false;
+	cachedBaseUrl = '';
 }
 
 /**

@@ -6,6 +6,7 @@
 	import Label from '$lib/components/ui/label/label.svelte';
 	import { serverStore, serverLoading } from '$lib/stores/server.svelte';
 	import { config, updateConfig } from '$lib/stores/settings.svelte';
+	import { getServerBaseUrl } from '$lib/utils/server-base-url';
 	import { fade, fly, scale } from 'svelte/transition';
 
 	interface Props {
@@ -64,7 +65,7 @@
 			updateConfig('apiKey', apiKeyInput.trim());
 
 			// Test the API key by making a real request to the server
-			const response = await fetch('./props', {
+			const response = await fetch(`${getServerBaseUrl()}/props`, {
 				headers: {
 					'Content-Type': 'application/json',
 					Authorization: `Bearer ${apiKeyInput.trim()}`
