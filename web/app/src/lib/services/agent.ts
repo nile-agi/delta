@@ -1,7 +1,16 @@
-import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
+function getAgentApiBase(): string {
+	if (typeof window !== 'undefined' && (window as any).__DELTA_MODEL_API_PORT__ != null) {
+		return `http://127.0.0.1:${(window as any).__DELTA_MODEL_API_PORT__}`;
+	}
+	if (typeof window !== 'undefined' && window.location.port) {
+		const port = parseInt(window.location.port, 10);
+		if (!isNaN(port)) return `${window.location.protocol}//${window.location.hostname}:${port + 1}`;
+	}
+	return 'http://127.0.0.1:8081';
+}
 
 function apiUrl(path: string): string {
-	return `${getModelApiBaseUrl()}${path}`;
+	return `${getAgentApiBase()}${path}`;
 }
 
 export interface CalendarEvent {
@@ -45,6 +54,10 @@ export const agentService = {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(event)
 		});
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({}));
+			throw new Error(err.error || `Failed to create event (${res.status})`);
+		}
 		return res.json();
 	},
 
@@ -54,6 +67,10 @@ export const agentService = {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(updates)
 		});
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({}));
+			throw new Error(err.error || `Failed to update event (${res.status})`);
+		}
 		return res.json();
 	},
 
@@ -83,6 +100,10 @@ export const agentService = {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(task)
 		});
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({}));
+			throw new Error(err.error || `Failed to create task (${res.status})`);
+		}
 		return res.json();
 	},
 
@@ -92,6 +113,10 @@ export const agentService = {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(updates)
 		});
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({}));
+			throw new Error(err.error || `Failed to update task (${res.status})`);
+		}
 		return res.json();
 	},
 
@@ -99,6 +124,10 @@ export const agentService = {
 		const res = await fetch(apiUrl(`/api/agent/tasks/${id}/complete`), {
 			method: 'POST'
 		});
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({}));
+			throw new Error(err.error || `Failed to complete task (${res.status})`);
+		}
 		return res.json();
 	},
 

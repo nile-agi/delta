@@ -11,6 +11,7 @@ export interface ModelInfo {
 	quantization: string;
 	size_bytes: number;
 	installed?: boolean;
+	supports_tools?: boolean;
 }
 
 export interface ModelListResponse {

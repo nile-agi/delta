@@ -85,26 +85,13 @@ Grab the latest release for your platform from [Releases](https://github.com/nil
 
 ### Build from Source
 
-See [docs/building.md](docs/building.md) for full instructions.
+See [docs/building.md](docs/building.md) for prerequisites and full instructions.
 
 ```bash
 git clone --recursive https://github.com/nile-agi/delta.git
 cd delta
-
-# Build web UI
-cd web/app && pnpm install && pnpm run build && cd ../..
-
-# Build C++ binaries
-mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j$(nproc) --target delta --target delta-server
-cmake --build . -j$(nproc) --target llama-server || true
-
-# Build desktop app
-cd ../src-tauri
-chmod +x ../scripts/build-sidecars.sh
-../scripts/build-sidecars.sh --release
-cargo tauri build
+make            # Build everything (engine + sidecars + web)
+make dev        # Run the desktop app
 ```
 
 ## Project Structure

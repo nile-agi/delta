@@ -2,6 +2,8 @@
 
 ## Prerequisites
 
+Install these before building anything.
+
 | Tool | Version | Purpose |
 |------|---------|---------|
 | CMake | 3.14+ | C++ build system |
@@ -9,17 +11,18 @@
 | Node.js | 18+ | Web UI build |
 | pnpm | 9+ | Package manager |
 | Rust | stable | Desktop app (Tauri) |
+| Make | any | Build automation |
 
-### Platform-specific
+### macOS
 
-**macOS:**
 ```bash
 xcode-select --install       # C++ toolchain
 brew install cmake node pnpm
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh  # Rust (for desktop)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-**Linux (Ubuntu/Debian):**
+### Linux (Ubuntu/Debian)
+
 ```bash
 sudo apt-get install -y \
   build-essential cmake \
@@ -30,11 +33,51 @@ sudo apt-get install -y \
 npm install -g pnpm
 ```
 
-**Windows:**
+### Windows
+
 - Visual Studio 2022 with C++ workload
 - CMake (bundled with VS or standalone)
 - Node.js from [nodejs.org](https://nodejs.org/)
 - `npm install -g pnpm`
+
+## Quick Start
+
+```bash
+git clone --recursive https://github.com/nile-agi/delta.git
+cd delta
+make engine     # Build C++ engine (delta-server + llama-server)
+make sidecars   # Copy sidecar binaries to src-tauri/binaries/
+make web        # Build SvelteKit web UI
+make dev        # Run the Tauri desktop app
+```
+
+Or build everything in one go:
+
+```bash
+make            # Builds engine + sidecars + web
+make dev        # Run the app
+```
+
+### After making changes
+
+| Changed | Rebuild with | Then |
+|---------|-------------|------|
+| C++ source (`engine/`) | `make engine sidecars` | Restart the app |
+| Web source (`web/app/`) | `make web` | Restart the app |
+| Rust source (`src-tauri/`) | Nothing | `make dev` rebuilds automatically |
+
+### All make targets
+
+```
+make            Build everything (engine + sidecars + web)
+make engine     Build C++ engine (delta-server + llama-server)
+make sidecars   Copy sidecar binaries into src-tauri/binaries/
+make web        Build SvelteKit web UI
+make dev        Run Tauri desktop app (cargo tauri dev)
+make run        Full rebuild then run
+make clean      Remove build artifacts
+make submodules Init git submodules
+```
 
 ## Project Structure
 
@@ -47,65 +90,57 @@ delta/
 ├── src-tauri/           # Tauri desktop app wrapper
 │   ├── binaries/        # Sidecar binaries (delta-server, llama-server)
 │   ├── frontend/        # Splash screen shown during startup
-│   └── src/lib.rs       # Tauri setup (spawns delta-server, navigates webview)
+│   └── src/lib.rs       # Tauri setup (spawns delta-server, injects ports)
 ├── public/              # Built web UI output (from web/app)
 ├── scripts/             # Build helper scripts
-└── VERSION              # Single source of truth for version
+└── Makefile             # Build automation
 ```
 
-## Initialize Submodules
+## How the Desktop App Works
+
+1. Tauri serves the SPA from `frontendDist` (`public/`) on `tauri://localhost`
+2. The layout shows a splash screen while waiting for the server
+3. Tauri spawns `delta-server` as a sidecar process
+4. `delta-server` starts llama-server on a chosen port and a model management API on port + 1
+5. Once the server is reachable, Rust injects `window.__DELTA_PORT__` and `window.__DELTA_MODEL_API_PORT__` via `eval()` and fires a `delta-server-ready` event
+6. The SPA uses these ports to make API calls to `http://127.0.0.1:{port}`
+
+## Building Without Make
+
+If you prefer running commands manually:
+
+### Engine (C++)
 
 ```bash
-git submodule update --init --recursive
+mkdir -p build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON   # macOS
+# cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=OFF  # Linux/Windows
+cmake --build build -j$(sysctl -n hw.ncpu) --target delta-server --target llama-server
 ```
 
-## Build the Web UI
+### Copy sidecars
+
+```bash
+chmod +x scripts/build-sidecars.sh
+./scripts/build-sidecars.sh --release
+```
+
+### Web UI
 
 ```bash
 cd web/app
 pnpm install
-pnpm run build       # outputs to ../../public/
+pnpm run build    # outputs to ../../public/
 ```
 
-## Build CLI Binaries
+### Run desktop app
 
 ```bash
-mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON  # macOS
-# cmake .. -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=OFF  # Linux/Windows
-cmake --build . -j$(nproc) --target delta --target delta-server
+cd src-tauri
+cargo tauri dev
 ```
 
-Outputs:
-- `build/delta` — CLI binary
-- `build/delta-server` — Server wrapper (manages llama-server + model API)
-
-Also build llama-server:
-```bash
-cmake --build . -j$(nproc) --target llama-server
-```
-
-### Cross-compile macOS architectures
-
-```bash
-# arm64
-cmake .. -DCMAKE_OSX_ARCHITECTURES=arm64 -DGGML_METAL=ON
-# x86_64
-cmake .. -DCMAKE_OSX_ARCHITECTURES=x86_64 -DGGML_METAL=ON
-```
-
-## Build Desktop App (Tauri)
-
-### 1. Build sidecar binaries
-
-```bash
-chmod +x scripts/build-sidecars.sh
-scripts/build-sidecars.sh --release
-```
-
-This builds delta-server and llama-server and copies them to `src-tauri/binaries/` with the correct target-triple suffix.
-
-### 2. Build the Tauri app
+### Build desktop app for distribution
 
 ```bash
 cd src-tauri
@@ -113,26 +148,27 @@ cargo tauri build
 ```
 
 Outputs:
-- `src-tauri/target/release/bundle/macos/Delta.app` — macOS app bundle
-- `src-tauri/target/release/bundle/dmg/Delta_*.dmg` — macOS disk image
+- `src-tauri/target/release/bundle/macos/Delta.app`
+- `src-tauri/target/release/bundle/dmg/Delta_*.dmg`
 
-### How the desktop app works
+### Cross-compile macOS architectures
 
-1. Tauri opens a webview showing `src-tauri/frontend/index.html` (animated Delta splash screen)
-2. The Tauri setup spawns `delta-server` as a sidecar process
-3. `delta-server` starts llama-server on the chosen port and a model management API on port + 1
-4. Once the server is reachable, the webview navigates to `http://localhost:{port}`
-5. The web UI is served by llama-server from `Contents/Resources/webui/` (bundled from `public/`)
+```bash
+cmake -S . -B build -DCMAKE_OSX_ARCHITECTURES=arm64 -DGGML_METAL=ON   # Apple Silicon
+cmake -S . -B build -DCMAKE_OSX_ARCHITECTURES=x86_64 -DGGML_METAL=ON  # Intel
+```
 
 ## Run Locally
 
 ### CLI
+
 ```bash
 ./build/delta                    # Interactive mode
 ./build/delta-server --port 8080 --models-dir ~/.delta-cli/models
 ```
 
 ### Desktop app
+
 ```bash
 open src-tauri/target/release/bundle/macos/Delta.app
 ```
@@ -159,13 +195,13 @@ After both complete, `attach-cli` uploads CLI archives + SHA-256 checksums to th
 
 Update version in three places (must match):
 1. `VERSION`
-2. `src-tauri/tauri.conf.json` → `"version"`
-3. `src-tauri/Cargo.toml` → `version`
+2. `src-tauri/tauri.conf.json` -> `"version"`
+3. `src-tauri/Cargo.toml` -> `version`
 
 ### macOS code signing
 
 Set these GitHub repository secrets for notarized macOS builds:
-- `APPLE_CERTIFICATE` — Base64-encoded .p12 certificate
+- `APPLE_CERTIFICATE` -- Base64-encoded .p12 certificate
 - `APPLE_CERTIFICATE_PASSWORD`
 - `APPLE_SIGNING_IDENTITY`
 - `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`

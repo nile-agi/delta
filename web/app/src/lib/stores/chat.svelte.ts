@@ -312,6 +312,10 @@ class ChatStore {
 			apiOptions.custom = currentConfig.custom;
 		}
 
+		if (currentConfig.useAgentTools) {
+			apiOptions.useTools = true;
+		}
+
 		return apiOptions;
 	}
 

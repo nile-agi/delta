@@ -2,7 +2,7 @@
 	import { ModelsService, type ModelInfo } from '$lib/services/models';
 	import { slotsService } from '$lib/services/slots';
 	import { modelsCatalog } from '$lib/data/models_catalog';
-	import { selectedModelName as getSelectedModelName } from '$lib/stores/models.svelte';
+	import { selectedModelName as getSelectedModelName, fetchModels } from '$lib/stores/models.svelte';
 	import FamilyAccordion from './FamilyAccordion.svelte';
 	import InstalledModelRow from './InstalledModelRow.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -134,6 +134,7 @@
 						if (progress.completed) {
 							toast.success(`Model ${modelName} downloaded successfully`);
 							await loadInstalledModels();
+							await fetchModels(true);
 							setTimeout(() => {
 								downloadProgress = null;
 								downloadingModel = null;
@@ -198,6 +199,7 @@
 			await ModelsService.remove(modelName);
 			toast.success(`Model ${modelName} removed successfully`);
 			await loadInstalledModels();
+			await fetchModels(true);
 		} catch (e) {
 			const errorMessage = e instanceof Error ? e.message : 'Failed to remove model';
 			toast.error(errorMessage);

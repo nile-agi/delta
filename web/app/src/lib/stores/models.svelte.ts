@@ -69,6 +69,10 @@ class ModelsStore {
 		return this._modelLoadedOnServer;
 	}
 
+	get selectedModelSupportsTools(): boolean {
+		return this.selectedModel?.capabilities?.includes('tools') ?? false;
+	}
+
 	async fetch(force = false): Promise<void> {
 		if (this._loading) return;
 		if (this._models.length > 0 && !force) return;
@@ -107,7 +111,7 @@ class ModelsStore {
 						name: displayName,
 						model: modelInfo.name,
 						description: modelInfo.description,
-						capabilities: [],
+						capabilities: modelInfo.supports_tools ? ['tools'] : [],
 						details: {
 							quantization_level: modelInfo.quantization
 						},
@@ -312,6 +316,7 @@ export const selectedModelId = () => modelsStore.selectedModelId;
 export const selectedModelName = () => modelsStore.selectedModelName;
 export const selectedModelOption = () => modelsStore.selectedModel;
 export const modelLoadedOnServer = () => modelsStore.modelLoadedOnServer;
+export const selectedModelSupportsTools = () => modelsStore.selectedModelSupportsTools;
 
 export const fetchModels = modelsStore.fetch.bind(modelsStore);
 export const selectModel = modelsStore.select.bind(modelsStore);

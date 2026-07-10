@@ -205,7 +205,8 @@ class ModelAPIServer {
                                        {"size_str", model.size_str},
                                        {"quantization", model.quantization},
                                        {"size_bytes", model.size_bytes},
-                                       {"installed", model.installed}};
+                                       {"installed", model.installed},
+                                       {"supports_tools", model.supports_tools}};
                     models_array.push_back(model_json);
                 }
 
@@ -230,7 +231,8 @@ class ModelAPIServer {
                                        {"description", model.description},
                                        {"size_str", model.size_str},
                                        {"quantization", model.quantization},
-                                       {"size_bytes", model.size_bytes}};
+                                       {"size_bytes", model.size_bytes},
+                                       {"supports_tools", model.supports_tools}};
                     models_array.push_back(model_json);
                 }
 
@@ -616,11 +618,54 @@ class ModelAPIServer {
 
             try {
                 json body = json::parse(req.body);
-                json messages = body.value("messages", json::array());
+                if (!body.is_object()) {
+                    json err = {
+                        {"error",
+                         {{"message", "Request body must be a JSON object, got: " + std::string(body.type_name())},
+                          {"type", "invalid_request_error"}}}};
+                    res.status = 400;
+                    res.set_content(err.dump(), "application/json");
+                    return;
+                }
+                json messages = body.contains("messages") ? body["messages"] : json::array();
+                if (!messages.is_array()) {
+                    json err = {{"error",
+                                 {{"message", "messages must be an array, got: " + std::string(messages.type_name())},
+                                  {"type", "invalid_request_error"}}}};
+                    res.status = 400;
+                    res.set_content(err.dump(), "application/json");
+                    return;
+                }
+                for (size_t i = 0; i < messages.size(); i++) {
+                    if (!messages[i].is_object()) {
+                        json err = {
+                            {"error",
+                             {{"message", "messages[" + std::to_string(i) + "] must be an object, got: " +
+                                              std::string(messages[i].type_name()) + " = " + messages[i].dump()},
+                              {"type", "invalid_request_error"}}}};
+                        res.status = 400;
+                        res.set_content(err.dump(), "application/json");
+                        return;
+                    }
+                }
                 bool stream = body.value("stream", false);
+                std::string model_name = body.value("model", std::string("default"));
 
                 std::string llama_url = "http://127.0.0.1:" + std::to_string(llama_port);
-                agent::AgentLoop loop(llama_url);
+                bool model_supports_tools = false;
+                auto reg = model_mgr_.get_registry_entry(model_name);
+                std::string llama_model_name = model_name;
+                if (!reg.name.empty()) {
+                    model_supports_tools = reg.supports_tools;
+                    if (!reg.filename.empty()) {
+                        auto dot = reg.filename.rfind('.');
+                        llama_model_name = (dot != std::string::npos) ? reg.filename.substr(0, dot) : reg.filename;
+                    }
+                }
+                agent::AgentLoop loop(llama_url, llama_model_name, model_supports_tools);
+                std::cerr << "[delta-server] agent loop: model=" << model_name << " -> llama_alias=" << llama_model_name
+                          << ", supports_tools=" << (model_supports_tools ? "true" : "false")
+                          << ", msgs=" << messages.size() << std::endl;
                 auto result = loop.process(messages);
 
                 if (!result.success) {
@@ -674,7 +719,14 @@ class ModelAPIServer {
                     {"error", {{"message", "Invalid JSON in request body"}, {"type", "invalid_request_error"}}}};
                 res.status = 400;
                 res.set_content(err.dump(), "application/json");
+            } catch (const nlohmann::json::type_error& e) {
+                std::cerr << "[delta-server] JSON type error in agent loop: " << e.what() << std::endl;
+                std::cerr << "[delta-server] Request body was: " << req.body.substr(0, 2000) << std::endl;
+                json err = {{"error", {{"message", std::string(e.what())}, {"type", "json_type_error"}}}};
+                res.status = 500;
+                res.set_content(err.dump(), "application/json");
             } catch (const std::exception& e) {
+                std::cerr << "[delta-server] Exception in agent loop: " << e.what() << std::endl;
                 json err = {{"error", {{"message", e.what()}, {"type", "server_error"}}}};
                 res.status = 500;
                 res.set_content(err.dump(), "application/json");

@@ -18,6 +18,12 @@
 
 	let showCreateDialog = $state(false);
 	let newEvent = $state({ title: '', start_time: '', end_time: '', description: '', location: '' });
+	let startDate = $state('');
+	let startTime = $state('');
+	let endDate = $state('');
+	let endTime = $state('');
+	let createError = $state('');
+	let creating = $state(false);
 	let selectedDayEvents = $state<CalendarEvent[]>([]);
 	let selectedDate = $state('');
 
@@ -73,10 +79,27 @@
 	}
 
 	async function handleCreateEvent() {
-		if (!newEvent.title || !newEvent.start_time) return;
-		await createEvent(newEvent);
-		newEvent = { title: '', start_time: '', end_time: '', description: '', location: '' };
-		showCreateDialog = false;
+		createError = '';
+		if (!newEvent.title) { createError = 'Title is required'; return; }
+		if (!startDate) { createError = 'Start date is required'; return; }
+		if (!startTime) { createError = 'Start time is required'; return; }
+		newEvent.start_time = `${startDate}T${startTime}:00`;
+		if (endDate && endTime) {
+			newEvent.end_time = `${endDate}T${endTime}:00`;
+		}
+		creating = true;
+		try {
+			await createEvent(newEvent);
+			newEvent = { title: '', start_time: '', end_time: '', description: '', location: '' };
+			startDate = ''; startTime = ''; endDate = ''; endTime = '';
+			showCreateDialog = false;
+			await loadMonthEvents(month);
+		} catch (e) {
+			createError = e instanceof Error ? e.message : 'Failed to create event';
+			console.error('Failed to create event:', e);
+		} finally {
+			creating = false;
+		}
 	}
 
 	async function handleDeleteEvent(id: string) {
@@ -96,7 +119,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-	<div class="flex items-center justify-between border-b px-6 py-4">
+	<div class="flex items-center justify-between border-b py-4 pl-14 pr-6">
 		<div class="flex items-center gap-4">
 			<h1 class="text-2xl font-semibold">Calendar</h1>
 			<div class="flex items-center gap-1">
@@ -109,7 +132,15 @@
 				</Button>
 			</div>
 		</div>
-		<Button size="sm" onclick={() => (showCreateDialog = true)}>
+		<Button size="sm" onclick={() => {
+			const now = new Date();
+			const pad = (n: number) => n.toString().padStart(2, '0');
+			startDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+			startTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+			endDate = startDate;
+			endTime = startTime;
+			showCreateDialog = true;
+		}}>
 			<Plus class="mr-1 h-4 w-4" />
 			New Event
 		</Button>
@@ -219,17 +250,47 @@
 		</Dialog.Header>
 		<div class="space-y-4 py-4">
 			<div>
-				<Label>Title</Label>
+				<Label>Title <span class="text-destructive">*</span></Label>
 				<Input bind:value={newEvent.title} placeholder="Event title" class="mt-1" />
 			</div>
 			<div class="grid grid-cols-2 gap-3">
 				<div>
-					<Label>Start</Label>
-					<Input type="datetime-local" bind:value={newEvent.start_time} class="mt-1" />
+					<Label>Start date <span class="text-destructive">*</span></Label>
+					<input
+						type="date"
+						value={startDate}
+						oninput={(e) => { startDate = e.currentTarget.value; }}
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+					/>
 				</div>
 				<div>
-					<Label>End</Label>
-					<Input type="datetime-local" bind:value={newEvent.end_time} class="mt-1" />
+					<Label>Start time <span class="text-destructive">*</span></Label>
+					<input
+						type="time"
+						value={startTime}
+						oninput={(e) => { startTime = e.currentTarget.value; }}
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+					/>
+				</div>
+			</div>
+			<div class="grid grid-cols-2 gap-3">
+				<div>
+					<Label>End date</Label>
+					<input
+						type="date"
+						value={endDate}
+						oninput={(e) => { endDate = e.currentTarget.value; }}
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+					/>
+				</div>
+				<div>
+					<Label>End time</Label>
+					<input
+						type="time"
+						value={endTime}
+						oninput={(e) => { endTime = e.currentTarget.value; }}
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+					/>
 				</div>
 			</div>
 			<div>
@@ -241,14 +302,19 @@
 				<Textarea
 					bind:value={newEvent.description}
 					placeholder="Description"
-					class="mt-1"
+					class="mt-1 max-h-[120px] resize-none"
 					rows={3}
 				/>
 			</div>
+			{#if createError}
+				<p class="text-sm text-destructive">{createError}</p>
+			{/if}
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (showCreateDialog = false)}>Cancel</Button>
-			<Button onclick={handleCreateEvent}>Create</Button>
+			<Button onclick={handleCreateEvent} disabled={creating}>
+				{creating ? 'Creating...' : 'Create'}
+			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

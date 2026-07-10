@@ -21,6 +21,7 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> =
 	disableAutoScroll: false,
 	alwaysShowSidebar: false,
 	autoShowSidebarOnNewChat: true,
+	useAgentTools: false,
 	// make sure these default values are in sync with `common.h`
 	samplers: 'top_k;typ_p;top_p;min_p;temperature',
 	temperature: 0.8,

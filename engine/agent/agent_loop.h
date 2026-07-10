@@ -16,14 +16,18 @@ struct AgentResponse {
 
 class AgentLoop {
   public:
-    AgentLoop(const std::string& llama_server_url);
+    AgentLoop(const std::string& llama_server_url, const std::string& model_name = "default",
+              bool supports_tools = true);
 
     AgentResponse process(nlohmann::json messages);
     void set_max_iterations(int max);
 
   private:
     std::string server_url_;
-    int max_iterations_ = 10;
+    std::string model_name_;
+    int max_iterations_ = 3;
+    bool supports_tools_ = true;
+    std::string tool_choice_ = "required";
 
     nlohmann::json call_llm(const nlohmann::json& messages, const nlohmann::json& tools);
     std::string build_system_prompt();

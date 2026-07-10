@@ -160,6 +160,26 @@ std::string AgentDatabase::get_current_timestamp() {
 // --- Calendar CRUD ---
 
 std::string AgentDatabase::create_event(const nlohmann::json& data) {
+    std::string title = data.value("title", "");
+    std::string start_time = data.value("start_time", "");
+
+    // Prevent overlapping events: no two events at the same start_time
+    if (!start_time.empty()) {
+        sqlite3_stmt* check;
+        const char* check_sql = "SELECT id, title FROM calendar_events WHERE start_time = ?";
+        if (sqlite3_prepare_v2(db_, check_sql, -1, &check, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(check, 1, start_time.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(check) == SQLITE_ROW) {
+                std::string existing_title = reinterpret_cast<const char*>(sqlite3_column_text(check, 1));
+                sqlite3_finalize(check);
+                std::cerr << "[delta-db] time conflict: \"" << existing_title << "\" already at " << start_time
+                          << std::endl;
+                return "";
+            }
+            sqlite3_finalize(check);
+        }
+    }
+
     std::string id = generate_uuid();
     std::string now = get_current_timestamp();
 
@@ -172,9 +192,9 @@ std::string AgentDatabase::create_event(const nlohmann::json& data) {
         return "";
 
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, data.value("title", "").c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, title.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, data.value("description", "").c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 4, data.value("start_time", "").c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, start_time.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 5, data.value("end_time", "").c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 6, data.value("location", "").c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt, 7, data.value("all_day", false) ? 1 : 0);
@@ -302,6 +322,25 @@ bool AgentDatabase::delete_event(const std::string& id) {
 // --- Task CRUD ---
 
 std::string AgentDatabase::create_task(const nlohmann::json& data) {
+    std::string title = data.value("title", "");
+
+    // Check for duplicate: same title created within last 60 seconds (retry/duplicate)
+    if (!title.empty()) {
+        sqlite3_stmt* check;
+        const char* check_sql = "SELECT id FROM tasks WHERE LOWER(title) = LOWER(?) "
+                                "AND created_at > datetime('now', '-60 seconds')";
+        if (sqlite3_prepare_v2(db_, check_sql, -1, &check, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(check, 1, title.c_str(), -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(check) == SQLITE_ROW) {
+                std::string existing_id = reinterpret_cast<const char*>(sqlite3_column_text(check, 0));
+                sqlite3_finalize(check);
+                std::cerr << "[delta-db] duplicate task detected (within 60s): " << title << std::endl;
+                return existing_id;
+            }
+            sqlite3_finalize(check);
+        }
+    }
+
     std::string id = generate_uuid();
     std::string now = get_current_timestamp();
 
@@ -314,7 +353,7 @@ std::string AgentDatabase::create_task(const nlohmann::json& data) {
         return "";
 
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, data.value("title", "").c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, title.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, data.value("description", "").c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 4, data.value("status", "pending").c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 5, data.value("priority", "medium").c_str(), -1, SQLITE_TRANSIENT);

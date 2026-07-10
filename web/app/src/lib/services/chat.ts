@@ -7,6 +7,22 @@ import { slotsService } from './slots';
 const IS_TAURI =
 	typeof window !== 'undefined' &&
 	('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+
+function flattenContent(content: unknown): string {
+	if (typeof content === 'string') return content;
+	if (Array.isArray(content)) {
+		return content
+			.filter((p: Record<string, unknown>) => p.type === 'text' && p.text)
+			.map((p: Record<string, unknown>) => p.text as string)
+			.join('\n');
+	}
+	if (content && typeof content === 'object') {
+		const obj = content as Record<string, unknown>;
+		if (obj.type === 'text' && typeof obj.text === 'string') return obj.text;
+		return JSON.stringify(content);
+	}
+	return content == null ? '' : String(content);
+}
 /**
  * ChatService - Low-level API communication layer for Delta server interactions
  *
@@ -61,6 +77,7 @@ export class ChatService {
 			onReasoningChunk,
 			onModel,
 			onFirstValidChunk,
+			useTools,
 			// Generation parameters
 			temperature,
 			max_tokens,
@@ -124,7 +141,7 @@ export class ChatService {
 		const requestBody: ApiChatCompletionRequest = {
 			messages: alternatingMessages.map((msg: ApiChatMessageData) => ({
 				role: msg.role,
-				content: msg.content
+				content: useTools ? flattenContent(msg.content) : msg.content
 			})),
 			stream
 		};
@@ -182,7 +199,11 @@ export class ChatService {
 
 		try {
 			const apiKey = currentConfig.apiKey?.toString().trim();
-			const url = `${getServerBaseUrl()}/v1/chat/completions`;
+			let baseUrl = getServerBaseUrl();
+			if (useTools && typeof window !== 'undefined' && (window as any).__DELTA_MODEL_API_PORT__ != null) {
+				baseUrl = `http://127.0.0.1:${(window as any).__DELTA_MODEL_API_PORT__}`;
+			}
+			const url = `${baseUrl}/v1/chat/completions`;
 			const headers: Record<string, string> = {
 				'Content-Type': 'application/json',
 				...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})

@@ -24,6 +24,8 @@
 
 	let showCreateDialog = $state(false);
 	let newTask = $state({ title: '', description: '', priority: 'medium', due_date: '', tags: '' });
+	let createError = $state('');
+	let creating = $state(false);
 
 	const tasks = $derived(taskList());
 	const loading = $derived(tasksLoading());
@@ -50,9 +52,19 @@
 
 	async function handleCreateTask() {
 		if (!newTask.title) return;
-		await createTask(newTask);
-		newTask = { title: '', description: '', priority: 'medium', due_date: '', tags: '' };
-		showCreateDialog = false;
+		createError = '';
+		creating = true;
+		try {
+			await createTask(newTask);
+			newTask = { title: '', description: '', priority: 'medium', due_date: '', tags: '' };
+			showCreateDialog = false;
+			await loadTasks(filterStatus || undefined, filterPriority || undefined);
+		} catch (e) {
+			createError = e instanceof Error ? e.message : 'Failed to create task';
+			console.error('Failed to create task:', e);
+		} finally {
+			creating = false;
+		}
 	}
 
 	async function handleComplete(id: string) {
@@ -85,7 +97,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-	<div class="flex items-center justify-between border-b px-6 py-4">
+	<div class="flex items-center justify-between border-b py-4 pl-14 pr-6">
 		<div class="flex items-center gap-4">
 			<h1 class="text-2xl font-semibold">Tasks</h1>
 			<div class="flex items-center gap-2">
@@ -128,7 +140,7 @@
 		</Button>
 	</div>
 
-	<div class="flex-1 overflow-auto p-6">
+	<div class="flex-1 overflow-auto py-6 pl-14 pr-6">
 		{#if loading}
 			<div class="flex items-center justify-center py-12">
 				<p class="text-muted-foreground">Loading tasks...</p>
@@ -239,7 +251,7 @@
 		</Dialog.Header>
 		<div class="space-y-4 py-4">
 			<div>
-				<Label>Title</Label>
+				<Label>Title <span class="text-destructive">*</span></Label>
 				<Input bind:value={newTask.title} placeholder="Task title" class="mt-1" />
 			</div>
 			<div>
@@ -247,7 +259,7 @@
 				<Textarea
 					bind:value={newTask.description}
 					placeholder="Description (optional)"
-					class="mt-1"
+					class="mt-1 max-h-[120px] resize-none"
 					rows={3}
 				/>
 			</div>
@@ -266,7 +278,11 @@
 				</div>
 				<div>
 					<Label>Due date</Label>
-					<Input type="date" bind:value={newTask.due_date} class="mt-1" />
+					<input
+						type="date"
+						oninput={(e) => { newTask.due_date = e.currentTarget.value; }}
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+					/>
 				</div>
 			</div>
 			<div>
@@ -278,9 +294,14 @@
 				/>
 			</div>
 		</div>
+		{#if createError}
+			<p class="text-sm text-destructive">{createError}</p>
+		{/if}
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (showCreateDialog = false)}>Cancel</Button>
-			<Button onclick={handleCreateTask}>Create</Button>
+			<Button onclick={handleCreateTask} disabled={creating}>
+				{creating ? 'Creating...' : 'Create'}
+			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

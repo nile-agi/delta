@@ -38,7 +38,7 @@ async fn stream_chat(
     let abort = abort_flag.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<u16, String> {
         let agent = ureq::AgentBuilder::new()
-            .timeout_read(std::time::Duration::from_secs(30))
+            .timeout_read(std::time::Duration::from_secs(180))
             .build();
         let mut req = agent.post(&url);
         for (key, value) in &headers {
