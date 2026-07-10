@@ -50,7 +50,7 @@ delta/
 │   └── src/lib.rs       # Tauri setup (spawns delta-server, navigates webview)
 ├── public/              # Built web UI output (from web/app)
 ├── scripts/             # Build helper scripts
-└── VERSION              # Single source of truth for version
+└── version.txt          # Single source of truth for version
 ```
 
 ## Initialize Submodules
@@ -96,7 +96,18 @@ cmake .. -DCMAKE_OSX_ARCHITECTURES=x86_64 -DGGML_METAL=ON
 
 ## Build Desktop App (Tauri)
 
-### 1. Build sidecar binaries
+### 1. Build the web UI
+
+```bash
+cd web/app
+pnpm install
+pnpm run build
+cd ../..
+```
+
+This writes the bundled desktop frontend to `public/`.
+
+### 2. Build sidecar binaries
 
 ```bash
 chmod +x scripts/build-sidecars.sh
@@ -105,7 +116,15 @@ scripts/build-sidecars.sh --release
 
 This builds delta-server and llama-server and copies them to `src-tauri/binaries/` with the correct target-triple suffix.
 
-### 2. Build the Tauri app
+### 3. Verify release assets
+
+```bash
+scripts/verify-tauri-release-assets.sh
+```
+
+This checks that `public/index.html` contains the Tauri startup readiness hooks and that both sidecars are present.
+
+### 4. Build the Tauri app
 
 ```bash
 cd src-tauri
@@ -118,11 +137,11 @@ Outputs:
 
 ### How the desktop app works
 
-1. Tauri opens a webview showing `src-tauri/frontend/index.html` (animated Delta splash screen)
+1. Tauri opens the bundled Svelte frontend from `public/`
 2. The Tauri setup spawns `delta-server` as a sidecar process
 3. `delta-server` starts llama-server on the chosen port and a model management API on port + 1
-4. Once the server is reachable, the webview navigates to `http://localhost:{port}`
-5. The web UI is served by llama-server from `Contents/Resources/webui/` (bundled from `public/`)
+4. Once the server is reachable, Tauri injects `window.__DELTA_PORT__` and `window.__DELTA_MODEL_API_PORT__`
+5. The frontend uses those injected ports to reach llama-server and the model management API
 
 ## Run Locally
 
@@ -153,12 +172,12 @@ The workflow (`.github/workflows/release.yml`) runs two parallel jobs:
 | `build-cli` | CLI archives (delta + delta-server + llama-server) | macOS arm64/x86_64, Linux x86_64, Windows x64 |
 | `build-tauri` | Desktop installers (dmg, deb, AppImage, exe) | macOS arm64/x86_64, Linux x86_64, Windows x64 |
 
-After both complete, `attach-cli` uploads CLI archives + SHA-256 checksums to the GitHub Release.
+Once `build-cli` completes, `attach-cli` uploads CLI archives + SHA-256 checksums to the GitHub Release (it runs independently of `build-tauri`).
 
 ### Version bumping
 
 Update version in three places (must match):
-1. `VERSION`
+1. `version.txt`
 2. `src-tauri/tauri.conf.json` → `"version"`
 3. `src-tauri/Cargo.toml` → `version`
 

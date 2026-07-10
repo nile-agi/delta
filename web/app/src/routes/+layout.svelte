@@ -13,6 +13,7 @@
 	import { config, settingsStore } from '$lib/stores/settings.svelte';
 	import { resolveModelApiBaseUrl, resetModelApiResolution } from '$lib/utils/model-api-url';
 	import { getServerBaseUrl } from '$lib/utils/server-base-url';
+	import { ServerErrorSplash } from '$lib/components/app';
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
@@ -22,26 +23,45 @@
 	const IS_TAURI_ENV =
 		browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 	let serverReady = $state(!IS_TAURI_ENV);
+	let serverError = $state(false);
+	let serverErrorMessage = $state('');
+
+	function handleRetryConnection() {
+		serverError = false;
+		serverErrorMessage = '';
+		serverStore.fetchServerProps().then(() => {
+			if (!serverStore.error) {
+				serverReady = true;
+			} else {
+				serverError = true;
+				serverErrorMessage = serverStore.error;
+			}
+		});
+	}
 
 	$effect(() => {
 		if (!IS_TAURI_ENV) return;
-		if ((window as any).__DELTA_PORT__ != null) {
+		if ((window as any).__DELTA_PORT__ != null && !(window as any).__DELTA_SERVER_ERROR__) {
 			serverReady = true;
+			return;
+		}
+		if ((window as any).__DELTA_SERVER_ERROR__) {
+			serverError = true;
+			serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
 			return;
 		}
 		const onReady = () => {
 			resetModelApiResolution();
+			serverError = false;
 			serverReady = true;
 		};
 		const onError = () => {
 			resetModelApiResolution();
-			serverReady = true;
+			serverError = true;
+			serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
 		};
 		window.addEventListener('delta-server-ready', onReady);
 		window.addEventListener('delta-server-error', onError);
-		if ((window as any).__DELTA_PORT__ != null) {
-			serverReady = true;
-		}
 		return () => {
 			window.removeEventListener('delta-server-ready', onReady);
 			window.removeEventListener('delta-server-error', onError);
@@ -55,13 +75,15 @@
 			modelApiReady = true;
 			return;
 		}
-		const done = () => {
-			modelApiReady = true;
-		};
 		Promise.race([
-			resolveModelApiBaseUrl(),
-			new Promise<void>((resolve) => setTimeout(resolve, 3000))
-		]).then(done);
+			resolveModelApiBaseUrl().then(() => true),
+			new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000))
+		]).then((resolved) => {
+			if (!resolved) {
+				console.warn('Model API readiness check timed out after 3s, proceeding anyway');
+			}
+			modelApiReady = true;
+		});
 	});
 
 	let isChatRoute = $derived(page.route.id === '/chat/[id]');
@@ -199,7 +221,17 @@
 
 <Toaster richColors />
 
-{#if serverReady && modelApiReady}
+{#if serverError}
+	<div class="splash-screen">
+		<ServerErrorSplash
+			error={serverErrorMessage}
+			onRetry={handleRetryConnection}
+			showRetry={true}
+			showTroubleshooting={true}
+			class="h-full"
+		/>
+	</div>
+{:else if serverReady && modelApiReady}
 	<ConversationTitleUpdateDialog
 		bind:open={titleUpdateDialogOpen}
 		currentTitle={titleUpdateCurrentTitle}

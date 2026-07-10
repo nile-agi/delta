@@ -104,6 +104,7 @@ cmake --build . -j$(nproc) --target llama-server || true
 cd ../src-tauri
 chmod +x ../scripts/build-sidecars.sh
 ../scripts/build-sidecars.sh --release
+../scripts/verify-tauri-release-assets.sh
 cargo tauri build
 ```
 

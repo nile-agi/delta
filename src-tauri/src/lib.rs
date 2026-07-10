@@ -1,11 +1,11 @@
-use tauri::Manager;
-use tauri::ipc::Channel;
-use tauri_plugin_shell::ShellExt;
-use tauri_plugin_shell::process::CommandChild;
-use std::sync::Mutex;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::collections::HashMap;
+use std::sync::Mutex;
+use tauri::ipc::Channel;
+use tauri::Manager;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::ShellExt;
 
 struct ServerState {
     child: Option<CommandChild>,
@@ -15,6 +15,54 @@ struct ServerState {
 #[tauri::command]
 fn get_server_port(state: tauri::State<'_, Mutex<ServerState>>) -> u16 {
     state.lock().unwrap().port
+}
+
+fn startup_info(message: &str) {
+    log::info!("{}", message);
+    eprintln!("[Delta] {}", message);
+}
+
+fn startup_warn(message: &str) {
+    log::warn!("{}", message);
+    eprintln!("[Delta] WARN: {}", message);
+}
+
+fn startup_error(message: &str) {
+    log::error!("{}", message);
+    eprintln!("[Delta] ERROR: {}", message);
+}
+
+fn log_sidecar_events(mut rx: tauri::async_runtime::Receiver<CommandEvent>) {
+    std::thread::spawn(move || {
+        while let Some(event) = rx.blocking_recv() {
+            match event {
+                CommandEvent::Stdout(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes);
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        startup_info(&format!("delta-server stdout: {}", trimmed));
+                    }
+                }
+                CommandEvent::Stderr(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes);
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        startup_warn(&format!("delta-server stderr: {}", trimmed));
+                    }
+                }
+                CommandEvent::Error(error) => {
+                    startup_error(&format!("delta-server event error: {}", error));
+                }
+                CommandEvent::Terminated(payload) => {
+                    startup_warn(&format!(
+                        "delta-server terminated before app exit (code: {:?}, signal: {:?})",
+                        payload.code, payload.signal
+                    ));
+                }
+                _ => {}
+            }
+        }
+    });
 }
 
 struct StreamAbortFlags {
@@ -32,13 +80,17 @@ async fn stream_chat(
 ) -> Result<u16, String> {
     let abort_flag = Arc::new(AtomicBool::new(false));
     {
-        state.flags.lock().unwrap().insert(stream_id.clone(), abort_flag.clone());
+        state
+            .flags
+            .lock()
+            .unwrap()
+            .insert(stream_id.clone(), abort_flag.clone());
     }
 
     let abort = abort_flag.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<u16, String> {
         let agent = ureq::AgentBuilder::new()
-            .timeout_read(std::time::Duration::from_secs(30))
+            .timeout_read(std::time::Duration::from_secs(180))
             .build();
         let mut req = agent.post(&url);
         for (key, value) in &headers {
@@ -102,7 +154,10 @@ fn find_available_port(start: u16) -> u16 {
 
 fn get_models_dir() -> String {
     let home = dirs_next().unwrap_or_else(|| std::path::PathBuf::from("."));
-    home.join(".delta-cli").join("models").to_string_lossy().to_string()
+    home.join(".delta-cli")
+        .join("models")
+        .to_string_lossy()
+        .to_string()
 }
 
 fn dirs_next() -> Option<std::path::PathBuf> {
@@ -112,7 +167,9 @@ fn dirs_next() -> Option<std::path::PathBuf> {
     }
     #[cfg(target_os = "windows")]
     {
-        std::env::var("USERPROFILE").ok().map(std::path::PathBuf::from)
+        std::env::var("USERPROFILE")
+            .ok()
+            .map(std::path::PathBuf::from)
     }
     #[cfg(target_os = "linux")]
     {
@@ -137,8 +194,12 @@ fn wait_for_server(port: u16) -> bool {
 #[cfg(target_os = "windows")]
 fn kill_stale_server_processes() {
     use std::process::Command;
-    let _ = Command::new("taskkill").args(["/F", "/FI", "IMAGENAME eq llama-server*"]).output();
-    let _ = Command::new("taskkill").args(["/F", "/FI", "IMAGENAME eq delta-server*"]).output();
+    let _ = Command::new("taskkill")
+        .args(["/F", "/FI", "IMAGENAME eq llama-server*"])
+        .output();
+    let _ = Command::new("taskkill")
+        .args(["/F", "/FI", "IMAGENAME eq delta-server*"])
+        .output();
     std::thread::sleep(std::time::Duration::from_millis(500));
 }
 
@@ -151,6 +212,7 @@ fn kill_stale_server_processes() {
 }
 
 pub fn run() {
+    startup_info("Cleaning stale server processes before startup");
     kill_stale_server_processes();
 
     tauri::Builder::default()
@@ -169,6 +231,10 @@ pub fn run() {
 
             let server_port = find_available_port(8080);
             let model_api_port = find_available_port(server_port + 1);
+            startup_info(&format!(
+                "Selected server port {} and model API port {}",
+                server_port, model_api_port
+            ));
 
             {
                 let state = app.state::<Mutex<ServerState>>();
@@ -177,7 +243,10 @@ pub fn run() {
             }
 
             let models_dir = get_models_dir();
-            let _ = std::fs::create_dir_all(&models_dir);
+            match std::fs::create_dir_all(&models_dir) {
+                Ok(()) => startup_info(&format!("Using models directory {}", models_dir)),
+                Err(e) => startup_error(&format!("Failed to create models directory {}: {}", models_dir, e)),
+            }
 
             let shell = app_handle.shell();
             let sidecar_cmd = shell
@@ -192,26 +261,42 @@ pub fn run() {
                     &model_api_port.to_string(),
                 ]);
 
-            match sidecar_cmd.spawn() {
-                Ok((mut _rx, child)) => {
-                    log::info!(
-                        "delta-server started on port {} (model API on {})",
-                        server_port,
-                        model_api_port
-                    );
+            let sidecar_spawned = match sidecar_cmd.spawn() {
+                Ok((rx, child)) => {
+                    startup_info(&format!(
+                        "Spawned delta-server sidecar on port {} (model API on {})",
+                        server_port, model_api_port
+                    ));
+                    log_sidecar_events(rx);
                     let state = app.state::<Mutex<ServerState>>();
                     let mut s = state.lock().unwrap();
                     s.child = Some(child);
+                    true
                 }
                 Err(e) => {
-                    log::error!("Failed to start delta-server: {}", e);
+                    startup_error(&format!("Failed to spawn delta-server sidecar: {}", e));
+                    false
                 }
-            }
+            };
 
             let port = server_port;
             let mapi_port = model_api_port;
             std::thread::spawn(move || {
+                if !sidecar_spawned {
+                    startup_error("Sidecar failed to spawn — notifying frontend immediately");
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let js = format!(
+                            "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.__DELTA_SERVER_ERROR__=true;window.dispatchEvent(new CustomEvent('delta-server-error'))",
+                            port, mapi_port
+                        );
+                        let _ = window.eval(&js);
+                    }
+                    return;
+                }
+
+                startup_info(&format!("Waiting for delta-server readiness on port {}", port));
                 if wait_for_server(port) {
+                    startup_info(&format!("delta-server is reachable on port {}", port));
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let js = format!(
                             "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.dispatchEvent(new CustomEvent('delta-server-ready'))",
@@ -220,10 +305,13 @@ pub fn run() {
                         let _ = window.eval(&js);
                     }
                 } else {
-                    log::warn!("Server did not respond within timeout");
+                    startup_warn(&format!(
+                        "delta-server did not respond within 30 seconds on port {}",
+                        port
+                    ));
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let js = format!(
-                            "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.dispatchEvent(new CustomEvent('delta-server-error'))",
+                            "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.__DELTA_SERVER_ERROR__=true;window.dispatchEvent(new CustomEvent('delta-server-error'))",
                             port, mapi_port
                         );
                         let _ = window.eval(&js);

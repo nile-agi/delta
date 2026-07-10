@@ -266,12 +266,15 @@ jobs:
         shell: bash
         run: |
           test -f public/index.html || { echo "ERROR: public/index.html not found"; exit 1; }
+          chmod +x scripts/verify-tauri-release-assets.sh
+          scripts/verify-tauri-release-assets.sh --web-only
 
       - name: Build C++ sidecars
         shell: bash
         run: |
           chmod +x scripts/build-sidecars.sh
           scripts/build-sidecars.sh --release --target ${{ matrix.target }}
+          scripts/verify-tauri-release-assets.sh ${{ matrix.target }}
 
       - name: Check signing availability
         id: signing
