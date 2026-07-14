@@ -412,9 +412,22 @@ class DeltaServerWrapper {
         if (ctx_size > 0) {
             cmd += " -c " + std::to_string(ctx_size);
         }
-        // Minimal flags for compatibility; avoid --flash-attn/--jinja which some builds don't support
         if (ctx_size > 16384) {
-            cmd += " --gpu-layers 0";
+            cmd += " --flash-attn off";
+            if (ctx_size > 32768) {
+                cmd += " --gpu-layers 0";
+            }
+        } else {
+            cmd += " --flash-attn auto";
+        }
+
+        // Enable Jinja templating for models that need it (e.g. Gemma 3/4)
+        std::string alias_lower = model_alias;
+        std::string path_lower = model_path;
+        std::transform(alias_lower.begin(), alias_lower.end(), alias_lower.begin(), ::tolower);
+        std::transform(path_lower.begin(), path_lower.end(), path_lower.begin(), ::tolower);
+        if (alias_lower.find("gemma") != std::string::npos || path_lower.find("gemma") != std::string::npos) {
+            cmd += " --jinja";
         }
 
         // Optimize batch sizes for large prompt processing (like LlamaBarn)
