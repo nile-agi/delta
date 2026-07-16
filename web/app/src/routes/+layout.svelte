@@ -17,8 +17,13 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 
 	let { children } = $props();
+
+	onMount(() => {
+		document.getElementById('app-loading')?.remove();
+	});
 
 	const IS_TAURI_ENV =
 		browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
