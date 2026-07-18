@@ -178,7 +178,8 @@ class ModelAPIServer {
         // GET /api/props - Proxy to llama-server when running, else fallback (for requests to port 8081)
         server_->Get("/api/props", [this](const httplib::Request&, httplib::Response& res) {
             try {
-                httplib::Client cli("127.0.0.1", 8080);
+                int llama_port = port_ - 1;
+                httplib::Client cli("127.0.0.1", llama_port);
                 cli.set_connection_timeout(2, 0);
                 cli.set_read_timeout(2, 0);
                 auto proxy_res = cli.Get("/props");

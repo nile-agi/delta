@@ -52,6 +52,7 @@ class ChatStore {
 	errorDialogState = $state<{ type: 'timeout' | 'server'; message: string } | null>(null);
 	isInitialized = $state(false);
 	isLoading = $state(false);
+	conversationLoadedSignal = $state(0);
 	conversationLoadingStates = new SvelteMap<string, boolean>();
 	conversationStreamingStates = new SvelteMap<
 		string,
@@ -156,6 +157,7 @@ class ChatStore {
 				this.activeMessages = await DatabaseStore.getConversationMessages(convId);
 			}
 
+			this.conversationLoadedSignal++;
 			return true;
 		} catch (error) {
 			console.error('Failed to load conversation:', error);
@@ -1856,6 +1858,7 @@ export const isLoading = () => chatStore.isLoading;
 export const currentResponse = () => chatStore.currentResponse;
 export const isInitialized = () => chatStore.isInitialized;
 export const errorDialog = () => chatStore.errorDialogState;
+export const conversationLoadedSignal = () => chatStore.conversationLoadedSignal;
 
 export const createConversation = chatStore.createConversation.bind(chatStore);
 export const downloadConversation = chatStore.downloadConversation.bind(chatStore);

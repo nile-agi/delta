@@ -7,6 +7,11 @@
 namespace delta {
 namespace agent {
 
+static nlohmann::json strip_id(nlohmann::json obj) {
+    obj.erase("id");
+    return obj;
+}
+
 void register_calendar_tools() {
     auto& registry = ToolRegistry::instance();
 
@@ -36,7 +41,7 @@ void register_calendar_tools() {
                                if (id.empty())
                                    return {false, "", "Failed to create event"};
                                auto event = db.get_event(id);
-                               return {true, event.dump(), ""};
+                               return {true, strip_id(event).dump(), ""};
                            });
 
     registry.register_tool({"list_events",
@@ -52,76 +57,73 @@ void register_calendar_tools() {
                                                             args.value("limit", 50));
                                nlohmann::json result = {{"events", nlohmann::json::array()}, {"count", events.size()}};
                                for (auto& e : events)
-                                   result["events"].push_back(e);
+                                   result["events"].push_back(strip_id(e));
                                return {true, result.dump(), ""};
                            });
 
-    registry.register_tool({"delete_event",
-                            "Delete a calendar event by title or id",
-                            {{"type", "object"},
-                             {"properties",
-                              {{"id", {{"type", "string"}}},
-                               {"title", {{"type", "string"}, {"description", "Event title to search and delete"}}}}},
-                             {"required", nlohmann::json::array()}}},
-                           [](const nlohmann::json& args) -> ToolResult {
-                               auto& db = AgentDatabase::instance();
-                               std::string id = args.value("id", "");
+    registry.register_tool(
+        {"delete_event",
+         "Delete a calendar event by title",
+         {{"type", "object"},
+          {"properties", {{"title", {{"type", "string"}, {"description", "Event title to search and delete"}}}}},
+          {"required", nlohmann::json::array({"title"})}}},
+        [](const nlohmann::json& args) -> ToolResult {
+            auto& db = AgentDatabase::instance();
+            std::string id = args.value("id", "");
 
-                               if (id.empty()) {
-                                   std::string title = args.value("title", "");
-                                   if (title.empty())
-                                       return {false, "", "Provide either id or title"};
+            if (id.empty()) {
+                std::string title = args.value("title", "");
+                if (title.empty())
+                    return {false, "", "Provide either id or title"};
 
-                                   auto events = db.list_events("", "", 50);
-                                   std::vector<nlohmann::json> matches;
-                                   std::string title_lower = title;
-                                   for (auto& c : title_lower)
-                                       c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                auto events = db.list_events("", "", 50);
+                std::vector<nlohmann::json> matches;
+                std::string title_lower = title;
+                for (auto& c : title_lower)
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
-                                   for (auto& e : events) {
-                                       std::string et = e.value("title", "");
-                                       std::string et_lower = et;
-                                       for (auto& c : et_lower)
-                                           c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                                       if (et_lower.find(title_lower) != std::string::npos) {
-                                           matches.push_back(e);
-                                       }
-                                   }
+                for (auto& e : events) {
+                    std::string et = e.value("title", "");
+                    std::string et_lower = et;
+                    for (auto& c : et_lower)
+                        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    if (et_lower.find(title_lower) != std::string::npos) {
+                        matches.push_back(e);
+                    }
+                }
 
-                                   if (matches.empty())
-                                       return {false, "", "No events found matching \"" + title + "\""};
+                if (matches.empty())
+                    return {false, "", "No events found matching \"" + title + "\""};
 
-                                   if (matches.size() == 1) {
-                                       id = matches[0].value("id", "");
-                                   } else {
-                                       nlohmann::json result = {{"message", "Multiple events match. Which one?"},
-                                                                {"matches", nlohmann::json::array()}};
-                                       for (auto& m : matches) {
-                                           result["matches"].push_back({{"id", m.value("id", "")},
-                                                                        {"title", m.value("title", "")},
-                                                                        {"start_time", m.value("start_time", "")}});
-                                       }
-                                       return {true, result.dump(), ""};
-                                   }
-                               }
+                if (matches.size() == 1) {
+                    id = matches[0].value("id", "");
+                } else {
+                    nlohmann::json result = {{"message", "Multiple events match. Which one?"},
+                                             {"matches", nlohmann::json::array()}};
+                    for (auto& m : matches) {
+                        result["matches"].push_back(
+                            {{"title", m.value("title", "")}, {"start_time", m.value("start_time", "")}});
+                    }
+                    return {true, result.dump(), ""};
+                }
+            }
 
-                               if (!db.delete_event(id))
-                                   return {false, "", "Event not found"};
-                               return {true, R"({"deleted": true})", ""};
-                           });
+            if (!db.delete_event(id))
+                return {false, "", "Event not found"};
+            return {true, R"({"deleted": true})", ""};
+        });
 
     registry.register_tool({"update_event",
                             "Update a calendar event's time, title, or details. Use title to find the event.",
                             {{"type", "object"},
                              {"properties",
-                              {{"id", {{"type", "string"}}},
-                               {"title", {{"type", "string"}, {"description", "Event title to find"}}},
+                              {{"title", {{"type", "string"}, {"description", "Event title to find"}}},
                                {"new_title", {{"type", "string"}, {"description", "New title for the event"}}},
                                {"start_time", {{"type", "string"}, {"description", "New start time ISO 8601"}}},
                                {"end_time", {{"type", "string"}, {"description", "New end time ISO 8601"}}},
                                {"description", {{"type", "string"}}},
                                {"location", {{"type", "string"}}}}},
-                             {"required", nlohmann::json::array()}}},
+                             {"required", nlohmann::json::array({"title"})}}},
                            [](const nlohmann::json& args) -> ToolResult {
                                auto& db = AgentDatabase::instance();
                                std::string id = args.value("id", "");
@@ -156,8 +158,7 @@ void register_calendar_tools() {
                                        nlohmann::json result = {{"message", "Multiple events match. Which one?"},
                                                                 {"matches", nlohmann::json::array()}};
                                        for (auto& m : matches) {
-                                           result["matches"].push_back({{"id", m.value("id", "")},
-                                                                        {"title", m.value("title", "")},
+                                           result["matches"].push_back({{"title", m.value("title", "")},
                                                                         {"start_time", m.value("start_time", "")}});
                                        }
                                        return {true, result.dump(), ""};
@@ -183,7 +184,7 @@ void register_calendar_tools() {
                                if (!db.update_event(id, update_data))
                                    return {false, "", "Event not found or update failed"};
                                auto event = db.get_event(id);
-                               return {true, event.dump(), ""};
+                               return {true, strip_id(event).dump(), ""};
                            });
 
     registry.register_tool(

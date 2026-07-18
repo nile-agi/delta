@@ -126,6 +126,10 @@ class ServerStore {
 		return this._serverProps?.modalities?.audio ?? false;
 	}
 
+	get supportsTools(): boolean {
+		return this._serverProps?.chat_template_caps?.supports_tools ?? false;
+	}
+
 	get slotsEndpointAvailable(): boolean | null {
 		return this._slotsEndpointAvailable;
 	}
@@ -330,3 +334,4 @@ export const supportsVision = () => serverStore.supportsVision;
 export const supportsAudio = () => serverStore.supportsAudio;
 export const slotsEndpointAvailable = () => serverStore.slotsEndpointAvailable;
 export const serverDefaultParams = () => serverStore.serverDefaultParams;
+export const serverSupportsTools = () => serverStore.supportsTools;

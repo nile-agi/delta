@@ -4,6 +4,7 @@ import { slotsService } from '$lib/services/slots';
 import { persisted } from '$lib/stores/persisted.svelte';
 import { SELECTED_MODEL_LOCALSTORAGE_KEY } from '$lib/constants/localstorage-keys';
 import type { ModelOption } from '$lib/types/models';
+import { serverStore, serverSupportsTools } from '$lib/stores/server.svelte';
 
 type PersistedModelSelection = {
 	id: string;
@@ -233,6 +234,8 @@ class ModelsStore {
 				if (useResponse.loaded) {
 					// Server restarted with new model (same as /use in terminal). Refetch so main API shows current model.
 					await this.fetch(true);
+					// Refresh server props to pick up runtime chat_template_caps (tool support detection).
+					serverStore.fetchServerProps({ silent: true });
 					// Update Context stat immediately to loaded model's n_ctx (from llama-server -c).
 					if (useResponse.ctx_size != null && useResponse.ctx_size > 0) {
 						slotsService.setLoadedContextTotal(useResponse.ctx_size);
@@ -256,6 +259,7 @@ class ModelsStore {
 									const { forceModelApiSeparatePort } = await import('$lib/utils/model-api-url');
 									forceModelApiSeparatePort();
 									await this.fetch(true);
+									serverStore.fetchServerProps({ silent: true });
 									return;
 								}
 							} catch {
@@ -316,7 +320,7 @@ export const selectedModelId = () => modelsStore.selectedModelId;
 export const selectedModelName = () => modelsStore.selectedModelName;
 export const selectedModelOption = () => modelsStore.selectedModel;
 export const modelLoadedOnServer = () => modelsStore.modelLoadedOnServer;
-export const selectedModelSupportsTools = () => modelsStore.selectedModelSupportsTools;
+export const selectedModelSupportsTools = () => modelsStore.selectedModelSupportsTools || serverSupportsTools();
 
 export const fetchModels = modelsStore.fetch.bind(modelsStore);
 export const selectModel = modelsStore.select.bind(modelsStore);

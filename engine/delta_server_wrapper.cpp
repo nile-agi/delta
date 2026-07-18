@@ -422,15 +422,6 @@ class DeltaServerWrapper {
             cmd += " --flash-attn auto";
         }
 
-        // Enable Jinja templating for models that need it (e.g. Gemma 3/4)
-        std::string alias_lower = model_alias;
-        std::string path_lower = model_path;
-        std::transform(alias_lower.begin(), alias_lower.end(), alias_lower.begin(), ::tolower);
-        std::transform(path_lower.begin(), path_lower.end(), path_lower.begin(), ::tolower);
-        if (alias_lower.find("gemma") != std::string::npos || path_lower.find("gemma") != std::string::npos) {
-            cmd += " --jinja";
-        }
-
         // Optimize batch sizes for large prompt processing (like LlamaBarn)
         // Larger ubatch-size significantly improves prompt processing speed for large prompts
         // Default ubatch-size is 512, but 1024-2048 provides better throughput for 20k+ token prompts

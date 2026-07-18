@@ -6,7 +6,7 @@
 #include <curl/curl.h>
 #include <iostream>
 #include <set>
-#include <sstream>
+#include <vector>
 
 namespace delta {
 namespace agent {
@@ -32,17 +32,26 @@ std::string AgentLoop::build_system_prompt() {
 #else
     localtime_r(&now, &t_local);
 #endif
-    char date_buf[64];
+    char date_buf[64], iso_date_buf[16], iso_datetime_buf[32];
     strftime(date_buf, sizeof(date_buf), "%A, %B %d, %Y at %H:%M", &t_local);
+    strftime(iso_date_buf, sizeof(iso_date_buf), "%Y-%m-%d", &t_local);
+    strftime(iso_datetime_buf, sizeof(iso_datetime_buf), "%Y-%m-%dT%H:%M", &t_local);
 
     std::string prompt =
-        "You are Delta, an offline AI assistant. Today is " + std::string(date_buf) +
-        ".\n"
-        "You can create, update, delete, and list calendar events and tasks. "
-        "When the user asks to do any of these, act immediately using the title or details they provide. "
-        "Never ask the user for IDs or internal identifiers. "
-        "Never mention tools, functions, or capabilities you lack — just help naturally. "
-        "Keep responses brief and friendly.";
+        "You are Delta, an offline AI assistant.\n"
+        "Today: " +
+        std::string(date_buf) + " (ISO: " + std::string(iso_date_buf) +
+        ")\n\n"
+        "RULES:\n"
+        "1. ACT IMMEDIATELY. Call tools right away — never ask the user for information you can infer.\n"
+        "2. \"today\" = " +
+        std::string(iso_date_buf) +
+        ", \"tomorrow\" = add 1 day. "
+        "If no time is given for an event, use 09:00. Format: YYYY-MM-DDTHH:MM.\n"
+        "3. \"cancel\" a task = update its status to \"cancelled\".\n"
+        "4. If the user asks for multiple things, call ALL the tools needed in one response.\n"
+        "5. Never show IDs. Never mention tools or functions. Just do the work.\n"
+        "6. Keep responses brief and friendly.";
 
     // Inject context summary of upcoming events and pending tasks
     auto& db = AgentDatabase::instance();
@@ -263,6 +272,8 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
     int total_tool_calls = 0;
     // Track executed tool calls to prevent duplicates across iterations
     std::set<std::string> executed_tool_keys;
+    // Collect summaries from write tools within a single batch
+    std::vector<std::string> write_summaries;
 
     bool tools_supported = supports_tools_;
     tool_choice_ = "required";
@@ -271,6 +282,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
               << std::endl;
 
     for (int iteration = 0; iteration < max_iterations_; iteration++) {
+        write_summaries.clear();
         if (iteration > 0) {
             tool_choice_ = "auto";
         }
@@ -419,12 +431,10 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
 
                 messages.push_back({{"role", "tool"}, {"tool_call_id", tool_call_id}, {"content", content}});
 
-                // After a write tool, return immediately with a friendly summary
-                // instead of making another slow LLM call
+                // Build a friendly summary for write tools
                 if (result.success &&
                     (tool_name.find("create") != std::string::npos || tool_name.find("delete") != std::string::npos ||
                      tool_name.find("update") != std::string::npos)) {
-                    std::cerr << "[delta-agent] write tool done, returning result directly" << std::endl;
                     std::string summary;
                     try {
                         auto j = nlohmann::json::parse(content);
@@ -479,8 +489,20 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
                     } catch (...) {
                         summary = content;
                     }
-                    return {true, summary, total_tool_calls, ""};
+                    write_summaries.push_back(summary);
+                    std::cerr << "[delta-agent] write tool done: " << summary << std::endl;
                 }
+            }
+
+            // If we executed write tools, return combined summary instead of another LLM call
+            if (!write_summaries.empty()) {
+                std::string combined;
+                for (size_t i = 0; i < write_summaries.size(); i++) {
+                    if (i > 0)
+                        combined += "\n";
+                    combined += write_summaries[i];
+                }
+                return {true, combined, total_tool_calls, ""};
             }
             continue;
         }

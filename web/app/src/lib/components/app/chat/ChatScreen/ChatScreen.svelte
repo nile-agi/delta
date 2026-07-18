@@ -15,13 +15,13 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import {
 		AUTO_SCROLL_AT_BOTTOM_THRESHOLD,
-		AUTO_SCROLL_INTERVAL,
-		INITIAL_SCROLL_DELAY
+		AUTO_SCROLL_INTERVAL
 	} from '$lib/constants/auto-scroll';
 	import { config } from '$lib/stores/settings.svelte';
 	import {
 		activeMessages,
 		activeConversation,
+		conversationLoadedSignal,
 		deleteConversation,
 		dismissErrorDialog,
 		errorDialog,
@@ -40,7 +40,7 @@
 	import { isFileTypeSupported } from '$lib/utils/file-type';
 	import { filterFilesByModalities } from '$lib/utils/modality-file-validation';
 	import { processFilesToChatUploaded } from '$lib/utils/process-uploaded-files';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { fade, fly, slide } from 'svelte/transition';
 	import { Trash2 } from '@lucide/svelte';
 	import ChatScreenDragOverlay from './ChatScreenDragOverlay.svelte';
@@ -249,15 +249,35 @@
 		});
 	}
 
+	function forceScrollToBottom() {
+		userScrolledUp = false;
+		autoScrollEnabled = true;
+		lastScrollTop = 0;
+		tick().then(() => {
+			scrollChatToBottom('smooth');
+			requestAnimationFrame(() => {
+				scrollChatToBottom('smooth');
+				setTimeout(() => scrollChatToBottom('smooth'), 100);
+			});
+		});
+	}
+
+	$effect(() => {
+		const _signal = conversationLoadedSignal();
+		if (_signal > 0 && !currentConfig.disableAutoScroll) {
+			forceScrollToBottom();
+		}
+	});
+
 	afterNavigate(() => {
 		if (!currentConfig.disableAutoScroll) {
-			setTimeout(() => scrollChatToBottom('instant'), INITIAL_SCROLL_DELAY);
+			forceScrollToBottom();
 		}
 	});
 
 	onMount(() => {
 		if (!currentConfig.disableAutoScroll) {
-			setTimeout(() => scrollChatToBottom('instant'), INITIAL_SCROLL_DELAY);
+			forceScrollToBottom();
 		}
 	});
 
