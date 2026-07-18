@@ -774,7 +774,6 @@ export class ChatService {
 			if (response.ok) {
 				return await response.json();
 			}
-			// When main server (8080) does not serve /props it returns 404 "File Not Found" - use fallback
 			if (response.status === 404) {
 				const fallback = await fetch(`${getModelApiBaseUrl()}/api/props`, { headers });
 				if (fallback.ok) {
@@ -783,6 +782,18 @@ export class ChatService {
 			}
 			throw new Error(`Failed to fetch server props: ${response.status}`);
 		} catch (error) {
+			if (error instanceof SyntaxError) {
+				console.error('Malformed JSON from server props:', error);
+				throw error;
+			}
+			// Network/CORS error — fall back to Model API (has Access-Control-Allow-Origin: *)
+			try {
+				const mapiBase = getModelApiBaseUrl() || `http://127.0.0.1:${(window as any).__DELTA_MODEL_API_PORT__ ?? 8081}`;
+				const fallback = await fetch(`${mapiBase}/api/props`, { headers });
+				if (fallback.ok) {
+					return await fallback.json();
+				}
+			} catch {}
 			console.error('Error fetching server props:', error);
 			throw error;
 		}

@@ -194,7 +194,7 @@ After both complete, `attach-cli` uploads CLI archives + SHA-256 checksums to th
 ### Version bumping
 
 Update version in three places (must match):
-1. `VERSION`
+1. `version.txt`
 2. `src-tauri/tauri.conf.json` -> `"version"`
 3. `src-tauri/Cargo.toml` -> `version`
 

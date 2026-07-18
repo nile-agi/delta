@@ -13,6 +13,7 @@
 	import { config, settingsStore } from '$lib/stores/settings.svelte';
 	import { resolveModelApiBaseUrl, resetModelApiResolution } from '$lib/utils/model-api-url';
 	import { getServerBaseUrl } from '$lib/utils/server-base-url';
+	import { ServerErrorSplash } from '$lib/components/app';
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
@@ -22,27 +23,79 @@
 	const IS_TAURI_ENV =
 		browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 	let serverReady = $state(!IS_TAURI_ENV);
+	let serverError = $state(false);
+	let serverErrorMessage = $state('');
+
+	function handleRetryConnection() {
+		serverError = false;
+		serverErrorMessage = '';
+		serverStore.fetchServerProps().then(() => {
+			if (!serverStore.error) {
+				serverReady = true;
+			} else {
+				serverError = true;
+				serverErrorMessage = serverStore.error;
+			}
+		});
+	}
 
 	$effect(() => {
 		if (!IS_TAURI_ENV) return;
-		if ((window as any).__DELTA_PORT__ != null) {
+		if ((window as any).__DELTA_PORT__ != null && !(window as any).__DELTA_SERVER_ERROR__) {
 			serverReady = true;
+			return;
+		}
+		if ((window as any).__DELTA_SERVER_ERROR__) {
+			serverError = true;
+			serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
 			return;
 		}
 		const onReady = () => {
 			resetModelApiResolution();
+			serverError = false;
 			serverReady = true;
 		};
 		const onError = () => {
 			resetModelApiResolution();
-			serverReady = true;
+			serverError = true;
+			serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
 		};
 		window.addEventListener('delta-server-ready', onReady);
 		window.addEventListener('delta-server-error', onError);
-		if ((window as any).__DELTA_PORT__ != null) {
-			serverReady = true;
-		}
+
+		// Poll via Tauri command as fallback — handles the race where
+		// window.eval() fires before SvelteKit hydrates and the event is lost
+		let pollFailures = 0;
+		const poll = setInterval(async () => {
+			try {
+				const { invoke } = await import('@tauri-apps/api/core');
+				const [port, mapiPort, ready, error] = await invoke<[number, number, boolean, boolean]>('get_server_status');
+				pollFailures = 0;
+				if (ready) {
+					(window as any).__DELTA_PORT__ = port;
+					(window as any).__DELTA_MODEL_API_PORT__ = mapiPort;
+					resetModelApiResolution();
+					serverError = false;
+					serverReady = true;
+					clearInterval(poll);
+				} else if (error) {
+					serverError = true;
+					serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
+					clearInterval(poll);
+				}
+			} catch (e) {
+				pollFailures++;
+				if (pollFailures >= 60) {
+					console.error('[Delta] IPC poll failed 60 times, giving up:', e);
+					serverError = true;
+					serverErrorMessage = 'Unable to communicate with the server process.';
+					clearInterval(poll);
+				}
+			}
+		}, 500);
+
 		return () => {
+			clearInterval(poll);
 			window.removeEventListener('delta-server-ready', onReady);
 			window.removeEventListener('delta-server-error', onError);
 		};
@@ -55,13 +108,26 @@
 			modelApiReady = true;
 			return;
 		}
-		const done = () => {
-			modelApiReady = true;
-		};
 		Promise.race([
-			resolveModelApiBaseUrl(),
-			new Promise<void>((resolve) => setTimeout(resolve, 3000))
-		]).then(done);
+			resolveModelApiBaseUrl().then(() => true),
+			new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000))
+		]).then((resolved) => {
+			if (!resolved) {
+				console.warn('Model API readiness check timed out after 3s, proceeding anyway');
+			}
+			modelApiReady = true;
+		});
+	});
+
+	$effect(() => {
+		if ((serverReady && modelApiReady) || serverError) {
+			const el = document.getElementById('app-loading');
+			if (el) {
+				el.style.transition = 'opacity 0.3s';
+				el.style.opacity = '0';
+				setTimeout(() => el.remove(), 400);
+			}
+		}
 	});
 
 	let isChatRoute = $derived(page.route.id === '/chat/[id]');
@@ -174,12 +240,11 @@
 			fetch(`${getServerBaseUrl()}/props`, { headers })
 				.then((response) => {
 					if (response.status === 401 || response.status === 403) {
-						window.location.reload();
+						serverError = true;
+						serverErrorMessage = 'Access denied — check your API key settings.';
 					}
 				})
-				.catch((e) => {
-					console.error('Error checking API key:', e);
-				});
+				.catch(() => {});
 		}
 	});
 
@@ -200,7 +265,17 @@
 
 <Toaster richColors />
 
-{#if serverReady && modelApiReady}
+{#if serverError}
+	<div class="splash-screen">
+		<ServerErrorSplash
+			error={serverErrorMessage}
+			onRetry={handleRetryConnection}
+			showRetry={true}
+			showTroubleshooting={true}
+			class="h-full"
+		/>
+	</div>
+{:else if serverReady && modelApiReady}
 	<ConversationTitleUpdateDialog
 		bind:open={titleUpdateDialogOpen}
 		currentTitle={titleUpdateCurrentTitle}

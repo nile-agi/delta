@@ -1,20 +1,77 @@
-use tauri::Manager;
-use tauri::ipc::Channel;
-use tauri_plugin_shell::ShellExt;
-use tauri_plugin_shell::process::CommandChild;
-use std::sync::Mutex;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::collections::HashMap;
+use std::sync::Mutex;
+use tauri::ipc::Channel;
+use tauri::Manager;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::ShellExt;
 
 struct ServerState {
     child: Option<CommandChild>,
     port: u16,
+    model_api_port: u16,
+    ready: bool,
+    error: bool,
 }
 
 #[tauri::command]
 fn get_server_port(state: tauri::State<'_, Mutex<ServerState>>) -> u16 {
-    state.lock().unwrap().port
+    state.lock().unwrap_or_else(|e| e.into_inner()).port
+}
+
+#[tauri::command]
+fn get_server_status(state: tauri::State<'_, Mutex<ServerState>>) -> (u16, u16, bool, bool) {
+    let s = state.lock().unwrap_or_else(|e| e.into_inner());
+    (s.port, s.model_api_port, s.ready, s.error)
+}
+
+fn startup_info(message: &str) {
+    log::info!("{}", message);
+    eprintln!("[Delta] {}", message);
+}
+
+fn startup_warn(message: &str) {
+    log::warn!("{}", message);
+    eprintln!("[Delta] WARN: {}", message);
+}
+
+fn startup_error(message: &str) {
+    log::error!("{}", message);
+    eprintln!("[Delta] ERROR: {}", message);
+}
+
+fn log_sidecar_events(mut rx: tauri::async_runtime::Receiver<CommandEvent>) {
+    std::thread::spawn(move || {
+        while let Some(event) = rx.blocking_recv() {
+            match event {
+                CommandEvent::Stdout(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes);
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        startup_info(&format!("delta-server stdout: {}", trimmed));
+                    }
+                }
+                CommandEvent::Stderr(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes);
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        startup_warn(&format!("delta-server stderr: {}", trimmed));
+                    }
+                }
+                CommandEvent::Error(error) => {
+                    startup_error(&format!("delta-server event error: {}", error));
+                }
+                CommandEvent::Terminated(payload) => {
+                    startup_warn(&format!(
+                        "delta-server terminated before app exit (code: {:?}, signal: {:?})",
+                        payload.code, payload.signal
+                    ));
+                }
+                _ => {}
+            }
+        }
+    });
 }
 
 struct StreamAbortFlags {
@@ -32,7 +89,11 @@ async fn stream_chat(
 ) -> Result<u16, String> {
     let abort_flag = Arc::new(AtomicBool::new(false));
     {
-        state.flags.lock().unwrap().insert(stream_id.clone(), abort_flag.clone());
+        state
+            .flags
+            .lock()
+            .unwrap()
+            .insert(stream_id.clone(), abort_flag.clone());
     }
 
     let abort = abort_flag.clone();
@@ -80,13 +141,13 @@ async fn stream_chat(
     })
     .await;
 
-    state.flags.lock().unwrap().remove(&stream_id);
+    state.flags.lock().unwrap_or_else(|e| e.into_inner()).remove(&stream_id);
     result.map_err(|_| "Stream task panicked".to_string())?
 }
 
 #[tauri::command]
 fn abort_stream(state: tauri::State<'_, StreamAbortFlags>, stream_id: String) {
-    if let Some(flag) = state.flags.lock().unwrap().get(&stream_id) {
+    if let Some(flag) = state.flags.lock().unwrap_or_else(|e| e.into_inner()).get(&stream_id) {
         flag.store(true, Ordering::Relaxed);
     }
 }
@@ -102,7 +163,10 @@ fn find_available_port(start: u16) -> u16 {
 
 fn get_models_dir() -> String {
     let home = dirs_next().unwrap_or_else(|| std::path::PathBuf::from("."));
-    home.join(".delta-cli").join("models").to_string_lossy().to_string()
+    home.join(".delta-cli")
+        .join("models")
+        .to_string_lossy()
+        .to_string()
 }
 
 fn dirs_next() -> Option<std::path::PathBuf> {
@@ -112,7 +176,9 @@ fn dirs_next() -> Option<std::path::PathBuf> {
     }
     #[cfg(target_os = "windows")]
     {
-        std::env::var("USERPROFILE").ok().map(std::path::PathBuf::from)
+        std::env::var("USERPROFILE")
+            .ok()
+            .map(std::path::PathBuf::from)
     }
     #[cfg(target_os = "linux")]
     {
@@ -123,11 +189,15 @@ fn dirs_next() -> Option<std::path::PathBuf> {
 fn wait_for_server(port: u16) -> bool {
     for _ in 0..120 {
         if let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", port)) {
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .ok();
             use std::io::{Read, Write};
             let _ = stream.write_all(b"GET /props HTTP/1.0\r\nHost: localhost\r\n\r\n");
             let mut buf = [0u8; 64];
-            let _ = stream.read(&mut buf);
-            return true;
+            if stream.read(&mut buf).is_ok() {
+                return true;
+            }
         }
         std::thread::sleep(std::time::Duration::from_millis(250));
     }
@@ -137,8 +207,12 @@ fn wait_for_server(port: u16) -> bool {
 #[cfg(target_os = "windows")]
 fn kill_stale_server_processes() {
     use std::process::Command;
-    let _ = Command::new("taskkill").args(["/F", "/FI", "IMAGENAME eq llama-server*"]).output();
-    let _ = Command::new("taskkill").args(["/F", "/FI", "IMAGENAME eq delta-server*"]).output();
+    let _ = Command::new("taskkill")
+        .args(["/F", "/IM", "llama-server*"])
+        .output();
+    let _ = Command::new("taskkill")
+        .args(["/F", "/IM", "delta-server*"])
+        .output();
     std::thread::sleep(std::time::Duration::from_millis(500));
 }
 
@@ -151,6 +225,7 @@ fn kill_stale_server_processes() {
 }
 
 pub fn run() {
+    startup_info("Cleaning stale server processes before startup");
     kill_stale_server_processes();
 
     tauri::Builder::default()
@@ -159,25 +234,36 @@ pub fn run() {
         .manage(Mutex::new(ServerState {
             child: None,
             port: 8080,
+            model_api_port: 8081,
+            ready: false,
+            error: false,
         }))
         .manage(StreamAbortFlags {
             flags: Mutex::new(HashMap::new()),
         })
-        .invoke_handler(tauri::generate_handler![get_server_port, stream_chat, abort_stream])
+        .invoke_handler(tauri::generate_handler![get_server_port, get_server_status, stream_chat, abort_stream])
         .setup(|app| {
             let app_handle = app.handle().clone();
 
             let server_port = find_available_port(8080);
             let model_api_port = find_available_port(server_port + 1);
+            startup_info(&format!(
+                "Selected server port {} and model API port {}",
+                server_port, model_api_port
+            ));
 
             {
                 let state = app.state::<Mutex<ServerState>>();
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 s.port = server_port;
+                s.model_api_port = model_api_port;
             }
 
             let models_dir = get_models_dir();
-            let _ = std::fs::create_dir_all(&models_dir);
+            match std::fs::create_dir_all(&models_dir) {
+                Ok(()) => startup_info(&format!("Using models directory {}", models_dir)),
+                Err(e) => startup_error(&format!("Failed to create models directory {}: {}", models_dir, e)),
+            }
 
             let shell = app_handle.shell();
             let sidecar_cmd = shell
@@ -192,41 +278,77 @@ pub fn run() {
                     &model_api_port.to_string(),
                 ]);
 
-            match sidecar_cmd.spawn() {
-                Ok((mut _rx, child)) => {
-                    log::info!(
-                        "delta-server started on port {} (model API on {})",
-                        server_port,
-                        model_api_port
-                    );
+            let sidecar_spawned = match sidecar_cmd.spawn() {
+                Ok((rx, child)) => {
+                    startup_info(&format!(
+                        "Spawned delta-server sidecar on port {} (model API on {})",
+                        server_port, model_api_port
+                    ));
+                    log_sidecar_events(rx);
                     let state = app.state::<Mutex<ServerState>>();
-                    let mut s = state.lock().unwrap();
+                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     s.child = Some(child);
+                    true
                 }
                 Err(e) => {
-                    log::error!("Failed to start delta-server: {}", e);
+                    startup_error(&format!("Failed to spawn delta-server sidecar: {}", e));
+                    false
                 }
-            }
+            };
 
             let port = server_port;
             let mapi_port = model_api_port;
             std::thread::spawn(move || {
-                if wait_for_server(port) {
+                if !sidecar_spawned {
+                    startup_error("Sidecar failed to spawn — notifying frontend immediately");
+                    if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
+                        s.error = true;
+                    }
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let js = format!(
+                            "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.__DELTA_SERVER_ERROR__=true;window.dispatchEvent(new CustomEvent('delta-server-error'))",
+                            port, mapi_port
+                        );
+                        if let Err(e) = window.eval(&js) {
+                            startup_error(&format!("Failed to inject error state: {}", e));
+                        }
+                    }
+                    return;
+                }
+
+                // Wait for Model API server (starts quickly, always available)
+                // rather than llama-server (may take 30s+ to load a model)
+                startup_info(&format!("Waiting for Model API readiness on port {}", mapi_port));
+                if wait_for_server(mapi_port) {
+                    startup_info(&format!("Model API is reachable on port {}", mapi_port));
+                    if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
+                        s.ready = true;
+                    }
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let js = format!(
                             "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.dispatchEvent(new CustomEvent('delta-server-ready'))",
                             port, mapi_port
                         );
-                        let _ = window.eval(&js);
+                        if let Err(e) = window.eval(&js) {
+                            startup_error(&format!("Failed to inject ports: {}", e));
+                        }
                     }
                 } else {
-                    log::warn!("Server did not respond within timeout");
+                    startup_warn(&format!(
+                        "Model API did not respond within 30 seconds on port {}",
+                        mapi_port
+                    ));
+                    if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
+                        s.error = true;
+                    }
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let js = format!(
-                            "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.dispatchEvent(new CustomEvent('delta-server-error'))",
+                            "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.__DELTA_SERVER_ERROR__=true;window.dispatchEvent(new CustomEvent('delta-server-error'))",
                             port, mapi_port
                         );
-                        let _ = window.eval(&js);
+                        if let Err(e) = window.eval(&js) {
+                            startup_error(&format!("Failed to inject error state: {}", e));
+                        }
                     }
                 }
             });
@@ -238,7 +360,7 @@ pub fn run() {
                 let app = window.app_handle();
                 let state = app.state::<Mutex<ServerState>>();
                 let child = {
-                    let mut s = state.lock().unwrap();
+                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     s.child.take()
                 };
                 if let Some(child) = child {

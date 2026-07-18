@@ -12,6 +12,13 @@ export async function validateApiKey(fetch: typeof globalThis.fetch): Promise<vo
 		return;
 	}
 
+	const baseUrl = getServerBaseUrl();
+
+	// In Tauri, the server port is injected after startup — skip until available
+	if ('__TAURI_INTERNALS__' in window && !baseUrl) {
+		return;
+	}
+
 	try {
 		const apiKey = config().apiKey;
 
@@ -23,7 +30,7 @@ export async function validateApiKey(fetch: typeof globalThis.fetch): Promise<vo
 			headers.Authorization = `Bearer ${apiKey}`;
 		}
 
-		const response = await fetch(`${getServerBaseUrl()}/props`, { headers });
+		const response = await fetch(`${baseUrl}/props`, { headers });
 
 		if (!response.ok) {
 			if (response.status === 401 || response.status === 403) {

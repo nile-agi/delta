@@ -20,9 +20,7 @@ const config = {
 			precompress: false,
 			strict: true
 		}),
-		output: {
-			bundleStrategy: 'inline'
-		},
+		output: {},
 		alias: {
 			$styles: 'src/styles'
 		}

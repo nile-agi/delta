@@ -393,6 +393,18 @@
           "markdownDescription": "Allows the abort_stream command for stopping a streaming chat request."
         },
         {
+          "description": "Allows the get_server_port command.",
+          "type": "string",
+          "const": "allow-get-server-port",
+          "markdownDescription": "Allows the get_server_port command."
+        },
+        {
+          "description": "Allows the get_server_status command.",
+          "type": "string",
+          "const": "allow-get-server-status",
+          "markdownDescription": "Allows the get_server_status command."
+        },
+        {
           "description": "Allows the stream_chat command for streaming chat completions via Tauri IPC.",
           "type": "string",
           "const": "allow-stream-chat",
@@ -403,6 +415,18 @@
           "type": "string",
           "const": "deny-abort-stream",
           "markdownDescription": "Denies the abort_stream command."
+        },
+        {
+          "description": "Denies the get_server_port command.",
+          "type": "string",
+          "const": "deny-get-server-port",
+          "markdownDescription": "Denies the get_server_port command."
+        },
+        {
+          "description": "Denies the get_server_status command.",
+          "type": "string",
+          "const": "deny-get-server-status",
+          "markdownDescription": "Denies the get_server_status command."
         },
         {
           "description": "Denies the stream_chat command.",
