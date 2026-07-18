@@ -5,7 +5,6 @@
 #include <iostream>
 #include <mutex>
 #include <random>
-#include <sstream>
 
 namespace delta {
 namespace agent {
@@ -243,9 +242,9 @@ std::vector<nlohmann::json> AgentDatabase::list_events(const std::string& start,
                       "FROM calendar_events";
     std::vector<std::string> conditions;
     if (!start.empty())
-        conditions.push_back("start_time >= ?");
+        conditions.push_back("date(start_time) >= date(?)");
     if (!end.empty())
-        conditions.push_back("start_time <= ?");
+        conditions.push_back("date(start_time) <= date(?)");
     if (!conditions.empty()) {
         sql += " WHERE ";
         for (size_t i = 0; i < conditions.size(); i++) {

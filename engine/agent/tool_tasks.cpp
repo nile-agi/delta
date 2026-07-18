@@ -15,48 +15,58 @@ static nlohmann::json strip_id(nlohmann::json obj) {
 void register_task_tools() {
     auto& registry = ToolRegistry::instance();
 
-    registry.register_tool({"create_task",
-                            "Create a task",
+    registry.register_tool(
+        {"create_task",
+         "Create a new task or to-do item. Use when the user wants to add, remember, or track something.",
+         {{"type", "object"},
+          {"properties",
+           {{"title", {{"type", "string"}, {"description", "What the task is about"}}},
+            {"priority",
+             {{"type", "string"},
+              {"enum", {"low", "medium", "high", "urgent"}},
+              {"description", "Defaults to medium if not specified"}}},
+            {"due_date", {{"type", "string"}, {"description", "Due date in YYYY-MM-DD format"}}}}},
+          {"required", nlohmann::json::array({"title"})}}},
+        [](const nlohmann::json& args) -> ToolResult {
+            auto& db = AgentDatabase::instance();
+            std::string id = db.create_task(args);
+            if (id.empty())
+                return {false, "", "Failed to create task"};
+            auto task = db.get_task(id);
+            return {true, strip_id(task).dump(), ""};
+        });
+
+    registry.register_tool({"list_tasks",
+                            "List the user's tasks. Use when user asks to see, show, or check their tasks or to-dos.",
                             {{"type", "object"},
                              {"properties",
-                              {{"title", {{"type", "string"}}},
-                               {"priority", {{"type", "string"}, {"enum", {"low", "medium", "high", "urgent"}}}},
-                               {"due_date", {{"type", "string"}, {"description", "YYYY-MM-DD"}}}}},
-                             {"required", nlohmann::json::array({"title"})}}},
+                              {{"status",
+                                {{"type", "string"},
+                                 {"enum", {"pending", "in_progress", "completed", "cancelled"}},
+                                 {"description", "Filter by status. Omit to show all active tasks."}}}}},
+                             {"required", nlohmann::json::array()}}},
                            [](const nlohmann::json& args) -> ToolResult {
                                auto& db = AgentDatabase::instance();
-                               std::string id = db.create_task(args);
-                               if (id.empty())
-                                   return {false, "", "Failed to create task"};
-                               auto task = db.get_task(id);
-                               return {true, strip_id(task).dump(), ""};
+                               auto tasks = db.list_tasks(args.value("status", ""), args.value("priority", ""),
+                                                          args.value("limit", 50), args.value("tags", ""));
+                               nlohmann::json result = {{"tasks", nlohmann::json::array()}, {"count", tasks.size()}};
+                               for (auto& t : tasks)
+                                   result["tasks"].push_back(strip_id(t));
+                               return {true, result.dump(), ""};
                            });
 
     registry.register_tool(
-        {"list_tasks",
-         "List tasks",
-         {{"type", "object"},
-          {"properties",
-           {{"status", {{"type", "string"}, {"enum", {"pending", "in_progress", "completed", "cancelled"}}}}}},
-          {"required", nlohmann::json::array()}}},
-        [](const nlohmann::json& args) -> ToolResult {
-            auto& db = AgentDatabase::instance();
-            auto tasks = db.list_tasks(args.value("status", ""), args.value("priority", ""), args.value("limit", 50),
-                                       args.value("tags", ""));
-            nlohmann::json result = {{"tasks", nlohmann::json::array()}, {"count", tasks.size()}};
-            for (auto& t : tasks)
-                result["tasks"].push_back(strip_id(t));
-            return {true, result.dump(), ""};
-        });
-
-    registry.register_tool(
         {"update_task",
-         "Update a task status or details. Use title to find the task.",
+         "Update a task: mark as done/completed, cancel, change priority, rename, or set due date. Use title to find "
+         "it.",
          {{"type", "object"},
           {"properties",
-           {{"title", {{"type", "string"}, {"description", "Task title to find"}}},
-            {"new_title", {{"type", "string"}, {"description", "New title for the task"}}},
-            {"status", {{"type", "string"}, {"enum", {"pending", "in_progress", "completed", "cancelled"}}}},
+           {{"title", {{"type", "string"}, {"description", "Current task title (or partial match) to find"}}},
+            {"new_title", {{"type", "string"}, {"description", "New title if renaming the task"}}},
+            {"status",
+             {{"type", "string"},
+              {"enum", {"pending", "in_progress", "completed", "cancelled"}},
+              {"description", "done/finish = completed, cancel = cancelled, start = in_progress"}}},
             {"priority", {{"type", "string"}, {"enum", {"low", "medium", "high", "urgent"}}}},
             {"due_date", {{"type", "string"}, {"description", "YYYY-MM-DD"}}}}},
           {"required", nlohmann::json::array({"title"})}}},
@@ -119,9 +129,10 @@ void register_task_tools() {
 
     registry.register_tool(
         {"delete_task",
-         "Delete a task by title",
+         "Permanently delete/remove a task. Use when user wants to get rid of a task entirely (not just mark "
+         "complete).",
          {{"type", "object"},
-          {"properties", {{"title", {{"type", "string"}, {"description", "Task title to search and delete"}}}}},
+          {"properties", {{"title", {{"type", "string"}, {"description", "Task title (or partial match) to delete"}}}}},
           {"required", nlohmann::json::array({"title"})}}},
         [](const nlohmann::json& args) -> ToolResult {
             auto& db = AgentDatabase::instance();

@@ -38,20 +38,28 @@ std::string AgentLoop::build_system_prompt() {
     strftime(iso_datetime_buf, sizeof(iso_datetime_buf), "%Y-%m-%dT%H:%M", &t_local);
 
     std::string prompt =
-        "You are Delta, an offline AI assistant.\n"
+        "You are Delta, an offline AI assistant with calendar and task management.\n"
         "Today: " +
         std::string(date_buf) + " (ISO: " + std::string(iso_date_buf) +
         ")\n\n"
         "RULES:\n"
-        "1. ACT IMMEDIATELY. Call tools right away — never ask the user for information you can infer.\n"
-        "2. \"today\" = " +
+        "1. ACT IMMEDIATELY — call tools right away. Never ask for info you can infer.\n"
+        "2. DATES: \"today\" = " +
         std::string(iso_date_buf) +
-        ", \"tomorrow\" = add 1 day. "
-        "If no time is given for an event, use 09:00. Format: YYYY-MM-DDTHH:MM.\n"
-        "3. \"cancel\" a task = update its status to \"cancelled\".\n"
-        "4. If the user asks for multiple things, call ALL the tools needed in one response.\n"
-        "5. Never show IDs. Never mention tools or functions. Just do the work.\n"
-        "6. Keep responses brief and friendly.";
+        ", \"tomorrow\" = next day, \"next Monday\" = compute it. "
+        "If no time given for an event, default to 09:00. Format: YYYY-MM-DDTHH:MM.\n"
+        "3. TASK STATUS WORDS:\n"
+        "   - \"done\", \"finish\", \"complete\", \"mark as done\" → update status to \"completed\"\n"
+        "   - \"cancel\", \"drop\", \"nevermind\" → update status to \"cancelled\"\n"
+        "   - \"start\", \"working on\", \"begin\" → update status to \"in_progress\"\n"
+        "4. EVENT WORDS:\n"
+        "   - \"reschedule\", \"move\", \"change time\", \"push to\" → update_event with new start_time\n"
+        "   - \"what's on my calendar\" with no date → list_events for today\n"
+        "   - \"this week\" → list_events from today to +7 days\n"
+        "5. If the user asks for multiple things, call ALL needed tools in one response.\n"
+        "6. Never show IDs. Never mention tools or functions. Just do the work.\n"
+        "7. Keep responses brief and friendly.\n"
+        "8. For general questions or greetings, respond naturally without calling tools.";
 
     // Inject context summary of upcoming events and pending tasks
     auto& db = AgentDatabase::instance();
@@ -276,16 +284,13 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
     std::vector<std::string> write_summaries;
 
     bool tools_supported = supports_tools_;
-    tool_choice_ = "required";
+    tool_choice_ = "auto";
     std::cerr << "[delta-agent] v2 process: " << messages.size()
               << " msgs, tools_supported=" << (tools_supported ? "true" : "false") << ", tools_count=" << tools.size()
               << std::endl;
 
     for (int iteration = 0; iteration < max_iterations_; iteration++) {
         write_summaries.clear();
-        if (iteration > 0) {
-            tool_choice_ = "auto";
-        }
         auto response = call_llm(messages, tools_supported ? tools : nlohmann::json::array());
 
         // If llama-server returns any error and tools were sent, retry without tools
@@ -359,7 +364,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
                   << ", has_tool_calls=" << (has_tool_calls ? "yes" : "no")
                   << ", content_len=" << message.value("content", "").size() << std::endl;
 
-        if (finish_reason == "tool_calls" && has_tool_calls) {
+        if (has_tool_calls) {
             messages.push_back(message);
 
             for (auto& tool_call : message["tool_calls"]) {
@@ -408,6 +413,11 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
                     for (auto& c : dk)
                         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                     dedup_key = tool_name + ":" + dk;
+                } else if (tool_name == "update_event" || tool_name == "update_task") {
+                    std::string uk = arguments.value("title", "");
+                    for (auto& c : uk)
+                        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    dedup_key = tool_name + ":" + uk;
                 } else {
                     dedup_key = "";
                 }
@@ -475,13 +485,26 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
                             } else if (tool_name == "update_event") {
                                 summary = "Updated \"" + j.value("title", "") + "\"";
                                 if (!j.value("start_time", "").empty())
-                                    summary += " — now at " + j.value("start_time", "");
+                                    summary += " — " + j.value("start_time", "");
+                                if (!j.value("location", "").empty())
+                                    summary += " at " + j.value("location", "");
                                 summary += ".";
                             } else {
                                 summary = "Updated task \"" + j.value("title", "") + "\"";
-                                if (!j.value("status", "").empty())
-                                    summary += " [" + j.value("status", "") + "]";
-                                summary += ".";
+                                std::string st = j.value("status", "");
+                                if (st == "completed")
+                                    summary = "Done! \"" + j.value("title", "") + "\" marked as completed.";
+                                else if (st == "cancelled")
+                                    summary = "Cancelled \"" + j.value("title", "") + "\".";
+                                else if (st == "in_progress")
+                                    summary = "Started working on \"" + j.value("title", "") + "\".";
+                                else {
+                                    if (!j.value("priority", "").empty())
+                                        summary += " [" + j.value("priority", "") + "]";
+                                    if (!j.value("due_date", "").empty())
+                                        summary += " due " + j.value("due_date", "");
+                                    summary += ".";
+                                }
                             }
                         } else {
                             summary = content;
