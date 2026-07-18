@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-get-server-port"
+description = "Allows the get_server_port command."
+commands.allow = ["get_server_port"]
+
+[[permission]]
+identifier = "deny-get-server-port"
+description = "Denies the get_server_port command."
+commands.deny = ["get_server_port"]

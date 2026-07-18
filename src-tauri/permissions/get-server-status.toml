@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-get-server-status"
+description = "Allows the get_server_status command."
+commands.allow = ["get_server_status"]
+
+[[permission]]
+identifier = "deny-get-server-status"
+description = "Denies the get_server_status command."
+commands.deny = ["get_server_status"]

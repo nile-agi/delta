@@ -17,13 +17,8 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
 
 	let { children } = $props();
-
-	onMount(() => {
-		document.getElementById('app-loading')?.remove();
-	});
 
 	const IS_TAURI_ENV =
 		browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -112,6 +107,12 @@
 			}
 			modelApiReady = true;
 		});
+	});
+
+	$effect(() => {
+		if ((serverReady && modelApiReady) || serverError) {
+			document.getElementById('app-loading')?.remove();
+		}
 	});
 
 	let isChatRoute = $derived(page.route.id === '/chat/[id]');
@@ -223,12 +224,11 @@
 			fetch(`${getServerBaseUrl()}/props`, { headers })
 				.then((response) => {
 					if (response.status === 401 || response.status === 403) {
-						window.location.reload();
+						serverError = true;
+						serverErrorMessage = 'Access denied — check your API key settings.';
 					}
 				})
-				.catch((e) => {
-					console.error('Error checking API key:', e);
-				});
+				.catch(() => {});
 		}
 	});
 

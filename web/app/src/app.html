@@ -4,6 +4,7 @@
 		<meta charset="utf-8" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<style>html,body{background:#0f0f1a;margin:0}</style>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
@@ -15,6 +16,40 @@
 			</div>
 		</div>
 		<style>@keyframes splashIn{to{opacity:1}}</style>
+		<script>
+		(function() {
+			// Ensure hash is set before SvelteKit router initializes —
+			// without it, the hash router navigates and Tauri's webview reloads
+			if (!window.location.hash) {
+				history.replaceState(null, '', window.location.pathname + '#/');
+			}
+			var el = document.querySelector('#app-loading p');
+			if (!('__TAURI_INTERNALS__' in window)) return;
+			if (el) { el.textContent = 'Starting...'; el.style.opacity = '1'; }
+			function doPoll() {
+				window.__TAURI_INTERNALS__.invoke('get_server_status').then(function(r) {
+					if (r[2]) {
+						window.__DELTA_PORT__ = r[0];
+						window.__DELTA_MODEL_API_PORT__ = r[1];
+						window.dispatchEvent(new CustomEvent('delta-server-ready'));
+						setTimeout(function() {
+							var s = document.getElementById('app-loading');
+							if (s) { s.style.transition = 'opacity 0.3s'; s.style.opacity = '0'; }
+							setTimeout(function() { if (s) s.remove(); }, 400);
+						}, 1500);
+					} else if (r[3]) {
+						window.__DELTA_SERVER_ERROR__ = true;
+						window.dispatchEvent(new CustomEvent('delta-server-error'));
+					} else {
+						setTimeout(doPoll, 500);
+					}
+				}).catch(function() {
+					setTimeout(doPoll, 1000);
+				});
+			}
+			setTimeout(doPoll, 300);
+		})();
+		</script>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

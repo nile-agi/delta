@@ -14,6 +14,8 @@
     "shell:default",
     "process:default",
     "allow-stream-chat",
-    "allow-abort-stream"
+    "allow-abort-stream",
+    "allow-get-server-port",
+    "allow-get-server-status"
   ]
 }
