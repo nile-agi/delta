@@ -67,7 +67,30 @@
 		};
 		window.addEventListener('delta-server-ready', onReady);
 		window.addEventListener('delta-server-error', onError);
+
+		// Poll via Tauri command as fallback — handles the race where
+		// window.eval() fires before SvelteKit hydrates and the event is lost
+		const poll = setInterval(async () => {
+			try {
+				const { invoke } = await import('@tauri-apps/api/core');
+				const [port, mapiPort, ready, error] = await invoke<[number, number, boolean, boolean]>('get_server_status');
+				if (ready) {
+					(window as any).__DELTA_PORT__ = port;
+					(window as any).__DELTA_MODEL_API_PORT__ = mapiPort;
+					resetModelApiResolution();
+					serverError = false;
+					serverReady = true;
+					clearInterval(poll);
+				} else if (error) {
+					serverError = true;
+					serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
+					clearInterval(poll);
+				}
+			} catch {}
+		}, 500);
+
 		return () => {
+			clearInterval(poll);
 			window.removeEventListener('delta-server-ready', onReady);
 			window.removeEventListener('delta-server-error', onError);
 		};

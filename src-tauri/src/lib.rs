@@ -10,11 +10,20 @@ use tauri_plugin_shell::ShellExt;
 struct ServerState {
     child: Option<CommandChild>,
     port: u16,
+    model_api_port: u16,
+    ready: bool,
+    error: bool,
 }
 
 #[tauri::command]
 fn get_server_port(state: tauri::State<'_, Mutex<ServerState>>) -> u16 {
     state.lock().unwrap().port
+}
+
+#[tauri::command]
+fn get_server_status(state: tauri::State<'_, Mutex<ServerState>>) -> (u16, u16, bool, bool) {
+    let s = state.lock().unwrap();
+    (s.port, s.model_api_port, s.ready, s.error)
 }
 
 fn startup_info(message: &str) {
@@ -180,11 +189,15 @@ fn dirs_next() -> Option<std::path::PathBuf> {
 fn wait_for_server(port: u16) -> bool {
     for _ in 0..120 {
         if let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", port)) {
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .ok();
             use std::io::{Read, Write};
             let _ = stream.write_all(b"GET /props HTTP/1.0\r\nHost: localhost\r\n\r\n");
             let mut buf = [0u8; 64];
-            let _ = stream.read(&mut buf);
-            return true;
+            if stream.read(&mut buf).is_ok() {
+                return true;
+            }
         }
         std::thread::sleep(std::time::Duration::from_millis(250));
     }
@@ -221,11 +234,14 @@ pub fn run() {
         .manage(Mutex::new(ServerState {
             child: None,
             port: 8080,
+            model_api_port: 8081,
+            ready: false,
+            error: false,
         }))
         .manage(StreamAbortFlags {
             flags: Mutex::new(HashMap::new()),
         })
-        .invoke_handler(tauri::generate_handler![get_server_port, stream_chat, abort_stream])
+        .invoke_handler(tauri::generate_handler![get_server_port, get_server_status, stream_chat, abort_stream])
         .setup(|app| {
             let app_handle = app.handle().clone();
 
@@ -240,6 +256,7 @@ pub fn run() {
                 let state = app.state::<Mutex<ServerState>>();
                 let mut s = state.lock().unwrap();
                 s.port = server_port;
+                s.model_api_port = model_api_port;
             }
 
             let models_dir = get_models_dir();
@@ -284,37 +301,54 @@ pub fn run() {
             std::thread::spawn(move || {
                 if !sidecar_spawned {
                     startup_error("Sidecar failed to spawn — notifying frontend immediately");
+                    if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
+                        s.error = true;
+                    }
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let js = format!(
                             "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.__DELTA_SERVER_ERROR__=true;window.dispatchEvent(new CustomEvent('delta-server-error'))",
                             port, mapi_port
                         );
-                        let _ = window.eval(&js);
+                        if let Err(e) = window.eval(&js) {
+                            startup_error(&format!("Failed to inject error state: {}", e));
+                        }
                     }
                     return;
                 }
 
-                startup_info(&format!("Waiting for delta-server readiness on port {}", port));
-                if wait_for_server(port) {
-                    startup_info(&format!("delta-server is reachable on port {}", port));
+                // Wait for Model API server (starts quickly, always available)
+                // rather than llama-server (may take 30s+ to load a model)
+                startup_info(&format!("Waiting for Model API readiness on port {}", mapi_port));
+                if wait_for_server(mapi_port) {
+                    startup_info(&format!("Model API is reachable on port {}", mapi_port));
+                    if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
+                        s.ready = true;
+                    }
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let js = format!(
                             "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.dispatchEvent(new CustomEvent('delta-server-ready'))",
                             port, mapi_port
                         );
-                        let _ = window.eval(&js);
+                        if let Err(e) = window.eval(&js) {
+                            startup_error(&format!("Failed to inject ports: {}", e));
+                        }
                     }
                 } else {
                     startup_warn(&format!(
-                        "delta-server did not respond within 30 seconds on port {}",
-                        port
+                        "Model API did not respond within 30 seconds on port {}",
+                        mapi_port
                     ));
+                    if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
+                        s.error = true;
+                    }
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let js = format!(
                             "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.__DELTA_SERVER_ERROR__=true;window.dispatchEvent(new CustomEvent('delta-server-error'))",
                             port, mapi_port
                         );
-                        let _ = window.eval(&js);
+                        if let Err(e) = window.eval(&js) {
+                            startup_error(&format!("Failed to inject error state: {}", e));
+                        }
                     }
                 }
             });
