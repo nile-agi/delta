@@ -65,10 +65,12 @@
 
 		// Poll via Tauri command as fallback — handles the race where
 		// window.eval() fires before SvelteKit hydrates and the event is lost
+		let pollFailures = 0;
 		const poll = setInterval(async () => {
 			try {
 				const { invoke } = await import('@tauri-apps/api/core');
 				const [port, mapiPort, ready, error] = await invoke<[number, number, boolean, boolean]>('get_server_status');
+				pollFailures = 0;
 				if (ready) {
 					(window as any).__DELTA_PORT__ = port;
 					(window as any).__DELTA_MODEL_API_PORT__ = mapiPort;
@@ -81,7 +83,15 @@
 					serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
 					clearInterval(poll);
 				}
-			} catch {}
+			} catch (e) {
+				pollFailures++;
+				if (pollFailures >= 60) {
+					console.error('[Delta] IPC poll failed 60 times, giving up:', e);
+					serverError = true;
+					serverErrorMessage = 'Unable to communicate with the server process.';
+					clearInterval(poll);
+				}
+			}
 		}, 500);
 
 		return () => {
@@ -111,7 +121,12 @@
 
 	$effect(() => {
 		if ((serverReady && modelApiReady) || serverError) {
-			document.getElementById('app-loading')?.remove();
+			const el = document.getElementById('app-loading');
+			if (el) {
+				el.style.transition = 'opacity 0.3s';
+				el.style.opacity = '0';
+				setTimeout(() => el.remove(), 400);
+			}
 		}
 	});
 

@@ -17,12 +17,12 @@ struct ServerState {
 
 #[tauri::command]
 fn get_server_port(state: tauri::State<'_, Mutex<ServerState>>) -> u16 {
-    state.lock().unwrap().port
+    state.lock().unwrap_or_else(|e| e.into_inner()).port
 }
 
 #[tauri::command]
 fn get_server_status(state: tauri::State<'_, Mutex<ServerState>>) -> (u16, u16, bool, bool) {
-    let s = state.lock().unwrap();
+    let s = state.lock().unwrap_or_else(|e| e.into_inner());
     (s.port, s.model_api_port, s.ready, s.error)
 }
 
@@ -141,13 +141,13 @@ async fn stream_chat(
     })
     .await;
 
-    state.flags.lock().unwrap().remove(&stream_id);
+    state.flags.lock().unwrap_or_else(|e| e.into_inner()).remove(&stream_id);
     result.map_err(|_| "Stream task panicked".to_string())?
 }
 
 #[tauri::command]
 fn abort_stream(state: tauri::State<'_, StreamAbortFlags>, stream_id: String) {
-    if let Some(flag) = state.flags.lock().unwrap().get(&stream_id) {
+    if let Some(flag) = state.flags.lock().unwrap_or_else(|e| e.into_inner()).get(&stream_id) {
         flag.store(true, Ordering::Relaxed);
     }
 }
@@ -208,10 +208,10 @@ fn wait_for_server(port: u16) -> bool {
 fn kill_stale_server_processes() {
     use std::process::Command;
     let _ = Command::new("taskkill")
-        .args(["/F", "/FI", "IMAGENAME eq llama-server*"])
+        .args(["/F", "/IM", "llama-server*"])
         .output();
     let _ = Command::new("taskkill")
-        .args(["/F", "/FI", "IMAGENAME eq delta-server*"])
+        .args(["/F", "/IM", "delta-server*"])
         .output();
     std::thread::sleep(std::time::Duration::from_millis(500));
 }
@@ -254,7 +254,7 @@ pub fn run() {
 
             {
                 let state = app.state::<Mutex<ServerState>>();
-                let mut s = state.lock().unwrap();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 s.port = server_port;
                 s.model_api_port = model_api_port;
             }
@@ -286,7 +286,7 @@ pub fn run() {
                     ));
                     log_sidecar_events(rx);
                     let state = app.state::<Mutex<ServerState>>();
-                    let mut s = state.lock().unwrap();
+                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     s.child = Some(child);
                     true
                 }
@@ -360,7 +360,7 @@ pub fn run() {
                 let app = window.app_handle();
                 let state = app.state::<Mutex<ServerState>>();
                 let child = {
-                    let mut s = state.lock().unwrap();
+                    let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     s.child.take()
                 };
                 if let Some(child) = child {

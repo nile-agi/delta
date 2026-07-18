@@ -761,10 +761,13 @@ export class ChatService {
 			}
 			throw new Error(`Failed to fetch server props: ${response.status}`);
 		} catch (error) {
-			// In Tauri, browser fetch to localhost may be blocked by CORS;
-			// fall back to the Model API which sets Access-Control-Allow-Origin: *
+			if (error instanceof SyntaxError) {
+				console.error('Malformed JSON from server props:', error);
+				throw error;
+			}
+			// Network/CORS error — fall back to Model API (has Access-Control-Allow-Origin: *)
 			try {
-				const mapiBase = getModelApiBaseUrl() || `http://localhost:${(window as any).__DELTA_MODEL_API_PORT__ ?? 8081}`;
+				const mapiBase = getModelApiBaseUrl() || `http://127.0.0.1:${(window as any).__DELTA_MODEL_API_PORT__ ?? 8081}`;
 				const fallback = await fetch(`${mapiBase}/api/props`, { headers });
 				if (fallback.ok) {
 					return await fallback.json();
