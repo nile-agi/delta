@@ -17,6 +17,8 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
+	import { onDestroy } from 'svelte';
+	import { startReminderPolling, stopReminderPolling } from '$lib/services/reminders';
 
 	let { children } = $props();
 
@@ -132,7 +134,7 @@
 
 	let isChatRoute = $derived(page.route.id === '/chat/[id]');
 	let isHomeRoute = $derived(page.route.id === '/');
-	let isToolRoute = $derived(page.route.id === '/calendar' || page.route.id === '/tasks');
+	let isToolRoute = $derived(page.route.id === '/calendar');
 	let isNewChatMode = $derived(page.url.searchParams.get('new_chat') === 'true');
 	let showSidebarByDefault = $derived(activeMessages().length > 0 || isLoading());
 	let currentConfig = $derived(config());
@@ -209,6 +211,16 @@
 	$effect(() => {
 		if (!serverReady) return;
 		serverStore.fetchServerProps();
+	});
+
+	$effect(() => {
+		if (serverReady && modelApiReady && !serverError) {
+			startReminderPolling();
+		}
+	});
+
+	onDestroy(() => {
+		stopReminderPolling();
 	});
 
 	// Sync settings when server props are loaded

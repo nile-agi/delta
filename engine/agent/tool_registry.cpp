@@ -1,6 +1,5 @@
 #include "tool_registry.h"
 #include "tool_calendar.h"
-#include "tool_tasks.h"
 #include <iostream>
 
 namespace delta {
@@ -55,7 +54,6 @@ std::vector<std::string> ToolRegistry::get_tool_names() const {
 
 void register_all_tools() {
     register_calendar_tools();
-    register_task_tools();
 }
 
 } // namespace agent

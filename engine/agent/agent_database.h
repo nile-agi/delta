@@ -16,21 +16,18 @@ class AgentDatabase {
     bool init(const std::string& db_path = "");
     void close();
 
-    // Calendar CRUD
+    // Unified calendar CRUD (events and tasks)
     std::string create_event(const nlohmann::json& data);
     nlohmann::json get_event(const std::string& id);
-    std::vector<nlohmann::json> list_events(const std::string& start = "", const std::string& end = "", int limit = 50);
+    std::vector<nlohmann::json> list_events(const std::string& start = "", const std::string& end = "", int limit = 50,
+                                            const std::string& type = "", const std::string& status = "",
+                                            const std::string& priority = "", const std::string& tags = "");
     bool update_event(const std::string& id, const nlohmann::json& data);
     bool delete_event(const std::string& id);
 
-    // Task CRUD
-    std::string create_task(const nlohmann::json& data);
-    nlohmann::json get_task(const std::string& id);
-    std::vector<nlohmann::json> list_tasks(const std::string& status = "", const std::string& priority = "",
-                                           int limit = 50, const std::string& tags = "");
-    bool update_task(const std::string& id, const nlohmann::json& data);
-    bool complete_task(const std::string& id);
-    bool delete_task(const std::string& id);
+    // Reminders
+    std::vector<nlohmann::json> get_upcoming_reminders();
+    bool mark_reminded(const std::string& id);
 
   private:
     AgentDatabase() = default;
@@ -49,7 +46,6 @@ class AgentDatabase {
 
     bool exec_sql(const std::string& sql);
     nlohmann::json row_to_event(sqlite3_stmt* stmt);
-    nlohmann::json row_to_task(sqlite3_stmt* stmt);
 };
 
 } // namespace agent

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Trash2, Calendar, ListTodo } from '@lucide/svelte';
+	import { Trash2, Calendar } from '@lucide/svelte';
 	import { ChatSidebarConversationItem, ConfirmationDialog } from '$lib/components/app';
 	import ScrollArea from '$lib/components/ui/scroll-area/scroll-area.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar';
@@ -125,16 +125,6 @@
 					>
 						<Calendar class="h-4 w-4" />
 						Calendar
-					</Sidebar.MenuButton>
-				</Sidebar.MenuItem>
-				<Sidebar.MenuItem>
-					<Sidebar.MenuButton
-						class="flex items-center gap-2 text-sm"
-						data-active={page.route.id === '/tasks'}
-						onclick={() => { goto('#/tasks'); handleMobileSidebarItemClick(); }}
-					>
-						<ListTodo class="h-4 w-4" />
-						Tasks
 					</Sidebar.MenuButton>
 				</Sidebar.MenuItem>
 			</Sidebar.Menu>

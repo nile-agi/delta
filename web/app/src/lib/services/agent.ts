@@ -21,27 +21,39 @@ export interface CalendarEvent {
 	end_time: string;
 	location: string;
 	all_day: boolean;
+	status: 'upcoming' | 'in_progress' | 'completed' | 'cancelled';
+	type: 'event' | 'task';
+	priority: 'low' | 'medium' | 'high' | 'urgent';
+	tags: string;
+	reminder_minutes: number;
+	reminded: boolean;
 	created_at: string;
 	updated_at: string;
 }
 
-export interface Task {
+export interface Reminder {
+	type: 'event' | 'task';
 	id: string;
 	title: string;
-	description: string;
-	status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
-	priority: 'low' | 'medium' | 'high' | 'urgent';
-	due_date: string;
-	tags: string;
-	created_at: string;
-	updated_at: string;
+	time: string;
+	reminder_minutes: number;
 }
 
 export const agentService = {
-	async listEvents(start?: string, end?: string, limit = 50): Promise<CalendarEvent[]> {
+	async listEvents(
+		start?: string,
+		end?: string,
+		limit = 50,
+		type?: string,
+		status?: string,
+		priority?: string
+	): Promise<CalendarEvent[]> {
 		const params = new URLSearchParams();
 		if (start) params.set('start', start);
 		if (end) params.set('end', end);
+		if (type) params.set('type', type);
+		if (status) params.set('status', status);
+		if (priority) params.set('priority', priority);
 		params.set('limit', limit.toString());
 		const res = await fetch(apiUrl(`/api/agent/events?${params}`));
 		const data = await res.json();
@@ -78,61 +90,10 @@ export const agentService = {
 		await fetch(apiUrl(`/api/agent/events/${id}`), { method: 'DELETE' });
 	},
 
-	async listTasks(
-		status?: string,
-		priority?: string,
-		tags?: string,
-		limit = 50
-	): Promise<Task[]> {
-		const params = new URLSearchParams();
-		if (status) params.set('status', status);
-		if (priority) params.set('priority', priority);
-		if (tags) params.set('tags', tags);
-		params.set('limit', limit.toString());
-		const res = await fetch(apiUrl(`/api/agent/tasks?${params}`));
+	async fetchPendingReminders(): Promise<Reminder[]> {
+		const res = await fetch(apiUrl('/api/agent/reminders/pending'));
 		const data = await res.json();
-		return data.tasks ?? [];
-	},
-
-	async createTask(task: Partial<Task>): Promise<Task> {
-		const res = await fetch(apiUrl('/api/agent/tasks'), {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(task)
-		});
-		if (!res.ok) {
-			const err = await res.json().catch(() => ({}));
-			throw new Error(err.error || `Failed to create task (${res.status})`);
-		}
-		return res.json();
-	},
-
-	async updateTask(id: string, updates: Partial<Task>): Promise<Task> {
-		const res = await fetch(apiUrl(`/api/agent/tasks/${id}`), {
-			method: 'PUT',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(updates)
-		});
-		if (!res.ok) {
-			const err = await res.json().catch(() => ({}));
-			throw new Error(err.error || `Failed to update task (${res.status})`);
-		}
-		return res.json();
-	},
-
-	async completeTask(id: string): Promise<Task> {
-		const res = await fetch(apiUrl(`/api/agent/tasks/${id}/complete`), {
-			method: 'POST'
-		});
-		if (!res.ok) {
-			const err = await res.json().catch(() => ({}));
-			throw new Error(err.error || `Failed to complete task (${res.status})`);
-		}
-		return res.json();
-	},
-
-	async deleteTask(id: string): Promise<void> {
-		await fetch(apiUrl(`/api/agent/tasks/${id}`), { method: 'DELETE' });
+		return data.reminders ?? [];
 	},
 
 	async getTools(): Promise<{ tools: unknown[]; tool_names: string[] }> {

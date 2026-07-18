@@ -16,6 +16,10 @@
     "allow-stream-chat",
     "allow-abort-stream",
     "allow-get-server-port",
-    "allow-get-server-status"
+    "allow-get-server-status",
+    "notification:default",
+    "notification:allow-notify",
+    "notification:allow-request-permission",
+    "notification:allow-is-permission-granted"
   ]
 }

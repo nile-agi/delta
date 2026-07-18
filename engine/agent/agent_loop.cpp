@@ -32,40 +32,54 @@ std::string AgentLoop::build_system_prompt() {
 #else
     localtime_r(&now, &t_local);
 #endif
-    char date_buf[64], iso_date_buf[16], iso_datetime_buf[32];
-    strftime(date_buf, sizeof(date_buf), "%A, %B %d, %Y at %H:%M", &t_local);
-    strftime(iso_date_buf, sizeof(iso_date_buf), "%Y-%m-%d", &t_local);
-    strftime(iso_datetime_buf, sizeof(iso_datetime_buf), "%Y-%m-%dT%H:%M", &t_local);
+    char today_buf[16], iso_buf[32], day_buf[16];
+    strftime(today_buf, sizeof(today_buf), "%Y-%m-%d", &t_local);
+    strftime(iso_buf, sizeof(iso_buf), "%Y-%m-%dT%H:%M", &t_local);
+    strftime(day_buf, sizeof(day_buf), "%A", &t_local);
+
+    time_t tomorrow_t = now + 24 * 3600;
+    struct tm tm_tom{};
+#ifdef _WIN32
+    localtime_s(&tm_tom, &tomorrow_t);
+#else
+    localtime_r(&tomorrow_t, &tm_tom);
+#endif
+    char tom_buf[16], tom_day_buf[16];
+    strftime(tom_buf, sizeof(tom_buf), "%Y-%m-%d", &tm_tom);
+    strftime(tom_day_buf, sizeof(tom_day_buf), "%A", &tm_tom);
 
     std::string prompt =
-        "You are Delta, an offline AI assistant with calendar and task management.\n"
-        "Today: " +
-        std::string(date_buf) + " (ISO: " + std::string(iso_date_buf) +
+        "You are Delta, an offline AI assistant with unified calendar and task management.\n\n"
+        "CURRENT TIME: " +
+        std::string(iso_buf) + " (" + std::string(day_buf) +
+        ")\n"
+        "TODAY: " +
+        std::string(today_buf) +
+        "\n"
+        "TOMORROW: " +
+        std::string(tom_buf) + " (" + std::string(tom_day_buf) +
         ")\n\n"
         "RULES:\n"
-        "1. ACT IMMEDIATELY — call tools right away. Never ask for info you can infer.\n"
-        "2. DATES: \"today\" = " +
-        std::string(iso_date_buf) +
-        ", \"tomorrow\" = next day, \"next Monday\" = compute it. "
-        "If no time given for an event, default to 09:00. Format: YYYY-MM-DDTHH:MM.\n"
-        "3. TASK STATUS WORDS:\n"
-        "   - \"done\", \"finish\", \"complete\", \"mark as done\" → update status to \"completed\"\n"
-        "   - \"cancel\", \"drop\", \"nevermind\" → update status to \"cancelled\"\n"
-        "   - \"start\", \"working on\", \"begin\" → update status to \"in_progress\"\n"
-        "4. EVENT WORDS:\n"
-        "   - \"reschedule\", \"move\", \"change time\", \"push to\" → update_event with new start_time\n"
-        "   - \"what's on my calendar\" with no date → list_events for today\n"
-        "   - \"this week\" → list_events from today to +7 days\n"
-        "5. If the user asks for multiple things, call ALL needed tools in one response.\n"
-        "6. Never show IDs. Never mention tools or functions. Just do the work.\n"
-        "7. Keep responses brief and friendly.\n"
-        "8. For general questions or greetings, respond naturally without calling tools.";
+        "1. DATES: Use the CURRENT TIME above to compute dates. "
+        "\"today\" = " +
+        std::string(today_buf) + ", \"tomorrow\" = " + std::string(tom_buf) +
+        ". "
+        "Format as YYYY-MM-DDTHH:MM. Default to 09:00 if no time is given.\n"
+        "2. NEVER ASK -- always act. Use conversation history and context. "
+        "If the user says \"the task\", \"it\", or \"the event\", they mean the most recently mentioned item. "
+        "Call tools immediately, never ask for info you can look up.\n"
+        "3. TYPE: ALWAYS set type='task' for things the user needs to DO (work on, finish, review, prepare, submit, "
+        "fix, build, write, read, buy, clean, call, email, send). "
+        "Set type='event' ONLY for meetings, appointments, or scheduled gatherings.\n"
+        "4. STATUS: done/complete = \"completed\", cancel = \"cancelled\", start/begin = \"in_progress\".\n"
+        "5. Brief and friendly responses. Never show IDs or mention tool names.\n"
+        "6. REMINDERS: Events remind 15 min before. Tasks default no reminder.\n"
+        "7. PRIORITY: set priority for tasks (low/medium/high/urgent). Default medium.";
 
     // Inject context summary of upcoming events and pending tasks
     auto& db = AgentDatabase::instance();
 
-    char today_buf[16], week_buf[16];
-    strftime(today_buf, sizeof(today_buf), "%Y-%m-%d", &t_local);
+    char week_buf[16];
     time_t week_later = now + 7 * 24 * 3600;
     struct tm wt_local{};
 #ifdef _WIN32
@@ -75,9 +89,9 @@ std::string AgentLoop::build_system_prompt() {
 #endif
     strftime(week_buf, sizeof(week_buf), "%Y-%m-%d", &wt_local);
 
-    auto events = db.list_events(std::string(today_buf), std::string(week_buf), 5);
-    auto tasks = db.list_tasks("pending", "", 5);
-    auto in_progress = db.list_tasks("in_progress", "", 5);
+    auto events = db.list_events(std::string(today_buf), std::string(week_buf), 5, "event");
+    auto tasks = db.list_events("", "", 5, "task", "upcoming");
+    auto in_progress = db.list_events("", "", 5, "task", "in_progress");
     tasks.insert(tasks.end(), in_progress.begin(), in_progress.end());
 
     if (!events.empty() || !tasks.empty()) {
@@ -95,8 +109,8 @@ std::string AgentLoop::build_system_prompt() {
             prompt += "Active tasks:\n";
             for (auto& t : tasks) {
                 prompt += "- [" + t.value("priority", "medium") + "] " + t.value("title", "");
-                if (!t.value("due_date", "").empty())
-                    prompt += " (due: " + t["due_date"].get<std::string>() + ")";
+                if (!t.value("start_time", "").empty())
+                    prompt += " (due: " + t["start_time"].get<std::string>() + ")";
                 prompt += " [" + t.value("status", "") + "]\n";
             }
         }
@@ -392,8 +406,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
                 }
 
                 // Build a normalized dedup key for write operations
-                // Allows parallel calls to DIFFERENT tools (e.g. create_event + create_task)
-                // but blocks duplicate calls to the SAME tool with similar intent
+                // Blocks duplicate calls to the same tool with similar intent
                 std::string dedup_key;
                 if (tool_name == "create_event") {
                     std::string t = arguments.value("title", "");
@@ -401,23 +414,18 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
                     for (auto& c : t)
                         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                     dedup_key = "create_event:" + t + ":" + s;
-                } else if (tool_name == "create_task") {
-                    std::string t = arguments.value("title", "");
-                    for (auto& c : t)
-                        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    dedup_key = "create_task:" + t;
-                } else if (tool_name == "delete_event" || tool_name == "delete_task") {
+                } else if (tool_name == "delete_event") {
                     std::string dk = arguments.value("id", "");
                     if (dk.empty())
                         dk = arguments.value("title", "");
                     for (auto& c : dk)
                         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    dedup_key = tool_name + ":" + dk;
-                } else if (tool_name == "update_event" || tool_name == "update_task") {
+                    dedup_key = "delete_event:" + dk;
+                } else if (tool_name == "update_event") {
                     std::string uk = arguments.value("title", "");
                     for (auto& c : uk)
                         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    dedup_key = tool_name + ":" + uk;
+                    dedup_key = "update_event:" + uk;
                 } else {
                     dedup_key = "";
                 }
@@ -441,56 +449,54 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
 
                 messages.push_back({{"role", "tool"}, {"tool_call_id", tool_call_id}, {"content", content}});
 
+                bool is_write_tool = tool_name.find("create") != std::string::npos ||
+                                     tool_name.find("delete") != std::string::npos ||
+                                     tool_name.find("update") != std::string::npos;
+
+                // If a write tool failed, return error directly instead of model hallucinating success
+                if (!result.success && is_write_tool) {
+                    std::cerr << "[delta-agent] write tool FAILED: " << result.error_message << std::endl;
+                    return {false, "Sorry, I could not do that: " + result.error_message, total_tool_calls, ""};
+                }
+
                 // Build a friendly summary for write tools
-                if (result.success &&
-                    (tool_name.find("create") != std::string::npos || tool_name.find("delete") != std::string::npos ||
-                     tool_name.find("update") != std::string::npos)) {
+                if (result.success && is_write_tool) {
                     std::string summary;
                     try {
                         auto j = nlohmann::json::parse(content);
+                        std::string item_type = j.value("type", "event");
+                        std::string label = (item_type == "task") ? "task" : "event";
                         if (tool_name == "create_event") {
-                            summary =
-                                "Created event \"" + j.value("title", "") + "\" on " + j.value("start_time", "") + ".";
-                        } else if (tool_name == "create_task") {
-                            summary = "Created task \"" + j.value("title", "") + "\".";
-                            if (j.contains("due_date") && !j.value("due_date", "").empty())
-                                summary += " Due: " + j.value("due_date", "") + ".";
-                        } else if (tool_name.find("delete") != std::string::npos) {
+                            summary = "Created " + label + " \"" + j.value("title", "") + "\"";
+                            if (!j.value("start_time", "").empty())
+                                summary += " on " + j.value("start_time", "");
+                            summary += ".";
+                            if (j.contains("overlap_note"))
+                                summary += " " + j.value("overlap_note", "");
+                        } else if (tool_name == "delete_event") {
                             if (j.contains("matches") && j["matches"].is_array()) {
                                 summary = j.value("message", "Multiple items found") + "\n\n";
                                 for (auto& m : j["matches"]) {
                                     summary += "- " + m.value("title", "?");
-                                    if (m.contains("start_time") && !m.value("start_time", "").empty())
+                                    if (!m.value("start_time", "").empty())
                                         summary += " (" + m.value("start_time", "") + ")";
-                                    if (m.contains("status") && !m.value("status", "").empty())
-                                        summary += " [" + m.value("status", "") + "]";
                                     summary += "\n";
                                 }
                                 summary += "\nPlease specify which one to delete.";
                             } else {
                                 summary = "Done! The item has been deleted.";
                             }
-                        } else if (tool_name.find("update") != std::string::npos) {
+                        } else if (tool_name == "update_event") {
                             if (j.contains("matches") && j["matches"].is_array()) {
                                 summary = j.value("message", "Multiple items found") + "\n\n";
                                 for (auto& m : j["matches"]) {
                                     summary += "- " + m.value("title", "?");
-                                    if (m.contains("start_time") && !m.value("start_time", "").empty())
+                                    if (!m.value("start_time", "").empty())
                                         summary += " (" + m.value("start_time", "") + ")";
-                                    if (m.contains("status") && !m.value("status", "").empty())
-                                        summary += " [" + m.value("status", "") + "]";
                                     summary += "\n";
                                 }
                                 summary += "\nPlease specify which one to update.";
-                            } else if (tool_name == "update_event") {
-                                summary = "Updated \"" + j.value("title", "") + "\"";
-                                if (!j.value("start_time", "").empty())
-                                    summary += " — " + j.value("start_time", "");
-                                if (!j.value("location", "").empty())
-                                    summary += " at " + j.value("location", "");
-                                summary += ".";
                             } else {
-                                summary = "Updated task \"" + j.value("title", "") + "\"";
                                 std::string st = j.value("status", "");
                                 if (st == "completed")
                                     summary = "Done! \"" + j.value("title", "") + "\" marked as completed.";
@@ -499,10 +505,11 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
                                 else if (st == "in_progress")
                                     summary = "Started working on \"" + j.value("title", "") + "\".";
                                 else {
-                                    if (!j.value("priority", "").empty())
-                                        summary += " [" + j.value("priority", "") + "]";
-                                    if (!j.value("due_date", "").empty())
-                                        summary += " due " + j.value("due_date", "");
+                                    summary = "Updated \"" + j.value("title", "") + "\"";
+                                    if (!j.value("start_time", "").empty())
+                                        summary += " on " + j.value("start_time", "");
+                                    if (!j.value("location", "").empty())
+                                        summary += " at " + j.value("location", "");
                                     summary += ".";
                                 }
                             }
@@ -531,6 +538,70 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
         }
 
         std::string content = message.value("content", "");
+
+        // If model responded with text but user wanted an action, retry with forced context
+        if (iteration == 0 && total_tool_calls == 0) {
+            std::string last_user;
+            for (int i = static_cast<int>(messages.size()) - 1; i >= 0; i--) {
+                if (messages[i].value("role", "") == "user") {
+                    last_user = messages[i].value("content", "");
+                    break;
+                }
+            }
+            std::string user_lower = last_user;
+            for (auto& c : user_lower)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+            static const char* action_words[] = {"push",    "move",     "reschedule", "change", "update",
+                                                 "delete",  "cancel",   "mark",       "done",   "complete",
+                                                 "remove",  "postpone", "ahead",      "later",  "earlier",
+                                                 "forward", "back",     "start",      nullptr};
+            bool wants_action = false;
+            for (int k = 0; action_words[k]; k++) {
+                if (user_lower.find(action_words[k]) != std::string::npos) {
+                    wants_action = true;
+                    break;
+                }
+            }
+
+            if (wants_action) {
+                // Find most recent item title from conversation history
+                std::string recent_title, recent_time;
+                for (int i = static_cast<int>(messages.size()) - 1; i >= 0; i--) {
+                    if (messages[i].value("role", "") != "assistant")
+                        continue;
+                    std::string asst = messages[i].value("content", "");
+                    auto q1 = asst.find('"');
+                    if (q1 == std::string::npos)
+                        continue;
+                    auto q2 = asst.find('"', q1 + 1);
+                    if (q2 == std::string::npos)
+                        continue;
+                    recent_title = asst.substr(q1 + 1, q2 - q1 - 1);
+                    auto on_pos = asst.find(" on ");
+                    if (on_pos != std::string::npos) {
+                        recent_time = asst.substr(on_pos + 4);
+                        while (!recent_time.empty() && (recent_time.back() == '.' || recent_time.back() == ' '))
+                            recent_time.pop_back();
+                    }
+                    break;
+                }
+
+                if (!recent_title.empty()) {
+                    std::cerr << "[delta-agent] model dodged action, retrying with context: " << recent_title
+                              << std::endl;
+                    messages.push_back(message);
+                    std::string hint = "I mean \"" + recent_title + "\"";
+                    if (!recent_time.empty())
+                        hint += " currently at " + recent_time;
+                    hint += ". Do it now.";
+                    messages.push_back({{"role", "user"}, {"content", hint}});
+                    tool_choice_ = "required";
+                    continue;
+                }
+            }
+        }
+
         return {true, content, total_tool_calls, ""};
     }
 

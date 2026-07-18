@@ -25,7 +25,7 @@ class AgentLoop {
   private:
     std::string server_url_;
     std::string model_name_;
-    int max_iterations_ = 3;
+    int max_iterations_ = 5;
     bool supports_tools_ = true;
     std::string tool_choice_ = "required";
 

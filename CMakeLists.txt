@@ -130,7 +130,6 @@ set(DELTA_SOURCES
     engine/agent/agent_database.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
-    engine/agent/tool_tasks.cpp
     engine/agent/agent_loop.cpp
 )
 
@@ -195,7 +194,6 @@ add_executable(delta-server
     engine/agent/agent_database.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
-    engine/agent/tool_tasks.cpp
     engine/agent/agent_loop.cpp
 )
 target_compile_definitions(delta-server PRIVATE

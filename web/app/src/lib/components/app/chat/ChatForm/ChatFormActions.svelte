@@ -13,7 +13,9 @@
 	let modelSupportsTools = $derived(selectedModelSupportsTools());
 
 	$effect(() => {
-		if (!modelSupportsTools && toolsEnabled) {
+		if (modelSupportsTools && !toolsEnabled) {
+			updateConfig('useAgentTools', true);
+		} else if (!modelSupportsTools && toolsEnabled) {
 			updateConfig('useAgentTools', false);
 		}
 	});
@@ -85,7 +87,7 @@
 				{#if !modelSupportsTools}
 					This model does not support agent tools
 				{:else if toolsEnabled}
-					Agent tools enabled (calendar, tasks)
+					Agent tools enabled (calendar)
 				{:else}
 					Enable agent tools
 				{/if}

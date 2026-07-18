@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ChevronLeft, ChevronRight, Plus } from '@lucide/svelte';
+	import { ChevronLeft, ChevronRight, Plus, Check, X, Undo2, Trash2, MapPin, Clock, Play } from '@lucide/svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import Input from '$lib/components/ui/input/input.svelte';
@@ -13,22 +13,31 @@
 		setCurrentMonth,
 		loadMonthEvents,
 		createEvent,
+		updateEvent,
 		deleteEvent
 	} from '$lib/stores/calendar.svelte';
 
 	let showCreateDialog = $state(false);
-	let newEvent = $state({ title: '', start_time: '', end_time: '', description: '', location: '' });
+	let newEventType = $state<'event' | 'task'>('event');
+	let newTitle = $state('');
+	let newDescription = $state('');
+	let newLocation = $state('');
+	let newPriority = $state('medium');
 	let startDate = $state('');
 	let startTime = $state('');
 	let endDate = $state('');
 	let endTime = $state('');
 	let createError = $state('');
 	let creating = $state(false);
-	let selectedDayEvents = $state<CalendarEvent[]>([]);
 	let selectedDate = $state('');
 
 	const month = $derived(calendarCurrentMonth());
 	const events = $derived(calendarEvents());
+
+	const selectedDayItems = $derived.by(() => {
+		if (!selectedDate) return [];
+		return events.filter((e) => e.start_time?.startsWith(selectedDate));
+	});
 
 	const daysInMonth = $derived.by(() => {
 		const y = month.getFullYear();
@@ -44,7 +53,7 @@
 		return month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 	});
 
-	function eventsForDay(day: number): CalendarEvent[] {
+	function itemsForDay(day: number): CalendarEvent[] {
 		const dateStr = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 		return events.filter((e) => e.start_time?.startsWith(dateStr));
 	}
@@ -75,36 +84,76 @@
 	function selectDay(day: number) {
 		const dateStr = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 		selectedDate = dateStr;
-		selectedDayEvents = eventsForDay(day);
+	}
+
+	function resetCreateForm() {
+		newEventType = 'event';
+		newTitle = '';
+		newDescription = '';
+		newLocation = '';
+		newPriority = 'medium';
+		startDate = '';
+		startTime = '';
+		endDate = '';
+		endTime = '';
+		createError = '';
+	}
+
+	function openCreateDialog() {
+		const now = new Date();
+		const pad = (n: number) => n.toString().padStart(2, '0');
+		resetCreateForm();
+		startDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+		startTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+		endDate = startDate;
+		endTime = startTime;
+		showCreateDialog = true;
 	}
 
 	async function handleCreateEvent() {
 		createError = '';
-		if (!newEvent.title) { createError = 'Title is required'; return; }
+		if (!newTitle) { createError = 'Title is required'; return; }
 		if (!startDate) { createError = 'Start date is required'; return; }
 		if (!startTime) { createError = 'Start time is required'; return; }
-		newEvent.start_time = `${startDate}T${startTime}:00`;
-		if (endDate && endTime) {
-			newEvent.end_time = `${endDate}T${endTime}:00`;
+
+		const data: Partial<CalendarEvent> = {
+			title: newTitle,
+			start_time: `${startDate}T${startTime}:00`,
+			description: newDescription,
+			type: newEventType
+		};
+
+		if (newEventType === 'event') {
+			data.location = newLocation;
+			if (endDate && endTime) {
+				data.end_time = `${endDate}T${endTime}:00`;
+			}
+		} else {
+			data.priority = newPriority as CalendarEvent['priority'];
 		}
+
 		creating = true;
 		try {
-			await createEvent(newEvent);
-			newEvent = { title: '', start_time: '', end_time: '', description: '', location: '' };
-			startDate = ''; startTime = ''; endDate = ''; endTime = '';
+			await createEvent(data);
+			resetCreateForm();
 			showCreateDialog = false;
 			await loadMonthEvents(month);
 		} catch (e) {
-			createError = e instanceof Error ? e.message : 'Failed to create event';
-			console.error('Failed to create event:', e);
+			createError = e instanceof Error ? e.message : 'Failed to create';
+			console.error('Failed to create:', e);
 		} finally {
 			creating = false;
 		}
 	}
 
-	async function handleDeleteEvent(id: string) {
+	async function handleMarkStatus(id: string, status: 'completed' | 'cancelled' | 'upcoming' | 'in_progress') {
+		await updateEvent(id, { status } as Partial<CalendarEvent>);
+		await loadMonthEvents(month);
+	}
+
+	async function handleDeleteItem(id: string) {
 		await deleteEvent(id);
-		selectedDayEvents = selectedDayEvents.filter((e) => e.id !== id);
+		await loadMonthEvents(month);
 	}
 
 	onMount(() => {
@@ -114,7 +163,15 @@
 			if (document.visibilityState === 'visible') loadMonthEvents(month);
 		}
 		document.addEventListener('visibilitychange', onVisible);
-		return () => document.removeEventListener('visibilitychange', onVisible);
+
+		const refreshInterval = setInterval(() => {
+			if (document.visibilityState === 'visible') loadMonthEvents(month);
+		}, 10000);
+
+		return () => {
+			document.removeEventListener('visibilitychange', onVisible);
+			clearInterval(refreshInterval);
+		};
 	});
 </script>
 
@@ -132,17 +189,9 @@
 				</Button>
 			</div>
 		</div>
-		<Button size="sm" onclick={() => {
-			const now = new Date();
-			const pad = (n: number) => n.toString().padStart(2, '0');
-			startDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-			startTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-			endDate = startDate;
-			endTime = startTime;
-			showCreateDialog = true;
-		}}>
+		<Button size="sm" onclick={openCreateDialog}>
 			<Plus class="mr-1 h-4 w-4" />
-			New Event
+			New
 		</Button>
 	</div>
 
@@ -161,7 +210,7 @@
 
 				{#each Array(daysInMonth) as _, i}
 					{@const day = i + 1}
-					{@const dayEvents = eventsForDay(day)}
+					{@const dayItems = itemsForDay(day)}
 					<button
 						class="min-h-[80px] bg-background p-1 text-left transition-colors hover:bg-accent/50"
 						class:ring-2={selectedDate ===
@@ -177,16 +226,16 @@
 						>
 							{day}
 						</span>
-						{#each dayEvents.slice(0, 2) as event}
+						{#each dayItems.slice(0, 2) as item}
 							<div
-								class="mt-0.5 truncate rounded bg-primary/10 px-1 text-[10px] text-primary"
+								class="mt-0.5 truncate rounded px-1 text-[10px] {item.type === 'task' ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400' : 'bg-primary/10 text-primary'} {item.status === 'completed' ? 'line-through opacity-50' : ''} {item.status === 'cancelled' ? 'line-through opacity-30' : ''}"
 							>
-								{event.title}
+								{item.title}
 							</div>
 						{/each}
-						{#if dayEvents.length > 2}
+						{#if dayItems.length > 2}
 							<div class="mt-0.5 text-[10px] text-muted-foreground">
-								+{dayEvents.length - 2} more
+								+{dayItems.length - 2} more
 							</div>
 						{/if}
 					</button>
@@ -195,7 +244,7 @@
 		</div>
 
 		{#if selectedDate}
-			<div class="w-72 border-l p-4">
+			<div class="w-72 overflow-y-auto border-l p-4">
 				<h3 class="mb-3 text-sm font-semibold">
 					{new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
 						weekday: 'long',
@@ -203,37 +252,105 @@
 						day: 'numeric'
 					})}
 				</h3>
-				{#if selectedDayEvents.length === 0}
-					<p class="text-sm text-muted-foreground">No events</p>
+				{#if selectedDayItems.length === 0}
+					<p class="text-sm text-muted-foreground">Nothing scheduled</p>
 				{:else}
 					<div class="space-y-2">
-						{#each selectedDayEvents as event}
-							<div class="rounded-lg border p-3">
-								<div class="flex items-start justify-between">
-									<div>
-										<p class="text-sm font-medium">{event.title}</p>
-										{#if event.start_time}
-											<p class="text-xs text-muted-foreground">
-												{new Date(event.start_time).toLocaleTimeString('en-US', {
+						{#each selectedDayItems as item (item.id)}
+							<div class="rounded-lg border p-3 {item.type === 'task' ? 'border-orange-500/30' : ''} {item.status === 'completed' ? 'opacity-60' : ''} {item.status === 'cancelled' ? 'opacity-40' : ''}">
+								<div class="flex items-start gap-2">
+									{#if item.status === 'completed'}
+										<button
+											class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-500 text-white"
+											title="Mark as upcoming"
+											onclick={() => handleMarkStatus(item.id, 'upcoming')}
+										>
+											<Check class="h-3 w-3" />
+										</button>
+									{:else if item.status === 'cancelled'}
+										<button
+											class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+											title="Restore"
+											onclick={() => handleMarkStatus(item.id, 'upcoming')}
+										>
+											<Undo2 class="h-3 w-3" />
+										</button>
+									{:else if item.status === 'in_progress'}
+										<button
+											class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-500 text-white"
+											title="Mark as done"
+											onclick={() => handleMarkStatus(item.id, 'completed')}
+										>
+											<Play class="h-2.5 w-2.5" />
+										</button>
+									{:else}
+										<button
+											class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 {item.type === 'task' ? 'border-orange-500/30 hover:border-green-500 hover:bg-green-500/10' : 'border-muted-foreground/30 hover:border-green-500 hover:bg-green-500/10'}"
+											title="Mark as done"
+											onclick={() => handleMarkStatus(item.id, 'completed')}
+										>
+										</button>
+									{/if}
+									<div class="min-w-0 flex-1">
+										<div class="flex items-center gap-1.5">
+											{#if item.type === 'task'}
+												<span class="inline-block h-2 w-2 shrink-0 rounded-full bg-orange-500"></span>
+											{/if}
+											<p class="text-sm font-medium {item.status === 'completed' || item.status === 'cancelled' ? 'line-through' : ''}">{item.title}</p>
+										</div>
+										{#if item.start_time}
+											<div class="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+												<Clock class="h-3 w-3" />
+												{new Date(item.start_time).toLocaleTimeString('en-US', {
 													hour: 'numeric',
 													minute: '2-digit'
 												})}
-											</p>
+											</div>
 										{/if}
-										{#if event.location}
-											<p class="text-xs text-muted-foreground">{event.location}</p>
+										{#if item.location}
+											<div class="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+												<MapPin class="h-3 w-3" />
+												{item.location}
+											</div>
+										{/if}
+										{#if item.type === 'task' && item.priority && item.priority !== 'medium'}
+											<span class="mt-0.5 inline-block rounded px-1 text-[10px] font-medium {item.priority === 'urgent' ? 'bg-red-500/10 text-red-600' : item.priority === 'high' ? 'bg-orange-500/10 text-orange-600' : 'bg-muted text-muted-foreground'}">
+												{item.priority}
+											</span>
+										{/if}
+										{#if item.status === 'in_progress'}
+											<span class="mt-0.5 inline-block rounded bg-blue-500/10 px-1 text-[10px] font-medium text-blue-600 dark:text-blue-400">
+												in progress
+											</span>
+										{/if}
+										{#if item.description}
+											<p class="mt-1.5 rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{item.description}</p>
 										{/if}
 									</div>
+								</div>
+								<div class="mt-2 flex items-center gap-1 border-t pt-2">
+									{#if item.status !== 'cancelled' && item.status !== 'completed'}
+										<Button
+											variant="ghost"
+											size="sm"
+											class="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+											onclick={() => handleMarkStatus(item.id, 'cancelled')}
+										>
+											<X class="mr-1 h-3 w-3" />
+											Cancel
+										</Button>
+									{/if}
+									<div class="flex-1"></div>
 									<Button
 										variant="ghost"
 										size="sm"
-										class="h-6 text-xs text-destructive"
-										onclick={() => handleDeleteEvent(event.id)}>Delete</Button
+										class="h-6 px-2 text-xs text-destructive"
+										onclick={() => handleDeleteItem(item.id)}
 									>
+										<Trash2 class="mr-1 h-3 w-3" />
+										Delete
+									</Button>
 								</div>
-								{#if event.description}
-									<p class="mt-1 text-xs text-muted-foreground">{event.description}</p>
-								{/if}
 							</div>
 						{/each}
 					</div>
@@ -246,16 +363,32 @@
 <Dialog.Root bind:open={showCreateDialog}>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title>New Event</Dialog.Title>
+			<Dialog.Title>New {newEventType === 'task' ? 'Task' : 'Event'}</Dialog.Title>
 		</Dialog.Header>
 		<div class="space-y-4 py-4">
+			<div class="flex gap-2">
+				<button
+					type="button"
+					class="flex-1 rounded-md border px-3 py-1.5 text-sm transition-colors {newEventType === 'event' ? 'border-primary bg-primary/10 text-primary' : 'border-input text-muted-foreground hover:bg-accent'}"
+					onclick={() => { newEventType = 'event'; }}
+				>
+					Event
+				</button>
+				<button
+					type="button"
+					class="flex-1 rounded-md border px-3 py-1.5 text-sm transition-colors {newEventType === 'task' ? 'border-orange-500 bg-orange-500/10 text-orange-600' : 'border-input text-muted-foreground hover:bg-accent'}"
+					onclick={() => { newEventType = 'task'; }}
+				>
+					Task
+				</button>
+			</div>
 			<div>
 				<Label>Title <span class="text-destructive">*</span></Label>
-				<Input bind:value={newEvent.title} placeholder="Event title" class="mt-1" />
+				<Input bind:value={newTitle} placeholder="{newEventType === 'task' ? 'Task name' : 'Event title'}" class="mt-1" />
 			</div>
 			<div class="grid grid-cols-2 gap-3">
 				<div>
-					<Label>Start date <span class="text-destructive">*</span></Label>
+					<Label>{newEventType === 'task' ? 'Due date' : 'Start date'} <span class="text-destructive">*</span></Label>
 					<input
 						type="date"
 						value={startDate}
@@ -264,7 +397,7 @@
 					/>
 				</div>
 				<div>
-					<Label>Start time <span class="text-destructive">*</span></Label>
+					<Label>{newEventType === 'task' ? 'Due time' : 'Start time'} <span class="text-destructive">*</span></Label>
 					<input
 						type="time"
 						value={startTime}
@@ -273,34 +406,53 @@
 					/>
 				</div>
 			</div>
-			<div class="grid grid-cols-2 gap-3">
-				<div>
-					<Label>End date</Label>
-					<input
-						type="date"
-						value={endDate}
-						oninput={(e) => { endDate = e.currentTarget.value; }}
-						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-					/>
+			{#if newEventType === 'event'}
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<Label>End date</Label>
+						<input
+							type="date"
+							value={endDate}
+							oninput={(e) => { endDate = e.currentTarget.value; }}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+						/>
+					</div>
+					<div>
+						<Label>End time</Label>
+						<input
+							type="time"
+							value={endTime}
+							oninput={(e) => { endTime = e.currentTarget.value; }}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+						/>
+					</div>
 				</div>
+			{/if}
+			{#if newEventType === 'task'}
 				<div>
-					<Label>End time</Label>
-					<input
-						type="time"
-						value={endTime}
-						oninput={(e) => { endTime = e.currentTarget.value; }}
+					<Label>Priority</Label>
+					<select
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-					/>
+						value={newPriority}
+						onchange={(e) => { newPriority = e.currentTarget.value; }}
+					>
+						<option value="low">Low</option>
+						<option value="medium">Medium</option>
+						<option value="high">High</option>
+						<option value="urgent">Urgent</option>
+					</select>
 				</div>
-			</div>
-			<div>
-				<Label>Location</Label>
-				<Input bind:value={newEvent.location} placeholder="Location" class="mt-1" />
-			</div>
+			{/if}
+			{#if newEventType === 'event'}
+				<div>
+					<Label>Location</Label>
+					<Input bind:value={newLocation} placeholder="Location" class="mt-1" />
+				</div>
+			{/if}
 			<div>
 				<Label>Description</Label>
 				<Textarea
-					bind:value={newEvent.description}
+					bind:value={newDescription}
 					placeholder="Description"
 					class="mt-1 max-h-[120px] resize-none"
 					rows={3}

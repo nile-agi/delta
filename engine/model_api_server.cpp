@@ -810,7 +810,11 @@ class ModelAPIServer {
                 } catch (...) {
                 }
             }
-            auto events = db.list_events(start, end, limit);
+            std::string type = req.has_param("type") ? req.get_param_value("type") : "";
+            std::string status = req.has_param("status") ? req.get_param_value("status") : "";
+            std::string priority = req.has_param("priority") ? req.get_param_value("priority") : "";
+            std::string tags = req.has_param("tags") ? req.get_param_value("tags") : "";
+            auto events = db.list_events(start, end, limit, type, status, priority, tags);
             json result = {{"events", json::array()}, {"count", events.size()}};
             for (auto& e : events)
                 result["events"].push_back(e);
@@ -867,87 +871,15 @@ class ModelAPIServer {
             res.set_content(json({{"deleted", true}}).dump(), "application/json");
         });
 
-        // GET /api/agent/tasks - List tasks
-        server_->Get("/api/agent/tasks", [](const httplib::Request& req, httplib::Response& res) {
+        // GET /api/agent/reminders/pending - Get upcoming reminders and mark them as fired
+        server_->Get("/api/agent/reminders/pending", [](const httplib::Request&, httplib::Response& res) {
             auto& db = agent::AgentDatabase::instance();
-            std::string status = req.has_param("status") ? req.get_param_value("status") : "";
-            std::string priority = req.has_param("priority") ? req.get_param_value("priority") : "";
-            std::string tags = req.has_param("tags") ? req.get_param_value("tags") : "";
-            int limit = 50;
-            if (req.has_param("limit")) {
-                try {
-                    limit = std::stoi(req.get_param_value("limit"));
-                } catch (...) {
-                }
+            auto reminders = db.get_upcoming_reminders();
+            for (auto& r : reminders) {
+                db.mark_reminded(r.value("id", ""));
             }
-            auto tasks = db.list_tasks(status, priority, limit, tags);
-            json result = {{"tasks", json::array()}, {"count", tasks.size()}};
-            for (auto& t : tasks)
-                result["tasks"].push_back(t);
+            json result = {{"reminders", reminders}, {"count", reminders.size()}};
             res.set_content(result.dump(), "application/json");
-        });
-
-        // POST /api/agent/tasks - Create task
-        server_->Post("/api/agent/tasks", [](const httplib::Request& req, httplib::Response& res) {
-            try {
-                auto& db = agent::AgentDatabase::instance();
-                json body = json::parse(req.body);
-                std::string id = db.create_task(body);
-                if (id.empty()) {
-                    res.status = 400;
-                    res.set_content(json({{"error", "Failed to create task"}}).dump(), "application/json");
-                    return;
-                }
-                auto task = db.get_task(id);
-                res.set_content(task.dump(), "application/json");
-            } catch (const std::exception& e) {
-                res.status = 400;
-                res.set_content(json({{"error", e.what()}}).dump(), "application/json");
-            }
-        });
-
-        // PUT /api/agent/tasks/:id - Update task
-        server_->Put(R"(/api/agent/tasks/(.+))", [](const httplib::Request& req, httplib::Response& res) {
-            try {
-                auto& db = agent::AgentDatabase::instance();
-                std::string id = req.matches[1];
-                json body = json::parse(req.body);
-                if (!db.update_task(id, body)) {
-                    res.status = 404;
-                    res.set_content(json({{"error", "Task not found"}}).dump(), "application/json");
-                    return;
-                }
-                auto task = db.get_task(id);
-                res.set_content(task.dump(), "application/json");
-            } catch (const std::exception& e) {
-                res.status = 400;
-                res.set_content(json({{"error", e.what()}}).dump(), "application/json");
-            }
-        });
-
-        // DELETE /api/agent/tasks/:id - Delete task
-        server_->Delete(R"(/api/agent/tasks/(.+))", [](const httplib::Request& req, httplib::Response& res) {
-            auto& db = agent::AgentDatabase::instance();
-            std::string id = req.matches[1];
-            if (!db.delete_task(id)) {
-                res.status = 404;
-                res.set_content(json({{"error", "Task not found"}}).dump(), "application/json");
-                return;
-            }
-            res.set_content(json({{"deleted", true}}).dump(), "application/json");
-        });
-
-        // POST /api/agent/tasks/:id/complete - Mark task as completed
-        server_->Post(R"(/api/agent/tasks/(.+)/complete)", [](const httplib::Request& req, httplib::Response& res) {
-            auto& db = agent::AgentDatabase::instance();
-            std::string id = req.matches[1];
-            if (!db.complete_task(id)) {
-                res.status = 404;
-                res.set_content(json({{"error", "Task not found"}}).dump(), "application/json");
-                return;
-            }
-            auto task = db.get_task(id);
-            res.set_content(task.dump(), "application/json");
         });
 
         // Serve web UI static files when path is set (for first-time users with no model; no llama-server)
