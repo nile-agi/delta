@@ -310,6 +310,15 @@ export class ModelsService {
 		return response.json() as Promise<ModelOperationResponse>;
 	}
 
+	static async checkHealth(): Promise<boolean> {
+		try {
+			const res = await fetch(`${getServerBaseUrl()}/health`);
+			return res.ok;
+		} catch {
+			return false;
+		}
+	}
+
 	/**
 	 * Get system RAM information
 	 */
