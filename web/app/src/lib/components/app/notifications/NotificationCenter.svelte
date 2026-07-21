@@ -12,6 +12,49 @@
 
 	let expanded = $state<Record<string, boolean>>({});
 	const items = $derived(activeNotifications());
+	let prevCount = $state(0);
+
+	function playChime() {
+		try {
+			const ctx = new AudioContext();
+			const now = ctx.currentTime;
+
+			const g = ctx.createGain();
+			g.gain.setValueAtTime(0.18, now);
+			g.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+			g.connect(ctx.destination);
+
+			const o1 = ctx.createOscillator();
+			o1.type = 'sine';
+			o1.frequency.setValueAtTime(880, now);
+			o1.connect(g);
+			o1.start(now);
+			o1.stop(now + 0.15);
+
+			const g2 = ctx.createGain();
+			g2.gain.setValueAtTime(0.14, now + 0.12);
+			g2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+			g2.connect(ctx.destination);
+
+			const o2 = ctx.createOscillator();
+			o2.type = 'sine';
+			o2.frequency.setValueAtTime(1175, now + 0.12);
+			o2.connect(g2);
+			o2.start(now + 0.12);
+			o2.stop(now + 0.35);
+
+			setTimeout(() => ctx.close(), 700);
+		} catch {
+			// Audio not available
+		}
+	}
+
+	$effect(() => {
+		if (items.length > prevCount) {
+			playChime();
+		}
+		prevCount = items.length;
+	});
 
 	function toggle(id: string) {
 		expanded = { ...expanded, [id]: !expanded[id] };
