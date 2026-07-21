@@ -16,7 +16,7 @@
 	import ChatMessageStatistics from './ChatMessageStatistics.svelte';
 	import Label from '$lib/components/ui/label/label.svelte';
 	import { config } from '$lib/stores/settings.svelte';
-	import { modelOptions, selectedModelId, selectModel } from '$lib/stores/models.svelte';
+	import { modelOptions, selectModel } from '$lib/stores/models.svelte';
 	import type { DatabaseMessageToolCall } from '$lib/types/database';
 	import { copyToClipboard } from '$lib/utils/copy';
 	import autoResizeTextarea from '$lib/utils/autoresize-textarea';
@@ -83,7 +83,6 @@
 	const processingState = useProcessingState();
 	let currentConfig = $derived(config());
 	let options = $derived(modelOptions());
-	let activeModelId = $derived(selectedModelId());
 	const streamingState = $derived(
 		getConversationStreaming(activeConversation()?.id ?? '')
 	);
@@ -181,16 +180,11 @@
 				modelId
 			);
 		}
-		if (activeModelId) {
-			const opt = options.find((m) => m.id === activeModelId);
-			return opt?.name ?? activeModelId;
-		}
 		return 'Unknown model';
 	}
 
 	async function handleModelSelect(optionId: string) {
-		const current = message.model ?? activeModelId;
-		if (optionId === current) return;
+		if (optionId === message.model) return;
 		try {
 			await selectModel(optionId);
 			onRegenerate();

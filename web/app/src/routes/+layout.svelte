@@ -319,4 +319,60 @@
 <svelte:window onkeydown={handleKeydown} bind:innerHeight />
 
 <style>
+	.splash-screen {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 100vh;
+		background: var(--background);
+		color: var(--foreground);
+		overflow: hidden;
+	}
+	.splash-content {
+		text-align: center;
+		animation: splashFadeIn 0.6s ease-out forwards;
+		opacity: 0;
+	}
+	.splash-logo {
+		width: 80px;
+		height: 80px;
+		margin: 0 auto 1.5rem;
+		animation: splashPulse 2s ease-in-out infinite;
+		color: #3898ec;
+		filter: drop-shadow(0 0 20px rgba(56, 152, 236, 0.3));
+	}
+	.splash-logo svg {
+		width: 100%;
+		height: 100%;
+	}
+	.splash-title {
+		font-size: 1.5rem;
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		margin-bottom: 0.25rem;
+	}
+	.splash-status {
+		font-size: 0.875rem;
+		opacity: 0.5;
+	}
+	.splash-dots span {
+		animation: splashBlink 1.4s infinite both;
+	}
+	.splash-dots span:nth-child(2) {
+		animation-delay: 0.2s;
+	}
+	.splash-dots span:nth-child(3) {
+		animation-delay: 0.4s;
+	}
+	@keyframes splashFadeIn {
+		to { opacity: 1; }
+	}
+	@keyframes splashPulse {
+		0%, 100% { transform: scale(1); opacity: 1; }
+		50% { transform: scale(1.05); opacity: 0.8; }
+	}
+	@keyframes splashBlink {
+		0%, 80%, 100% { opacity: 0; }
+		40% { opacity: 1; }
+	}
 </style>

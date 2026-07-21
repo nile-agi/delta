@@ -3,6 +3,7 @@ import { chatService, slotsService } from '$lib/services';
 import { config } from '$lib/stores/settings.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
 import { normalizeModelName } from '$lib/utils/model-names';
+import { selectedModelName } from '$lib/stores/models.svelte';
 import { filterByLeafNodeId, findLeafNode, findDescendantMessages } from '$lib/utils/branching';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
@@ -719,6 +720,13 @@ class ChatStore {
 		}
 	}
 
+	private resolveCurrentModelName(): string | null {
+		const name = selectedModelName() ?? serverStore.modelName ?? null;
+		if (!name) return null;
+		const normalized = normalizeModelName(name);
+		return normalized || null;
+	}
+
 	/**
 	 * Creates a new assistant message in the database
 	 * @param parentId - Optional parent message ID, defaults to '-1'
@@ -736,7 +744,7 @@ class ChatStore {
 				timestamp: Date.now(),
 				thinking: '',
 				children: [],
-				model: null
+				model: this.resolveCurrentModelName()
 			},
 			parentId || null
 		);
@@ -1747,7 +1755,7 @@ class ChatStore {
 					content: '',
 					thinking: '',
 					children: [],
-					model: null
+					model: this.resolveCurrentModelName()
 				},
 				parentMessage.id
 			);
@@ -1805,7 +1813,7 @@ class ChatStore {
 					content: '',
 					thinking: '',
 					children: [],
-					model: null
+					model: this.resolveCurrentModelName()
 				},
 				userMessageId
 			);

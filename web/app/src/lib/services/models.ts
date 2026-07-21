@@ -311,6 +311,76 @@ export class ModelsService {
 		return response.json() as Promise<ModelOperationResponse>;
 	}
 
+	static async checkHealth(): Promise<boolean> {
+		try {
+			const res = await fetch(`${getServerBaseUrl()}/health`);
+			return res.ok;
+		} catch {
+			return false;
+		}
+	}
+
+	static async checkModelReady(
+		modelName: string
+	): Promise<{ ready: boolean; failed: boolean; needsLoad: boolean; routerModelName?: string }> {
+		try {
+			const res = await fetch(`${getServerBaseUrl()}/v1/models`);
+			if (!res.ok) return { ready: false, failed: false, needsLoad: false };
+			const data = await res.json();
+			if (!data?.data?.length) return { ready: false, failed: false, needsLoad: false };
+
+			const hasStatusFields = data.data.some(
+				(m: Record<string, unknown>) => m.status && typeof m.status === 'object'
+			);
+			if (!hasStatusFields) {
+				return { ready: true, failed: false, needsLoad: false };
+			}
+
+			const normalized = modelName.toLowerCase();
+			const getId = (m: Record<string, unknown>) => ((m.id as string) || '').toLowerCase();
+
+			let model = data.data.find((m: Record<string, unknown>) => getId(m) === normalized);
+			if (!model) {
+				const stem = normalized.split(/[/\\]/).pop()?.replace(/\.gguf$/i, '') ?? normalized;
+				model = data.data.find((m: Record<string, unknown>) => getId(m) === stem);
+			}
+
+			if (!model?.status || typeof model.status !== 'object') {
+				return { ready: false, failed: false, needsLoad: false };
+			}
+
+			const routerModelName = (model.id as string) || modelName;
+			const status = model.status as Record<string, unknown>;
+			const value = status.value as string;
+
+			if (value === 'loaded' || value === 'sleeping') {
+				return { ready: true, failed: false, needsLoad: false, routerModelName };
+			}
+			if (status.failed || (value === 'unloaded' && status.exit_code != null && status.exit_code !== 0)) {
+				return { ready: false, failed: true, needsLoad: false, routerModelName };
+			}
+			if (value === 'unloaded') {
+				return { ready: false, failed: false, needsLoad: true, routerModelName };
+			}
+			return { ready: false, failed: false, needsLoad: false, routerModelName };
+		} catch {
+			return { ready: false, failed: false, needsLoad: false };
+		}
+	}
+
+	static async triggerModelLoad(modelName: string): Promise<boolean> {
+		try {
+			const res = await fetch(`${getServerBaseUrl()}/models/load`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ model: modelName })
+			});
+			return res.ok;
+		} catch {
+			return false;
+		}
+	}
+
 	/**
 	 * Get system RAM information
 	 */

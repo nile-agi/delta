@@ -204,88 +204,117 @@ class ModelsStore {
 		this._loadingModelId = modelId;
 		this._error = null;
 
-		try {
-			// Get the model path from the backend API; pass user's stored context length if set
-			const storedCtx =
-				typeof window !== 'undefined'
-					? (() => {
-							const raw = localStorage.getItem('delta_model_ctx_' + option.model);
-							if (!raw) return undefined;
-							const n = parseInt(raw, 10);
-							return Number.isNaN(n) ? undefined : n;
-						})()
-					: undefined;
-			try {
-				const useResponse = await ModelsService.use(
-					option.model,
-					storedCtx != null && storedCtx > 0 ? storedCtx : undefined
-				);
-				// Prefer model_alias for chat requests (router mode); fallback to model_path or option.model
-				const modelForRequests =
-					useResponse.model_alias ??
-					useResponse.model_name ??
-					useResponse.model_path ??
-					option.model;
+		const storedCtx =
+			typeof window !== 'undefined'
+				? (() => {
+						const raw = localStorage.getItem('delta_model_ctx_' + option.model);
+						if (!raw) return undefined;
+						const n = parseInt(raw, 10);
+						return Number.isNaN(n) ? undefined : n;
+					})()
+				: undefined;
 
-				this._selectedModelId = option.id;
-				this._selectedModelName = modelForRequests;
-				this._persistedSelection.value = { id: option.id, model: modelForRequests };
-				this._modelLoadedOnServer = !!useResponse.loaded;
-				if (useResponse.loaded) {
-					// Server restarted with new model (same as /use in terminal). Refetch so main API shows current model.
-					await this.fetch(true);
-					// Refresh server props to pick up runtime chat_template_caps (tool support detection).
-					serverStore.fetchServerProps({ silent: true });
-					// Update Context stat immediately to loaded model's n_ctx (from llama-server -c).
-					if (useResponse.ctx_size != null && useResponse.ctx_size > 0) {
-						slotsService.setLoadedContextTotal(useResponse.ctx_size);
-					}
-					if (typeof window !== 'undefined') {
+		try {
+			const useResponse = await ModelsService.use(
+				option.model,
+				storedCtx != null && storedCtx > 0 ? storedCtx : undefined
+			);
+			const modelForRequests =
+				useResponse.model_alias ??
+				useResponse.model_name ??
+				useResponse.model_path ??
+				option.model;
+
+			this._selectedModelId = option.id;
+			this._selectedModelName = modelForRequests;
+			this._persistedSelection.value = { id: option.id, model: modelForRequests };
+			this._modelLoadedOnServer = false;
+
+			if (typeof window !== 'undefined') {
+				const pollInterval = useResponse.loaded ? 1000 : 2000;
+				const maxAttempts = useResponse.loaded ? 120 : 60;
+				let attempts = 0;
+				let healthPassed = false;
+				let loadTriggered = false;
+				const expectedModelId = option.id;
+				const modelNameForCheck = modelForRequests;
+
+				const onReady = async () => {
+					this._modelLoadedOnServer = true;
+					this._updating = false;
+					this._loadingModelId = null;
+					try {
 						const { forceModelApiSeparatePort } = await import('$lib/utils/model-api-url');
 						forceModelApiSeparatePort();
-					}
-				} else {
-					// Migration in progress (UI-only -> llama-server). Poll so we show green dot once server is up.
-					if (typeof window !== 'undefined') {
-						const pollInterval = 2000;
-						const maxAttempts = 30;
-						let attempts = 0;
-						const checkLoaded = async () => {
-							attempts++;
-							try {
-								const list = await ModelsService.list();
-								if (list?.data?.length > 0) {
-									this._modelLoadedOnServer = true;
-									const { forceModelApiSeparatePort } = await import('$lib/utils/model-api-url');
-									forceModelApiSeparatePort();
-									await this.fetch(true);
-									serverStore.fetchServerProps({ silent: true });
-									return;
+						await this.fetch(true);
+						if (useResponse.ctx_size != null && useResponse.ctx_size > 0) {
+							slotsService.setLoadedContextTotal(useResponse.ctx_size);
+						}
+					} catch { /* state already updated — fetch failure is non-critical */ }
+				};
+
+				const checkReady = async () => {
+					if (this._selectedModelId !== expectedModelId) return;
+					attempts++;
+					try {
+						if (!healthPassed) {
+							const healthy = await ModelsService.checkHealth();
+							if (this._selectedModelId !== expectedModelId) return;
+							if (!healthy) {
+								if (attempts < maxAttempts && this._selectedModelId === expectedModelId) {
+									setTimeout(checkReady, pollInterval);
+								} else if (this._selectedModelId === expectedModelId) {
+									this._error = 'Model took too long to load. Try selecting it again.';
+									this._updating = false;
+									this._loadingModelId = null;
 								}
-							} catch {
-								// Ignore
+								return;
 							}
-							if (attempts < maxAttempts && this._selectedModelId === option.id) {
-								setTimeout(checkLoaded, pollInterval);
-							}
-						};
-						setTimeout(checkLoaded, pollInterval);
+							healthPassed = true;
+						}
+
+						const modelStatus = await ModelsService.checkModelReady(modelNameForCheck);
+						if (this._selectedModelId !== expectedModelId) return;
+
+						if (modelStatus.ready) {
+							await onReady();
+							return;
+						}
+						if (modelStatus.failed) {
+							this._error = `Model "${option.name}" failed to load.`;
+							this._updating = false;
+							this._loadingModelId = null;
+							return;
+						}
+						if (modelStatus.needsLoad && !loadTriggered) {
+							loadTriggered = true;
+							await ModelsService.triggerModelLoad(modelStatus.routerModelName ?? modelNameForCheck);
+						}
+					} catch { /* ignore */ }
+					if (attempts < maxAttempts && this._selectedModelId === expectedModelId) {
+						setTimeout(checkReady, pollInterval);
+					} else if (this._selectedModelId === expectedModelId) {
+						this._error = 'Model took too long to load. Try selecting it again.';
+						this._updating = false;
+						this._loadingModelId = null;
 					}
-				}
-			} catch (error) {
-				console.warn('Failed to switch model:', error);
-				const rawMessage = error instanceof Error ? error.message : String(error);
-				this._error =
-					rawMessage === 'Failed to fetch' || (error instanceof TypeError && rawMessage.includes('fetch'))
-						? "Cannot reach the server while loading the model. Make sure Delta is running (run 'delta' in terminal). If you just selected a model, wait a few seconds and try again."
-						: rawMessage;
-				// Still set selection so chat can use this model (e.g. router mode loads on demand)
-				this._selectedModelId = option.id;
-				this._selectedModelName = option.model;
-				this._persistedSelection.value = { id: option.id, model: option.model };
-				this._modelLoadedOnServer = false;
+				};
+				setTimeout(checkReady, pollInterval);
+			} else {
+				this._updating = false;
+				this._loadingModelId = null;
 			}
-		} finally {
+		} catch (error) {
+			console.warn('Failed to switch model:', error);
+			const rawMessage = error instanceof Error ? error.message : String(error);
+			this._error =
+				rawMessage === 'Failed to fetch' || (error instanceof TypeError && rawMessage.includes('fetch'))
+					? "Cannot reach the server while loading the model. Make sure Delta is running (run 'delta' in terminal). If you just selected a model, wait a few seconds and try again."
+					: rawMessage;
+			this._selectedModelId = option.id;
+			this._selectedModelName = option.model;
+			this._persistedSelection.value = { id: option.id, model: option.model };
+			this._modelLoadedOnServer = false;
 			this._updating = false;
 			this._loadingModelId = null;
 		}
