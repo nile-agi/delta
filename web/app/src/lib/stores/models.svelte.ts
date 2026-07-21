@@ -354,3 +354,9 @@ export const selectedModelSupportsTools = () => modelsStore.selectedModelSupport
 export const fetchModels = modelsStore.fetch.bind(modelsStore);
 export const selectModel = modelsStore.select.bind(modelsStore);
 export const unloadModel = modelsStore.unload.bind(modelsStore);
+
+let _modelDropdownTrigger = $state(0);
+export const modelDropdownTrigger = () => _modelDropdownTrigger;
+export function requestModelSelection() {
+	_modelDropdownTrigger++;
+}

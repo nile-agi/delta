@@ -3,7 +3,7 @@ import { chatService, slotsService } from '$lib/services';
 import { config } from '$lib/stores/settings.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
 import { normalizeModelName } from '$lib/utils/model-names';
-import { selectedModelName } from '$lib/stores/models.svelte';
+import { selectedModelName, requestModelSelection } from '$lib/stores/models.svelte';
 import { filterByLeafNodeId, findLeafNode, findDescendantMessages } from '$lib/utils/branching';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
@@ -656,9 +656,14 @@ class ChatStore {
 						const [failedMessage] = this.activeMessages.splice(messageIndex, 1);
 
 						if (failedMessage) {
+							const parentId = failedMessage.parent ?? '-1';
 							DatabaseStore.deleteMessage(failedMessage.id).catch((cleanupError) => {
 								console.error('Failed to remove assistant message after error:', cleanupError);
 							});
+							if (this.activeConversation) {
+								DatabaseStore.updateCurrentNode(this.activeConversation.id, parentId).catch(() => {});
+								this.activeConversation.currNode = parentId;
+							}
 						}
 					}
 
@@ -685,12 +690,14 @@ class ChatStore {
 	}
 
 	private showErrorDialog(type: 'timeout' | 'server', message: string): void {
-		// Never show error when the server says the model is still loading - the model selector shows a spinner until ready.
-		const isModelLoadingError =
-			message &&
-			(message === 'Loading model' ||
-				(message.toLowerCase().includes('loading') && message.toLowerCase().includes('model')));
-		if (isModelLoadingError) {
+		const lower = message?.toLowerCase() ?? '';
+		// Model still loading -- selector already shows a spinner
+		if (lower === 'loading model' || (lower.includes('loading') && lower.includes('model'))) {
+			return;
+		}
+		// No model selected -- open the model selector instead of showing an error
+		if (lower.includes('model') && lower.includes('missing')) {
+			requestModelSelection();
 			return;
 		}
 		this.errorDialogState = { type, message };
@@ -725,6 +732,12 @@ class ChatStore {
 		if (!name) return null;
 		const normalized = normalizeModelName(name);
 		return normalized || null;
+	}
+
+	private requireModel(): boolean {
+		if (this.resolveCurrentModelName()) return true;
+		requestModelSelection();
+		return false;
 	}
 
 	/**
@@ -773,6 +786,7 @@ class ChatStore {
 	 */
 	async sendMessage(content: string, extras?: DatabaseMessageExtra[]): Promise<void> {
 		if (!content.trim() && (!extras || extras.length === 0)) return;
+		if (!this.requireModel()) return;
 
 		if (this.activeConversation && this.isConversationLoading(this.activeConversation.id)) {
 			console.log('Cannot send message: current conversation is already processing a message');
@@ -1038,6 +1052,7 @@ class ChatStore {
 	 */
 	async regenerateMessage(messageId: string): Promise<void> {
 		if (!this.activeConversation || this.isLoading) return;
+		if (!this.requireModel()) return;
 
 		try {
 			const messageIndex = this.findMessageIndex(messageId);
@@ -1097,6 +1112,7 @@ class ChatStore {
 	 */
 	async continueMessage(messageId: string): Promise<void> {
 		if (!this.activeConversation || this.isLoading) return;
+		if (!this.requireModel()) return;
 
 		try {
 			const path = await DatabaseStore.getConversationPath(this.activeConversation.id);
@@ -1719,6 +1735,10 @@ class ChatStore {
 	 */
 	async regenerateMessageWithBranching(messageId: string): Promise<void> {
 		if (!this.activeConversation || this.isLoading) return;
+		if (!this.requireModel()) return;
+
+		let newAssistantMessage: DatabaseMessage | null = null;
+		const previousNode = this.activeConversation.currNode;
 
 		try {
 			const messageIndex = this.findMessageIndex(messageId);
@@ -1746,7 +1766,7 @@ class ChatStore {
 			this.setConversationLoading(this.activeConversation.id, true);
 			this.clearConversationStreaming(this.activeConversation.id);
 
-			const newAssistantMessage = await DatabaseStore.createMessageBranch(
+			newAssistantMessage = await DatabaseStore.createMessageBranch(
 				{
 					convId: this.activeConversation.id,
 					type: 'text',
@@ -1779,6 +1799,12 @@ class ChatStore {
 			if (this.isAbortError(error)) return;
 
 			console.error('Failed to regenerate message with branching:', error);
+			if (newAssistantMessage && this.activeConversation) {
+				await DatabaseStore.deleteMessage(newAssistantMessage.id).catch(() => {});
+				await DatabaseStore.updateCurrentNode(this.activeConversation.id, previousNode).catch(() => {});
+				this.activeConversation.currNode = previousNode;
+				await this.refreshActiveMessages();
+			}
 			this.setConversationLoading(this.activeConversation!.id, false);
 		}
 	}
@@ -1789,6 +1815,7 @@ class ChatStore {
 	 */
 	private async generateResponseForMessage(userMessageId: string): Promise<void> {
 		if (!this.activeConversation) return;
+		if (!this.requireModel()) return;
 
 		this.errorDialogState = null;
 		this.setConversationLoading(this.activeConversation.id, true);

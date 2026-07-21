@@ -7,6 +7,7 @@
 	import {
 		fetchModels,
 		loadingModelId,
+		modelDropdownTrigger,
 		modelLoadedOnServer,
 		modelOptions,
 		modelsError,
@@ -154,6 +155,7 @@
 	}
 
 	let lastOpenTrigger = $state(0);
+	let lastGlobalTrigger = $state(0);
 
 	$effect(() => {
 		if (loading || updating) {
@@ -165,6 +167,14 @@
 		const trigger = openTrigger;
 		if (trigger > lastOpenTrigger && options.length > 0 && !loading && !updating) {
 			lastOpenTrigger = trigger;
+			void openMenu();
+		}
+	});
+
+	$effect(() => {
+		const trigger = modelDropdownTrigger();
+		if (trigger > lastGlobalTrigger && options.length > 0 && !loading && !updating) {
+			lastGlobalTrigger = trigger;
 			void openMenu();
 		}
 	});
