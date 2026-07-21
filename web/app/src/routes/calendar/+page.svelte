@@ -44,6 +44,24 @@
 	let editError = $state('');
 	let saving = $state(false);
 
+	function handleTimeInput(e: Event, setter: (v: string) => void) {
+		const input = e.currentTarget as HTMLInputElement;
+		let raw = input.value.replace(/[^0-9]/g, '');
+		if (raw.length > 4) raw = raw.slice(0, 4);
+		if (raw.length >= 3) {
+			raw = raw.slice(0, 2) + ':' + raw.slice(2);
+		}
+		input.value = raw;
+		setter(raw);
+	}
+
+	function isValidTime(v: string): boolean {
+		const m = v.match(/^(\d{1,2}):(\d{2})$/);
+		if (!m) return false;
+		const h = parseInt(m[1]), min = parseInt(m[2]);
+		return h >= 0 && h <= 23 && min >= 0 && min <= 59;
+	}
+
 	const month = $derived(calendarCurrentMonth());
 	const events = $derived(calendarEvents());
 
@@ -128,6 +146,8 @@
 		if (!newTitle) { createError = 'Title is required'; return; }
 		if (!startDate) { createError = 'Start date is required'; return; }
 		if (!startTime) { createError = 'Start time is required'; return; }
+		if (!isValidTime(startTime)) { createError = 'Invalid time format (use HH:MM)'; return; }
+		if (endTime && !isValidTime(endTime)) { createError = 'Invalid end time format (use HH:MM)'; return; }
 
 		const data: Partial<CalendarEvent> = {
 			title: newTitle,
@@ -197,6 +217,8 @@
 		editError = '';
 		if (!editTitle) { editError = 'Title is required'; return; }
 		if (!editStartDate || !editStartTime) { editError = 'Date and time are required'; return; }
+		if (!isValidTime(editStartTime)) { editError = 'Invalid time format (use HH:MM)'; return; }
+		if (editEndTime && !isValidTime(editEndTime)) { editError = 'Invalid end time format (use HH:MM)'; return; }
 
 		const updates: Partial<CalendarEvent> = {
 			title: editTitle,
@@ -483,9 +505,12 @@
 				<div>
 					<Label>{newEventType === 'task' ? 'Due time' : 'Start time'} <span class="text-destructive">*</span></Label>
 					<input
-						type="time"
+						type="text"
+						inputmode="numeric"
+						placeholder="HH:MM"
+						maxlength={5}
 						value={startTime}
-						oninput={(e) => { startTime = e.currentTarget.value; }}
+						oninput={(e) => handleTimeInput(e, (v) => { startTime = v; })}
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
 					/>
 				</div>
@@ -504,9 +529,12 @@
 					<div>
 						<Label>End time</Label>
 						<input
-							type="time"
+							type="text"
+							inputmode="numeric"
+							placeholder="HH:MM"
+							maxlength={5}
 							value={endTime}
-							oninput={(e) => { endTime = e.currentTarget.value; }}
+							oninput={(e) => handleTimeInput(e, (v) => { endTime = v; })}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
 						/>
 					</div>
@@ -579,9 +607,12 @@
 					<div>
 						<Label>{editingItem.type === 'task' ? 'Due time' : 'Start time'} <span class="text-destructive">*</span></Label>
 						<input
-							type="time"
+							type="text"
+							inputmode="numeric"
+							placeholder="HH:MM"
+							maxlength={5}
 							value={editStartTime}
-							oninput={(e) => { editStartTime = e.currentTarget.value; }}
+							oninput={(e) => handleTimeInput(e, (v) => { editStartTime = v; })}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
 						/>
 					</div>
@@ -600,9 +631,12 @@
 						<div>
 							<Label>End time</Label>
 							<input
-								type="time"
+								type="text"
+								inputmode="numeric"
+								placeholder="HH:MM"
+								maxlength={5}
 								value={editEndTime}
-								oninput={(e) => { editEndTime = e.currentTarget.value; }}
+								oninput={(e) => handleTimeInput(e, (v) => { editEndTime = v; })}
 								class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
 							/>
 						</div>
