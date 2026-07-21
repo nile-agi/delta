@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ChevronLeft, ChevronRight, Plus, Check, X, Undo2, Trash2, MapPin, Clock, Play } from '@lucide/svelte';
+	import { ChevronLeft, ChevronRight, Plus, Check, X, Undo2, Trash2, MapPin, Clock, Play, Pencil } from '@lucide/svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import Input from '$lib/components/ui/input/input.svelte';
@@ -30,6 +30,19 @@
 	let createError = $state('');
 	let creating = $state(false);
 	let selectedDate = $state('');
+
+	let showEditDialog = $state(false);
+	let editingItem = $state<CalendarEvent | null>(null);
+	let editTitle = $state('');
+	let editDescription = $state('');
+	let editLocation = $state('');
+	let editPriority = $state('medium');
+	let editStartDate = $state('');
+	let editStartTime = $state('');
+	let editEndDate = $state('');
+	let editEndTime = $state('');
+	let editError = $state('');
+	let saving = $state(false);
 
 	const month = $derived(calendarCurrentMonth());
 	const events = $derived(calendarEvents());
@@ -154,6 +167,62 @@
 	async function handleDeleteItem(id: string) {
 		await deleteEvent(id);
 		await loadMonthEvents(month);
+	}
+
+	function openEditDialog(item: CalendarEvent) {
+		editingItem = item;
+		editTitle = item.title;
+		editDescription = item.description || '';
+		editLocation = item.location || '';
+		editPriority = item.priority || 'medium';
+		if (item.start_time) {
+			const [d, t] = item.start_time.split('T');
+			editStartDate = d;
+			editStartTime = t?.substring(0, 5) || '';
+		}
+		if (item.end_time) {
+			const [d, t] = item.end_time.split('T');
+			editEndDate = d;
+			editEndTime = t?.substring(0, 5) || '';
+		} else {
+			editEndDate = '';
+			editEndTime = '';
+		}
+		editError = '';
+		showEditDialog = true;
+	}
+
+	async function handleSaveEdit() {
+		if (!editingItem) return;
+		editError = '';
+		if (!editTitle) { editError = 'Title is required'; return; }
+		if (!editStartDate || !editStartTime) { editError = 'Date and time are required'; return; }
+
+		const updates: Partial<CalendarEvent> = {
+			title: editTitle,
+			start_time: `${editStartDate}T${editStartTime}:00`,
+			description: editDescription,
+			location: editLocation
+		};
+
+		if (editingItem.type === 'task') {
+			updates.priority = editPriority as CalendarEvent['priority'];
+		}
+		if (editingItem.type === 'event' && editEndDate && editEndTime) {
+			updates.end_time = `${editEndDate}T${editEndTime}:00`;
+		}
+
+		saving = true;
+		try {
+			await updateEvent(editingItem.id, updates);
+			showEditDialog = false;
+			editingItem = null;
+			await loadMonthEvents(month);
+		} catch (e) {
+			editError = e instanceof Error ? e.message : 'Failed to save';
+		} finally {
+			saving = false;
+		}
 	}
 
 	onMount(() => {
@@ -304,7 +373,13 @@
 												{new Date(item.start_time).toLocaleTimeString('en-US', {
 													hour: 'numeric',
 													minute: '2-digit'
-												})}
+												})}{#if item.end_time}
+													<span class="text-muted-foreground/60">-</span>
+													{new Date(item.end_time).toLocaleTimeString('en-US', {
+														hour: 'numeric',
+														minute: '2-digit'
+													})}
+												{/if}
 											</div>
 										{/if}
 										{#if item.location}
@@ -329,6 +404,15 @@
 									</div>
 								</div>
 								<div class="mt-2 flex items-center gap-1 border-t pt-2">
+									<Button
+										variant="ghost"
+										size="sm"
+										class="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+										onclick={() => openEditDialog(item)}
+									>
+										<Pencil class="mr-1 h-3 w-3" />
+										Edit
+									</Button>
 									{#if item.status !== 'cancelled' && item.status !== 'completed'}
 										<Button
 											variant="ghost"
@@ -468,5 +552,102 @@
 				{creating ? 'Creating...' : 'Create'}
 			</Button>
 		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={showEditDialog}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Edit {editingItem?.type === 'task' ? 'Task' : 'Event'}</Dialog.Title>
+		</Dialog.Header>
+		{#if editingItem}
+			<div class="space-y-4 py-4">
+				<div>
+					<Label>Title <span class="text-destructive">*</span></Label>
+					<Input bind:value={editTitle} class="mt-1" />
+				</div>
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<Label>{editingItem.type === 'task' ? 'Due date' : 'Start date'} <span class="text-destructive">*</span></Label>
+						<input
+							type="date"
+							value={editStartDate}
+							oninput={(e) => { editStartDate = e.currentTarget.value; }}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+						/>
+					</div>
+					<div>
+						<Label>{editingItem.type === 'task' ? 'Due time' : 'Start time'} <span class="text-destructive">*</span></Label>
+						<input
+							type="time"
+							value={editStartTime}
+							oninput={(e) => { editStartTime = e.currentTarget.value; }}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+						/>
+					</div>
+				</div>
+				{#if editingItem.type === 'event'}
+					<div class="grid grid-cols-2 gap-3">
+						<div>
+							<Label>End date</Label>
+							<input
+								type="date"
+								value={editEndDate}
+								oninput={(e) => { editEndDate = e.currentTarget.value; }}
+								class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+							/>
+						</div>
+						<div>
+							<Label>End time</Label>
+							<input
+								type="time"
+								value={editEndTime}
+								oninput={(e) => { editEndTime = e.currentTarget.value; }}
+								class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+							/>
+						</div>
+					</div>
+				{/if}
+				{#if editingItem.type === 'task'}
+					<div>
+						<Label>Priority</Label>
+						<select
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+							value={editPriority}
+							onchange={(e) => { editPriority = e.currentTarget.value; }}
+						>
+							<option value="low">Low</option>
+							<option value="medium">Medium</option>
+							<option value="high">High</option>
+							<option value="urgent">Urgent</option>
+						</select>
+					</div>
+				{/if}
+				{#if editingItem.type === 'event'}
+					<div>
+						<Label>Location</Label>
+						<Input bind:value={editLocation} placeholder="Location" class="mt-1" />
+					</div>
+				{/if}
+				<div>
+					<Label>Description</Label>
+					<Textarea
+						bind:value={editDescription}
+						placeholder="Description"
+						class="mt-1 max-h-[120px] resize-none"
+						rows={3}
+					/>
+				</div>
+				{#if editError}
+					<p class="text-sm text-destructive">{editError}</p>
+				{/if}
+			</div>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => { showEditDialog = false; editingItem = null; }}>Cancel</Button>
+				<Button onclick={handleSaveEdit} disabled={saving}>
+					{saving ? 'Saving...' : 'Save'}
+				</Button>
+			</Dialog.Footer>
+		{/if}
 	</Dialog.Content>
 </Dialog.Root>
