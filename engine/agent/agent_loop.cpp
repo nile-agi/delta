@@ -1,5 +1,6 @@
 #include "agent_loop.h"
 #include "agent_database.h"
+#include "tool_calendar.h"
 #include "tool_registry.h"
 #include <cctype>
 #include <ctime>
@@ -10,6 +11,23 @@
 
 namespace delta {
 namespace agent {
+
+static std::string get_text_content(const nlohmann::json& msg, const std::string& key = "content") {
+    if (!msg.contains(key))
+        return "";
+    auto& val = msg[key];
+    if (val.is_string())
+        return val.get<std::string>();
+    if (val.is_array()) {
+        for (auto& part : val) {
+            if (part.is_object() && part.value("type", "") == "text")
+                return part.value("text", "");
+            if (part.is_string())
+                return part.get<std::string>();
+        }
+    }
+    return "";
+}
 
 static size_t write_callback(void* contents, size_t size, size_t nmemb, std::string* out) {
     size_t total = size * nmemb;
@@ -60,11 +78,11 @@ std::string AgentLoop::build_system_prompt() {
         std::string(tom_buf) + " (" + std::string(tom_day_buf) +
         ")\n\n"
         "RULES:\n"
-        "1. DATES: Use the CURRENT TIME above to compute dates. "
-        "\"today\" = " +
-        std::string(today_buf) + ", \"tomorrow\" = " + std::string(tom_buf) +
-        ". "
-        "Format as YYYY-MM-DDTHH:MM. Default to 09:00 if no time is given.\n"
+        "1. DATES: Pass dates to tools naturally ('friday 2pm', 'tomorrow 1300'). "
+        "Tools auto-resolve. Default 09:00 if no time given. "
+        "today = " +
+        std::string(today_buf) + ", tomorrow = " + std::string(tom_buf) +
+        ".\n"
         "2. NEVER ASK -- always act. Use conversation history and context. "
         "If the user says \"the task\", \"it\", or \"the event\", they mean the most recently mentioned item. "
         "Call tools immediately, never ask for info you can look up.\n"
@@ -99,7 +117,8 @@ std::string AgentLoop::build_system_prompt() {
         if (!events.empty()) {
             prompt += "Upcoming events this week:\n";
             for (auto& e : events) {
-                prompt += "- " + e.value("title", "") + " at " + e.value("start_time", "");
+                prompt +=
+                    "- [id:" + e.value("id", "") + "] " + e.value("title", "") + " at " + e.value("start_time", "");
                 if (!e.value("location", "").empty())
                     prompt += " (" + e["location"].get<std::string>() + ")";
                 prompt += "\n";
@@ -108,7 +127,8 @@ std::string AgentLoop::build_system_prompt() {
         if (!tasks.empty()) {
             prompt += "Active tasks:\n";
             for (auto& t : tasks) {
-                prompt += "- [" + t.value("priority", "medium") + "] " + t.value("title", "");
+                prompt +=
+                    "- [id:" + t.value("id", "") + "] [" + t.value("priority", "medium") + "] " + t.value("title", "");
                 if (!t.value("start_time", "").empty())
                     prompt += " (due: " + t["start_time"].get<std::string>() + ")";
                 prompt += " [" + t.value("status", "") + "]\n";
@@ -211,42 +231,38 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
     auto& registry = ToolRegistry::instance();
     nlohmann::json tools = registry.get_tools_array();
 
-    // Normalize content fields: ensure every message has string content
-    for (auto& msg : messages) {
-        if (!msg.is_object())
-            continue;
-        if (msg.contains("content") && msg["content"].is_string())
-            continue;
-        if (!msg.contains("content") || msg["content"].is_null()) {
-            msg["content"] = "";
-            continue;
-        }
-        if (msg["content"].is_array()) {
-            std::string text;
-            for (auto& part : msg["content"]) {
-                if (part.is_object() && part.value("type", "") == "text" && part.contains("text")) {
-                    if (!text.empty())
-                        text += "\n";
-                    text += part["text"].get<std::string>();
-                } else if (part.is_string()) {
-                    if (!text.empty())
-                        text += "\n";
-                    text += part.get<std::string>();
+    // Remove non-object entries and normalize content to string
+    {
+        nlohmann::json clean = nlohmann::json::array();
+        for (auto& msg : messages) {
+            if (!msg.is_object())
+                continue;
+            if (msg.contains("content") && msg["content"].is_array()) {
+                std::string text;
+                for (auto& part : msg["content"]) {
+                    if (part.is_object() && part.value("type", "") == "text" && part.contains("text")) {
+                        if (!text.empty())
+                            text += "\n";
+                        text += part["text"].get<std::string>();
+                    } else if (part.is_string()) {
+                        if (!text.empty())
+                            text += "\n";
+                        text += part.get<std::string>();
+                    }
                 }
+                msg["content"] = text;
+            } else if (msg.contains("content") && msg["content"].is_object()) {
+                auto& obj = msg["content"];
+                msg["content"] =
+                    (obj.contains("text") && obj["text"].is_string()) ? obj["text"].get<std::string>() : obj.dump();
+            } else if (!msg.contains("content") || msg["content"].is_null()) {
+                msg["content"] = "";
+            } else if (!msg["content"].is_string()) {
+                msg["content"] = msg["content"].dump();
             }
-            msg["content"] = text;
-        } else if (msg["content"].is_object()) {
-            auto& obj = msg["content"];
-            if (obj.contains("text") && obj["text"].is_string()) {
-                msg["content"] = obj["text"].get<std::string>();
-            } else {
-                msg["content"] = obj.dump();
-            }
-        } else if (msg["content"].is_null()) {
-            msg["content"] = "";
-        } else {
-            msg["content"] = msg["content"].dump();
+            clean.push_back(msg);
         }
+        messages = clean;
     }
 
     // Trim conversation history to avoid slow processing on long conversations.
@@ -281,7 +297,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
         if (!msg.is_object())
             continue;
         if (msg.value("role", "") == "system") {
-            std::string existing = msg.value("content", "");
+            std::string existing = get_text_content(msg);
             msg["content"] = existing + "\n\n" + agent_prompt;
             found_system = true;
             break;
@@ -299,6 +315,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
 
     bool tools_supported = supports_tools_;
     tool_choice_ = "auto";
+    bool action_retry_fired = false;
     std::cerr << "[delta-agent] v2 process: " << messages.size()
               << " msgs, tools_supported=" << (tools_supported ? "true" : "false") << ", tools_count=" << tools.size()
               << std::endl;
@@ -306,6 +323,8 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
     for (int iteration = 0; iteration < max_iterations_; iteration++) {
         write_summaries.clear();
         auto response = call_llm(messages, tools_supported ? tools : nlohmann::json::array());
+        if (tool_choice_ == "required")
+            tool_choice_ = "auto";
 
         // If llama-server returns any error and tools were sent, retry without tools
         if (response.is_object() && response.contains("error") && tools_supported) {
@@ -319,7 +338,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
             // Update system prompt to remove tool instructions
             for (auto& msg : messages) {
                 if (msg.is_object() && msg.value("role", "") == "system") {
-                    std::string sys = msg.value("content", "");
+                    std::string sys = get_text_content(msg);
                     auto pos = sys.find("You can create");
                     if (pos != std::string::npos) {
                         sys = sys.substr(0, pos) +
@@ -376,7 +395,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
             message.contains("tool_calls") && message["tool_calls"].is_array() && !message["tool_calls"].empty();
         std::cerr << "[delta-agent] response: finish_reason=" << finish_reason
                   << ", has_tool_calls=" << (has_tool_calls ? "yes" : "no")
-                  << ", content_len=" << message.value("content", "").size() << std::endl;
+                  << ", content_len=" << get_text_content(message).size() << std::endl;
 
         if (has_tool_calls) {
             messages.push_back(message);
@@ -537,15 +556,19 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
             continue;
         }
 
-        std::string content = message.value("content", "");
+        std::string content = get_text_content(message);
 
-        // If model responded with text but user wanted an action, retry with forced context
-        if (iteration == 0 && total_tool_calls == 0) {
+        // Action retry: detect when model responds with text but user wanted an action.
+        // Fires at most once per process() call, regardless of iteration or tool count.
+        if (!action_retry_fired) {
             std::string last_user;
             for (int i = static_cast<int>(messages.size()) - 1; i >= 0; i--) {
                 if (messages[i].value("role", "") == "user") {
-                    last_user = messages[i].value("content", "");
-                    break;
+                    std::string candidate = get_text_content(messages[i]);
+                    if (candidate.find("Do it now.") == std::string::npos) {
+                        last_user = candidate;
+                        break;
+                    }
                 }
             }
             std::string user_lower = last_user;
@@ -555,7 +578,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
             static const char* action_words[] = {"push",    "move",     "reschedule", "change", "update",
                                                  "delete",  "cancel",   "mark",       "done",   "complete",
                                                  "remove",  "postpone", "ahead",      "later",  "earlier",
-                                                 "forward", "back",     "start",      nullptr};
+                                                 "forward", "back",     "start",      "begin",  nullptr};
             bool wants_action = false;
             for (int k = 0; action_words[k]; k++) {
                 if (user_lower.find(action_words[k]) != std::string::npos) {
@@ -565,12 +588,13 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
             }
 
             if (wants_action) {
-                // Find most recent item title from conversation history
-                std::string recent_title, recent_time;
+                std::string recent_title, recent_time, recent_id;
+
+                // Strategy 1: quoted text in prior assistant messages
                 for (int i = static_cast<int>(messages.size()) - 1; i >= 0; i--) {
                     if (messages[i].value("role", "") != "assistant")
                         continue;
-                    std::string asst = messages[i].value("content", "");
+                    std::string asst = get_text_content(messages[i]);
                     auto q1 = asst.find('"');
                     if (q1 == std::string::npos)
                         continue;
@@ -587,13 +611,150 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
                     break;
                 }
 
+                // Strategy 2: match user message words against DB items
+                if (recent_title.empty()) {
+                    auto& db = AgentDatabase::instance();
+                    std::vector<nlohmann::json> items;
+                    auto upcoming = db.list_events("", "", 10, "", "upcoming");
+                    auto in_prog = db.list_events("", "", 5, "", "in_progress");
+                    items.insert(items.end(), upcoming.begin(), upcoming.end());
+                    items.insert(items.end(), in_prog.begin(), in_prog.end());
+
+                    time_t now_t = time(nullptr);
+                    struct tm t_now{};
+                    localtime_r(&now_t, &t_now);
+                    char today_s[16], week_s[16];
+                    strftime(today_s, sizeof(today_s), "%Y-%m-%d", &t_now);
+                    time_t week_t = now_t + 7 * 24 * 3600;
+                    struct tm t_week{};
+                    localtime_r(&week_t, &t_week);
+                    strftime(week_s, sizeof(week_s), "%Y-%m-%d", &t_week);
+                    auto week_events = db.list_events(std::string(today_s), std::string(week_s), 5, "event");
+                    items.insert(items.end(), week_events.begin(), week_events.end());
+
+                    int best_score = 0;
+                    for (auto& item : items) {
+                        std::string title = item.value("title", "");
+                        std::string title_lower = title;
+                        for (auto& c : title_lower)
+                            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+                        int score = 0;
+                        size_t ws = 0;
+                        while (ws < title_lower.size()) {
+                            size_t we = title_lower.find(' ', ws);
+                            if (we == std::string::npos)
+                                we = title_lower.size();
+                            if (we - ws >= 3) {
+                                std::string word = title_lower.substr(ws, we - ws);
+                                if (user_lower.find(word) != std::string::npos)
+                                    score++;
+                            }
+                            ws = we + 1;
+                        }
+
+                        if (score > best_score) {
+                            best_score = score;
+                            recent_title = title;
+                            recent_time = item.value("start_time", "");
+                            recent_id = item.value("id", "");
+                        }
+                    }
+
+                    // Strategy 3: reference pronoun fallback
+                    if (best_score == 0 && !items.empty()) {
+                        bool has_ref = user_lower.find("the task") != std::string::npos ||
+                                       user_lower.find("the event") != std::string::npos ||
+                                       user_lower.find("this task") != std::string::npos ||
+                                       user_lower.find("that task") != std::string::npos ||
+                                       user_lower.find("the meeting") != std::string::npos;
+                        if (!has_ref) {
+                            size_t pos = 0;
+                            while ((pos = user_lower.find("it", pos)) != std::string::npos) {
+                                bool start_ok =
+                                    (pos == 0 || !std::isalpha(static_cast<unsigned char>(user_lower[pos - 1])));
+                                bool end_ok = (pos + 2 >= user_lower.size() ||
+                                               !std::isalpha(static_cast<unsigned char>(user_lower[pos + 2])));
+                                if (start_ok && end_ok) {
+                                    has_ref = true;
+                                    break;
+                                }
+                                pos++;
+                            }
+                        }
+                        if (has_ref) {
+                            recent_title = items[0].value("title", "");
+                            recent_time = items[0].value("start_time", "");
+                            recent_id = items[0].value("id", "");
+                        }
+                    }
+                }
+
                 if (!recent_title.empty()) {
-                    std::cerr << "[delta-agent] model dodged action, retrying with context: " << recent_title
-                              << std::endl;
+                    std::cerr << "[delta-agent] action retry: forcing tool with context: " << recent_title
+                              << " (id=" << recent_id << ")" << std::endl;
+                    action_retry_fired = true;
                     messages.push_back(message);
                     std::string hint = "I mean \"" + recent_title + "\"";
+                    if (!recent_id.empty())
+                        hint += " (id: " + recent_id + ")";
                     if (!recent_time.empty())
                         hint += " currently at " + recent_time;
+
+                    // Pre-compute start_time when user's message contains a date reference.
+                    // resolve_datetime handles day names, tomorrow, am/pm, military time.
+                    bool has_date_ref = user_lower.find("tomorrow") != std::string::npos ||
+                                        user_lower.find("today") != std::string::npos;
+                    if (!has_date_ref) {
+                        static const char* day_names[] = {"sunday",   "monday", "tuesday", "wednesday",
+                                                          "thursday", "friday", "saturday"};
+                        for (int d = 0; d < 7; d++) {
+                            if (user_lower.find(day_names[d]) != std::string::npos) {
+                                has_date_ref = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (has_date_ref) {
+                        std::string resolved = resolve_datetime(last_user);
+                        // If resolve_datetime used default time (09:00) and user didn't
+                        // specify an explicit time, keep the item's current time
+                        if (resolved.size() >= 16 && resolved.substr(11, 5) == "09:00" && !recent_time.empty() &&
+                            recent_time.size() >= 16) {
+                            bool user_has_time = false;
+                            // Check for digit followed by am/pm (avoids matching "same", "game")
+                            for (size_t pi = 0; pi < user_lower.size() && !user_has_time; pi++) {
+                                if (!std::isdigit(static_cast<unsigned char>(user_lower[pi])))
+                                    continue;
+                                size_t k = pi + 1;
+                                if (k < user_lower.size() && std::isdigit(static_cast<unsigned char>(user_lower[k])))
+                                    k++;
+                                while (k < user_lower.size() && user_lower[k] == ' ')
+                                    k++;
+                                if (k + 1 < user_lower.size() && ((user_lower[k] == 'a' && user_lower[k + 1] == 'm') ||
+                                                                  (user_lower[k] == 'p' && user_lower[k + 1] == 'm')))
+                                    user_has_time = true;
+                            }
+                            // Check for HH:MM pattern
+                            if (!user_has_time) {
+                                for (size_t ci = 0; ci + 4 < last_user.size(); ci++) {
+                                    if (std::isdigit(static_cast<unsigned char>(last_user[ci])) &&
+                                        std::isdigit(static_cast<unsigned char>(last_user[ci + 1])) &&
+                                        last_user[ci + 2] == ':' &&
+                                        std::isdigit(static_cast<unsigned char>(last_user[ci + 3])) &&
+                                        std::isdigit(static_cast<unsigned char>(last_user[ci + 4]))) {
+                                        user_has_time = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!user_has_time) {
+                                resolved = resolved.substr(0, 11) + recent_time.substr(11, 5);
+                            }
+                        }
+                        hint += ". Set start_time to \"" + resolved + "\"";
+                    }
+
                     hint += ". Do it now.";
                     messages.push_back({{"role", "user"}, {"content", hint}});
                     tool_choice_ = "required";

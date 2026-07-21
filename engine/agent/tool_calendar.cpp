@@ -17,7 +17,7 @@ static nlohmann::json strip_id(nlohmann::json obj) {
 
 // Resolve a model-provided start_time to a valid YYYY-MM-DDTHH:MM string.
 // Handles: valid ISO, past-date correction, "tomorrow", bare "HH:MM", garbage.
-static std::string resolve_datetime(const std::string& raw) {
+std::string resolve_datetime(const std::string& raw) {
     time_t now = time(nullptr);
     struct tm t_now{};
 #ifdef _WIN32
@@ -40,29 +40,101 @@ static std::string resolve_datetime(const std::string& raw) {
     strftime(tom_buf, sizeof(tom_buf), "%Y-%m-%d", &tm_tom);
     std::string tomorrow(tom_buf);
 
-    // Extract HH:MM from anywhere in the string (first match)
+    // Extract time from anywhere in the string.
+    // Handles: HH:MM, HH:MM am/pm, Hpm/Ham, HHMM military, bare HH.
     auto extract_time = [](const std::string& s) -> std::string {
-        for (size_t i = 0; i + 4 < s.size(); i++) {
-            if (std::isdigit(static_cast<unsigned char>(s[i])) && std::isdigit(static_cast<unsigned char>(s[i + 1])) &&
-                s[i + 2] == ':' && std::isdigit(static_cast<unsigned char>(s[i + 3])) &&
-                std::isdigit(static_cast<unsigned char>(s[i + 4]))) {
-                int h = (s[i] - '0') * 10 + (s[i + 1] - '0');
-                int m = (s[i + 3] - '0') * 10 + (s[i + 4] - '0');
-                if (h < 24 && m < 60)
-                    return s.substr(i, 5);
+        std::string lower = s;
+        for (auto& c : lower)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+        // 1. HH:MM pattern, optionally followed by am/pm
+        for (size_t i = 0; i + 4 < lower.size(); i++) {
+            if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
+                std::isdigit(static_cast<unsigned char>(lower[i + 1])) && lower[i + 2] == ':' &&
+                std::isdigit(static_cast<unsigned char>(lower[i + 3])) &&
+                std::isdigit(static_cast<unsigned char>(lower[i + 4]))) {
+                int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
+                int m = (lower[i + 3] - '0') * 10 + (lower[i + 4] - '0');
+                if (h < 24 && m < 60) {
+                    size_t after = i + 5;
+                    while (after < lower.size() && lower[after] == ' ')
+                        after++;
+                    if (after + 1 < lower.size()) {
+                        if (lower[after] == 'p' && lower[after + 1] == 'm' && h < 12)
+                            h += 12;
+                        if (lower[after] == 'a' && lower[after + 1] == 'm' && h == 12)
+                            h = 0;
+                    }
+                    char buf[6];
+                    snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
+                    return std::string(buf);
+                }
             }
         }
-        // Try bare hour like "1300" or "13"
-        for (size_t i = 0; i + 1 < s.size(); i++) {
-            if (std::isdigit(static_cast<unsigned char>(s[i])) && std::isdigit(static_cast<unsigned char>(s[i + 1]))) {
-                int h = (s[i] - '0') * 10 + (s[i + 1] - '0');
-                if (h >= 0 && h <= 23 && (i + 2 >= s.size() || !std::isdigit(static_cast<unsigned char>(s[i + 2])))) {
+
+        // 2. Digit(s) followed by am/pm: "1pm", "2am", "11pm", "12am"
+        for (size_t i = 0; i < lower.size(); i++) {
+            if (!std::isdigit(static_cast<unsigned char>(lower[i])))
+                continue;
+            int h = lower[i] - '0';
+            size_t j = i + 1;
+            if (j < lower.size() && std::isdigit(static_cast<unsigned char>(lower[j]))) {
+                h = h * 10 + (lower[j] - '0');
+                j++;
+            }
+            size_t k = j;
+            while (k < lower.size() && lower[k] == ' ')
+                k++;
+            if (k + 1 < lower.size()) {
+                bool is_pm = (lower[k] == 'p' && lower[k + 1] == 'm');
+                bool is_am = (lower[k] == 'a' && lower[k + 1] == 'm');
+                if ((is_am || is_pm) && h >= 1 && h <= 12) {
+                    if (is_pm && h != 12)
+                        h += 12;
+                    if (is_am && h == 12)
+                        h = 0;
                     char buf[6];
                     snprintf(buf, sizeof(buf), "%02d:00", h);
                     return std::string(buf);
                 }
             }
         }
+
+        // 3. 4-digit military time: "1300" -> "13:00"
+        for (size_t i = 0; i + 3 < lower.size(); i++) {
+            if (i > 0 && (std::isdigit(static_cast<unsigned char>(lower[i - 1])) || lower[i - 1] == '-'))
+                continue;
+            if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
+                std::isdigit(static_cast<unsigned char>(lower[i + 1])) &&
+                std::isdigit(static_cast<unsigned char>(lower[i + 2])) &&
+                std::isdigit(static_cast<unsigned char>(lower[i + 3]))) {
+                if (i + 4 < lower.size() &&
+                    (std::isdigit(static_cast<unsigned char>(lower[i + 4])) || lower[i + 4] == '-'))
+                    continue;
+                int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
+                int m = (lower[i + 2] - '0') * 10 + (lower[i + 3] - '0');
+                if (h < 24 && m < 60) {
+                    char buf[6];
+                    snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
+                    return std::string(buf);
+                }
+            }
+        }
+
+        // 4. Bare two-digit hour: "13" -> "13:00"
+        for (size_t i = 0; i + 1 < lower.size(); i++) {
+            if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
+                std::isdigit(static_cast<unsigned char>(lower[i + 1]))) {
+                int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
+                if (h >= 0 && h <= 23 &&
+                    (i + 2 >= lower.size() || !std::isdigit(static_cast<unsigned char>(lower[i + 2])))) {
+                    char buf[6];
+                    snprintf(buf, sizeof(buf), "%02d:00", h);
+                    return std::string(buf);
+                }
+            }
+        }
+
         return "09:00";
     };
 
@@ -96,8 +168,25 @@ static std::string resolve_datetime(const std::string& raw) {
         date_part = tomorrow;
     } else if (lower.find("today") != std::string::npos) {
         date_part = today;
+    } else {
+        // Check for day-of-week names and compute next occurrence
+        static const char* day_names[] = {"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"};
+        int current_wday = t_now.tm_wday; // 0=Sun
+        for (int d = 0; d < 7; d++) {
+            if (lower.find(day_names[d]) != std::string::npos) {
+                int days_ahead = d - current_wday;
+                if (days_ahead <= 0)
+                    days_ahead += 7;
+                time_t target = now + days_ahead * 24 * 3600;
+                struct tm t_target{};
+                localtime_r(&target, &t_target);
+                char tbuf[16];
+                strftime(tbuf, sizeof(tbuf), "%Y-%m-%d", &t_target);
+                date_part = std::string(tbuf);
+                break;
+            }
+        }
     }
-    // else default to today
 
     std::cerr << "[delta-tool] resolved \"" << raw << "\" -> " << date_part << "T" << time_part << std::endl;
     return date_part + "T" + time_part;
@@ -115,10 +204,10 @@ void register_calendar_tools() {
            {{"title", {{"type", "string"}, {"description", "Name of the event or task"}}},
             {"start_time",
              {{"type", "string"},
-              {"description",
-               "Datetime as YYYY-MM-DDTHH:MM. For tasks this is the deadline. Default to 09:00 if no time given."}}},
+              {"description", "When: pass naturally ('friday 2pm', 'tomorrow 13:00', '1300') or as YYYY-MM-DDTHH:MM. "
+                              "For tasks this is the deadline. Default 09:00 if no time given."}}},
             {"end_time",
-             {{"type", "string"}, {"description", "End datetime as YYYY-MM-DDTHH:MM (optional, events only)"}}},
+             {{"type", "string"}, {"description", "End time: same formats as start_time (optional, events only)"}}},
             {"description", {{"type", "string"}, {"description", "Additional details (optional)"}}},
             {"location", {{"type", "string"}, {"description", "Where it takes place (optional)"}}},
             {"type",
@@ -164,6 +253,8 @@ void register_calendar_tools() {
 
             nlohmann::json resolved_args = args;
             resolved_args["start_time"] = start_time;
+            if (resolved_args.contains("end_time") && resolved_args["end_time"].is_string())
+                resolved_args["end_time"] = resolve_datetime(resolved_args["end_time"].get<std::string>());
 
             // Auto-detect type if not explicitly set by model
             if (!resolved_args.contains("type") || resolved_args["type"].get<std::string>() == "event") {
@@ -247,8 +338,10 @@ void register_calendar_tools() {
         {"delete_event",
          "Delete/remove a calendar event or task permanently.",
          {{"type", "object"},
-          {"properties", {{"title", {{"type", "string"}, {"description", "Title (or partial match) to delete"}}}}},
-          {"required", nlohmann::json::array({"title"})}}},
+          {"properties",
+           {{"id", {{"type", "string"}, {"description", "Event/task ID from context (exact match)"}}},
+            {"title", {{"type", "string"}, {"description", "Title (or partial match) to delete"}}}}},
+          {"required", nlohmann::json::array()}}},
         [](const nlohmann::json& args) -> ToolResult {
             auto& db = AgentDatabase::instance();
             std::string id = args.value("id", "");
@@ -302,10 +395,13 @@ void register_calendar_tools() {
          "Use for 'move to 3pm', 'mark as done', 'change priority', etc.",
          {{"type", "object"},
           {"properties",
-           {{"title", {{"type", "string"}, {"description", "Current title (or partial match) to find"}}},
+           {{"id", {{"type", "string"}, {"description", "Event/task ID from context (exact match)"}}},
+            {"title", {{"type", "string"}, {"description", "Current title (or partial match) to find"}}},
             {"new_title", {{"type", "string"}, {"description", "New title if renaming"}}},
-            {"start_time", {{"type", "string"}, {"description", "New datetime YYYY-MM-DDTHH:MM"}}},
-            {"end_time", {{"type", "string"}, {"description", "New end datetime YYYY-MM-DDTHH:MM"}}},
+            {"start_time",
+             {{"type", "string"},
+              {"description", "New date/time: pass naturally ('friday 2pm', 'tomorrow') or as YYYY-MM-DDTHH:MM"}}},
+            {"end_time", {{"type", "string"}, {"description", "New end time: same formats as start_time"}}},
             {"description", {{"type", "string"}, {"description", "Notes or description"}}},
             {"location", {{"type", "string"}, {"description", "New location"}}},
             {"status",
@@ -319,7 +415,7 @@ void register_calendar_tools() {
             {"tags", {{"type", "string"}, {"description", "New comma-separated tags"}}},
             {"reminder_minutes",
              {{"type", "integer"}, {"description", "Minutes before to send reminder. Use 0 for no reminder."}}}}},
-          {"required", nlohmann::json::array({"title"})}}},
+          {"required", nlohmann::json::array()}}},
         [](const nlohmann::json& args) -> ToolResult {
             auto& db = AgentDatabase::instance();
             std::string id = args.value("id", "");
@@ -368,7 +464,7 @@ void register_calendar_tools() {
             if (args.contains("start_time"))
                 update_data["start_time"] = resolve_datetime(args["start_time"].get<std::string>());
             if (args.contains("end_time"))
-                update_data["end_time"] = args["end_time"];
+                update_data["end_time"] = resolve_datetime(args["end_time"].get<std::string>());
             if (args.contains("description"))
                 update_data["description"] = args["description"];
             if (args.contains("location"))
@@ -390,9 +486,8 @@ void register_calendar_tools() {
 
     registry.register_tool(
         {"get_current_time",
-         "Get the current date and time. Call this FIRST whenever you need to resolve relative dates "
-         "like 'today', 'tomorrow', 'next week', 'this Friday', etc. Use the returned date to compute "
-         "the correct YYYY-MM-DD value before creating or updating events and tasks.",
+         "Get the current date and time. NOTE: CURRENT TIME, TODAY, and TOMORROW are already in the system prompt. "
+         "Only call this if you need date info beyond what is provided above.",
          {{"type", "object"}, {"properties", nlohmann::json::object()}, {"required", nlohmann::json::array()}}},
         [](const nlohmann::json&) -> ToolResult {
             time_t now = time(nullptr);
