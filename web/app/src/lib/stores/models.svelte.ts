@@ -229,36 +229,75 @@ class ModelsStore {
 				const pollInterval = useResponse.loaded ? 1000 : 2000;
 				const maxAttempts = useResponse.loaded ? 120 : 60;
 				let attempts = 0;
+				let healthPassed = false;
+				let loadTriggered = false;
 				const expectedModelId = option.id;
+				const modelNameForCheck = modelForRequests;
 
-				const checkHealth = async () => {
+				const onReady = async () => {
+					this._modelLoadedOnServer = true;
+					this._updating = false;
+					this._loadingModelId = null;
+					try {
+						const { forceModelApiSeparatePort } = await import('$lib/utils/model-api-url');
+						forceModelApiSeparatePort();
+						await this.fetch(true);
+						if (useResponse.ctx_size != null && useResponse.ctx_size > 0) {
+							slotsService.setLoadedContextTotal(useResponse.ctx_size);
+						}
+					} catch { /* state already updated — fetch failure is non-critical */ }
+				};
+
+				const checkReady = async () => {
 					if (this._selectedModelId !== expectedModelId) return;
 					attempts++;
 					try {
-						const ready = await ModelsService.checkHealth();
+						if (!healthPassed) {
+							const healthy = await ModelsService.checkHealth();
+							if (this._selectedModelId !== expectedModelId) return;
+							if (!healthy) {
+								if (attempts < maxAttempts && this._selectedModelId === expectedModelId) {
+									setTimeout(checkReady, pollInterval);
+								} else if (this._selectedModelId === expectedModelId) {
+									this._error = 'Model took too long to load. Try selecting it again.';
+									this._updating = false;
+									this._loadingModelId = null;
+								}
+								return;
+							}
+							healthPassed = true;
+						}
+
+						const modelStatus = await ModelsService.checkModelReady(modelNameForCheck);
 						if (this._selectedModelId !== expectedModelId) return;
-						if (ready) {
-							this._modelLoadedOnServer = true;
+
+						if (modelStatus.ready) {
+							await onReady();
+							return;
+						}
+						if (modelStatus.failed) {
+							this._error = `Model "${option.name}" failed to load.`;
 							this._updating = false;
 							this._loadingModelId = null;
-							const { forceModelApiSeparatePort } = await import('$lib/utils/model-api-url');
-							forceModelApiSeparatePort();
-							await this.fetch(true);
-							if (useResponse.ctx_size != null && useResponse.ctx_size > 0) {
-								slotsService.setLoadedContextTotal(useResponse.ctx_size);
-							}
 							return;
+						}
+						if (modelStatus.needsLoad && !loadTriggered) {
+							loadTriggered = true;
+							await ModelsService.triggerModelLoad(modelStatus.routerModelName ?? modelNameForCheck);
 						}
 					} catch { /* ignore */ }
 					if (attempts < maxAttempts && this._selectedModelId === expectedModelId) {
-						setTimeout(checkHealth, pollInterval);
+						setTimeout(checkReady, pollInterval);
 					} else if (this._selectedModelId === expectedModelId) {
 						this._error = 'Model took too long to load. Try selecting it again.';
 						this._updating = false;
 						this._loadingModelId = null;
 					}
 				};
-				setTimeout(checkHealth, pollInterval);
+				setTimeout(checkReady, pollInterval);
+			} else {
+				this._updating = false;
+				this._loadingModelId = null;
 			}
 		} catch (error) {
 			console.warn('Failed to switch model:', error);
