@@ -426,36 +426,29 @@
 									</div>
 								</div>
 								<div class="mt-2 flex items-center gap-1 border-t pt-2">
-									<Button
-										variant="ghost"
-										size="sm"
-										class="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+									<button
+										title="Edit"
+										class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 										onclick={() => openEditDialog(item)}
 									>
-										<Pencil class="mr-1 h-3 w-3" />
-										Edit
-									</Button>
+										<Pencil class="h-3.5 w-3.5" />
+									</button>
 									{#if item.status !== 'cancelled' && item.status !== 'completed'}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+										<button
+											title="Cancel"
+											class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 											onclick={() => handleMarkStatus(item.id, 'cancelled')}
 										>
-											<X class="mr-1 h-3 w-3" />
-											Cancel
-										</Button>
+											<X class="h-3.5 w-3.5" />
+										</button>
 									{/if}
-									<div class="flex-1"></div>
-									<Button
-										variant="ghost"
-										size="sm"
-										class="h-6 px-2 text-xs text-destructive"
+									<button
+										title="Delete"
+										class="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-destructive transition-colors hover:bg-destructive/10"
 										onclick={() => handleDeleteItem(item.id)}
 									>
-										<Trash2 class="mr-1 h-3 w-3" />
-										Delete
-									</Button>
+										<Trash2 class="h-3.5 w-3.5" />
+									</button>
 								</div>
 							</div>
 						{/each}
