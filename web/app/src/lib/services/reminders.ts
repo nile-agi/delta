@@ -1,9 +1,13 @@
+import { pushNotification } from '$lib/stores/notifications.svelte';
 import { agentService } from './agent';
 
 let pollInterval: ReturnType<typeof setInterval> | undefined;
-let notificationSupported = false;
+let nativeSend: ((opts: { title: string; body: string }) => void) | null = null;
+let nativeInitDone = false;
 
 async function initNotifications() {
+	if (nativeInitDone) return;
+	nativeInitDone = true;
 	try {
 		const {
 			isPermissionGranted,
@@ -16,12 +20,25 @@ async function initNotifications() {
 			const permission = await requestPermission();
 			granted = permission === 'granted';
 		}
-		notificationSupported = granted;
-		return { sendNotification };
+		if (granted) {
+			nativeSend = sendNotification;
+		}
 	} catch {
-		notificationSupported = false;
-		return null;
+		// Tauri plugin not available (e.g. browser dev mode)
 	}
+}
+
+function notify(
+	title: string,
+	body: string,
+	type: 'event' | 'task',
+	eventId?: string,
+	time?: string
+) {
+	if (nativeSend) {
+		nativeSend({ title, body });
+	}
+	pushNotification({ title, body, type, eventId, time });
 }
 
 async function checkReminders() {
@@ -29,7 +46,7 @@ async function checkReminders() {
 		const reminders = await agentService.fetchPendingReminders();
 		if (reminders.length === 0) return;
 
-		const notif = await initNotifications();
+		await initNotifications();
 
 		for (const reminder of reminders) {
 			const isEvent = reminder.type === 'event';
@@ -42,15 +59,16 @@ async function checkReminders() {
 				body = isEvent ? 'Starting now' : 'Due now';
 			}
 
-			if (notif?.sendNotification) {
-				notif.sendNotification({
-					title: `${prefix}${reminder.title}`,
-					body
-				});
-			}
+			notify(
+				`${prefix}${reminder.title}`,
+				body,
+				reminder.type,
+				reminder.id,
+				reminder.time
+			);
 		}
 	} catch {
-		// Server may not be ready yet — silently ignore
+		// Server may not be ready yet
 	}
 }
 

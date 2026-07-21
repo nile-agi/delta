@@ -16,6 +16,7 @@
 	import { ServerErrorSplash } from '$lib/components/app';
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
+	import NotificationCenter from '$lib/components/app/notifications/NotificationCenter.svelte';
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 	import { startReminderPolling, stopReminderPolling } from '$lib/services/reminders';
@@ -276,6 +277,7 @@
 <ModeWatcher />
 
 <Toaster richColors />
+<NotificationCenter />
 
 {#if serverError}
 	<div class="splash-screen">
