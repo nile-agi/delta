@@ -29,6 +29,14 @@ web:
 	cd web/app && pnpm install --frozen-lockfile && pnpm run build
 
 dev:
+	@TRIPLE=$$(rustc -vV 2>/dev/null | grep host | cut -d' ' -f2 || echo "aarch64-apple-darwin"); \
+	if [ ! -f src-tauri/binaries/delta-server-$$TRIPLE ] || [ ! -f src-tauri/binaries/llama-server-$$TRIPLE ]; then \
+		echo ""; \
+		echo "  Sidecar binaries not found for $$TRIPLE."; \
+		echo "  Run 'make engine sidecars' first to build them."; \
+		echo ""; \
+		exit 1; \
+	fi
 	cd src-tauri && cargo tauri dev
 
 run: all dev
