@@ -9,7 +9,7 @@ Install these before building anything.
 | CMake | 3.14+ | C++ build system |
 | C++17 compiler | clang or gcc | Engine compilation |
 | Node.js | 18+ | Web UI build |
-| pnpm | 9+ | Package manager |
+| pnpm | 11+ | Package manager |
 | Rust | stable | Desktop app (Tauri) |
 | Make | any | Build automation |
 
@@ -17,7 +17,8 @@ Install these before building anything.
 
 ```bash
 xcode-select --install       # C++ toolchain
-brew install cmake node pnpm
+brew install cmake node
+npm install -g pnpm@latest   # pnpm 11+
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
