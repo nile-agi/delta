@@ -1,26 +1,37 @@
-.PHONY: all engine sidecars web dev run clean help submodules
+.PHONY: all engine sidecars web dev run clean help submodules ensure-submodules
 
 help:
-	@echo "make engine   - Build C++ engine"
-	@echo "make sidecars - Copy binaries to src-tauri/binaries/"
+	@echo "make sidecars - Build C++ engine + copy binaries into src-tauri/binaries/ (needed by the app)"
+	@echo "make engine   - Build C++ engine only (into build/, not used directly by the app)"
 	@echo "make web      - Build SvelteKit web UI"
-	@echo "make dev      - Run Tauri desktop app"
+	@echo "make dev      - Run Tauri desktop app (auto-builds sidecars if missing)"
 	@echo "make run      - Full rebuild then run"
 	@echo "make clean    - Remove build artifacts"
 
-all: engine sidecars web
+# `engine` is omitted on purpose: `sidecars` already builds everything the app
+# ships, so including it would just do a second redundant full build.
+all: sidecars web
 
 submodules:
 	git submodule update --init --recursive
 
-engine:
+# Init submodules only if the llama.cpp checkout is empty (fresh non-recursive clone).
+ensure-submodules:
+	@if [ ! -f engine/vendor/llama.cpp/CMakeLists.txt ]; then \
+		echo "=== Initializing git submodules (llama.cpp) ==="; \
+		git submodule update --init --recursive; \
+	fi
+
+engine: ensure-submodules
 	@echo "=== Building engine ==="
 	mkdir -p build
 	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON
 	cmake --build build -j$$(sysctl -n hw.ncpu) --target delta-server --target llama-server
 
-sidecars:
-	@echo "=== Copying sidecar binaries ==="
+# Builds the sidecars and copies them into src-tauri/binaries/ with the
+# target-triple suffix Tauri requires. `make engine` alone does not do this.
+sidecars: ensure-submodules
+	@echo "=== Building + copying sidecar binaries ==="
 	chmod +x scripts/build-sidecars.sh
 	./scripts/build-sidecars.sh --release
 
@@ -32,10 +43,10 @@ dev:
 	@TRIPLE=$$(rustc -vV 2>/dev/null | grep host | cut -d' ' -f2 || echo "aarch64-apple-darwin"); \
 	if [ ! -f src-tauri/binaries/delta-server-$$TRIPLE ] || [ ! -f src-tauri/binaries/llama-server-$$TRIPLE ]; then \
 		echo ""; \
-		echo "  Sidecar binaries not found for $$TRIPLE."; \
-		echo "  Run 'make engine sidecars' first to build them."; \
+		echo ">>> Sidecar binaries missing for $$TRIPLE -- building them now ('make sidecars')."; \
+		echo ">>> ('make engine' builds into build/ but does not populate src-tauri/binaries/.)"; \
 		echo ""; \
-		exit 1; \
+		$(MAKE) sidecars; \
 	fi
 	cd src-tauri && cargo tauri dev
 

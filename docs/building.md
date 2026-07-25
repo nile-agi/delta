@@ -46,16 +46,22 @@ npm install -g pnpm
 ```bash
 git clone --recursive https://github.com/nile-agi/delta.git
 cd delta
-make engine     # Build C++ engine (delta-server + llama-server)
-make sidecars   # Copy sidecar binaries to src-tauri/binaries/
-make web        # Build SvelteKit web UI
+make            # Builds sidecars (delta-server + llama-server) + web UI
 make dev        # Run the Tauri desktop app
 ```
 
-Or build everything in one go:
+`make` (a.k.a. `make all`) builds `sidecars` + `web` — the two things the app
+ships. `sidecars` compiles the C++ engine **and** copies the binaries into
+`src-tauri/binaries/` with the target-triple suffix Tauri requires; `make
+engine` alone does not do that copy, so it is not part of `all`. `make dev` also
+auto-builds the sidecars if they're missing, so a plain `make dev` on a fresh
+clone works too.
+
+Prefer step-by-step:
 
 ```bash
-make            # Builds engine + sidecars + web
+make sidecars   # Build C++ engine + copy binaries into src-tauri/binaries/
+make web        # Build SvelteKit web UI
 make dev        # Run the app
 ```
 
@@ -63,19 +69,19 @@ make dev        # Run the app
 
 | Changed | Rebuild with | Then |
 |---------|-------------|------|
-| C++ source (`engine/`) | `make engine sidecars` | Restart the app |
+| C++ source (`engine/`) | `make sidecars` | Restart the app |
 | Web source (`web/app/`) | `make web` | Restart the app |
 | Rust source (`src-tauri/`) | Nothing | `make dev` rebuilds automatically |
 
 ### All make targets
 
 ```
-make            Build everything (engine + sidecars + web)
-make engine     Build C++ engine (delta-server + llama-server)
-make sidecars   Copy sidecar binaries into src-tauri/binaries/
+make            Build what the app ships: sidecars + web
+make sidecars   Build C++ engine + copy binaries into src-tauri/binaries/
+make engine     Build C++ engine only, into build/ (standalone CLI; not used by the app)
 make web        Build SvelteKit web UI
-make dev        Run Tauri desktop app (cargo tauri dev)
-make run        Full rebuild then run
+make dev        Run Tauri desktop app (auto-builds sidecars if missing)
+make run        Full rebuild then run (all + dev)
 make clean      Remove build artifacts
 make submodules Init git submodules
 ```
