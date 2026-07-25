@@ -483,7 +483,7 @@
 			</div>
 			<div>
 				<Label>Title <span class="text-destructive">*</span></Label>
-				<Input bind:value={newTitle} placeholder="{newEventType === 'task' ? 'Task name' : 'Event title'}" class="mt-1" />
+				<Input bind:value={newTitle} placeholder={newEventType === 'task' ? 'Task name' : 'Event title'} class="mt-1" />
 			</div>
 			<div class="grid grid-cols-2 gap-3">
 				<div>
