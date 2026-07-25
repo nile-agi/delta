@@ -1,16 +1,8 @@
-function getAgentApiBase(): string {
-	if (typeof window !== 'undefined' && (window as any).__DELTA_MODEL_API_PORT__ != null) {
-		return `http://127.0.0.1:${(window as any).__DELTA_MODEL_API_PORT__}`;
-	}
-	if (typeof window !== 'undefined' && window.location.port) {
-		const port = parseInt(window.location.port, 10);
-		if (!isNaN(port)) return `${window.location.protocol}//${window.location.hostname}:${port + 1}`;
-	}
-	return 'http://127.0.0.1:8081';
-}
+import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
 
+// Agent API shares the model API's server, so reuse its base URL resolution.
 function apiUrl(path: string): string {
-	return `${getAgentApiBase()}${path}`;
+	return `${getModelApiBaseUrl()}${path}`;
 }
 
 export interface CalendarEvent {

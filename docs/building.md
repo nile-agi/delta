@@ -80,11 +80,23 @@ make            Build what the app ships: sidecars + web
 make sidecars   Build C++ engine + copy binaries into src-tauri/binaries/
 make engine     Build C++ engine only, into build/ (standalone CLI; not used by the app)
 make web        Build SvelteKit web UI
+make preview    Build web + serve it WITH the engine at http://localhost:8080 (browser)
 make dev        Run Tauri desktop app (auto-builds sidecars if missing)
 make run        Full rebuild then run (all + dev)
 make clean      Remove build artifacts
 make submodules Init git submodules
 ```
+
+### Preview in a browser (no desktop build)
+
+`make preview` builds the web UI and serves it **together with the engine** at
+`http://localhost:8080` via the CLI's UI-only server, so the app actually works
+in a browser — pick a model in the UI and go. It builds the `delta` CLI once on
+first run.
+
+> Note: `pnpm run preview` (Vite's own hint after `make web`) serves the static
+> files **only** — with no engine behind it the app just shows
+> "Server Connection Error". Use `make preview` (or `make dev`) instead.
 
 ## Project Structure
 
