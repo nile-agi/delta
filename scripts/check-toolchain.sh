@@ -7,7 +7,9 @@ set -euo pipefail
 
 [[ "$(uname -s)" == "Darwin" ]] || exit 0
 
-CC_BIN="$(xcrun -f clang 2>/dev/null || command -v clang || true)"
+# Test the exact compiler the build pins (/usr/bin/cc), falling back if absent.
+CC_BIN="/usr/bin/cc"
+[[ -x "$CC_BIN" ]] || CC_BIN="$(xcrun -f clang 2>/dev/null || command -v clang || true)"
 [[ -n "$CC_BIN" ]] || exit 0
 
 if printf 'int main(void){ if(__builtin_available(visionOS 1.0, *)){} return 0; }\n' \
