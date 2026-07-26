@@ -1,17 +1,13 @@
 #!/usr/bin/env bash
-# Wipe a build dir whose cached CMake compiler can't build the current macOS SDK
-# (e.g. an old clang cached before an Xcode/CLT update). No-op otherwise.
+# Wipe a build dir whose cached CMake C compiler isn't Apple's /usr/bin/cc (e.g. a
+# Homebrew LLVM clang, which can't build the macOS SDK) so cmake reconfigures with it.
 set -euo pipefail
 
 DIR="${1:-}"
 [[ -n "$DIR" && "$(uname -s)" == "Darwin" && -f "$DIR/CMakeCache.txt" ]] || exit 0
 
 CC="$(sed -n 's/^CMAKE_C_COMPILER:[^=]*=//p' "$DIR/CMakeCache.txt" | head -1)"
-[[ -n "$CC" ]] || exit 0
-
-if ! { [[ -x "$CC" ]] \
-     && printf 'int main(void){ if(__builtin_available(visionOS 1.0, *)){} return 0; }\n' \
-        | "$CC" -x c -fsyntax-only - >/dev/null 2>&1; }; then
-    echo "  Stale CMake cache in $DIR (compiler: $CC) -- wiping to reconfigure with your current toolchain."
+if [[ -n "$CC" && "$CC" != "/usr/bin/cc" ]]; then
+    echo "  Build dir cached a non-Apple compiler ($CC) -- wiping $DIR to rebuild with /usr/bin/cc."
     rm -rf "$DIR"
 fi

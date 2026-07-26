@@ -65,7 +65,8 @@ CMAKE_ARGS=(
 
 case "$(uname -s)" in
     Darwin)
-        CMAKE_ARGS+=(-DGGML_METAL=ON -DUSE_CURL=ON)
+        # Force Apple's compiler; a Homebrew LLVM clang on PATH/CC can't build the macOS SDK.
+        CMAKE_ARGS+=(-DGGML_METAL=ON -DUSE_CURL=ON -DCMAKE_C_COMPILER=/usr/bin/cc -DCMAKE_CXX_COMPILER=/usr/bin/c++)
         case "$TARGET_TRIPLE" in
             aarch64-apple-darwin) CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=arm64) ;;
             x86_64-apple-darwin)

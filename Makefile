@@ -28,7 +28,7 @@ engine: ensure-submodules
 	@bash scripts/check-toolchain.sh
 	@bash scripts/clean-stale-cmake-cache.sh build
 	mkdir -p build
-	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON
+	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON -DCMAKE_C_COMPILER=/usr/bin/cc -DCMAKE_CXX_COMPILER=/usr/bin/c++
 	cmake --build build -j$$(sysctl -n hw.ncpu) --target delta-server --target llama-server
 
 # Builds the sidecars and copies them into src-tauri/binaries/ with the
@@ -54,7 +54,7 @@ preview: ensure-submodules web
 		echo "=== Building delta CLI (one-time) ==="; \
 		bash scripts/check-toolchain.sh && \
 		bash scripts/clean-stale-cmake-cache.sh build && \
-		cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON && \
+		cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON -DCMAKE_C_COMPILER=/usr/bin/cc -DCMAKE_CXX_COMPILER=/usr/bin/c++ && \
 		cmake --build build -j$$(sysctl -n hw.ncpu) --target delta; \
 	fi
 	@echo ""
