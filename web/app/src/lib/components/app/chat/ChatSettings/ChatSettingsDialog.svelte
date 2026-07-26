@@ -518,15 +518,14 @@
 					<ModelManagementTab />
 				</div>
 			{:else}
-				<ScrollArea class="max-h-[calc(100dvh-13.5rem)] flex-1 md:max-h-[calc(100vh-13.5rem)]">
-					<div class="space-y-6 p-4 md:p-6">
-						<div class="grid">
-							<div class="mb-6 flex hidden items-center gap-2 border-b border-border/30 pb-6 md:flex">
-								<currentSection.icon class="h-5 w-5" />
-
-								<h3 class="text-lg font-semibold">{currentSection.title}</h3>
-							</div>
-
+				<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+					<!-- Fixed section header (desktop); options scroll below -->
+					<div class="hidden shrink-0 items-center gap-2 border-b border-border/30 px-4 pt-4 pb-4 md:flex md:px-6 md:pt-6">
+						<currentSection.icon class="h-5 w-5" />
+						<h3 class="text-lg font-semibold">{currentSection.title}</h3>
+					</div>
+					<ScrollArea class="min-h-0 flex-1">
+						<div class="space-y-6 p-4 md:p-6">
 							{#if currentSection.title === 'Import/Export'}
 								<ImportExportTab />
 							{:else if currentSection.title === 'Developer'}
@@ -548,15 +547,15 @@
 									/>
 								</div>
 							{/if}
-						</div>
 
-						<div class="mt-8 border-t pt-6">
-							<p class="text-xs text-muted-foreground">
-								Settings are saved in browser's localStorage
-							</p>
+							<div class="mt-8 border-t pt-6">
+								<p class="text-xs text-muted-foreground">
+									Settings are saved in browser's localStorage
+								</p>
+							</div>
 						</div>
-					</div>
-				</ScrollArea>
+					</ScrollArea>
+				</div>
 			{/if}
 		</div>
 
