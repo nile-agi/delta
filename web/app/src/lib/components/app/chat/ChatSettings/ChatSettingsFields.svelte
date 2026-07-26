@@ -106,7 +106,7 @@
 				value={String(localConfig[field.key] ?? '')}
 				onchange={(e) => onConfigChange(field.key, e.currentTarget.value)}
 				placeholder={`Default: ${SETTING_CONFIG_DEFAULT[field.key] ?? 'none'}`}
-				class="min-h-[100px] w-full md:max-w-2xl"
+				class="min-h-[100px] max-h-[360px] w-full resize-none overflow-y-auto md:max-w-2xl"
 			/>
 			{#if field.help || SETTING_CONFIG_INFO[field.key]}
 				<p class="mt-1 text-xs text-muted-foreground">
