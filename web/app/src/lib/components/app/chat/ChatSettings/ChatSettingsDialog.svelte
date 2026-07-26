@@ -504,55 +504,60 @@
 				</div>
 			</div>
 
-			<ScrollArea class="max-h-[calc(100dvh-13.5rem)] flex-1 md:max-h-[calc(100vh-13.5rem)]">
-				<div class="space-y-6 p-4 md:p-6">
-					<div class="grid">
-						<div class="mb-6 flex hidden items-center gap-2 border-b border-border/30 pb-6 md:flex">
-							<currentSection.icon class="h-5 w-5" />
+			{#if currentSection.title === 'Model Management'}
+				<!-- Bounded container so the tab owns its scroll: fixed header + scrollable list -->
+				<div class="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6">
+					<div class="mb-4 hidden shrink-0 items-center gap-2 border-b border-border/30 pb-4 md:flex">
+						<currentSection.icon class="h-5 w-5" />
+						<h3 class="text-lg font-semibold">{currentSection.title}</h3>
+					</div>
+					<p class="mb-4 shrink-0 text-sm text-muted-foreground">
+						Manage your installed models and download new ones. Use the model selector in the chat
+						input to choose models in the chat interface.
+					</p>
+					<ModelManagementTab />
+				</div>
+			{:else}
+				<ScrollArea class="max-h-[calc(100dvh-13.5rem)] flex-1 md:max-h-[calc(100vh-13.5rem)]">
+					<div class="space-y-6 p-4 md:p-6">
+						<div class="grid">
+							<div class="mb-6 flex hidden items-center gap-2 border-b border-border/30 pb-6 md:flex">
+								<currentSection.icon class="h-5 w-5" />
 
-							<h3 class="text-lg font-semibold">{currentSection.title}</h3>
+								<h3 class="text-lg font-semibold">{currentSection.title}</h3>
+							</div>
+
+							{#if currentSection.title === 'Import/Export'}
+								<ImportExportTab />
+							{:else if currentSection.title === 'Developer'}
+								<div class="space-y-6">
+									<ChatSettingsFields
+										fields={currentSection.fields}
+										{localConfig}
+										onConfigChange={handleConfigChange}
+										onThemeChange={handleThemeChange}
+									/>
+								</div>
+							{:else}
+								<div class="space-y-6">
+									<ChatSettingsFields
+										fields={currentSection.fields}
+										{localConfig}
+										onConfigChange={handleConfigChange}
+										onThemeChange={handleThemeChange}
+									/>
+								</div>
+							{/if}
 						</div>
 
-						{#if currentSection.title === 'Import/Export'}
-							<ImportExportTab />
-						{:else if currentSection.title === 'Model Management'}
-							<div class="space-y-6">
-								<p class="text-sm text-muted-foreground">
-									Manage your installed models and download new ones. Use the model selector in the
-									chat input to choose models in the chat interface.
-								</p>
-								<div class="model-management-container" style="min-height: 200px;">
-									<ModelManagementTab />
-								</div>
-							</div>
-						{:else if currentSection.title === 'Developer'}
-							<div class="space-y-6">
-								<ChatSettingsFields
-									fields={currentSection.fields}
-									{localConfig}
-									onConfigChange={handleConfigChange}
-									onThemeChange={handleThemeChange}
-								/>
-							</div>
-						{:else}
-							<div class="space-y-6">
-								<ChatSettingsFields
-									fields={currentSection.fields}
-									{localConfig}
-									onConfigChange={handleConfigChange}
-									onThemeChange={handleThemeChange}
-								/>
-							</div>
-						{/if}
+						<div class="mt-8 border-t pt-6">
+							<p class="text-xs text-muted-foreground">
+								Settings are saved in browser's localStorage
+							</p>
+						</div>
 					</div>
-
-					<div class="mt-8 border-t pt-6">
-						<p class="text-xs text-muted-foreground">
-							Settings are saved in browser's localStorage
-						</p>
-					</div>
-				</div>
-			</ScrollArea>
+				</ScrollArea>
+			{/if}
 		</div>
 
 		<ChatSettingsFooter onReset={handleReset} onSave={handleSave} />

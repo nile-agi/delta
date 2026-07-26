@@ -874,6 +874,70 @@ export function getFamilyIconForModelName(name: string): string {
 	return '●';
 }
 
+/** Provider display name keyed on the actual logo filenames used by catalog families. */
+const PROVIDER_BY_LOGO: Record<string, string> = {
+	'qwen logo.jpeg': 'Qwen',
+	'gemma logo.svg': 'Google',
+	'ministral logo.png': 'Mistral AI',
+	'nvidia logo.webp': 'NVIDIA',
+	'nemotron logo.png': 'NVIDIA',
+	'angleslim logo.webp': 'Tencent',
+	'angelslim logo.webp': 'Tencent',
+	'glm logo.svg': 'GLM',
+	'deepseek logo.webp': 'DeepSeek',
+	'meta-llama logo.webp': 'Meta',
+	'cohere logo.webp': 'Cohere',
+	'GPT logo.png': 'OpenAI',
+	'bonsai-logo.svg': 'Bonsai',
+};
+
+/** Display order for provider sections in the Catalog; unknown providers fall after these. */
+export const PROVIDER_ORDER: string[] = [
+	'Qwen',
+	'Google',
+	'Meta',
+	'Mistral AI',
+	'NVIDIA',
+	'DeepSeek',
+	'GLM',
+	'Tencent',
+	'Cohere',
+	'OpenAI',
+	'Bonsai',
+	'Other',
+];
+
+/** Provider a family belongs to, derived from its logo icon. Falls back to "Other". */
+export function getFamilyProvider(family: ModelFamily): string {
+	return PROVIDER_BY_LOGO[family.icon] ?? 'Other';
+}
+
+export interface ProviderGroup {
+	provider: string;
+	families: ModelFamily[];
+}
+
+/** Group families by provider, ordered by PROVIDER_ORDER, families sorted by name within each. */
+export function groupFamiliesByProvider(families: ModelFamily[]): ProviderGroup[] {
+	const buckets = new Map<string, ModelFamily[]>();
+	for (const family of families) {
+		const provider = getFamilyProvider(family);
+		const arr = buckets.get(provider) ?? [];
+		arr.push(family);
+		buckets.set(provider, arr);
+	}
+	const orderIndex = (p: string) => {
+		const i = PROVIDER_ORDER.indexOf(p);
+		return i === -1 ? PROVIDER_ORDER.length : i;
+	};
+	return Array.from(buckets.entries())
+		.map(([provider, fams]) => ({
+			provider,
+			families: [...fams].sort((a, b) => a.name.localeCompare(b.name)),
+		}))
+		.sort((a, b) => orderIndex(a.provider) - orderIndex(b.provider) || a.provider.localeCompare(b.provider));
+}
+
 /**
  * Parse params in billions from model name (e.g. "270M" → 0.27, "4B" → 4).
  * Used for optional KV-cache-style mem estimates; returns null if unparseable.
