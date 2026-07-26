@@ -44,6 +44,9 @@ if [[ -z "$TARGET_TRIPLE" ]]; then
     fi
 fi
 
+# Fail early if the toolchain is too old for the macOS SDK (see script).
+bash "$PROJECT_ROOT/scripts/check-toolchain.sh"
+
 echo "=== Building Delta sidecars ==="
 echo "  Platform triple: $TARGET_TRIPLE"
 echo "  Build type: $BUILD_TYPE"

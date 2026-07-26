@@ -22,6 +22,12 @@ npm install -g pnpm@latest   # pnpm 11+
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
+> On macOS 26+ the system SDK requires **clang 17+ (Xcode 16+)**. If `clang --version`
+> is older, the build fails in llama.cpp with `unrecognized platform name visionOS`.
+> Fix: `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` (full Xcode),
+> or refresh CLT: `sudo rm -rf /Library/Developer/CommandLineTools && sudo xcode-select --install`.
+> The build runs this check up front (`scripts/check-toolchain.sh`) and stops early if the toolchain is too old.
+
 ### Linux (Ubuntu/Debian)
 
 ```bash
