@@ -87,6 +87,9 @@ case "$(uname -s)" in
         ;;
 esac
 
+bash "$PROJECT_ROOT/scripts/clean-stale-cmake-cache.sh" "$BUILDDIR"
+mkdir -p "$BUILDDIR"
+
 echo "Configuring CMake..."
 cmake -S "$PROJECT_ROOT" -B "$BUILDDIR" "${CMAKE_ARGS[@]}"
 

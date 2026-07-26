@@ -26,6 +26,7 @@ ensure-submodules:
 engine: ensure-submodules
 	@echo "=== Building engine ==="
 	@bash scripts/check-toolchain.sh
+	@bash scripts/clean-stale-cmake-cache.sh build
 	mkdir -p build
 	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON
 	cmake --build build -j$$(sysctl -n hw.ncpu) --target delta-server --target llama-server
@@ -52,6 +53,7 @@ preview: ensure-submodules web
 	@if [ ! -x build/delta ]; then \
 		echo "=== Building delta CLI (one-time) ==="; \
 		bash scripts/check-toolchain.sh && \
+		bash scripts/clean-stale-cmake-cache.sh build && \
 		cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON && \
 		cmake --build build -j$$(sysctl -n hw.ncpu) --target delta; \
 	fi
