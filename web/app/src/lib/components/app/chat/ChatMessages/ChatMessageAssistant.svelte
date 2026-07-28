@@ -289,7 +289,7 @@
 			{#if config().disableReasoningFormat}
 				<pre class="raw-output">{displayContent || ''}</pre>
 			{:else}
-				<MarkdownContent content={displayContent || ''} />
+				<MarkdownContent content={displayContent || ''} streaming={isActivelyStreaming} />
 			{/if}
 		</div>
 	{:else}
@@ -434,7 +434,10 @@
 		text-overflow: ellipsis;
 	}
 
-	.streaming-content :global(:last-child)::after {
+	/* Last block inside the markdown wrapper only -- a bare descendant selector put a cursor on
+	   every nesting level (`Hello world▍▍▍`). */
+	.streaming-content :global(> * > :last-child)::after,
+	.streaming-content :global(> pre.raw-output)::after {
 		content: '▍';
 		display: inline;
 		color: var(--primary);

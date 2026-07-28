@@ -6,17 +6,25 @@
 	import ChatFormActionRecord from './ChatFormActionRecord.svelte';
 	import ChatFormModelSelector from './ChatFormModelSelector.svelte';
 	import { config, updateConfig } from '$lib/stores/settings.svelte';
-	import { selectedModelSupportsTools } from '$lib/stores/models.svelte';
+	import {
+		modelsLoading,
+		selectedModelId,
+		selectedModelSupportsTools
+	} from '$lib/stores/models.svelte';
 	import type { FileTypeCategory } from '$lib/enums/files';
 
 	let toolsEnabled = $derived(config().useAgentTools === true);
 	let modelSupportsTools = $derived(selectedModelSupportsTools());
 
+	// Sync the toggle only when the model actually changes -- syncing on every render would clobber
+	// the user's choice, and would persist `false` while the model list is still loading.
+	let lastSyncedModelId: string | null = null;
 	$effect(() => {
-		if (modelSupportsTools && !toolsEnabled) {
-			updateConfig('useAgentTools', true);
-		} else if (!modelSupportsTools && toolsEnabled) {
-			updateConfig('useAgentTools', false);
+		const modelId = selectedModelId();
+		if (modelsLoading() || !modelId || modelId === lastSyncedModelId) return;
+		lastSyncedModelId = modelId;
+		if (modelSupportsTools !== toolsEnabled) {
+			updateConfig('useAgentTools', modelSupportsTools);
 		}
 	});
 

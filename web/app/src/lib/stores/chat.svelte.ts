@@ -574,7 +574,8 @@ class ChatStore {
 				onComplete: async (
 					finalContent?: string,
 					reasoningContent?: string,
-					timings?: ChatMessageTimings
+					timings?: ChatMessageTimings,
+					toolCalls?: DatabaseMessageToolCall[]
 				) => {
 					const doComplete = async () => {
 						slotsService.stopStreaming();
@@ -584,11 +585,16 @@ class ChatStore {
 							thinking: string;
 							timings?: ChatMessageTimings;
 							model?: string;
+							tool_calls?: DatabaseMessageToolCall[];
 						} = {
 							content: finalContent || streamedContent,
 							thinking: reasoningContent || streamedReasoningContent,
 							timings: timings
 						};
+
+						if (toolCalls?.length) {
+							updateData.tool_calls = toolCalls;
+						}
 
 						if (resolvedModel && !modelPersisted) {
 							updateData.model = resolvedModel;
@@ -599,12 +605,20 @@ class ChatStore {
 
 						const messageIndex = this.findMessageIndex(assistantMessage.id);
 
-						const localUpdateData: { timings?: ChatMessageTimings; model?: string } = {
+						const localUpdateData: {
+							timings?: ChatMessageTimings;
+							model?: string;
+							tool_calls?: DatabaseMessageToolCall[];
+						} = {
 							timings: timings
 						};
 
 						if (updateData.model) {
 							localUpdateData.model = updateData.model;
+						}
+
+						if (updateData.tool_calls) {
+							localUpdateData.tool_calls = updateData.tool_calls;
 						}
 
 						this.updateMessageAtIndex(messageIndex, localUpdateData);

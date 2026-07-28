@@ -198,6 +198,7 @@ export interface ApiChatCompletionStreamChunk {
 			content?: string;
 			reasoning_content?: string;
 			model?: string;
+			tool_calls?: DatabaseMessageToolCall[];
 		};
 	}>;
 	timings?: {
@@ -219,6 +220,7 @@ export interface ApiChatCompletionResponse {
 			content: string;
 			reasoning_content?: string;
 			model?: string;
+			tool_calls?: DatabaseMessageToolCall[];
 		};
 	}>;
 }

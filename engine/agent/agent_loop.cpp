@@ -29,6 +29,53 @@ static std::string get_text_content(const nlohmann::json& msg, const std::string
     return "";
 }
 
+// Text of the last real user message (skipping our own "Do it now." retry nudge).
+static std::string last_user_text(const nlohmann::json& messages) {
+    for (int i = static_cast<int>(messages.size()) - 1; i >= 0; i--) {
+        if (messages[i].value("role", "") == "user") {
+            std::string candidate = get_text_content(messages[i]);
+            if (candidate.find("Do it now.") == std::string::npos)
+                return candidate;
+        }
+    }
+    return "";
+}
+
+static std::string to_lower(std::string s) {
+    for (auto& c : s)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+// True when the last user message asks for an action, so the model answering with plain text should
+// trigger the tool_choice="required" retry. Also gates streaming, since that text gets discarded.
+static bool user_wants_action(const nlohmann::json& messages) {
+    const std::string last_user = to_lower(last_user_text(messages));
+
+    static const char* action_words[] = {"push",    "move",    "reschedule", "change", "update",   "delete", "cancel",
+                                         "mark",    "done",    "complete",   "remove", "postpone", "ahead",  "later",
+                                         "earlier", "forward", "back",       "start",  "begin",    nullptr};
+    for (int k = 0; action_words[k]; k++) {
+        if (last_user.find(action_words[k]) != std::string::npos)
+            return true;
+    }
+    return false;
+}
+
+// Same idea for new items. The action-retry above only matches *existing* items, so create requests
+// need their own check or a prose reply ("what date is Friday?") is returned as-is.
+static bool user_wants_create(const nlohmann::json& messages) {
+    const std::string last_user = to_lower(last_user_text(messages));
+
+    static const char* create_words[] = {"create", "add",   "schedule", "book",  "remind",
+                                         "set up", "setup", "new ",     "plan ", nullptr};
+    for (int k = 0; create_words[k]; k++) {
+        if (last_user.find(create_words[k]) != std::string::npos)
+            return true;
+    }
+    return false;
+}
+
 static size_t write_callback(void* contents, size_t size, size_t nmemb, std::string* out) {
     size_t total = size * nmemb;
     out->append(static_cast<char*>(contents), total);
@@ -139,7 +186,7 @@ std::string AgentLoop::build_system_prompt() {
     return prompt;
 }
 
-nlohmann::json AgentLoop::call_llm(const nlohmann::json& messages, const nlohmann::json& tools) {
+nlohmann::json AgentLoop::build_request_body(const nlohmann::json& messages, const nlohmann::json& tools, bool stream) {
     // Ensure every message has a string content field for llama-server
     nlohmann::json clean_messages = nlohmann::json::array();
     for (const auto& msg : messages) {
@@ -175,12 +222,17 @@ nlohmann::json AgentLoop::call_llm(const nlohmann::json& messages, const nlohman
     }
 
     nlohmann::json request_body = {
-        {"messages", clean_messages}, {"stream", false}, {"model", model_name_}, {"max_tokens", 1024}};
+        {"messages", clean_messages}, {"stream", stream}, {"model", model_name_}, {"max_tokens", 1024}};
     if (!tools.empty()) {
         request_body["tools"] = tools;
         request_body["tool_choice"] = tool_choice_;
         request_body["chat_template_kwargs"] = {{"enable_thinking", false}};
     }
+    return request_body;
+}
+
+nlohmann::json AgentLoop::call_llm(const nlohmann::json& messages, const nlohmann::json& tools) {
+    nlohmann::json request_body = build_request_body(messages, tools, false);
 
     std::string response_str;
     CURL* curl = curl_easy_init();
@@ -189,7 +241,7 @@ nlohmann::json AgentLoop::call_llm(const nlohmann::json& messages, const nlohman
 
     std::string url = server_url_ + "/v1/chat/completions";
     std::string body = request_body.dump();
-    std::cerr << "[delta-agent] call_llm: " << clean_messages.size() << " msgs, "
+    std::cerr << "[delta-agent] call_llm: " << request_body["messages"].size() << " msgs, "
               << (tools.empty() ? "no tools" : std::to_string(tools.size()) + " tools") << ", model=" << model_name_
               << std::endl;
 
@@ -227,7 +279,220 @@ nlohmann::json AgentLoop::call_llm(const nlohmann::json& messages, const nlohman
     }
 }
 
-AgentResponse AgentLoop::process(nlohmann::json messages) {
+// Hold content back this long before forwarding, so a preamble emitted just before a tool call can
+// still be discarded. 0 = forward immediately (lowest latency).
+static constexpr size_t kStreamHoldbackBytes = 0;
+
+namespace {
+
+struct SseContext {
+    std::string buffer; // partial line carried across curl callbacks
+    std::string raw;    // bounded copy of the body, for non-SSE error responses
+    std::string content;
+    nlohmann::json tool_calls = nlohmann::json::array();
+    std::string finish_reason = "stop";
+    std::string pending; // holdback buffer, discarded if a tool call starts
+    bool saw_sse = false;
+    bool saw_tool_calls = false;
+    bool aborted = false;
+    size_t forwarded = 0;
+    const delta::agent::TokenCallback* forward = nullptr;
+};
+
+// Merge an OpenAI streaming tool_call fragment into the accumulating array (fragments arrive by index).
+void merge_tool_call_delta(nlohmann::json& acc, const nlohmann::json& fragment) {
+    size_t idx = fragment.value("index", 0);
+    while (acc.size() <= idx) {
+        acc.push_back({{"id", ""}, {"type", "function"}, {"function", {{"name", ""}, {"arguments", ""}}}});
+    }
+    auto& slot = acc[idx];
+    if (fragment.contains("id") && fragment["id"].is_string() && !fragment["id"].get<std::string>().empty())
+        slot["id"] = fragment["id"];
+    if (!fragment.contains("function") || !fragment["function"].is_object())
+        return;
+    const auto& fn = fragment["function"];
+    if (fn.contains("name") && fn["name"].is_string())
+        slot["function"]["name"] = slot["function"]["name"].get<std::string>() + fn["name"].get<std::string>();
+    if (fn.contains("arguments") && fn["arguments"].is_string())
+        slot["function"]["arguments"] =
+            slot["function"]["arguments"].get<std::string>() + fn["arguments"].get<std::string>();
+}
+
+// Flush the holdback buffer through the forward callback. Returns false if the client went away.
+bool flush_pending(SseContext* ctx, bool force) {
+    if (!ctx->forward)
+        return true;
+    while (ctx->pending.size() > (force ? 0 : kStreamHoldbackBytes)) {
+        size_t take = force ? ctx->pending.size() : ctx->pending.size() - kStreamHoldbackBytes;
+        std::string chunk = ctx->pending.substr(0, take);
+        ctx->pending.erase(0, take);
+        if (!(*ctx->forward)(chunk)) {
+            ctx->aborted = true;
+            return false;
+        }
+        ctx->forwarded += chunk.size();
+    }
+    return true;
+}
+
+void handle_sse_line(SseContext* ctx, const std::string& line) {
+    if (line.rfind("data: ", 0) != 0)
+        return;
+    ctx->saw_sse = true;
+    std::string payload = line.substr(6);
+    if (payload == "[DONE]")
+        return;
+
+    nlohmann::json chunk;
+    try {
+        chunk = nlohmann::json::parse(payload);
+    } catch (...) {
+        return;
+    }
+    if (!chunk.is_object() || !chunk.contains("choices") || !chunk["choices"].is_array() || chunk["choices"].empty())
+        return;
+
+    const auto& choice = chunk["choices"][0];
+    if (choice.contains("finish_reason") && choice["finish_reason"].is_string())
+        ctx->finish_reason = choice["finish_reason"].get<std::string>();
+    if (!choice.contains("delta") || !choice["delta"].is_object())
+        return;
+
+    const auto& delta = choice["delta"];
+    if (delta.contains("tool_calls") && delta["tool_calls"].is_array() && !delta["tool_calls"].empty()) {
+        // A tool call means this turn is not user-visible text -- drop anything held back.
+        ctx->saw_tool_calls = true;
+        ctx->pending.clear();
+        for (const auto& fragment : delta["tool_calls"]) {
+            if (fragment.is_object())
+                merge_tool_call_delta(ctx->tool_calls, fragment);
+        }
+    }
+    if (delta.contains("content") && delta["content"].is_string()) {
+        const std::string text = delta["content"].get<std::string>();
+        if (text.empty())
+            return;
+        ctx->content += text;
+        if (!ctx->saw_tool_calls && ctx->forward) {
+            ctx->pending += text;
+            flush_pending(ctx, false);
+        }
+    }
+}
+
+size_t sse_write_callback(void* contents, size_t size, size_t nmemb, void* userdata) {
+    size_t total = size * nmemb;
+    auto* ctx = static_cast<SseContext*>(userdata);
+    if (ctx->aborted)
+        return 0; // makes curl fail with CURLE_WRITE_ERROR
+
+    const char* data = static_cast<char*>(contents);
+    if (ctx->raw.size() < 4096)
+        ctx->raw.append(data, std::min(total, 4096 - ctx->raw.size()));
+
+    ctx->buffer.append(data, total);
+    size_t start = 0;
+    for (size_t i = 0; i < ctx->buffer.size(); i++) {
+        if (ctx->buffer[i] != '\n')
+            continue;
+        std::string line = ctx->buffer.substr(start, i - start);
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        handle_sse_line(ctx, line);
+        if (ctx->aborted)
+            return 0;
+        start = i + 1;
+    }
+    ctx->buffer.erase(0, start);
+    return total;
+}
+
+} // namespace
+
+nlohmann::json AgentLoop::call_llm_stream(const nlohmann::json& messages, const nlohmann::json& tools,
+                                          const TokenCallback& forward, size_t& out_forwarded,
+                                          bool& out_client_aborted) {
+    out_forwarded = 0;
+    out_client_aborted = false;
+
+    nlohmann::json request_body = build_request_body(messages, tools, true);
+
+    CURL* curl = curl_easy_init();
+    if (!curl)
+        return {{"error", "Failed to init curl"}};
+
+    SseContext ctx;
+    if (forward)
+        ctx.forward = &forward;
+
+    std::string url = server_url_ + "/v1/chat/completions";
+    std::string body = request_body.dump();
+    std::cerr << "[delta-agent] call_llm_stream: " << request_body["messages"].size() << " msgs, "
+              << (tools.empty() ? "no tools" : std::to_string(tools.size()) + " tools") << ", model=" << model_name_
+              << std::endl;
+
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers = curl_slist_append(headers, "Accept: text/event-stream");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, sse_write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
+    // No overall timeout: a long generation is legitimate. Bail only if the stream truly stalls.
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 120L);
+
+    CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (ctx.aborted) {
+        out_forwarded = ctx.forwarded;
+        out_client_aborted = true;
+        return {{"error", "client disconnected"}};
+    }
+
+    if (!ctx.saw_tool_calls)
+        flush_pending(&ctx, true);
+    out_forwarded = ctx.forwarded;
+    if (ctx.aborted) {
+        out_client_aborted = true;
+        return {{"error", "client disconnected"}};
+    }
+
+    if (res != CURLE_OK) {
+        std::cerr << "[delta-agent] curl error (stream): " << curl_easy_strerror(res) << std::endl;
+        return {{"error", std::string("HTTP request failed: ") + curl_easy_strerror(res)}};
+    }
+
+    // Not an SSE body (e.g. an HTTP error) -- parse it as-is so the retry-without-tools path still works.
+    if (!ctx.saw_sse) {
+        if (http_code >= 400) {
+            std::cerr << "[delta-agent] llama-server HTTP " << http_code
+                      << " (tools=" << (!tools.empty() ? "yes" : "no") << "): " << ctx.raw.substr(0, 500) << std::endl;
+        }
+        try {
+            return nlohmann::json::parse(ctx.raw);
+        } catch (...) {
+            std::cerr << "[delta-agent] JSON parse failed, raw: " << ctx.raw.substr(0, 500) << std::endl;
+            return {{"error", "Failed to parse LLM response"}};
+        }
+    }
+
+    nlohmann::json message = {{"role", "assistant"}, {"content", ctx.content}};
+    if (!ctx.tool_calls.empty()) {
+        message["tool_calls"] = ctx.tool_calls;
+        std::cerr << "[delta-agent] stream reassembled " << ctx.tool_calls.size()
+                  << " tool_calls: " << ctx.tool_calls.dump() << std::endl;
+    }
+    return {{"choices", {{{"index", 0}, {"message", message}, {"finish_reason", ctx.finish_reason}}}}};
+}
+
+AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token) {
     auto& registry = ToolRegistry::instance();
     nlohmann::json tools = registry.get_tools_array();
 
@@ -304,7 +569,10 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
         }
     }
     if (!found_system) {
-        messages.insert(messages.begin(), {{"role", "system"}, {"content", agent_prompt}});
+        // Build the object first: insert() with a braced list would add two arrays, not one message,
+        // and the system prompt would then be dropped as a non-object before the request is sent.
+        nlohmann::json system_msg = {{"role", "system"}, {"content", agent_prompt}};
+        messages.insert(messages.begin(), system_msg);
     }
 
     int total_tool_calls = 0;
@@ -316,13 +584,37 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
     bool tools_supported = supports_tools_;
     tool_choice_ = "auto";
     bool action_retry_fired = false;
+    nlohmann::json executed_tool_calls = nlohmann::json::array();
+    size_t forwarded_total = 0;
+    // Every return carries the recorded tool calls and streamed byte count.
+    auto finish = [&](bool ok, std::string content, std::string error) {
+        return AgentResponse{
+            ok, std::move(content), total_tool_calls, std::move(error), executed_tool_calls, forwarded_total, false};
+    };
     std::cerr << "[delta-agent] v2 process: " << messages.size()
               << " msgs, tools_supported=" << (tools_supported ? "true" : "false") << ", tools_count=" << tools.size()
               << std::endl;
 
     for (int iteration = 0; iteration < max_iterations_; iteration++) {
         write_summaries.clear();
-        auto response = call_llm(messages, tools_supported ? tools : nlohmann::json::array());
+        nlohmann::json active_tools = tools_supported ? tools : nlohmann::json::array();
+        nlohmann::json response;
+        if (on_token) {
+            // Don't forward text that a retry would discard anyway.
+            bool may_forward = action_retry_fired || !(user_wants_action(messages) || user_wants_create(messages));
+            size_t forwarded = 0;
+            bool client_aborted = false;
+            response = call_llm_stream(messages, active_tools, may_forward ? on_token : TokenCallback{}, forwarded,
+                                       client_aborted);
+            forwarded_total += forwarded;
+            if (client_aborted) {
+                AgentResponse aborted = finish(false, "", "client disconnected");
+                aborted.client_aborted = true;
+                return aborted;
+            }
+        } else {
+            response = call_llm(messages, active_tools);
+        }
         if (tool_choice_ == "required")
             tool_choice_ = "auto";
 
@@ -359,7 +651,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
         }
 
         if (!response.is_object()) {
-            return {false, "", total_tool_calls, "Unexpected LLM response format: " + response.dump()};
+            return finish(false, "", "Unexpected LLM response format: " + response.dump());
         }
 
         if (response.contains("error")) {
@@ -372,22 +664,22 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
             } else {
                 error_msg = err.dump();
             }
-            return {false, "", total_tool_calls, error_msg};
+            return finish(false, "", error_msg);
         }
 
         if (!response.contains("choices") || !response["choices"].is_array() || response["choices"].empty()) {
-            return {false, "", total_tool_calls, "No choices in LLM response"};
+            return finish(false, "", "No choices in LLM response");
         }
 
         auto& choice = response["choices"][0];
         if (!choice.is_object()) {
-            return {false, "", total_tool_calls, "Invalid choice format in LLM response"};
+            return finish(false, "", "Invalid choice format in LLM response");
         }
 
         std::string finish_reason = choice.value("finish_reason", "stop");
 
         if (!choice.contains("message") || !choice["message"].is_object()) {
-            return {false, "", total_tool_calls, "No message in LLM choice"};
+            return finish(false, "", "No message in LLM choice");
         }
         auto& message = choice["message"];
 
@@ -462,6 +754,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
 
                 auto result = registry.execute(tool_name, arguments);
                 total_tool_calls++;
+                executed_tool_calls.push_back({{"name", tool_name}, {"arguments", args_str}});
 
                 std::string content =
                     result.success ? result.content : nlohmann::json({{"error", result.error_message}}).dump();
@@ -475,7 +768,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
                 // If a write tool failed, return error directly instead of model hallucinating success
                 if (!result.success && is_write_tool) {
                     std::cerr << "[delta-agent] write tool FAILED: " << result.error_message << std::endl;
-                    return {false, "Sorry, I could not do that: " + result.error_message, total_tool_calls, ""};
+                    return finish(false, "Sorry, I could not do that: " + result.error_message, "");
                 }
 
                 // Build a friendly summary for write tools
@@ -551,7 +844,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
                         combined += "\n";
                     combined += write_summaries[i];
                 }
-                return {true, combined, total_tool_calls, ""};
+                return finish(true, combined, "");
             }
             continue;
         }
@@ -561,33 +854,9 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
         // Action retry: detect when model responds with text but user wanted an action.
         // Fires at most once per process() call, regardless of iteration or tool count.
         if (!action_retry_fired) {
-            std::string last_user;
-            for (int i = static_cast<int>(messages.size()) - 1; i >= 0; i--) {
-                if (messages[i].value("role", "") == "user") {
-                    std::string candidate = get_text_content(messages[i]);
-                    if (candidate.find("Do it now.") == std::string::npos) {
-                        last_user = candidate;
-                        break;
-                    }
-                }
-            }
-            std::string user_lower = last_user;
-            for (auto& c : user_lower)
-                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-
-            static const char* action_words[] = {"push",    "move",     "reschedule", "change", "update",
-                                                 "delete",  "cancel",   "mark",       "done",   "complete",
-                                                 "remove",  "postpone", "ahead",      "later",  "earlier",
-                                                 "forward", "back",     "start",      "begin",  nullptr};
-            bool wants_action = false;
-            for (int k = 0; action_words[k]; k++) {
-                if (user_lower.find(action_words[k]) != std::string::npos) {
-                    wants_action = true;
-                    break;
-                }
-            }
-
-            if (wants_action) {
+            const std::string last_user = last_user_text(messages);
+            const std::string user_lower = to_lower(last_user);
+            if (user_wants_action(messages)) {
                 std::string recent_title, recent_time, recent_id;
 
                 // Strategy 1: quoted text in prior assistant messages
@@ -761,12 +1030,25 @@ AgentResponse AgentLoop::process(nlohmann::json messages) {
                     continue;
                 }
             }
+
+            // Create intent answered with prose instead of a tool call -- retry once, forcing the tool.
+            if (total_tool_calls == 0 && user_wants_create(messages)) {
+                std::cerr << "[delta-agent] create retry: forcing tool call" << std::endl;
+                action_retry_fired = true;
+                messages.push_back(message);
+                messages.push_back({{"role", "user"},
+                                    {"content", "Use the calendar tools to do that now. Never ask for a date -- "
+                                                "pass it through as the user phrased it and let the tool resolve "
+                                                "it. Do it now."}});
+                tool_choice_ = "required";
+                continue;
+            }
         }
 
-        return {true, content, total_tool_calls, ""};
+        return finish(true, content, "");
     }
 
-    return {false, "", total_tool_calls, "Max tool call iterations reached"};
+    return finish(false, "", "Max tool call iterations reached");
 }
 
 } // namespace agent

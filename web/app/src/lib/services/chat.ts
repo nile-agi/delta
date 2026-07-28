@@ -199,10 +199,9 @@ export class ChatService {
 
 		try {
 			const apiKey = currentConfig.apiKey?.toString().trim();
-			let baseUrl = getServerBaseUrl();
-			if (useTools && typeof window !== 'undefined' && (window as any).__DELTA_MODEL_API_PORT__ != null) {
-				baseUrl = `http://127.0.0.1:${(window as any).__DELTA_MODEL_API_PORT__}`;
-			}
+			// Tools live in the agent loop, which only the model API server hosts. getModelApiBaseUrl()
+			// resolves it in every mode (Tauri, same-origin UI-only, and port+1 after the 8080 migration).
+			const baseUrl = useTools ? getModelApiBaseUrl() : getServerBaseUrl();
 			const url = `${baseUrl}/v1/chat/completions`;
 			const headers: Record<string, string> = {
 				'Content-Type': 'application/json',
@@ -291,7 +290,8 @@ export class ChatService {
 		onComplete?: (
 			response: string,
 			reasoningContent?: string,
-			timings?: ChatMessageTimings
+			timings?: ChatMessageTimings,
+			toolCalls?: DatabaseMessageToolCall[]
 		) => void,
 		onError?: (error: Error) => void,
 		onReasoningChunk?: (chunk: string) => void,
@@ -314,6 +314,7 @@ export class ChatService {
 
 			let aggregatedContent = '';
 			let fullReasoningContent = '';
+			const collectedToolCalls: DatabaseMessageToolCall[] = [];
 			let hasReceivedData = false;
 			let lastTimings: ChatMessageTimings | undefined;
 			let streamFinished = false;
@@ -353,6 +354,8 @@ export class ChatService {
 
 							const content = parsed.choices[0]?.delta?.content;
 							const reasoningContent = parsed.choices[0]?.delta?.reasoning_content;
+							const deltaToolCalls = parsed.choices[0]?.delta?.tool_calls;
+							if (deltaToolCalls?.length) collectedToolCalls.push(...deltaToolCalls);
 							const timings = parsed.timings;
 							const promptProgress = parsed.prompt_progress;
 
@@ -428,7 +431,12 @@ export class ChatService {
 					return;
 				}
 
-				onComplete?.(aggregatedContent, fullReasoningContent || undefined, lastTimings);
+				onComplete?.(
+				aggregatedContent,
+				fullReasoningContent || undefined,
+				lastTimings,
+				collectedToolCalls.length > 0 ? collectedToolCalls : undefined
+			);
 				resolve();
 			};
 
@@ -467,7 +475,8 @@ export class ChatService {
 		onComplete?: (
 			response: string,
 			reasoningContent?: string,
-			timings?: ChatMessageTimings
+			timings?: ChatMessageTimings,
+			toolCalls?: DatabaseMessageToolCall[]
 		) => void,
 		onError?: (error: Error) => void,
 		onReasoningChunk?: (chunk: string) => void,
@@ -486,6 +495,7 @@ export class ChatService {
 		const streamId = conversationId || crypto.randomUUID();
 		let aggregatedContent = '';
 		let fullReasoningContent = '';
+		const collectedToolCalls: DatabaseMessageToolCall[] = [];
 		let hasReceivedData = false;
 		let lastTimings: ChatMessageTimings | undefined;
 		let modelEmitted = false;
@@ -514,6 +524,8 @@ export class ChatService {
 
 				const content = parsed.choices[0]?.delta?.content;
 				const reasoningContent = parsed.choices[0]?.delta?.reasoning_content;
+				const deltaToolCalls = parsed.choices[0]?.delta?.tool_calls;
+				if (deltaToolCalls?.length) collectedToolCalls.push(...deltaToolCalls);
 				const timings = parsed.timings;
 				const promptProgress = parsed.prompt_progress;
 
@@ -571,7 +583,12 @@ export class ChatService {
 				throw new Error('No response received from server. Please try again.');
 			}
 
-			onComplete?.(aggregatedContent, fullReasoningContent || undefined, lastTimings);
+			onComplete?.(
+				aggregatedContent,
+				fullReasoningContent || undefined,
+				lastTimings,
+				collectedToolCalls.length > 0 ? collectedToolCalls : undefined
+			);
 		} catch (error) {
 			abortSignal?.removeEventListener('abort', onAbort);
 
@@ -608,7 +625,8 @@ export class ChatService {
 		onComplete?: (
 			response: string,
 			reasoningContent?: string,
-			timings?: ChatMessageTimings
+			timings?: ChatMessageTimings,
+			toolCalls?: DatabaseMessageToolCall[]
 		) => void,
 		onModel?: (model: string) => void
 	): Promise<string> {
@@ -639,7 +657,7 @@ export class ChatService {
 				throw noResponseError;
 			}
 
-			onComplete?.(content, reasoningContent);
+			onComplete?.(content, reasoningContent, undefined, data.choices[0]?.message?.tool_calls);
 
 			return content;
 		} catch (error) {
