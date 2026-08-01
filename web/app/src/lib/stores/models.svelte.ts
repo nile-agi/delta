@@ -5,6 +5,7 @@ import { persisted } from '$lib/stores/persisted.svelte';
 import { SELECTED_MODEL_LOCALSTORAGE_KEY } from '$lib/constants/localstorage-keys';
 import type { ModelOption } from '$lib/types/models';
 import { serverStore, serverSupportsTools } from '$lib/stores/server.svelte';
+import { config } from '$lib/stores/settings.svelte';
 
 type PersistedModelSelection = {
 	id: string;
@@ -350,6 +351,11 @@ export const selectedModelName = () => modelsStore.selectedModelName;
 export const selectedModelOption = () => modelsStore.selectedModel;
 export const modelLoadedOnServer = () => modelsStore.modelLoadedOnServer;
 export const selectedModelSupportsTools = () => modelsStore.selectedModelSupportsTools || serverSupportsTools();
+
+// Single source of truth for the toggle: the stored flag is user intent, capability is applied here.
+// Both the wrench UI and the request routing must read this, or they can disagree.
+export const agentToolsActive = () =>
+	config().useAgentTools === true && selectedModelSupportsTools();
 
 export const fetchModels = modelsStore.fetch.bind(modelsStore);
 export const selectModel = modelsStore.select.bind(modelsStore);

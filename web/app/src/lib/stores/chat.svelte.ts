@@ -3,7 +3,7 @@ import { chatService, slotsService } from '$lib/services';
 import { config } from '$lib/stores/settings.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
 import { normalizeModelName } from '$lib/utils/model-names';
-import { selectedModelName, requestModelSelection } from '$lib/stores/models.svelte';
+import { agentToolsActive, selectedModelName, requestModelSelection } from '$lib/stores/models.svelte';
 import { filterByLeafNodeId, findLeafNode, findDescendantMessages } from '$lib/utils/branching';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
@@ -244,7 +244,7 @@ class ChatStore {
 	 * Converts settings store values to API-compatible format
 	 * @returns API options object for chat completion requests
 	 */
-	private getApiOptions(): Record<string, unknown> {
+	private getApiOptions(useToolsOverride?: boolean): Record<string, unknown> {
 		const currentConfig = config();
 		const hasValue = (value: unknown): boolean =>
 			value !== undefined && value !== null && value !== '';
@@ -315,7 +315,9 @@ class ChatStore {
 			apiOptions.custom = currentConfig.custom;
 		}
 
-		if (currentConfig.useAgentTools) {
+		// useTools picks the server (agent loop vs llama-server), so honour the caller's snapshot when
+		// given -- re-reading it here would sample state from after goto()/DB writes.
+		if (useToolsOverride ?? agentToolsActive()) {
 			apiOptions.useTools = true;
 		}
 
@@ -429,7 +431,7 @@ class ChatStore {
 		assistantMessage: DatabaseMessage,
 		onComplete?: (content: string) => Promise<void>,
 		onError?: (error: Error) => void,
-		options?: { initialContent?: string; initialThinking?: string }
+		options?: { initialContent?: string; initialThinking?: string; useTools?: boolean }
 	): Promise<void> {
 		let streamedContent = options?.initialContent ?? '';
 		let streamedReasoningContent = options?.initialThinking ?? '';
@@ -550,7 +552,7 @@ class ChatStore {
 		await chatService.sendMessage(
 			allMessages,
 			{
-				...this.getApiOptions(),
+				...this.getApiOptions(options?.useTools),
 
 				onFirstValidChunk: () => {
 					refreshServerPropsOnce();
@@ -807,6 +809,10 @@ class ChatStore {
 			return;
 		}
 
+		// Sample before createConversation()/goto() and the DB writes, so the request routes to the
+		// server the user actually saw selected when they hit send.
+		const useTools = agentToolsActive();
+
 		let isNewConversation = false;
 
 		if (!this.activeConversation) {
@@ -848,7 +854,9 @@ class ChatStore {
 
 			const conversationContext = this.activeMessages.slice(0, -1);
 
-			await this.streamChatCompletion(conversationContext, assistantMessage);
+			await this.streamChatCompletion(conversationContext, assistantMessage, undefined, undefined, {
+				useTools
+			});
 		} catch (error) {
 			if (this.isAbortError(error)) {
 				this.setConversationLoading(this.activeConversation!.id, false);

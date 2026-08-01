@@ -6,27 +6,14 @@
 	import ChatFormActionRecord from './ChatFormActionRecord.svelte';
 	import ChatFormModelSelector from './ChatFormModelSelector.svelte';
 	import { config, updateConfig } from '$lib/stores/settings.svelte';
-	import {
-		modelsLoading,
-		selectedModelId,
-		selectedModelSupportsTools
-	} from '$lib/stores/models.svelte';
+	import { agentToolsActive, selectedModelSupportsTools } from '$lib/stores/models.svelte';
 	import type { FileTypeCategory } from '$lib/enums/files';
 
+	// The stored flag is the user's intent; the click below is its only writer. Deriving it from the
+	// model in an effect clobbered that choice on every remount (new chat, route swap).
 	let toolsEnabled = $derived(config().useAgentTools === true);
 	let modelSupportsTools = $derived(selectedModelSupportsTools());
-
-	// Sync the toggle only when the model actually changes -- syncing on every render would clobber
-	// the user's choice, and would persist `false` while the model list is still loading.
-	let lastSyncedModelId: string | null = null;
-	$effect(() => {
-		const modelId = selectedModelId();
-		if (modelsLoading() || !modelId || modelId === lastSyncedModelId) return;
-		lastSyncedModelId = modelId;
-		if (modelSupportsTools !== toolsEnabled) {
-			updateConfig('useAgentTools', modelSupportsTools);
-		}
-	});
+	let toolsActive = $derived(agentToolsActive());
 
 	interface Props {
 		canSend?: boolean;
@@ -76,7 +63,7 @@
 		<Tooltip.Trigger>
 			<button
 				type="button"
-				class="flex h-8 w-8 items-center justify-center rounded-md transition-colors {toolsEnabled && modelSupportsTools
+				class="flex h-8 w-8 items-center justify-center rounded-md transition-colors {toolsActive
 					? 'bg-primary text-primary-foreground'
 					: !modelSupportsTools
 						? 'text-muted-foreground/40 cursor-not-allowed'
