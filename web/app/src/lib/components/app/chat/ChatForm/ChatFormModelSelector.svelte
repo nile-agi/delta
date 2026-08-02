@@ -7,6 +7,7 @@
 	import {
 		fetchModels,
 		loadingModelId,
+		modelDropdownTrigger,
 		modelLoadedOnServer,
 		modelOptions,
 		modelsError,
@@ -154,6 +155,7 @@
 	}
 
 	let lastOpenTrigger = $state(0);
+	let lastGlobalTrigger = $state(0);
 
 	$effect(() => {
 		if (loading || updating) {
@@ -165,6 +167,14 @@
 		const trigger = openTrigger;
 		if (trigger > lastOpenTrigger && options.length > 0 && !loading && !updating) {
 			lastOpenTrigger = trigger;
+			void openMenu();
+		}
+	});
+
+	$effect(() => {
+		const trigger = modelDropdownTrigger();
+		if (trigger > lastGlobalTrigger && options.length > 0 && !loading && !updating) {
+			lastGlobalTrigger = trigger;
 			void openMenu();
 		}
 	});
@@ -422,7 +432,7 @@
 										{option.name}
 									</span>
 									{#if option.description}
-										<span class="text-xs text-muted-foreground">{option.description}</span>
+										<span class="line-clamp-2 text-xs leading-snug text-muted-foreground" title={option.description}>{option.description}</span>
 									{/if}
 									{#if isLoadingThis}
 										<span class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">

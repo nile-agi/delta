@@ -4,6 +4,8 @@ import { slotsService } from '$lib/services/slots';
 import { persisted } from '$lib/stores/persisted.svelte';
 import { SELECTED_MODEL_LOCALSTORAGE_KEY } from '$lib/constants/localstorage-keys';
 import type { ModelOption } from '$lib/types/models';
+import { serverStore, serverSupportsTools } from '$lib/stores/server.svelte';
+import { config } from '$lib/stores/settings.svelte';
 
 type PersistedModelSelection = {
 	id: string;
@@ -69,6 +71,10 @@ class ModelsStore {
 		return this._modelLoadedOnServer;
 	}
 
+	get selectedModelSupportsTools(): boolean {
+		return this.selectedModel?.capabilities?.includes('tools') ?? false;
+	}
+
 	async fetch(force = false): Promise<void> {
 		if (this._loading) return;
 		if (this._models.length > 0 && !force) return;
@@ -107,7 +113,7 @@ class ModelsStore {
 						name: displayName,
 						model: modelInfo.name,
 						description: modelInfo.description,
-						capabilities: [],
+						capabilities: modelInfo.supports_tools ? ['tools'] : [],
 						details: {
 							quantization_level: modelInfo.quantization
 						},
@@ -344,7 +350,19 @@ export const selectedModelId = () => modelsStore.selectedModelId;
 export const selectedModelName = () => modelsStore.selectedModelName;
 export const selectedModelOption = () => modelsStore.selectedModel;
 export const modelLoadedOnServer = () => modelsStore.modelLoadedOnServer;
+export const selectedModelSupportsTools = () => modelsStore.selectedModelSupportsTools || serverSupportsTools();
+
+// Single source of truth for the toggle: the stored flag is user intent, capability is applied here.
+// Both the wrench UI and the request routing must read this, or they can disagree.
+export const agentToolsActive = () =>
+	config().useAgentTools === true && selectedModelSupportsTools();
 
 export const fetchModels = modelsStore.fetch.bind(modelsStore);
 export const selectModel = modelsStore.select.bind(modelsStore);
 export const unloadModel = modelsStore.unload.bind(modelsStore);
+
+let _modelDropdownTrigger = $state(0);
+export const modelDropdownTrigger = () => _modelDropdownTrigger;
+export function requestModelSelection() {
+	_modelDropdownTrigger++;
+}

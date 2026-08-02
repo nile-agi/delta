@@ -908,11 +908,7 @@ int main(int argc, char** argv) {
         std::transform(model_name_lower.begin(), model_name_lower.end(), model_name_lower.begin(), ::tolower);
         std::transform(model_alias_lower.begin(), model_alias_lower.end(), model_alias_lower.begin(), ::tolower);
         std::transform(model_path_lower.begin(), model_path_lower.end(), model_path_lower.begin(), ::tolower);
-        if (model_name_lower.find("gemma3") != std::string::npos ||
-            model_alias_lower.find("gemma3") != std::string::npos ||
-            model_path_lower.find("gemma3") != std::string::npos) {
-            cmd << " --jinja";
-        }
+        cmd << " --jinja";
 
         if (enable_embedding)
             cmd << " --embedding";

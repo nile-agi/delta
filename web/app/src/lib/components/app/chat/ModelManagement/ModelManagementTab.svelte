@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { ModelsService, type ModelInfo } from '$lib/services/models';
 	import { slotsService } from '$lib/services/slots';
-	import { modelsCatalog } from '$lib/data/models_catalog';
-	import { selectedModelName as getSelectedModelName } from '$lib/stores/models.svelte';
+	import { modelsCatalog, groupFamiliesByProvider } from '$lib/data/models_catalog';
+	import { selectedModelName as getSelectedModelName, fetchModels } from '$lib/stores/models.svelte';
 	import FamilyAccordion from './FamilyAccordion.svelte';
 	import InstalledModelRow from './InstalledModelRow.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -134,6 +134,7 @@
 						if (progress.completed) {
 							toast.success(`Model ${modelName} downloaded successfully`);
 							await loadInstalledModels();
+							await fetchModels(true);
 							setTimeout(() => {
 								downloadProgress = null;
 								downloadingModel = null;
@@ -198,6 +199,7 @@
 			await ModelsService.remove(modelName);
 			toast.success(`Model ${modelName} removed successfully`);
 			await loadInstalledModels();
+			await fetchModels(true);
 		} catch (e) {
 			const errorMessage = e instanceof Error ? e.message : 'Failed to remove model';
 			toast.error(errorMessage);
@@ -247,9 +249,9 @@
 	- Pill-shaped tabs
 	- Prominent system RAM display
 -->
-<div class="model-management-container min-h-[400px] rounded-lg border border-border bg-background p-6 text-foreground">
-	<!-- Top Bar: Tabs, Search, RAM Display -->
-	<div class="mb-6 flex flex-col gap-4">
+<div class="model-management-container flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground">
+	<!-- Top Bar: Tabs, Search, RAM Display (fixed header) -->
+	<div class="mb-4 flex shrink-0 flex-col gap-4 px-6 pt-6">
 		<!-- Tabs and Search Row -->
 		<div class="flex items-center justify-between gap-4">
 			<!-- Pill-shaped Tabs -->
@@ -322,67 +324,79 @@
 		</div>
 	</div>
 
-	<!-- Installed Models View -->
-	{#if viewMode === 'installed'}
-		{#if loadingInstalled && installedModels.length === 0}
-			<div class="flex items-center justify-center py-16">
-				<Loader2 class="h-8 w-8 animate-spin text-primary" />
-			</div>
-		{:else if filteredInstalledModels.length === 0}
-			<div class="py-16 text-center text-muted-foreground">
-				<p class="mb-2">
-					{#if searchQuery}
-						No installed models match your search.
-					{:else}
-						No models installed.
+	<!-- Scrollable model list (header above stays fixed) -->
+	<div class="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+		<!-- Installed Models View -->
+		{#if viewMode === 'installed'}
+			{#if loadingInstalled && installedModels.length === 0}
+				<div class="flex items-center justify-center py-16">
+					<Loader2 class="h-8 w-8 animate-spin text-primary" />
+				</div>
+			{:else if filteredInstalledModels.length === 0}
+				<div class="py-16 text-center text-muted-foreground">
+					<p class="mb-2">
+						{#if searchQuery}
+							No installed models match your search.
+						{:else}
+							No models installed.
+						{/if}
+					</p>
+					{#if !searchQuery}
+						<p class="text-sm">Switch to the "Catalog" tab to download models.</p>
 					{/if}
-				</p>
-				{#if !searchQuery}
-					<p class="text-sm">Switch to the "Catalog" tab to download models.</p>
-				{/if}
+				</div>
+			{:else}
+				<!-- Installed Models List: manage context length and delete only. Load/select model via chat model selector. -->
+				<div class="space-y-2">
+					{#each filteredInstalledModels as model (model.name)}
+						<InstalledModelRow
+							{model}
+							onRemove={handleRemove}
+							onContextChange={handleContextChange}
+							removing={removingModel === model.name}
+							{systemRAMGB}
+						/>
+					{/each}
+				</div>
+			{/if}
+			<!-- Catalog View -->
+		{:else if systemRAMGB === null && !loadingRAM}
+			<div class="py-16 text-center text-muted-foreground">
+				<p>Unable to detect system RAM. Hardware-aware filtering disabled.</p>
+			</div>
+		{:else if filteredFamilies.length === 0}
+			<div class="py-16 text-center text-muted-foreground">
+				<p>No model families match your search.</p>
 			</div>
 		{:else}
-			<!-- Installed Models List: manage context length and delete only. Load/select model via chat model selector. -->
-			<div class="space-y-2">
-				{#each filteredInstalledModels as model (model.name)}
-					<InstalledModelRow
-						{model}
-						onRemove={handleRemove}
-						onContextChange={handleContextChange}
-						removing={removingModel === model.name}
-						{systemRAMGB}
-					/>
+			<!-- Catalog grouped by provider -->
+			<div class="space-y-6">
+				{#each groupFamiliesByProvider(filteredFamilies) as group (group.provider)}
+					<div>
+						<div class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+							{group.provider}
+						</div>
+						<div class="space-y-3">
+							{#each group.families as family (family.id)}
+								<FamilyAccordion
+									{family}
+									expanded={false}
+									systemRAMGB={systemRAMGB || 8}
+									{installedModelNames}
+									onModelDownload={handleDownload}
+									onModelRemove={handleRemove}
+									onModelStopDownload={handleStopDownload}
+									{downloadingModel}
+									{removingModel}
+									{downloadProgress}
+								/>
+							{/each}
+						</div>
+					</div>
 				{/each}
 			</div>
 		{/if}
-		<!-- Catalog View -->
-	{:else if systemRAMGB === null && !loadingRAM}
-		<div class="py-16 text-center text-muted-foreground">
-			<p>Unable to detect system RAM. Hardware-aware filtering disabled.</p>
-		</div>
-	{:else if filteredFamilies.length === 0}
-		<div class="py-16 text-center text-muted-foreground">
-			<p>No model families match your search.</p>
-		</div>
-	{:else}
-		<!-- Model Families with Accordions -->
-		<div class="space-y-4">
-			{#each filteredFamilies as family (family.id)}
-				<FamilyAccordion
-					{family}
-					expanded={false}
-					systemRAMGB={systemRAMGB || 8}
-					{installedModelNames}
-					onModelDownload={handleDownload}
-					onModelRemove={handleRemove}
-					onModelStopDownload={handleStopDownload}
-					{downloadingModel}
-					{removingModel}
-					{downloadProgress}
-				/>
-			{/each}
-		</div>
-	{/if}
+	</div>
 </div>
 
 <!-- Delete Confirmation Dialog -->

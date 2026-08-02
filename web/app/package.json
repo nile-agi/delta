@@ -3,6 +3,10 @@
 	"private": true,
 	"version": "1.0.0",
 	"type": "module",
+	"engines": {
+		"node": ">=18",
+		"pnpm": ">=11"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
@@ -84,6 +88,7 @@
 		"vitest-browser-svelte": "^0.1.0"
 	},
 	"dependencies": {
+		"@tauri-apps/plugin-notification": "^2.3.3",
 		"highlight.js": "^11.11.1",
 		"mode-watcher": "^1.1.0",
 		"pdfjs-dist": "^5.4.54",

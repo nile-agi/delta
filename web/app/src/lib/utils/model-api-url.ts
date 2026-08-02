@@ -37,6 +37,11 @@ export function resolveModelApiBaseUrl(): Promise<void> {
 		cachedBaseUrl = buildModelApiUrl();
 		return Promise.resolve();
 	}
+	if (isTauri()) {
+		cachedBaseUrl = buildModelApiUrl();
+		resolved = true;
+		return Promise.resolve();
+	}
 	if (resolvePromise !== null) {
 		return resolvePromise;
 	}
@@ -44,7 +49,8 @@ export function resolveModelApiBaseUrl(): Promise<void> {
 		try {
 			const probeBase = getServerBaseUrl();
 			const res = await fetch(`${probeBase}/api/models/available`, { method: 'GET' });
-			if (res.ok) {
+			const contentType = res.headers.get('content-type') || '';
+			if (res.ok && contentType.includes('application/json')) {
 				cachedBaseUrl = '';
 			} else {
 				cachedBaseUrl = buildModelApiUrl();

@@ -31,8 +31,7 @@ ModelManager::ModelManager() : progress_callback_(nullptr) {
     load_context_overrides();
 }
 
-ModelManager::~ModelManager() {
-}
+ModelManager::~ModelManager() {}
 
 void ModelManager::ensure_models_dir() {
     if (!tools::FileOps::dir_exists(models_dir_)) {
@@ -42,20 +41,20 @@ void ModelManager::ensure_models_dir() {
 
 std::vector<std::string> ModelManager::list_models() {
     std::vector<std::string> models;
-    
+
     if (!tools::FileOps::dir_exists(models_dir_)) {
         return models;
     }
-    
+
     auto files = tools::FileOps::list_dir(models_dir_);
-    
+
     for (const auto& file : files) {
         // Only include .gguf files
         if (file.length() > 5 && file.substr(file.length() - 5) == ".gguf") {
             models.push_back(file.substr(0, file.length() - 5));
         }
     }
-    
+
     std::sort(models.begin(), models.end());
     return models;
 }
@@ -70,16 +69,16 @@ std::string ModelManager::get_model_path(const std::string& model_name) {
     if (tools::FileOps::file_exists(model_name)) {
         return model_name;
     }
-    
+
     // Resolve short name to full filename
     std::string filename = resolve_model_name(model_name);
-    
+
     // Check in models directory
     std::string full_path = tools::FileOps::join_path(models_dir_, filename);
     if (tools::FileOps::file_exists(full_path)) {
         return full_path;
     }
-    
+
     // If still not found, try the original input with .gguf
     std::string with_ext = model_name;
     if (model_name.length() < 5 || model_name.substr(model_name.length() - 5) != ".gguf") {
@@ -89,36 +88,36 @@ std::string ModelManager::get_model_path(const std::string& model_name) {
     if (tools::FileOps::file_exists(full_path)) {
         return full_path;
     }
-    
+
     return "";
 }
 
 bool ModelManager::add_model(const std::string& model_name, const std::string& file_path) {
     ensure_models_dir();
-    
+
     if (!tools::FileOps::file_exists(file_path)) {
         return false;
     }
-    
+
     std::string dest_name = model_name;
     if (dest_name.length() < 5 || dest_name.substr(dest_name.length() - 5) != ".gguf") {
         dest_name += ".gguf";
     }
-    
+
     std::string dest_path = tools::FileOps::join_path(models_dir_, dest_name);
-    
+
     // Use streaming copy for large files instead of loading into memory
     std::ifstream src(file_path, std::ios::binary);
     std::ofstream dst(dest_path, std::ios::binary);
-    
+
     if (!src || !dst) {
         return false;
     }
-    
+
     // Copy in chunks to avoid memory issues with large models
     constexpr size_t buffer_size = 1024 * 1024; // 1 MB chunks
     char buffer[buffer_size];
-    
+
     while (src.read(buffer, buffer_size) || src.gcount() > 0) {
         dst.write(buffer, src.gcount());
         if (!dst) {
@@ -128,10 +127,10 @@ bool ModelManager::add_model(const std::string& model_name, const std::string& f
             return false;
         }
     }
-    
+
     src.close();
     dst.close();
-    
+
     return true;
 }
 
@@ -140,7 +139,7 @@ bool ModelManager::remove_model(const std::string& model_name) {
     if (path.empty()) {
         return false;
     }
-    
+
     return std::remove(path.c_str()) == 0;
 }
 
@@ -152,18 +151,18 @@ bool ModelManager::remove_model_with_confirmation(const std::string& model_name)
         UI::print_info("Use 'delta --list-models' to see installed models");
         return false;
     }
-    
+
     // Check if model exists
     if (!has_model(resolved_name)) {
         UI::print_error("Model '" + model_name + "' is not installed locally");
         UI::print_info("Use 'delta --list-models' to see installed models");
         return false;
     }
-    
+
     // Get model info for confirmation
     std::string path = get_model_path(resolved_name);
     auto info = get_model_info(resolved_name);
-    
+
     // Display model info
     UI::print_border("CONFIRM MODEL DELETION");
     UI::print_info("Model: " + resolved_name);
@@ -172,24 +171,24 @@ bool ModelManager::remove_model_with_confirmation(const std::string& model_name)
     }
     UI::print_info("Path: " + path);
     std::cout << std::endl;
-    
+
     // Confirmation prompt
     UI::print_warning("This action cannot be undone!");
     std::cout << "Are you sure you want to delete this model? (y/N): " << std::flush;
-    
+
     std::string response;
     std::getline(std::cin, response);
-    
+
     // Trim whitespace and convert to lowercase
     response.erase(0, response.find_first_not_of(" \t\n\r"));
     response.erase(response.find_last_not_of(" \t\n\r") + 1);
     std::transform(response.begin(), response.end(), response.begin(), ::tolower);
-    
+
     if (response != "y" && response != "yes") {
         UI::print_info("Deletion cancelled");
         return false;
     }
-    
+
     // Perform deletion
     bool success = remove_model(resolved_name);
     if (success) {
@@ -198,24 +197,24 @@ bool ModelManager::remove_model_with_confirmation(const std::string& model_name)
         UI::print_error("Failed to delete model '" + resolved_name + "'");
         UI::print_info("Check file permissions and try again");
     }
-    
+
     return success;
 }
 
 std::map<std::string, std::string> ModelManager::get_model_info(const std::string& model_name) {
     std::map<std::string, std::string> info;
-    
+
     std::string path = get_model_path(model_name);
     if (path.empty()) {
         return info;
     }
-    
+
     // Get file size
     struct stat st;
     if (stat(path.c_str(), &st) == 0) {
         double size_mb = st.st_size / (1024.0 * 1024.0);
         double size_gb = size_mb / 1024.0;
-        
+
         char buffer[64];
         if (size_gb >= 1.0) {
             snprintf(buffer, sizeof(buffer), "%.2f GB", size_gb);
@@ -225,11 +224,11 @@ std::map<std::string, std::string> ModelManager::get_model_info(const std::strin
         info["size"] = buffer;
         info["path"] = path;
     }
-    
+
     // Try to detect quantization from filename
     std::string lower_name = model_name;
     std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::tolower);
-    
+
     if (lower_name.find("q4_0") != std::string::npos) {
         info["quantization"] = "Q4_0";
     } else if (lower_name.find("q4_1") != std::string::npos) {
@@ -245,7 +244,7 @@ std::map<std::string, std::string> ModelManager::get_model_info(const std::strin
     } else if (lower_name.find("f32") != std::string::npos) {
         info["quantization"] = "F32";
     }
-    
+
     return info;
 }
 
@@ -260,10 +259,10 @@ void ModelManager::cancel_download() {
 
 void ModelManager::init_model_registry() {
     // Enhanced registry with short names and friendly display
-    // Format: {name, short_name, repo_id, filename, quant, size, description, display_name, max_context}
-    // Updated with verified HuggingFace repositories as of v1.0.0
-    // max_context: 0 = use model default (-c from model); no override passed to llama-server
-   
+    // Format: {name, short_name, repo_id, filename, quant, size, description, display_name, max_context,
+    // supports_tools} Updated with verified HuggingFace repositories as of v1.0.0 max_context: 0 = use model default
+    // (-c from model); no override passed to llama-server
+
     // ===== HY 2Bit SERIES (Latest generation) =====
     model_registry_["HY-2Bit:1.8b"] = {
         "HY-2Bit:1.8b",
@@ -271,12 +270,12 @@ void ModelManager::init_model_registry() {
         "AngelSlim/HY-1.8B-2Bit-GGUF",
         "hunyuan-q4_0.gguf",
         "Q4_0",
-        1080LL * 1024 * 1024,      // ~1.08 MB
+        1080LL * 1024 * 1024, // ~1.08 MB
         "HY-1.8B-2Bit, a high-efficiency 2-bit LLM built for on-device deployment",
         "HY-2Bit 1.8B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-
 
     // ===== QWEN 3 SERIES (Latest generation) =====
     model_registry_["tinygemma3"] = {
@@ -285,10 +284,11 @@ void ModelManager::init_model_registry() {
         "ggml-org/tinygemma3-GGUF",
         "tinygemma3-Q8_0.gguf",
         "Q8_0",
-        4720LL * 1024 * 1024,      // ~47.2 MB
+        4720LL * 1024 * 1024, // ~47.2 MB
         "Ultra-compact multilingual model (TinyGemma3)",
         "TinyGemma 3",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
 
     model_registry_["qwen3:0.6b"] = {
@@ -297,46 +297,50 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen3-0.6B-GGUF",
         "Qwen3-0.6B-f16.gguf",
         "F16",
-        1546LL * 1024 * 1024,      // ~1.51 GB
+        1546LL * 1024 * 1024, // ~1.51 GB
         "Ultra-compact multilingual model",
         "Qwen 3 0.6B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen3:1.7b"] = {
         "qwen3:1.7b",
         "qwen3-1.7b",
         "ggml-org/Qwen3-1.7B-GGUF",
         "Qwen3-1.7B-f16.gguf",
         "F16",
-        1126LL * 1024 * 1024,     // ~1.28 GB
+        1126LL * 1024 * 1024, // ~1.28 GB
         "Efficient small multilingual model",
         "Qwen 3 1.7B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen3:4b"] = {
         "qwen3:4b",
         "qwen3-4b",
         "ggml-org/Qwen3-4B-GGUF",
         "Qwen3-4B-Q4_K_M.gguf",
         "Q4_K_M",
-        2560LL * 1024 * 1024,     // ~2.5 GB
+        2560LL * 1024 * 1024, // ~2.5 GB
         "Balanced multilingual reasoning model",
         "Qwen 3 4B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen3:8b"] = {
         "qwen3:8b",
         "qwen3-8b",
         "ggml-org/Qwen3-8B-GGUF",
         "Qwen3-8B-Q4_K_M.gguf",
         "Q4_K_M",
-        5150LL * 1024 * 1024,     // ~5.03 GB
+        5150LL * 1024 * 1024, // ~5.03 GB
         "Powerful multilingual instruct model",
         "Qwen 3 8B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["qwen3:14b"] = {
@@ -345,10 +349,11 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen3-14B-GGUF",
         "Qwen3-14B-Q4_K_M.gguf",
         "Q4_K_M",
-        9216LL * 1024 * 1024,     // ~9 GB
+        9216LL * 1024 * 1024, // ~9 GB
         "Powerful multilingual instruct model",
         "Qwen 3 14B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["qwen3think:4b"] = {
@@ -357,10 +362,11 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen3-4B-Thinking-2507-Q8_0-GGUF",
         "qwen3-4b-thinking-2507-q8_0.gguf",
         "Q8_0",
-        4288LL * 1024 * 1024,     // ~4.28 GB
+        4288LL * 1024 * 1024, // ~4.28 GB
         "Powerful reasoning model",
         "Qwen 3 4B Thinking",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["qwen3it:4b"] = {
@@ -369,12 +375,13 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen3-4B-Instruct-2507-Q8_0-GGUF",
         "qwen3-4b-instruct-2507-q8_0.gguf",
         "Q8_0",
-        4288LL * 1024 * 1024,     // ~4.28 GB
+        4288LL * 1024 * 1024, // ~4.28 GB
         "Powerful reasoning model",
         "Qwen 3 4B Instruct",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // ===== QWEN 3 VL (Vision-Language) INSTRUCT from NexaAI =====
     model_registry_["qwen3-vl:4b-instruct"] = {
         "qwen3-vl:4b",
@@ -382,22 +389,24 @@ void ModelManager::init_model_registry() {
         "KathAhegao/Qwen3-VL-4B-Instruct-Q4_K_M-GGUF",
         "qwen3-vl-4b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4000LL * 1024 * 1024,     // ~4.0 GB (approx)
+        4000LL * 1024 * 1024, // ~4.0 GB (approx)
         "Qwen3-VL 4B Instruct vision-language model",
         "Qwen3-VL 4B Instruct",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen3-vl:8b-instruct"] = {
         "qwen3-vl:8b",
         "qwen3-vl-8b-instruct",
         "mazrba/Huihui-Qwen3-VL-8B-Instruct-abliterated-Q4_K_M-GGUF",
         "huihui-qwen3-vl-8b-instruct-abliterated-q4_k_m-imat.gguf",
         "Q4_K_M",
-        8000LL * 1024 * 1024,     // ~8.0 GB (approx)
+        8000LL * 1024 * 1024, // ~8.0 GB (approx)
         "Qwen3-VL 8B Instruct vision-language model",
         "Qwen3-VL 8B Instruct",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     // Catalog-only entries (names match frontend models_catalog.ts for Install from UI)
@@ -410,7 +419,8 @@ void ModelManager::init_model_registry() {
         1900LL * 1024 * 1024,
         "Qwen3-VL 2B Instruct vision-language model",
         "Qwen3 VL 2B",
-        8192
+        8192,
+        true // supports_tools
     };
     model_registry_["qwen3-vl:30b-a3b"] = {
         "qwen3-vl:30b-a3b",
@@ -421,7 +431,8 @@ void ModelManager::init_model_registry() {
         20000LL * 1024 * 1024,
         "Qwen3-VL 30B-A3B Instruct vision-language model",
         "Qwen3 VL 30B-A3B",
-        8192
+        8192,
+        true // supports_tools
     };
     model_registry_["ministral-3:3b"] = {
         "ministral-3:3b",
@@ -432,7 +443,8 @@ void ModelManager::init_model_registry() {
         2200LL * 1024 * 1024,
         "Ministral 3 3B Instruct",
         "Ministral 3 3B",
-        16384
+        16384,
+        true // supports_tools
     };
     model_registry_["ministral-3:8b"] = {
         "ministral-3:8b",
@@ -443,7 +455,8 @@ void ModelManager::init_model_registry() {
         5800LL * 1024 * 1024,
         "Ministral 3 8B Instruct",
         "Ministral 3 8B",
-        16384
+        16384,
+        true // supports_tools
     };
     model_registry_["ministral-3:14b"] = {
         "ministral-3:14b",
@@ -454,9 +467,10 @@ void ModelManager::init_model_registry() {
         10000LL * 1024 * 1024,
         "Ministral 3 14B Instruct",
         "Ministral 3 14B",
-        16384
+        16384,
+        true // supports_tools
     };
-   
+
     model_registry_["devstral-2:24b"] = {
         "devstral-2:24b",
         "devstral-2-24b",
@@ -466,7 +480,8 @@ void ModelManager::init_model_registry() {
         15000LL * 1024 * 1024,
         "Devstral 2 24B Instruct",
         "Devstral 2 24B",
-        131072
+        131072,
+        true // supports_tools
     };
     model_registry_["devstral-2:123b"] = {
         "devstral-2:123b",
@@ -477,7 +492,8 @@ void ModelManager::init_model_registry() {
         78000LL * 1024 * 1024,
         "Devstral 2 123B Instruct",
         "Devstral 2 123B",
-        131072
+        131072,
+        true // supports_tools
     };
     model_registry_["nemotron-nano-3:30b-a3b"] = {
         "nemotron-nano-3:30b-a3b",
@@ -488,7 +504,8 @@ void ModelManager::init_model_registry() {
         20000LL * 1024 * 1024,
         "Nemotron Nano 3 30B-A3B",
         "Nemotron Nano 3 30B-A3B",
-        1048576
+        1048576,
+        true // supports_tools
     };
     model_registry_["gpt-oss:20b"] = {
         "gpt-oss:20b",
@@ -499,7 +516,8 @@ void ModelManager::init_model_registry() {
         12500LL * 1024 * 1024,
         "GPT-OSS 20B",
         "GPT-OSS 20B",
-        131072
+        131072,
+        true // supports_tools
     };
     model_registry_["gpt-oss:120b"] = {
         "gpt-oss:120b",
@@ -510,7 +528,8 @@ void ModelManager::init_model_registry() {
         75000LL * 1024 * 1024,
         "GPT-OSS 120B",
         "GPT-OSS 120B",
-        131072
+        131072,
+        true // supports_tools
     };
     model_registry_["qwen3-coder:30b-a3b"] = {
         "qwen3-coder:30b-a3b",
@@ -521,7 +540,8 @@ void ModelManager::init_model_registry() {
         20000LL * 1024 * 1024,
         "Qwen3 Coder 30B-A3B",
         "Qwen3 Coder 30B-A3B",
-        131072
+        131072,
+        true // supports_tools
     };
 
     // ===== QWEN 2.5 CODER SERIES (Code-specialized)(128K native) =====
@@ -531,48 +551,52 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen2.5-Coder-0.5B-Q8_0-GGUF",
         "qwen2.5-coder-0.5b-q8_0.gguf",
         "Q8_0",
-        352LL * 1024 * 1024,      // ~0.53 GB
+        352LL * 1024 * 1024, // ~0.53 GB
         "Tiny code generation model",
         "Qwen 2.5 Coder 0.5B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen2.5-coder:1.5b"] = {
         "qwen2.5-coder:1.5b",
         "qwen2.5-coder-1.5b",
         "ggml-org/Qwen2.5-Coder-1.5B-Q8_0-GGUF",
         "qwen2.5-coder-1.5b-q8_0.gguf",
         "Q8_0",
-        1689LL * 1024 * 1024,     // ~1.65 GB
+        1689LL * 1024 * 1024, // ~1.65 GB
         "Small code-focused model",
         "Qwen 2.5 Coder 1.5B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen2.5-coder:3b"] = {
         "qwen2.5-coder:3b",
         "qwen2.5-coder-3b",
         "ggml-org/Qwen2.5-Coder-3B-Q8_0-GGUF",
         "qwen2.5-coder-3b-q8_0.gguf",
         "Q8_0",
-        3296LL * 1024 * 1024,     // ~3.29 GB
+        3296LL * 1024 * 1024, // ~3.29 GB
         "Balanced coding assistant",
         "Qwen 2.5 Coder 3B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen2.5-coder:7b"] = {
         "qwen2.5-coder:7b",
         "qwen2.5-coder-7b",
         "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
         "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.5 GB
+        4608LL * 1024 * 1024, // ~4.5 GB
         "Advanced code generation model",
         "Qwen 2.5 Coder 7B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // ===== QWEN 2.5 SERIES (Latest instruct models)(128K native) =====
     model_registry_["qwen2.5:0.5b"] = {
         "qwen2.5:0.5b",
@@ -580,48 +604,52 @@ void ModelManager::init_model_registry() {
         "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
         "qwen2.5-0.5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        350LL * 1024 * 1024,       // ~0.35 GB
+        350LL * 1024 * 1024, // ~0.35 GB
         "Ultra-compact instruct model",
         "Qwen 2.5 0.5B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen2.5:1.5b"] = {
         "qwen2.5:1.5b",
         "qwen2.5-1.5b",
         "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
         "qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        1024LL * 1024 * 1024,      // ~1 GB
+        1024LL * 1024 * 1024, // ~1 GB
         "Small instruct model for edge devices",
         "Qwen 2.5 1.5B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen2.5:3b"] = {
         "qwen2.5:3b",
         "qwen2.5-3b",
         "Qwen/Qwen2.5-3B-Instruct-GGUF",
         "qwen2.5-3b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        2048LL * 1024 * 1024,      // ~2 GB
+        2048LL * 1024 * 1024, // ~2 GB
         "Balanced instruct model",
         "Qwen 2.5 3B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen2.5:7b"] = {
         "qwen2.5:7b",
         "qwen2.5-7b",
         "paultimothymooney/Qwen2.5-7B-Instruct-Q4_K_M-GGUF",
         "qwen2.5-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,      // ~4.5 GB
+        4608LL * 1024 * 1024, // ~4.5 GB
         "Powerful instruct model for complex tasks",
         "Qwen 2.5 7B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // ===== ORIGINAL QWEN SERIES (32K) =====
     model_registry_["qwen2:0.5b"] = {
         "qwen2:0.5b",
@@ -629,48 +657,52 @@ void ModelManager::init_model_registry() {
         "Qwen/Qwen2-0.5B-Instruct-GGUF",
         "qwen2-0_5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        352LL * 1024 * 1024,      // ~352 MB
+        352LL * 1024 * 1024, // ~352 MB
         "Original compact Qwen model",
         "Qwen 2 0.5B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["qwen:1.8b"] = {
         "qwen:1.8b",
         "qwen-1.8b",
         "mradermacher/Qwen-1_8B-GGUF",
         "Qwen-1_8B.Q4_K_M.gguf",
         "Q4_K_M",
-        1126LL * 1024 * 1024,     // ~1.1 GB
+        1126LL * 1024 * 1024, // ~1.1 GB
         "Early Qwen series model",
         "Qwen 1.8B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["qwen3:4b"] = {
         "qwen3:4b",
         "qwen3-4b",
         "Qwen/Qwen3-4B-GGUF",
         "Qwen3-4B-Q4_K_M.gguf",
         "Q4_K_M",
-        2458LL * 1024 * 1024,     // ~2.4 GB
+        2458LL * 1024 * 1024, // ~2.4 GB
         "Mid-size original Qwen",
         "Qwen 3 4B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen2:7b"] = {
         "qwen2:7b",
         "qwen2-7b",
         "NikolayKozloff/Qwen2-7B-Instruct-Q4_K_M-GGUF",
         "qwen2-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4368LL * 1024 * 1024,     // ~4.3 GB
+        4368LL * 1024 * 1024, // ~4.3 GB
         "Full-size original Qwen model",
         "Qwen 2 7B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // ===== QWEN 2 SERIES (32K) =====
     model_registry_["qwen2:0.5b"] = {
         "qwen2:0.5b",
@@ -678,36 +710,39 @@ void ModelManager::init_model_registry() {
         "Qwen/Qwen2-0.5B-Instruct-GGUF",
         "qwen2-0_5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        352LL * 1024 * 1024,      // ~352 MB
+        352LL * 1024 * 1024, // ~352 MB
         "Improved compact model",
         "Qwen 2 0.5B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["qwen2:1.5b"] = {
         "qwen2:1.5b",
         "qwen2-1.5b",
         "Qwen/Qwen2-1.5B-Instruct-GGUF",
         "qwen2-1_5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        1024LL * 1024 * 1024,     // ~1 GB
+        1024LL * 1024 * 1024, // ~1 GB
         "Enhanced small model",
         "Qwen 2 1.5B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen2:7b"] = {
         "qwen2:7b",
         "qwen2-7b",
         "Qwen/Qwen2-7B-Instruct-GGUF",
         "qwen2-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.5 GB
+        4608LL * 1024 * 1024, // ~4.5 GB
         "Advanced Qwen 2 series",
         "Qwen 2 7B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // ===== QWEN 2.5 VL (Vision-Language) (128K) =====
     model_registry_["qwen2.5vl:1.5b"] = {
         "qwen2.5vl:1.5b",
@@ -715,10 +750,11 @@ void ModelManager::init_model_registry() {
         "Triangle104/Qwen2.5-1.5B-Instruct-Q4_K_M-GGUF",
         "qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        1024LL * 1024 * 1024,     // ~1 GB
+        1024LL * 1024 * 1024, // ~1 GB
         "Vision-language model",
         "Qwen 2.5 VL 1.5B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["qwen2.5vl:3b"] = {
@@ -727,10 +763,11 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen2.5-VL-3B-Instruct-GGUF",
         "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf",
         "Q4_K_M",
-        1976LL * 1024 * 1024,     // ~1.93 GB
+        1976LL * 1024 * 1024, // ~1.93 GB
         "Vision-language model",
         "Qwen 2.5 VL 3B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["qwen2.5vl:7b"] = {
@@ -739,10 +776,11 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF",
         "Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
         "Q4_K_M",
-        4792LL * 1024 * 1024,     // ~4.68 GB
+        4792LL * 1024 * 1024, // ~4.68 GB
         "Vision-language model",
         "Qwen 2.5 VL 7B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["qwen2vl:2b"] = {
@@ -751,24 +789,26 @@ void ModelManager::init_model_registry() {
         "ggml-org/Qwen2-VL-2B-Instruct-GGUF",
         "Qwen2-VL-2B-Instruct-Q8_0.gguf",
         "Q8_0",
-        1656LL * 1024 * 1024,     // ~1.65 GB
+        1656LL * 1024 * 1024, // ~1.65 GB
         "Vision-language model",
         "Qwen 2 VL 2B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["qwen2.5vl:7b"] = {
         "qwen2.5vl:7b",
         "qwen2.5vl-7b",
         "rexionmars/Qwen2.5-VL-7B-Instruct-Q4_K_M-GGUF",
         "qwen2.5-vl-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.5 GB
+        4608LL * 1024 * 1024, // ~4.5 GB
         "Advanced vision-language model",
         "Qwen 2.5 VL 7B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // ===== QWEN 2 MATH (Math-specialized) (32K) =====
     model_registry_["qwen2-math:1.5b"] = {
         "qwen2-math:1.5b",
@@ -776,24 +816,26 @@ void ModelManager::init_model_registry() {
         "itlwas/Qwen2-Math-1.5B-Instruct-Q4_K_M-GGUF",
         "qwen2-math-1.5b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        1024LL * 1024 * 1024,     // ~1 GB
+        1024LL * 1024 * 1024, // ~1 GB
         "Math-specialized model",
         "Qwen 2 Math 1.5B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["qwen2-math:7b"] = {
         "qwen2-math:7b",
         "qwen2-math-7b",
         "gdhnes/Qwen2-Math-7B-Instruct-Q4_K_M-GGUF",
         "qwen2-math-7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.5 GB
+        4608LL * 1024 * 1024, // ~4.5 GB
         "Advanced math reasoning model",
         "Qwen 2 Math 7B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     // ===== QWEN 3 EMBEDDING MODELS  (32K)=====
     model_registry_["qwen3-embedding:0.6b"] = {
         "qwen3-embedding:0.6b",
@@ -801,36 +843,39 @@ void ModelManager::init_model_registry() {
         "WariHima/Qwen3-Embedding-0.6B-Q4_K_M-GGUF",
         "qwen3-embedding-0.6b-q4_k_m.gguf",
         "Q4_K_M",
-        400LL * 1024 * 1024,      // ~400 MB
+        400LL * 1024 * 1024, // ~400 MB
         "Compact embedding model",
         "Qwen 3 Embedding 0.6B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["qwen3-embedding:4b"] = {
         "qwen3-embedding:4b",
         "qwen3-embedding-4b",
         "enacimie/Qwen3-Embedding-4B-Q4_K_M-GGUF",
         "qwen3-embedding-4b-q4_k_m.gguf",
         "Q4_K_M",
-        2458LL * 1024 * 1024,     // ~2.4 GB
+        2458LL * 1024 * 1024, // ~2.4 GB
         "Balanced embedding model",
         "Qwen 3 Embedding 4B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["qwen3-embedding:8b"] = {
         "qwen3-embedding:8b",
         "qwen3-embedding-8b",
         "endyjasmi/Qwen3-Embedding-8B-Q4_K_M-GGUF",
         "qwen3-embedding-8b-q4_k_m.gguf",
         "Q4_K_M",
-        4915LL * 1024 * 1024,     // ~4.8 GB
+        4915LL * 1024 * 1024, // ~4.8 GB
         "Powerful embedding model",
         "Qwen 3 Embedding 8B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     // ===== QWEN 3.5 =====
     model_registry_["qwen3.5:0.8b"] = {
         "qwen3.5:0.8b",
@@ -838,10 +883,11 @@ void ModelManager::init_model_registry() {
         "unsloth/Qwen3.5-0.8B-GGUF",
         "Qwen3.5-0.8B-Q8_0.gguf",
         "Q8_0",
-        812LL * 1024 * 1024,     // ~0.812 GB
+        812LL * 1024 * 1024, // ~0.812 GB
         "Multimodal model",
         "Qwen3.5 0.8B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["qwen3.5:2b"] = {
@@ -850,10 +896,11 @@ void ModelManager::init_model_registry() {
         "unsloth/Qwen3.5-2B-GGUF",
         "Qwen3.5-2B-Q8_0.gguf",
         "Q8_0",
-        2016LL * 1024 * 1024,     // ~2.01 GB
+        2016LL * 1024 * 1024, // ~2.01 GB
         "Multimodal model",
         "Qwen3.5 2B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["qwen3.5:4b"] = {
@@ -862,10 +909,11 @@ void ModelManager::init_model_registry() {
         "unsloth/Qwen3.5-4B-GGUF",
         "Qwen3.5-4B-Q4_K_M.gguf",
         "Q4_K_M",
-        2740LL * 1024 * 1024,     // ~2.74 GB
+        2740LL * 1024 * 1024, // ~2.74 GB
         "Multimodal model",
         "Qwen3.5 4B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["qwen3.5:9b"] = {
@@ -874,12 +922,13 @@ void ModelManager::init_model_registry() {
         "unsloth/Qwen3.5-9B-GGUF",
         "Qwen3.5-9B-Q4_K_M.gguf",
         "Q4_K_M",
-        5680LL * 1024 * 1024,     // ~5.68 GB
+        5680LL * 1024 * 1024, // ~5.68 GB
         "Multimodal model",
         "Qwen3.5 9B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-        
+
     // ===== GEMMA SERIES (8K) =====
     model_registry_["gemma1.1:2b"] = {
         "gemma1.1:2b",
@@ -887,10 +936,11 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-1.1-2b-it-Q8_0-GGUF",
         "gemma-1.1-2b-it.Q8_0.gguf",
         "Q8_0",
-        2592LL * 1024 * 1024,     // ~2.6 GB
+        2592LL * 1024 * 1024, // ~2.6 GB
         "Google's lightweight model",
         "Gemma 1.1 2B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
 
     model_registry_["gemma1.1:7b"] = {
@@ -899,10 +949,11 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-1.1-7b-it-Q4_K_M-GGUF",
         "gemma-1.1-7b-it.Q4_K_M.gguf",
         "Q4_K_M",
-        9024LL * 1024 * 1024,     // ~5.38 GB
+        9024LL * 1024 * 1024, // ~5.38 GB
         "Google's lightweight model",
         "Gemma 1.1 7B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
 
     model_registry_["gemma:2b"] = {
@@ -911,24 +962,26 @@ void ModelManager::init_model_registry() {
         "llm-exp/gemma-2b-Q4_K_M-GGUF",
         "gemma-2b.Q4_K_M.gguf",
         "Q4_K_M",
-        1536LL * 1024 * 1024,     // ~1.5 GB
+        1536LL * 1024 * 1024, // ~1.5 GB
         "Google's lightweight model",
         "Gemma 2B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["gemma:7b"] = {
         "gemma:7b",
         "gemma-7b",
         "goromlagche/gemma-7b-Q4_K_M-GGUF",
         "gemma-7b-q4_k_m.gguf",
         "Q4_K_M",
-        4368LL * 1024 * 1024,     // ~4.3 GB
+        4368LL * 1024 * 1024, // ~4.3 GB
         "Google's efficient model",
         "Gemma 7B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     // ===== GEMMA 3 SERIES (128K) =====
     model_registry_["gemma3:270m"] = {
         "gemma3:270m",
@@ -936,10 +989,11 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-3-270m-it-GGUF",
         "gemma-3-270m-it-Q8_0.gguf",
         "Q8_0",
-        292LL * 1024 * 1024,      // ~292 MB
+        292LL * 1024 * 1024, // ~292 MB
         "Ultra-small Gemma 3",
         "Gemma 3 270M",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
 
     model_registry_["gemma3qat:270m"] = {
@@ -948,10 +1002,11 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-3-270m-it-qat-GGUF",
         "gemma-3-270m-it-qat-Q4_0.gguf",
         "Q8_0",
-        241LL * 1024 * 1024,      // ~241 MB
+        241LL * 1024 * 1024, // ~241 MB
         "Ultra-small Gemma 3",
         "Gemma 3 270M Qat",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
 
     model_registry_["gemma3qat:1b"] = {
@@ -960,83 +1015,84 @@ void ModelManager::init_model_registry() {
         "ggml-org/gemma-3-1b-it-qat-GGUF",
         "gemma-3-1b-it-qat-Q4_0.gguf",
         "Q4_0",
-        729LL * 1024 * 1024,      // ~729 MB
+        729LL * 1024 * 1024, // ~729 MB
         "Compact Gemma 3",
         "Gemma 3 1B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["gemma3qat:4b"] = {
         "gemma3qat:4b",
         "gemma3-qat-4b",
         "ggml-org/gemma-3-4b-it-qat-GGUF",
         "gemma-3-4b-it-qat-Q4_0.gguf",
         "Q4_0",
-        2532LL * 1024 * 1024,     // ~2.53 GB
+        2532LL * 1024 * 1024, // ~2.53 GB
         "Balanced Gemma 3",
         "Gemma 3 4B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["gemma3qat:12b"] = {
         "gemma3qat:12b",
         "gemma3-qat-12b",
         "ggml-org/gemma-3-12b-it-qat-GGUF",
         "gemma-3-12b-it-qat-Q4_0.gguf",
         "Q4_0",
-        7136LL * 1024 * 1024,     // ~7.13 GB
+        7136LL * 1024 * 1024, // ~7.13 GB
         "Powerful Gemma 3",
         "Gemma 3 12B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["gemma3:1b"] = {
         "gemma3:1b",
         "gemma3-1b",
         "ggml-org/gemma-3-1b-it-GGUF",
         "gemma-3-1b-it-Q8_0.gguf",
         "Q8_0",
-        729LL * 1024 * 1024,      // ~1.07 GB
+        729LL * 1024 * 1024, // ~1.07 GB
         "Compact Gemma 3",
         "Gemma 3 1B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
     model_registry_["gemma3:27b"] = {
-        "gemma3:27b",
-        "gemma3-27b",
-        "google/gemma-3-27b-it-GGUF",
-        "gemma-3-27b-it-Q4_K_M.gguf",
-        "Q4_K_M",
-        16500LL * 1024 * 1024,
-        "Gemma 3 27B Instruct",
-        "Gemma 3 27B",
-        32768
+        "gemma3:27b", "gemma3-27b",          "google/gemma-3-27b-it-GGUF", "gemma-3-27b-it-Q4_K_M.gguf",
+        "Q4_K_M",     16500LL * 1024 * 1024, "Gemma 3 27B Instruct",       "Gemma 3 27B",
+        32768,
+        true // supports_tools
     };
-    
+
     model_registry_["gemma3:4b"] = {
         "gemma3:4b",
         "gemma3-4b",
         "ggml-org/gemma-3-4b-it-GGUF",
         "gemma-3-4b-it-Q4_K_M.gguf",
         "Q4_K_M",
-        2496LL * 1024 * 1024,     // ~2.49 GB
+        2496LL * 1024 * 1024, // ~2.49 GB
         "Balanced Gemma 3",
         "Gemma 3 4B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["gemma3:12b"] = {
         "gemma3:12b",
         "gemma3-12b",
         "ggml-org/gemma-3-12b-it-GGUF",
         "gemma-3-12b-it-Q4_K_M.gguf",
         "Q4_K_M",
-        7372LL * 1024 * 1024,     // ~7.3 GB
+        7372LL * 1024 * 1024, // ~7.3 GB
         "Powerful Gemma 3",
         "Gemma 3 12B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // ===== GEMMA 3N SERIES (128K) =====
     model_registry_["gemma3n:e2b"] = {
         "gemma3n:e2b",
@@ -1044,47 +1100,51 @@ void ModelManager::init_model_registry() {
         "unsloth/gemma-3n-E2B-it-GGUF",
         "gemma-3n-E2B-it-Q4_K_M.gguf",
         "Q4_K_M",
-        3030LL * 1024 * 1024,     // ~3.03 GB
+        3030LL * 1024 * 1024, // ~3.03 GB
         "Enhanced 2B variant",
         "Gemma 3N E2B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["gemma3n:e4b"] = {
         "gemma3n:e4b",
         "gemma3n-e4b",
         "unsloth/gemma-3n-E4B-it-GGUF",
         "gemma-3n-E4B-it-Q4_K_M.gguf",
         "Q4_K_M",
-        4540LL * 1024 * 1024,     // ~4.54 GB
+        4540LL * 1024 * 1024, // ~4.54 GB
         "Enhanced 4B variant",
         "Gemma 3N E4B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
-     // ===== MEDGEMMA SERIES (128K) =====
-     model_registry_["medgemma1.5:4b"] = {
+    // ===== MEDGEMMA SERIES (128K) =====
+    model_registry_["medgemma1.5:4b"] = {
         "medgemma1.5:4b",
         "medgemma-1.5-4b",
         "unsloth/medgemma-1.5-4b-it-GGUF",
         "medgemma-1.5-4b-it-Q4_K_M.gguf",
         "Q4_K_M",
-        2496LL * 1024 * 1024,     // ~2.49 GB
+        2496LL * 1024 * 1024, // ~2.49 GB
         "Balanced MedGemma",
         "MedGemma 1.5 4B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["medgemma:4b"] = {
         "medgemma:4b",
         "medgemma-4b",
         "unsloth/medgemma-4b-it-GGUF",
         "medgemma-4b-it-Q4_K_M.gguf",
         "Q4_K_M",
-        2496LL * 1024 * 1024,     // ~2.49 GB
+        2496LL * 1024 * 1024, // ~2.49 GB
         "Balanced MedGemma",
         "MedGemma 4B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["medgemma:27b"] = {
@@ -1093,10 +1153,11 @@ void ModelManager::init_model_registry() {
         "unsloth/medgemma-27b-it-GGUF",
         "medgemma-27b-it-Q4_K_M.gguf",
         "Q4_K_M",
-        16500LL * 1024 * 1024,     // ~16.5 GB
+        16500LL * 1024 * 1024, // ~16.5 GB
         "Balanced MedGemma",
         "MedGemma 27B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     // ===== GEMMA4  SERIES (128K) =====
@@ -1106,10 +1167,13 @@ void ModelManager::init_model_registry() {
         "unsloth/gemma-4-E2B-it-GGUF",
         "gemma-4-E2B-it-Q4_K_M.gguf",
         "Q4_K_M",
-        3110LL * 1024 * 1024,     // ~3.11 GB
-        "A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, and Jetson Nano.",
+        3110LL * 1024 * 1024, // ~3.11 GB
+        "A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge "
+        "processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, "
+        "and Jetson Nano.",
         "Gemma 4 E2B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["gemma4:e4b"] = {
@@ -1118,35 +1182,40 @@ void ModelManager::init_model_registry() {
         "unsloth/gemma-4-E4B-it-GGUF",
         "gemma-4-E4B-it-Q4_K_M.gguf",
         "Q4_K_M",
-        4980LL * 1024 * 1024,     // ~4.98 GB
-        "A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, and Jetson Nano.",
+        4980LL * 1024 * 1024, // ~4.98 GB
+        "A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge "
+        "processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, "
+        "and Jetson Nano.",
         "Gemma 4 E4B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
-     // ===== TRANSLATEGEMMA SERIES (128K) =====
-     model_registry_["translategemma:4b"] = {
+    // ===== TRANSLATEGEMMA SERIES (128K) =====
+    model_registry_["translategemma:4b"] = {
         "translategemma:4b",
         "translategemma-4b",
         "bullerwins/translategemma-4b-it-GGUF",
         "translategemma-4b-it-Q4_K_M.gguf",
         "Q4_K_M",
-        2496LL * 1024 * 1024,     // ~2.49 GB
+        2496LL * 1024 * 1024, // ~2.49 GB
         "Balanced TranslateGemma",
         "TranslateGemma 4B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["translategemma:12b"] = {
         "translategemma:12b",
         "translategemma-12b",
         "bullerwins/translategemma-12b-it-GGUF",
         "translategemma-12b-it-Q4_K_M.gguf",
         "Q4_K_M",
-        7300LL * 1024 * 1024,     // ~7.3 GB
+        7300LL * 1024 * 1024, // ~7.3 GB
         "Translation model",
         "TranslateGemma 12B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
 
     model_registry_["translategemma:27b"] = {
@@ -1155,12 +1224,13 @@ void ModelManager::init_model_registry() {
         "bullerwins/translategemma-27b-it-GGUF",
         "translategemma-27b-it-Q4_K_M.gguf",
         "Q4_K_M",
-        1650LL * 1024 * 1024,     // ~16.5 GB
+        1650LL * 1024 * 1024, // ~16.5 GB
         "Translation model",
         "TranslateGemma 27B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     // ===== DEEPSEEK R1 SERIES (128K) =====
     model_registry_["deepseek-r1:1.5b"] = {
         "deepseek-r1:1.5b",
@@ -1168,34 +1238,37 @@ void ModelManager::init_model_registry() {
         "unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF",
         "DeepSeek-R1-Distill-Qwen-1.5B-Q8_0.gguf",
         "Q8_0",
-        1890LL * 1024 * 1024,     // ~1.89 GB
+        1890LL * 1024 * 1024, // ~1.89 GB
         "Tiny reasoning model",
         "DeepSeek R1 1.5B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["deepseek-r1:7b"] = {
         "deepseek-r1:7b",
         "deepseek-r1-7b",
         "unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF",
         "DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
         "Q4_K_M",
-        4680LL * 1024 * 1024,     // ~4.68 GB
+        4680LL * 1024 * 1024, // ~4.68 GB
         "Advanced reasoning model",
         "DeepSeek R1 7B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["deepseek-r1:8b"] = {
         "deepseek-r1:8b",
         "deepseek-r1-8b",
         "unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF",
         "DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf",
         "Q4_K_M",
-        4920LL * 1024 * 1024,     // ~4.92 GB
+        4920LL * 1024 * 1024, // ~4.92 GB
         "Powerful reasoning model",
         "DeepSeek R1 8B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["deepseek-r1:14b"] = {
@@ -1204,10 +1277,11 @@ void ModelManager::init_model_registry() {
         "unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF",
         "DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf",
         "Q4_K_M",
-        8990LL * 1024 * 1024,     // ~8.99 GB
+        8990LL * 1024 * 1024, // ~8.99 GB
         "Powerful reasoning model",
         "DeepSeek R1 14B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["deepseek-r1:32b"] = {
@@ -1216,10 +1290,11 @@ void ModelManager::init_model_registry() {
         "unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF",
         "DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf",
         "Q4_K_M",
-        19900LL * 1024 * 1024,     // ~19.9 GB
+        19900LL * 1024 * 1024, // ~19.9 GB
         "Powerful reasoning model",
         "DeepSeek R1 32B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     // ===== DEEPSEEK OCR SERIES (128K) =====
@@ -1229,10 +1304,11 @@ void ModelManager::init_model_registry() {
         "NexaAI/DeepSeek-OCR-GGUF",
         "DeepSeek-OCR.Q8_0.gguf",
         "Q8_0",
-        3120LL * 1024 * 1024,     // ~3.12 GB
+        3120LL * 1024 * 1024, // ~3.12 GB
         "Token-efficient OCR model",
         "DeepSeek OCR",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
 
     // ===== DEEPSEEK CODER SERIES (128K) =====
@@ -1242,10 +1318,11 @@ void ModelManager::init_model_registry() {
         "TheBloke/deepseek-coder-1.3b-instruct-GGUF",
         "deepseek-coder-1.3b-instruct.Q8_0.gguf",
         "Q8_0",
-        1430LL * 1024 * 1024,     // ~1.43 GB
+        1430LL * 1024 * 1024, // ~1.43 GB
         "Tiny coding assistant",
         "DeepSeek Coder 1.3B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
 
     model_registry_["deepseek-coder-6.7b"] = {
@@ -1254,10 +1331,11 @@ void ModelManager::init_model_registry() {
         "TheBloke/deepseek-coder-6.7B-instruct-GGUF",
         "deepseek-coder-6.7b-instruct.Q4_K_M.gguf",
         "Q4_K_M",
-        4080LL * 1024 * 1024,     // ~4.08 GB
+        4080LL * 1024 * 1024, // ~4.08 GB
         "Advanced coding assistant",
         "DeepSeek Coder 6.7B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
 
     model_registry_["deepseek-coder-7b"] = {
@@ -1266,12 +1344,13 @@ void ModelManager::init_model_registry() {
         "mradermacher/deepseek-coder-7b-instruct-v1.5-i1-GGUF",
         "deepseek-coder-7b-instruct-v1.5.i1-Q4_K_M.gguf",
         "Q4_K_M",
-        4200LL * 1024 * 1024,     // ~4.22 GB
+        4200LL * 1024 * 1024, // ~4.22 GB
         "Advanced coding assistant",
         "DeepSeek Coder 7B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     // ===== LLAMA 3 SERIES (8K) =====
     model_registry_["llama3:8b"] = {
         "llama3:8b",
@@ -1279,12 +1358,13 @@ void ModelManager::init_model_registry() {
         "QuantFactory/Meta-Llama-3-8B-Instruct-GGUF",
         "Meta-Llama-3-8B-Instruct.Q4_K_M.gguf",
         "Q4_K_M",
-        4661LL * 1024 * 1024,     // ~4.7 GB
+        4661LL * 1024 * 1024, // ~4.7 GB
         "Meta's open-source model",
         "Llama 3 8B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // ===== LLAMA 3.1 SERIES (Latest Meta models) (128K)=====
     model_registry_["llama3.1:8b"] = {
         "llama3.1:8b",
@@ -1292,12 +1372,13 @@ void ModelManager::init_model_registry() {
         "unsloth/Llama-3.1-8B-Instruct-GGUF",
         "Llama-3.1-8B-Instruct-Q4_K_M.gguf",
         "Q4_K_M",
-        4920LL * 1024 * 1024,     // ~4.92 GB
+        4920LL * 1024 * 1024, // ~4.92 GB
         "Light-weight, ultra-fast model you can run anywhere.",
         "Llama 3.1 8B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // ===== LLAMA 3.2 SERIES (Vision-Language models) (128K) =====
     model_registry_["llama3.2:1b"] = {
         "llama3.2:1b",
@@ -1305,24 +1386,26 @@ void ModelManager::init_model_registry() {
         "bartowski/Llama-3.2-1B-Instruct-GGUF",
         "Llama-3.2-1B-Instruct-Q8_0.gguf",
         "Q8_0",
-        1320LL * 1024 * 1024,      // ~1.32 GB
+        1320LL * 1024 * 1024, // ~1.32 GB
         "Light-weight, efficient models you can run everywhere.",
         "Llama 3.2 1B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["llama3.2:3b"] = {
         "llama3.2:3b",
         "llama3.2-3b",
         "bartowski/Llama-3.2-3B-Instruct-GGUF",
         "Llama-3.2-3B-Instruct-Q5_K_M.gguf",
         "Q5_K_M",
-        2320LL * 1024 * 1024,     // ~2.32 GB
+        2320LL * 1024 * 1024, // ~2.32 GB
         "Light-weight, efficient models you can run everywhere.",
         "Llama 3.2 3B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // ===== LLAVA (Vision-Language) (4K)=====
     model_registry_["llava"] = {
         "llava",
@@ -1330,12 +1413,13 @@ void ModelManager::init_model_registry() {
         "second-state/Llava-v1.5-7B-GGUF",
         "llava-v1.5-7b-Q4_K_M.gguf",
         "Q4_K_M",
-        4368LL * 1024 * 1024,     // ~4.3 GB
+        4368LL * 1024 * 1024, // ~4.3 GB
         "Multimodal vision-language model",
         "LLaVA 1.5 7B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     // ===== LLAMA 2 SERIES (4K) =====
     model_registry_["llama2:7b"] = {
         "llama2:7b",
@@ -1343,24 +1427,26 @@ void ModelManager::init_model_registry() {
         "TheBloke/Llama-2-7B-GGUF",
         "llama-2-7b.Q4_K_M.gguf",
         "Q4_K_M",
-        4080LL * 1024 * 1024,     // ~4 GB
+        4080LL * 1024 * 1024, // ~4 GB
         "Original Llama series",
         "Llama 2 7B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["llama2:13b"] = {
         "llama2:13b",
         "llama2-13b",
         "TheBloke/Llama-2-13B-GGUF",
         "llama-2-13b.Q4_K_M.gguf",
         "Q4_K_M",
-        7370LL * 1024 * 1024,     // ~7.2 GB
+        7370LL * 1024 * 1024, // ~7.2 GB
         "Larger original Llama",
         "Llama 2 13B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     // ===== TINYLLAMA (2K) =====
     model_registry_["tinyllama"] = {
         "tinyllama",
@@ -1368,12 +1454,13 @@ void ModelManager::init_model_registry() {
         "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
         "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
         "Q4_K_M",
-        669LL * 1024 * 1024,      // ~669 MB
+        669LL * 1024 * 1024, // ~669 MB
         "Ultra-small efficient model",
         "TinyLlama 1.1B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     // ===== BGE-M3 (Embedding) (8K) =====
     model_registry_["bge-m3"] = {
         "bge-m3",
@@ -1381,12 +1468,13 @@ void ModelManager::init_model_registry() {
         "groonga/bge-m3-Q4_K_M-GGUF",
         "bge-m3-q4_k_m.gguf",
         "Q4_K_M",
-        512LL * 1024 * 1024,      // ~512 MB
+        512LL * 1024 * 1024, // ~512 MB
         "Embedding model for retrieval",
         "BGE-M3",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     // ===== SMOLLM 2 SERIES (128K  )=====
     model_registry_["smollm2:135m"] = {
         "smollm2:135m",
@@ -1394,36 +1482,39 @@ void ModelManager::init_model_registry() {
         "Segilmez06/SmolLM2-135M-Instruct-Q4_K_M-GGUF",
         "smollm2-135m-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        82LL * 1024 * 1024,       // ~82 MB
+        82LL * 1024 * 1024, // ~82 MB
         "Tiny SmolLM variant 🪐",
         "SmolLM 2 135M",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["smollm2:360m"] = {
         "smollm2:360m",
         "smollm2-360m",
         "AIronMind/SmolLM2-360M-Instruct-FT-Q4_K_M-GGUF",
         "smollm2-360m-instruct-ft-q4_k_m.gguf",
         "Q4_K_M",
-        220LL * 1024 * 1024,      // ~220 MB
+        220LL * 1024 * 1024, // ~220 MB
         "Small SmolLM variant 🪐",
         "SmolLM 2 360M",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["smollm2:1.7b"] = {
         "smollm2:1.7b",
         "smollm2-1.7b",
         "HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF",
         "smollm2-1.7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        1126LL * 1024 * 1024,     // ~1.1 GB
+        1126LL * 1024 * 1024, // ~1.1 GB
         "Balanced SmolLM",
         "SmolLM 2 1.7B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     // ===== SMOLLM SERIES (Original) (32K) =====
     model_registry_["smollm:135m"] = {
         "smollm:135m",
@@ -1431,34 +1522,37 @@ void ModelManager::init_model_registry() {
         "QuantFactory/SmolLM-135M-GGUF",
         "SmolLM-135M.Q4_K_M.gguf",
         "Q4_K_M",
-        82LL * 1024 * 1024,       // ~82 MB
+        82LL * 1024 * 1024, // ~82 MB
         "Original tiny SmolLM 🪐",
         "SmolLM 135M",
-        0,  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["smollm:360m"] = {
         "smollm:360m",
         "smollm-360m",
         "QuantFactory/SmolLM2-360M-GGUF",
         "SmolLM2-360M.Q4_K_M.gguf",
         "Q4_K_M",
-        220LL * 1024 * 1024,      // ~220 MB
+        220LL * 1024 * 1024, // ~220 MB
         "Original small SmolLM",
         "SmolLM 360M",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["smollm:1.7b"] = {
         "smollm:1.7b",
         "smollm-1.7b",
         "itlwas/SmolLM-1.7B-Instruct-Q4_K_M-GGUF",
         "smollm-1.7b-instruct-q4_k_m.gguf",
         "Q4_K_M",
-        1126LL * 1024 * 1024,     // ~1.1 GB
+        1126LL * 1024 * 1024, // ~1.1 GB
         "Original balanced SmolLM 🪐",
         "SmolLM 1.7B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
 
     // ===== FALCON 3 SERIES (32K) =====
@@ -1468,36 +1562,39 @@ void ModelManager::init_model_registry() {
         "tiiuae/Falcon3-1B-Instruct-GGUF",
         "Falcon3-1B-Instruct-q4_k_m.gguf",
         "Q4_K_M",
-        729LL * 1024 * 1024,      // ~729 MB
+        729LL * 1024 * 1024, // ~729 MB
         "Efficient small Falcon",
         "Falcon 3 1B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["falcon3:3b"] = {
         "falcon3:3b",
         "falcon3-3b",
         "tiiuae/Falcon3-3B-Instruct-GGUF",
         "Falcon3-3B-Instruct-q4_k_m.gguf",
         "Q4_K_M",
-        2048LL * 1024 * 1024,     // ~2 GB
+        2048LL * 1024 * 1024, // ~2 GB
         "Balanced Falcon model",
         "Falcon 3 3B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["falcon3:7b"] = {
         "falcon3:7b",
         "falcon3-7b",
         "bartowski/Falcon3-7B-Instruct-GGUF",
         "Falcon3-7B-Instruct-Q4_K_M.gguf",
         "Q4_K_M",
-        4608LL * 1024 * 1024,     // ~4.5 GB
+        4608LL * 1024 * 1024, // ~4.5 GB
         "Powerful Falcon model",
         "Falcon 3 7B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // ===== PHI SERIES (4K / 128K) =====
     model_registry_["phi3-mini"] = {
         "phi3-mini",
@@ -1505,36 +1602,39 @@ void ModelManager::init_model_registry() {
         "microsoft/Phi-3-mini-4k-instruct-gguf",
         "Phi-3-mini-4k-instruct-q4.gguf",
         "Q4_K_M",
-        2355LL * 1024 * 1024,     // ~2.3 GB
+        2355LL * 1024 * 1024, // ~2.3 GB
         "Microsoft's reasoning model",
         "Phi-3 Mini",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["phi2"] = {
         "phi2",
         "phi2",
         "TheBloke/phi-2-GGUF",
         "phi-2.Q4_K_M.gguf",
         "Q4_K_M",
-        1638LL * 1024 * 1024,     // ~1.6 GB
+        1638LL * 1024 * 1024, // ~1.6 GB
         "Improved reasoning model",
         "Phi-2",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["phi4-mini"] = {
         "phi4-mini",
         "phi4-mini",
         "tensorblock/Phi-4-mini-instruct-GGUF",
         "Phi-4-mini-instruct-Q4_K_M.gguf",
         "Q4_K_M",
-        2458LL * 1024 * 1024,     // ~2.4 GB
+        2458LL * 1024 * 1024, // ~2.4 GB
         "Compact Phi variant",
         "Phi-4 Mini",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // ===== GRANITE4 SERIES (IBM Granite models) (128K) =====
     model_registry_["granite4:350m"] = {
         "granite4:350m",
@@ -1542,48 +1642,52 @@ void ModelManager::init_model_registry() {
         "unsloth/granite-4.0-350m-GGUF",
         "granite-4.0-350m-Q4_K_M.gguf",
         "Q4_K_M",
-        237LL * 1024 * 1024,      // ~237 MB
+        237LL * 1024 * 1024, // ~237 MB
         "Ultra-compact Granite 4 model",
         "Granite 4 350M",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["granite4:350m-h"] = {
         "granite4:350m-h",
         "granite4-350m-h",
         "unsloth/granite-4.0-h-350m-GGUF",
         "granite-4.0-h-350m-Q4_K_M.gguf",
         "Q4_K_M",
-        223LL * 1024 * 1024,      // ~223 MB
+        223LL * 1024 * 1024, // ~223 MB
         "Ultra-compact Granite 4 model (HF format)",
         "Granite 4 350M-H",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
-    
+
     model_registry_["granite4:1b"] = {
         "granite4:1b",
         "granite4-1b",
         "unsloth/granite-4.0-1b-GGUF",
         "granite-4.0-1b-Q4_K_M.gguf",
         "Q4_K_M",
-        1020LL * 1024 * 1024,      // ~1.02 GB
+        1020LL * 1024 * 1024, // ~1.02 GB
         "Compact Granite 4 model",
         "Granite 4 1B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     model_registry_["granite4:1b-h"] = {
         "granite4:1b-h",
         "granite4-1b-h",
         "unsloth/granite-4.0-h-1b-GGUF",
         "granite-4.0-h-1b-Q4_K_M.gguf",
         "Q4_K_M",
-        901LL * 1024 * 1024,      // ~901 MB
+        901LL * 1024 * 1024, // ~901 MB
         "Compact Granite 4 model (HF format)",
         "Granite 4 1B-H",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // model_registry_["granite4:3b"] = {
     //     "granite4:3b",
     //     "granite4-3b",
@@ -1595,19 +1699,20 @@ void ModelManager::init_model_registry() {
     //     "Granite 4 3B",
     //     131072                      // 128K native context
     // };
-    
+
     model_registry_["granite4:micro"] = {
         "granite4:micro",
         "granite4-micro",
         "ibm-granite/granite-4.0-micro-GGUF",
         "granite-4.0-micro-Q4_K_M.gguf",
         "Q4_K_M",
-        2100LL * 1024 * 1024,      // ~2.1 GB (estimated)
+        2100LL * 1024 * 1024, // ~2.1 GB (estimated)
         "Tiny Granite 4 model",
         "Granite 4 Micro",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // model_registry_["granite4:3b-h"] = {
     //     "granite4:3b-h",
     //     "granite4-3b-h",
@@ -1619,19 +1724,20 @@ void ModelManager::init_model_registry() {
     //     "Granite 4 3B-H",
     //     131072                      // 128K native context
     // };
-    
+
     model_registry_["granite4:h-micro"] = {
         "granite4:h-micro",
         "granite4-h-micro",
         "ibm-granite/granite-4.0-h-micro-GGUF",
         "granite-4.0-h-micro-Q4_K_M.gguf",
         "Q4_K_M",
-        1940LL * 1024 * 1024,      // ~1.94 GB (estimated)
+        1940LL * 1024 * 1024, // ~1.94 GB (estimated)
         "Tiny Granite 4 model (HF format)",
         "Granite 4 Micro-H",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // model_registry_["granite4:7b-a1b-h"] = {
     //     "granite4:7b-a1b-h",
     //     "granite4-7b-a1b-h",
@@ -1643,19 +1749,20 @@ void ModelManager::init_model_registry() {
     //     "Granite 4 7B-A1B-H",
     //     131072                      // 128K native context
     // };
-    
+
     model_registry_["granite4:h-tiny"] = {
         "granite4:h-tiny",
         "granite4-h-tiny",
         "unsloth/granite-4.0-h-tiny-GGUF",
         "granite-4.0-h-tiny-Q4_K_M.gguf",
         "Q4_K_M",
-        4250LL * 1024 * 1024,       // ~4.25 GB (estimated)
+        4250LL * 1024 * 1024, // ~4.25 GB (estimated)
         "Ultra-tiny Granite 4 model (HF format)",
         "Granite 4 Tiny-H",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
-    
+
     // model_registry_["granite4:32b-a9b-h"] = {
     //     "granite4:32b-a9b-h",
     //     "granite4-32b-a9b-h",
@@ -1667,7 +1774,7 @@ void ModelManager::init_model_registry() {
     //     "Granite 4 32B-A9B-H",
     //     131072                      // 128K native context
     // };
-    
+
     // model_registry_["granite4:small-h"] = {
     //     "granite4:small-h",
     //     "granite4-small-h",
@@ -1686,10 +1793,11 @@ void ModelManager::init_model_registry() {
         "mistralai/Ministral-3-3B-Instruct-2512-GGUF",
         "Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
         "Q4_K_M",
-        2150LL * 1024 * 1024,       // 2.15 GB
+        2150LL * 1024 * 1024, // 2.15 GB
         "Edge Instruct model",
         "mistral 3 3b",
-        262144
+        262144,
+        true // supports_tools
     };
 
     model_registry_["mistral-3:8b"] = {
@@ -1698,10 +1806,11 @@ void ModelManager::init_model_registry() {
         "mistralai/Ministral-3-8B-Instruct-2512-GGUF",
         "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
         "Q4_K_M",
-        5200LL * 1024 * 1024,       // 5.2 GB
+        5200LL * 1024 * 1024, // 5.2 GB
         "Edge Instruct model",
         "mistral 3 8b",
-        262144
+        262144,
+        true // supports_tools
     };
 
     model_registry_["mistral-3:14b"] = {
@@ -1710,10 +1819,11 @@ void ModelManager::init_model_registry() {
         "mistralai/Ministral-3-14B-Instruct-2512-GGUF",
         "Ministral-3-14B-Instruct-2512-Q4_K_M.gguf",
         "Q4_K_M",
-        8240LL * 1024 * 1024,       // 8.24 GB
+        8240LL * 1024 * 1024, // 8.24 GB
         "Edge Instruct model",
         "mistral 3 14b",
-        262144
+        262144,
+        true // supports_tools
     };
 
     model_registry_["mistral-3R:3b"] = {
@@ -1722,10 +1832,11 @@ void ModelManager::init_model_registry() {
         "mistralai/Ministral-3-3B-Reasoning-2512-GGUF",
         "Ministral-3-3B-Reasoning-2512-Q4_K_M.gguf",
         "Q4_K_M",
-        2150LL * 1024 * 1024,       // 2.15 GB
+        2150LL * 1024 * 1024, // 2.15 GB
         "Edge Reasoning model",
         "mistral 3 Reasoning 3b",
-        262144
+        262144,
+        true // supports_tools
     };
 
     model_registry_["mistral-3R:8b"] = {
@@ -1734,10 +1845,11 @@ void ModelManager::init_model_registry() {
         "mistralai/Ministral-3-8B-Reasoning-2512-GGUF",
         "Ministral-3-8B-Reasoning-2512-Q4_K_M.gguf",
         "Q4_K_M",
-        5200LL * 1024 * 1024,       // 5.2 GB
+        5200LL * 1024 * 1024, // 5.2 GB
         "Edge Reasoning model",
         "mistral 3 Reasoning 8b",
-        262144
+        262144,
+        true // supports_tools
     };
 
     model_registry_["mistral-3R:14b"] = {
@@ -1746,10 +1858,11 @@ void ModelManager::init_model_registry() {
         "mistralai/Ministral-3-14B-Reasoning-2512-GGUF",
         "Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf",
         "Q4_K_M",
-        8240LL * 1024 * 1024,       // 8.24 GB
+        8240LL * 1024 * 1024, // 8.24 GB
         "Edge Reasoning model",
         "mistral 3 Reasoning 14b",
-        262144
+        262144,
+        true // supports_tools
     };
 
     model_registry_["mistral:7b"] = {
@@ -1758,10 +1871,11 @@ void ModelManager::init_model_registry() {
         "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
         "mistral-7b-instruct-v0.2.Q4_K_M.gguf",
         "Q4_K_M",
-        4370LL * 1024 * 1024,       // 4.37 GB
+        4370LL * 1024 * 1024, // 4.37 GB
         "Edge Instruct model",
         "mistral Instruct 7b",
-        32768
+        32768,
+        false // supports_tools
     };
 
     // ===== NVIDIA MODEL NEMOTRON 3 NANO =====
@@ -1771,10 +1885,11 @@ void ModelManager::init_model_registry() {
         "nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF",
         "NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
         "Q4_K_M",
-        2840LL * 1024 * 1024,        // 2.84 GB
+        2840LL * 1024 * 1024, // 2.84 GB
         "Reasoning and Non-Reasoning Task",
         "Nemotron-3-Nano-4B",
-        1048576
+        1048576,
+        true // supports_tools
     };
 
     model_registry_["Devstral-Small-2:24B"] = {
@@ -1786,7 +1901,8 @@ void ModelManager::init_model_registry() {
         14300LL * 1024 * 1024,
         "gentic LLM for software engineering tasks",
         "Devstral-Small-2-24B",
-        393216
+        393216,
+        true // supports_tools
     };
 
     model_registry_["GML-4.6V-Flash"] = {
@@ -1798,7 +1914,8 @@ void ModelManager::init_model_registry() {
         6170LL * 1024 * 1024,
         "lightweight model optimized for local deployment and low-latency applications",
         "GML 4.6V Flash",
-        131072
+        131072,
+        true // supports_tools
     };
 
     model_registry_["glm-4.7:flash"] = {
@@ -1810,7 +1927,8 @@ void ModelManager::init_model_registry() {
         18300LL * 1024 * 1024,
         "GLM 4.7 Flash",
         "GLM 4.7 Flash",
-        131072
+        131072,
+        true // supports_tools
     };
 
     model_registry_["AutoGLM-Phone:9B"] = {
@@ -1822,7 +1940,8 @@ void ModelManager::init_model_registry() {
         6170LL * 1024 * 1024,
         "lightweight model optimized for local deployment and low-latency applications",
         "GLM 4.1V 9B Base",
-        65536
+        65536,
+        true // supports_tools
     };
 
     // ===== TINY AYA (MODELS) =====
@@ -1833,10 +1952,11 @@ void ModelManager::init_model_registry() {
         "CohereLabs/tiny-aya-global-GGUF",
         "tiny-aya-global-q4_k_m.gguf",
         "Q4_K_M",
-        2140LL * 1024 * 1024,      // ~2.14 GB
+        2140LL * 1024 * 1024, // ~2.14 GB
         "Optimized for balanced multilingual performance.",
         "Tiny Aya Global",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["tiny-aya-earth"] = {
@@ -1845,10 +1965,11 @@ void ModelManager::init_model_registry() {
         "CohereLabs/tiny-aya-earth-GGUF",
         "tiny-aya-earth-q4_k_m.gguf",
         "Q4_K_M",
-        2140LL * 1024 * 1024,      // ~2.14 GB
+        2140LL * 1024 * 1024, // ~2.14 GB
         "Strongest for languages across Africa and West Asia regions.",
         "Tiny Aya Earth",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["tiny-aya-fire"] = {
@@ -1857,10 +1978,11 @@ void ModelManager::init_model_registry() {
         "CohereLabs/tiny-aya-fire-GGUF",
         "tiny-aya-fire-q4_k_m.gguf",
         "Q4_K_M",
-        2140LL * 1024 * 1024,      // ~2.14 MB
+        2140LL * 1024 * 1024, // ~2.14 MB
         "Strongest for South Asian languages.",
         "Tiny Aya Fire",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["tiny-aya-water"] = {
@@ -1869,10 +1991,11 @@ void ModelManager::init_model_registry() {
         "CohereLabs/tiny-aya-water-GGUF",
         "tiny-aya-water-q4_k_m.gguf",
         "Q4_K_M",
-        2140LL * 1024 * 1024,      // ~2.14 GB
+        2140LL * 1024 * 1024, // ~2.14 GB
         "Strongest for the Asia-Pacific and Europe regions.",
         "Tiny Aya Water",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     // ===== Bonsai models from Prism ML =====
@@ -1883,10 +2006,13 @@ void ModelManager::init_model_registry() {
         "prism-ml/Bonsai-8B-gguf",
         "Bonsai-8B.gguf",
         "Q1_0",
-        1160LL * 1024 * 1024,      // ~1.16 GB
-        "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~1.15 GB of memory, delivering strong performance with excellent speed and energy efficiency for edge devices, real-time applications, and robotics.",
+        1160LL * 1024 * 1024, // ~1.16 GB
+        "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~1.15 GB of memory, delivering strong "
+        "performance with excellent speed and energy efficiency for edge devices, real-time applications, and "
+        "robotics.",
         "Bonsai 8B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["Bonsai-4B"] = {
@@ -1895,10 +2021,12 @@ void ModelManager::init_model_registry() {
         "prism-ml/Bonsai-4B-gguf",
         "Bonsai-4B.gguf",
         "Q1_0",
-        572LL * 1024 * 1024,      // ~572 MB
-        "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~0.57 GB of memory while delivering fast inference and strong multilingual performance with excellent energy efficiency.",
+        572LL * 1024 * 1024, // ~572 MB
+        "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~0.57 GB of memory while delivering fast "
+        "inference and strong multilingual performance with excellent energy efficiency.",
         "Bonsai 4B",
-        0  // use model default (-c from model)
+        0,   // use model default (-c from model)
+        true // supports_tools
     };
 
     model_registry_["Bonsai-1.7B"] = {
@@ -1907,10 +2035,12 @@ void ModelManager::init_model_registry() {
         "prism-ml/Bonsai-1.7B-gguf",
         "Bonsai-1.7B.gguf",
         "Q1_0",
-        248LL * 1024 * 1024,      // ~248 MB
-        "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~0.24 GB of memory, offering excellent speed and energy efficiency for on-device and mobile applications.",
+        248LL * 1024 * 1024, // ~248 MB
+        "Ultra-compact 1-bit quantized model (Q1_0_g128). Requires only ~0.24 GB of memory, offering excellent speed "
+        "and energy efficiency for on-device and mobile applications.",
         "Bonsai 1.7B",
-        0  // use model default (-c from model)
+        0,    // use model default (-c from model)
+        false // supports_tools
     };
 }
 
@@ -1923,11 +2053,21 @@ std::vector<ModelRegistry> ModelManager::get_registry_models() {
 }
 
 std::string ModelManager::get_registry_key_for_name(const std::string& model_name) const {
-    if (model_name.empty()) return "";
+    if (model_name.empty())
+        return "";
     auto it = model_registry_.find(model_name);
-    if (it != model_registry_.end()) return it->first;
+    if (it != model_registry_.end())
+        return it->first;
     for (const auto& pair : model_registry_) {
-        if (pair.second.name == model_name) return pair.first;
+        if (pair.second.name == model_name)
+            return pair.first;
+        if (pair.second.short_name == model_name)
+            return pair.first;
+        // Match against filename without extension (the alias llama-server uses)
+        const auto& fn = pair.second.filename;
+        auto dot = fn.rfind('.');
+        if (dot != std::string::npos && fn.substr(0, dot) == model_name)
+            return pair.first;
     }
     return "";
 }
@@ -1936,7 +2076,8 @@ ModelRegistry ModelManager::get_registry_entry(const std::string& model_name) {
     std::string key = get_registry_key_for_name(model_name);
     if (!key.empty()) {
         auto it = model_registry_.find(key);
-        if (it != model_registry_.end()) return it->second;
+        if (it != model_registry_.end())
+            return it->second;
     }
     return ModelRegistry{};
 }
@@ -1946,7 +2087,8 @@ bool ModelManager::is_in_registry(const std::string& model_name) {
 }
 
 int ModelManager::get_max_context_for_model(const std::string& model_name) {
-    if (model_name.empty()) return 0;
+    if (model_name.empty())
+        return 0;
     std::string key = get_registry_key_for_name(model_name);
     if (key.empty()) {
         size_t last_dash = model_name.find_last_of('-');
@@ -1955,7 +2097,8 @@ int ModelManager::get_max_context_for_model(const std::string& model_name) {
             key = get_registry_key_for_name(colon_name);
         }
     }
-    if (key.empty()) return 0;
+    if (key.empty())
+        return 0;
     auto it = context_overrides_.find(key);
     if (it != context_overrides_.end() && it->second > 0)
         return it->second;
@@ -1964,7 +2107,8 @@ int ModelManager::get_max_context_for_model(const std::string& model_name) {
 }
 
 void ModelManager::set_max_context_override(const std::string& model_name, int ctx) {
-    if (model_name.empty()) return;
+    if (model_name.empty())
+        return;
     std::string key = get_registry_key_for_name(model_name);
     if (key.empty()) {
         size_t last_dash = model_name.find_last_of('-');
@@ -1973,7 +2117,8 @@ void ModelManager::set_max_context_override(const std::string& model_name, int c
             key = get_registry_key_for_name(colon_name);
         }
     }
-    if (key.empty()) return;
+    if (key.empty())
+        return;
     if (ctx <= 0) {
         context_overrides_.erase(key);
     } else {
@@ -1985,14 +2130,20 @@ void ModelManager::set_max_context_override(const std::string& model_name, int c
 void ModelManager::load_context_overrides() {
     context_overrides_.clear();
     std::ifstream f(context_overrides_path_);
-    if (!f) return;
+    if (!f)
+        return;
     std::string line;
     while (std::getline(f, line)) {
         size_t tab = line.find('\t');
-        if (tab == std::string::npos) continue;
+        if (tab == std::string::npos)
+            continue;
         std::string name = line.substr(0, tab);
         int ctx = 0;
-        try { ctx = std::stoi(line.substr(tab + 1)); } catch (...) { continue; }
+        try {
+            ctx = std::stoi(line.substr(tab + 1));
+        } catch (...) {
+            continue;
+        }
         if (!name.empty() && ctx > 0)
             context_overrides_[name] = ctx;
     }
@@ -2006,7 +2157,8 @@ void ModelManager::save_context_overrides() {
             tools::FileOps::create_dir(base_dir);
     }
     std::ofstream f(context_overrides_path_);
-    if (!f) return;
+    if (!f)
+        return;
     for (const auto& p : context_overrides_)
         f << p.first << '\t' << p.second << '\n';
 }
@@ -2023,44 +2175,43 @@ std::string ModelManager::resolve_model_name(const std::string& input_name) {
     // Resolve model name to GGUF filename
     // Accepts: "qwen3:0.6b" (registry .name), "qwen3-0.6b" (short_name), or "Model.gguf" (filename)
     // Returns: Full GGUF filename (e.g., "Qwen3-0.6B-Q4_K_M.gguf")
-    
+
     // If input already ends with .gguf, return as-is
-    if (input_name.length() >= 5 && 
-        input_name.substr(input_name.length() - 5) == ".gguf") {
+    if (input_name.length() >= 5 && input_name.substr(input_name.length() - 5) == ".gguf") {
         return input_name;
     }
-    
+
     // First, check if it matches a registry key or entry.name (catalog name e.g. "qwen3-vl:4b")
     std::string key = get_registry_key_for_name(input_name);
     if (!key.empty()) {
         auto it = model_registry_.find(key);
-        if (it != model_registry_.end()) return it->second.filename;
+        if (it != model_registry_.end())
+            return it->second.filename;
     }
-    
+
     // Check if it matches a short_name in registry ("qwen3-0.6b")
     for (const auto& pair : model_registry_) {
         if (pair.second.short_name == input_name) {
             return pair.second.filename;
         }
     }
-    
+
     // Try converting dash notation to colon notation
     // "qwen2.5-0.5b" -> "qwen2.5:0.5b"
     size_t last_dash = input_name.find_last_of('-');
     if (last_dash != std::string::npos) {
-        std::string colon_name = input_name.substr(0, last_dash) + ":" + 
-                                 input_name.substr(last_dash + 1);
+        std::string colon_name = input_name.substr(0, last_dash) + ":" + input_name.substr(last_dash + 1);
         auto it2 = model_registry_.find(colon_name);
         if (it2 != model_registry_.end()) {
             return it2->second.filename;
         }
     }
-    
+
     // If not found, assume it's already a filename (with or without .gguf)
     if (input_name.length() < 5 || input_name.substr(input_name.length() - 5) != ".gguf") {
         return input_name + ".gguf";
     }
-    
+
     return input_name;
 }
 
@@ -2068,18 +2219,17 @@ std::string ModelManager::get_short_name_from_filename(const std::string& filena
     // Get short_name from filename by looking up in registry
     // Accepts filename with or without .gguf extension
     std::string search_filename = filename;
-    if (search_filename.length() >= 5 && 
-        search_filename.substr(search_filename.length() - 5) != ".gguf") {
+    if (search_filename.length() >= 5 && search_filename.substr(search_filename.length() - 5) != ".gguf") {
         search_filename += ".gguf";
     }
-    
+
     // Search registry for matching filename
     for (const auto& pair : model_registry_) {
         if (pair.second.filename == search_filename) {
             return pair.second.short_name;
         }
     }
-    
+
     // If not found, return empty string
     return "";
 }
@@ -2088,18 +2238,17 @@ std::string ModelManager::get_name_from_filename(const std::string& filename) {
     // Get name (with colon) from filename by looking up in registry
     // Accepts filename with or without .gguf extension
     std::string search_filename = filename;
-    if (search_filename.length() >= 5 && 
-        search_filename.substr(search_filename.length() - 5) != ".gguf") {
+    if (search_filename.length() >= 5 && search_filename.substr(search_filename.length() - 5) != ".gguf") {
         search_filename += ".gguf";
     }
-    
+
     // Search registry for matching filename
     for (const auto& pair : model_registry_) {
         if (pair.second.filename == search_filename) {
-            return pair.second.name;  // Return name (e.g., "qwen3:0.6b") instead of short_name
+            return pair.second.name; // Return name (e.g., "qwen3:0.6b") instead of short_name
         }
     }
-    
+
     // If not found, return empty string
     return "";
 }
@@ -2113,24 +2262,23 @@ bool ModelManager::is_model_installed(const std::string& model_name) {
 
 std::vector<ModelManager::ModelInfo> ModelManager::get_friendly_model_list(bool include_available) {
     std::vector<ModelInfo> result;
-    
+
     // Use locale-aware size formatting
-    auto format_size = [](long long bytes) -> std::string {
-        return UI::format_size(bytes);
-    };
-    
+    auto format_size = [](long long bytes) -> std::string { return UI::format_size(bytes); };
+
     if (include_available) {
         // Show all models from registry using .name (e.g., "qwen3:0.6b")
         for (const auto& pair : model_registry_) {
             const auto& reg = pair.second;
             ModelInfo info;
-            info.name = reg.name;  // Use registry .name (with colon)
+            info.name = reg.name; // Use registry .name (with colon)
             info.display_name = reg.display_name;
             info.description = reg.description;
             info.size_str = format_size(reg.size_bytes);
             info.quantization = reg.quantization;
             info.size_bytes = reg.size_bytes;
-            info.installed = is_model_installed(reg.name);  // Check by .name
+            info.installed = is_model_installed(reg.name); // Check by .name
+            info.supports_tools = reg.supports_tools;
             result.push_back(info);
         }
     } else {
@@ -2139,17 +2287,18 @@ std::vector<ModelManager::ModelInfo> ModelManager::get_friendly_model_list(bool 
             const auto& reg = pair.second;
             if (is_model_installed(reg.name)) {
                 ModelInfo info;
-                info.name = reg.name;  // Use registry .name (with colon)
+                info.name = reg.name; // Use registry .name (with colon)
                 info.display_name = reg.display_name;
                 info.description = reg.description;
                 info.size_str = format_size(reg.size_bytes);
                 info.quantization = reg.quantization;
                 info.size_bytes = reg.size_bytes;
                 info.installed = true;
+                info.supports_tools = reg.supports_tools;
                 result.push_back(info);
             }
         }
-        
+
         // Also check for any locally installed models not in registry
         auto local_files = list_models();
         for (const auto& filename : local_files) {
@@ -2165,7 +2314,7 @@ std::vector<ModelManager::ModelInfo> ModelManager::get_friendly_model_list(bool 
                     break;
                 }
             }
-            
+
             if (!found) {
                 // Unknown model - get actual size from disk
                 std::string full_path = tools::FileOps::join_path(models_dir_, filename + ".gguf");
@@ -2174,7 +2323,7 @@ std::vector<ModelManager::ModelInfo> ModelManager::get_friendly_model_list(bool 
                 if (stat(full_path.c_str(), &st) == 0) {
                     size_bytes = st.st_size;
                 }
-                
+
                 ModelInfo info;
                 info.name = filename;
                 info.display_name = filename;
@@ -2183,17 +2332,16 @@ std::vector<ModelManager::ModelInfo> ModelManager::get_friendly_model_list(bool 
                 info.quantization = "Unknown";
                 info.size_bytes = size_bytes;
                 info.installed = true;
+                info.supports_tools = false;
                 result.push_back(info);
             }
         }
     }
-    
+
     // Sort by size (smallest first)
-    std::sort(result.begin(), result.end(), 
-              [](const ModelInfo& a, const ModelInfo& b) {
-                  return a.size_bytes < b.size_bytes;
-              });
-    
+    std::sort(result.begin(), result.end(),
+              [](const ModelInfo& a, const ModelInfo& b) { return a.size_bytes < b.size_bytes; });
+
     return result;
 }
 
@@ -2210,20 +2358,18 @@ static size_t write_callback(void* contents, size_t size, size_t nmemb, void* us
 }
 
 // libcurl progress callback
-static int progress_callback_wrapper(void* clientp, 
-                                     curl_off_t dltotal, curl_off_t dlnow,
-                                     curl_off_t ultotal, curl_off_t ulnow) {
+static int progress_callback_wrapper(void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal,
+                                     curl_off_t ulnow) {
     (void)ultotal;
     (void)ulnow;
-    
+
     // If cancellation was requested, abort the transfer
     if (g_download_cancel_requested.load()) {
         return 1; // Non-zero return value tells libcurl to abort
     }
-    
+
     if (dltotal > 0) {
-        ModelManager::ProgressCallback* callback = 
-            static_cast<ModelManager::ProgressCallback*>(clientp);
+        ModelManager::ProgressCallback* callback = static_cast<ModelManager::ProgressCallback*>(clientp);
         if (*callback) {
             double progress = (double)dlnow / (double)dltotal * 100.0;
             (*callback)(progress, dlnow, dltotal);
@@ -2232,58 +2378,56 @@ static int progress_callback_wrapper(void* clientp,
     return 0; // Return 0 to continue download
 }
 
-bool ModelManager::download_file(const std::string& url, 
-                                 const std::string& dest_path,
-                                 ProgressCallback progress) {
+bool ModelManager::download_file(const std::string& url, const std::string& dest_path, ProgressCallback progress) {
     CURL* curl;
     CURLcode res;
     bool success = false;
-    
+
     // Clear any previous cancellation request for a new download
     g_download_cancel_requested.store(false);
-    
+
     // Create temporary file path
     std::string temp_path = dest_path + ".tmp";
-    
+
     // Open file for writing
     std::ofstream file(temp_path, std::ios::binary);
     if (!file.is_open()) {
         return false;
     }
-    
+
     // Initialize curl
     curl_global_init(CURL_GLOBAL_DEFAULT);
     curl = curl_easy_init();
-    
+
     if (curl) {
         // Set URL
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        
+
         // Follow redirects
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
-        
+
         // Set write callback
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &file);
-        
+
         // Set user agent
         curl_easy_setopt(curl, CURLOPT_USERAGENT, "Delta-CLI/1.0");
-        
+
         // Enable progress meter
         if (progress) {
             curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
             curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback_wrapper);
             curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progress);
         }
-        
+
         // Set timeout (30 seconds connect, 0 = infinite transfer)
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
-        
+
         // Perform download
         res = curl_easy_perform(curl);
-        
+
         if (res == CURLE_OK) {
             long response_code;
             curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
@@ -2309,25 +2453,25 @@ bool ModelManager::download_file(const std::string& url,
                 UI::print_error("Download failed: " + std::string(curl_easy_strerror(res)));
             }
         }
-        
+
         // Cleanup
         curl_easy_cleanup(curl);
     }
-    
+
     curl_global_cleanup();
     file.close();
-    
+
     // Move temp file to destination if successful
     if (success) {
         // Remove any existing file at destination
         std::remove(dest_path.c_str());
-        
+
         // Attempt to rename temp file to final destination
         if (std::rename(temp_path.c_str(), dest_path.c_str()) != 0) {
             // Rename failed (possibly across filesystems) - fall back to copy + delete
             std::ifstream src(temp_path, std::ios::binary);
             std::ofstream dst(dest_path, std::ios::binary);
-            
+
             if (src && dst) {
                 dst << src.rdbuf();
                 src.close();
@@ -2345,7 +2489,7 @@ bool ModelManager::download_file(const std::string& url,
         // Remove temp file on failure
         std::remove(temp_path.c_str());
     }
-    
+
     return success;
 }
 
@@ -2355,17 +2499,17 @@ bool ModelManager::pull_model(const std::string& model_name, const std::string& 
     if (!quantization.empty()) {
         // Future: allow override of quantization format
     }
-    
+
     // Check if model exists in registry
     if (!is_in_registry(model_name)) {
         UI::print_error("Model '" + model_name + "' not found in registry");
         UI::print_info("Use 'delta list-models --available' to see available models");
         return false;
     }
-    
+
     // Get registry entry
     ModelRegistry entry = get_registry_entry(model_name);
-    
+
     // Check if already downloaded
     if (has_model(model_name)) {
         UI::print_info("Model '" + model_name + "' already exists locally");
@@ -2373,35 +2517,35 @@ bool ModelManager::pull_model(const std::string& model_name, const std::string& 
         UI::print_info("Path: " + path);
         return true;
     }
-    
+
     // Construct download URL
     std::string url = get_hf_url(entry.repo_id, entry.filename);
-    
+
     // Determine destination filename
     std::string dest_filename = entry.filename;
     std::string dest_path = tools::FileOps::join_path(models_dir_, dest_filename);
-    
+
     // Print download info
     UI::print_border("DOWNLOADING MODEL");
     UI::print_info("Model: " + entry.name);
     UI::print_info("Description: " + entry.description);
     UI::print_info("Quantization: " + entry.quantization);
-    
+
     // Format size
     double size_gb = entry.size_bytes / (1024.0 * 1024.0 * 1024.0);
     std::ostringstream size_str;
     size_str << std::fixed << std::setprecision(2) << size_gb << " GB";
     UI::print_info("Approximate size: " + size_str.str());
-    
+
     UI::print_info("Source: " + entry.repo_id);
     UI::print_info("Destination: " + dest_path);
     std::cout << std::endl;
-    
+
     // Download with progress
     UI::print_info("Downloading... (this may take a while)");
-    
+
     bool success = download_file(url, dest_path, progress_callback_);
-    
+
     if (success) {
         std::cout << std::endl;
         UI::print_success("Download complete!");
@@ -2422,7 +2566,7 @@ bool ModelManager::pull_model(const std::string& model_name, const std::string& 
 // ============================================================================
 
 std::string ModelManager::get_default_model() {
-    return DEFAULT_MODEL_NAME;  // "qwen3:0.6b"
+    return DEFAULT_MODEL_NAME; // "qwen3:0.6b"
 }
 
 std::string ModelManager::get_default_model_short_name() const {
@@ -2431,28 +2575,28 @@ std::string ModelManager::get_default_model_short_name() const {
     if (it != model_registry_.end()) {
         return it->second.short_name;
     }
-    return "qwen3-0.6b";  // Fallback
+    return "qwen3-0.6b"; // Fallback
 }
 
 bool ModelManager::ensure_default_model_installed(ProgressCallback progress) {
     // Check if default model is already installed
     std::string short_name = get_default_model_short_name();
     if (is_model_installed(short_name)) {
-        return true;  // Already installed
+        return true; // Already installed
     }
-    
+
     // Get registry entry
     auto it = model_registry_.find(DEFAULT_MODEL_NAME);
     if (it == model_registry_.end()) {
         UI::print_error("Default model not found in registry: " + DEFAULT_MODEL_NAME);
         return false;
     }
-    
+
     // Show friendly message with better formatting
     UI::print_border("SETTING UP DEFAULT MODEL");
     UI::print_info("Model: " + it->second.display_name);
     UI::print_info("Description: " + it->second.description);
-    
+
     // Format size nicely
     double size_mb = it->second.size_bytes / (1024.0 * 1024.0);
     double size_gb = size_mb / 1024.0;
@@ -2466,12 +2610,12 @@ bool ModelManager::ensure_default_model_installed(ProgressCallback progress) {
     UI::print_info("Quantization: " + it->second.quantization);
     UI::print_info("This is a one-time download (internet required)");
     std::cout << std::endl;
-    
+
     // Download the model
     set_progress_callback(progress);
     bool success = pull_model(DEFAULT_MODEL_NAME);
     set_progress_callback(nullptr);
-    
+
     if (success) {
         UI::print_success("Default model installed successfully!");
         UI::print_info("You can now start chatting with your AI assistant!");
@@ -2485,7 +2629,7 @@ bool ModelManager::ensure_default_model_installed(ProgressCallback progress) {
         UI::print_info("You can manually download it later with: delta pull " + DEFAULT_MODEL_NAME);
         UI::print_info("Or try a different model: delta --list-models --available");
     }
-    
+
     return success;
 }
 
@@ -2495,16 +2639,15 @@ std::string ModelManager::get_auto_selected_model() {
     if (is_model_installed(default_short)) {
         return default_short;
     }
-    
+
     // Fall back to any installed model (smallest first)
     auto models = list_models();
     if (!models.empty()) {
-        return models[0];  // Return first installed model
+        return models[0]; // Return first installed model
     }
-    
+
     // No models installed - return default for download
     return default_short;
 }
 
 } // namespace delta
-

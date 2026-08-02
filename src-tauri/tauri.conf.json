@@ -5,7 +5,7 @@
   "identifier": "com.nileagi.delta",
   "build": {
     "frontendDist": "../public",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:5177",
     "beforeBuildCommand": "",
     "beforeDevCommand": "cd web/app && pnpm run dev"
   },

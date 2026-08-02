@@ -38,12 +38,21 @@ export interface SettingsChatServiceOptions {
 	samplers?: string | string[];
 	// Custom parameters
 	custom?: string;
+	// Agent tools
+	useTools?: boolean;
+	// Timing display
+	timings_per_token?: boolean;
 	// Callbacks
 	onChunk?: (chunk: string) => void;
 	onReasoningChunk?: (chunk: string) => void;
 	onModel?: (model: string) => void;
 	onFirstValidChunk?: () => void;
-	onComplete?: (response: string, reasoningContent?: string, timings?: ChatMessageTimings) => void;
+	onComplete?: (
+		response: string,
+		reasoningContent?: string,
+		timings?: ChatMessageTimings,
+		toolCalls?: DatabaseMessageToolCall[]
+	) => void;
 	onError?: (error: Error) => void;
 }
 

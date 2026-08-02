@@ -12,6 +12,9 @@
 
 #include "delta_cli.h"
 #include "model_api_server.h"
+#include "agent/agent_database.h"
+#include "agent/tool_registry.h"
+#include "agent/agent_loop.h"
 #include <cpp-httplib/httplib.h>
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -40,6 +43,25 @@
 using json = nlohmann::json;
 
 namespace delta {
+
+// OpenAI-compatible SSE frames for /v1/chat/completions streaming.
+static json sse_content_chunk(const std::string& text) {
+    return {{"id", "chatcmpl-delta"},
+            {"object", "chat.completion.chunk"},
+            {"choices", {{{"index", 0}, {"delta", {{"content", text}}}, {"finish_reason", nullptr}}}}};
+}
+
+static json sse_tool_calls_chunk(const json& tool_calls) {
+    return {{"id", "chatcmpl-delta"},
+            {"object", "chat.completion.chunk"},
+            {"choices", {{{"index", 0}, {"delta", {{"tool_calls", tool_calls}}}, {"finish_reason", nullptr}}}}};
+}
+
+static json sse_finish_chunk() {
+    return {{"id", "chatcmpl-delta"},
+            {"object", "chat.completion.chunk"},
+            {"choices", {{{"index", 0}, {"delta", json::object()}, {"finish_reason", "stop"}}}}};
+}
 
 // Forward declaration for model switch callback
 static ModelSwitchCallback* g_model_switch_callback = nullptr;
@@ -162,8 +184,8 @@ class ModelAPIServer {
     void setup_routes() {
         // CORS headers
         server_->set_default_headers({{"Access-Control-Allow-Origin", "*"},
-                                      {"Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"},
-                                      {"Access-Control-Allow-Headers", "Content-Type"}});
+                                      {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
+                                      {"Access-Control-Allow-Headers", "Content-Type, Authorization"}});
 
         // Handle OPTIONS (CORS preflight)
         server_->Options(".*", [](const httplib::Request&, httplib::Response&) { return; });
@@ -175,7 +197,8 @@ class ModelAPIServer {
         // GET /api/props - Proxy to llama-server when running, else fallback (for requests to port 8081)
         server_->Get("/api/props", [this](const httplib::Request&, httplib::Response& res) {
             try {
-                httplib::Client cli("127.0.0.1", 8080);
+                int llama_port = port_ - 1;
+                httplib::Client cli("127.0.0.1", llama_port);
                 cli.set_connection_timeout(2, 0);
                 cli.set_read_timeout(2, 0);
                 auto proxy_res = cli.Get("/props");
@@ -202,7 +225,8 @@ class ModelAPIServer {
                                        {"size_str", model.size_str},
                                        {"quantization", model.quantization},
                                        {"size_bytes", model.size_bytes},
-                                       {"installed", model.installed}};
+                                       {"installed", model.installed},
+                                       {"supports_tools", model.supports_tools}};
                     models_array.push_back(model_json);
                 }
 
@@ -227,7 +251,8 @@ class ModelAPIServer {
                                        {"description", model.description},
                                        {"size_str", model.size_str},
                                        {"quantization", model.quantization},
-                                       {"size_bytes", model.size_bytes}};
+                                       {"size_bytes", model.size_bytes},
+                                       {"supports_tools", model.supports_tools}};
                     models_array.push_back(model_json);
                 }
 
@@ -591,15 +616,189 @@ class ModelAPIServer {
             }
         });
 
-        // When serving web UI on 8080 (UI-only mode), llama-server is not running.
-        // Handle /v1/chat/completions and /v1/models so the frontend gets a proper error instead of 404.
-        server_->Post("/v1/chat/completions", [this](const httplib::Request&, httplib::Response& res) {
-            json err = {{"error",
-                         {{"message", "No model loaded. Please select a model from the dropdown first."},
-                          {"type", "server_error"},
-                          {"code", "no_model_loaded"}}}};
-            res.status = 503;
-            res.set_content(err.dump(), "application/json");
+        // /v1/chat/completions — proxy through agent loop when llama-server is running,
+        // otherwise return 503 (no model loaded).
+        server_->Post("/v1/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
+            int llama_port = port_ - 1;
+            // Check if llama-server is reachable
+            {
+                httplib::Client probe("127.0.0.1", llama_port);
+                probe.set_connection_timeout(1, 0);
+                auto check = probe.Get("/props");
+                if (!check || check->status != 200) {
+                    json err = {{"error",
+                                 {{"message", "No model loaded. Please select a model from the dropdown first."},
+                                  {"type", "server_error"},
+                                  {"code", "no_model_loaded"}}}};
+                    res.status = 503;
+                    res.set_content(err.dump(), "application/json");
+                    return;
+                }
+            }
+
+            try {
+                json body = json::parse(req.body);
+                if (!body.is_object()) {
+                    json err = {
+                        {"error",
+                         {{"message", "Request body must be a JSON object, got: " + std::string(body.type_name())},
+                          {"type", "invalid_request_error"}}}};
+                    res.status = 400;
+                    res.set_content(err.dump(), "application/json");
+                    return;
+                }
+                json messages = body.contains("messages") ? body["messages"] : json::array();
+                if (!messages.is_array()) {
+                    json err = {{"error",
+                                 {{"message", "messages must be an array, got: " + std::string(messages.type_name())},
+                                  {"type", "invalid_request_error"}}}};
+                    res.status = 400;
+                    res.set_content(err.dump(), "application/json");
+                    return;
+                }
+                for (size_t i = 0; i < messages.size(); i++) {
+                    if (!messages[i].is_object()) {
+                        json err = {
+                            {"error",
+                             {{"message", "messages[" + std::to_string(i) + "] must be an object, got: " +
+                                              std::string(messages[i].type_name()) + " = " + messages[i].dump()},
+                              {"type", "invalid_request_error"}}}};
+                        res.status = 400;
+                        res.set_content(err.dump(), "application/json");
+                        return;
+                    }
+                }
+                bool stream = body.value("stream", false);
+                std::string model_name = body.value("model", std::string("default"));
+
+                std::string llama_url = "http://127.0.0.1:" + std::to_string(llama_port);
+                bool model_supports_tools = false;
+                auto reg = model_mgr_.get_registry_entry(model_name);
+                std::string llama_model_name = model_name;
+                if (!reg.name.empty()) {
+                    model_supports_tools = reg.supports_tools;
+                    if (!reg.filename.empty()) {
+                        auto dot = reg.filename.rfind('.');
+                        llama_model_name = (dot != std::string::npos) ? reg.filename.substr(0, dot) : reg.filename;
+                    }
+                }
+                std::cerr << "[delta-server] agent loop: model=" << model_name << " -> llama_alias=" << llama_model_name
+                          << ", supports_tools=" << (model_supports_tools ? "true" : "false")
+                          << ", msgs=" << messages.size() << std::endl;
+
+                if (stream) {
+                    // Run the agent loop inside a chunked provider so tokens reach the client as they
+                    // are generated. Capture only copyable data -- never `this`, `req` or `res`.
+                    struct StreamJob {
+                        std::string llama_url, llama_model;
+                        bool supports_tools = false;
+                        json messages;
+                        bool started = false;
+                    };
+                    auto job = std::make_shared<StreamJob>();
+                    job->llama_url = llama_url;
+                    job->llama_model = llama_model_name;
+                    job->supports_tools = model_supports_tools;
+                    job->messages = messages;
+
+                    res.set_header("Cache-Control", "no-cache");
+                    res.set_header("Connection", "keep-alive");
+                    res.set_header("X-Accel-Buffering", "no");
+                    res.set_chunked_content_provider(
+                        "text/event-stream", [job](size_t, httplib::DataSink& sink) -> bool {
+                            if (job->started) {
+                                sink.done();
+                                return true;
+                            }
+                            job->started = true;
+
+                            auto emit = [&sink](const json& chunk) -> bool {
+                                const std::string frame = "data: " + chunk.dump() + "\n\n";
+                                return sink.write(frame.data(), frame.size());
+                            };
+
+                            try {
+                                agent::AgentLoop loop(job->llama_url, job->llama_model, job->supports_tools);
+                                auto result = loop.process(job->messages, [&](const std::string& delta) -> bool {
+                                    if (delta.empty())
+                                        return true;
+                                    if (!sink.is_writable())
+                                        return false;
+                                    return emit(sse_content_chunk(delta));
+                                });
+
+                                if (result.client_aborted) {
+                                    sink.done();
+                                    return true;
+                                }
+
+                                if (!result.success) {
+                                    // Headers are already sent, so surface the error as content.
+                                    std::cerr << "[delta-server] stream error: " << result.error << std::endl;
+                                    emit(sse_content_chunk(result.error));
+                                } else if (result.streamed_chars == 0) {
+                                    // Nothing streamed (e.g. a tool-write summary): emit the text now.
+                                    std::istringstream iss(result.content);
+                                    std::string line;
+                                    bool first_line = true;
+                                    while (std::getline(iss, line)) {
+                                        emit(sse_content_chunk(first_line ? line : "\n" + line));
+                                        first_line = false;
+                                    }
+                                }
+                                if (!result.tool_calls.empty())
+                                    emit(sse_tool_calls_chunk(result.tool_calls));
+                            } catch (const std::exception& e) {
+                                std::cerr << "[delta-server] exception in stream provider: " << e.what() << std::endl;
+                                emit(sse_content_chunk(std::string("Error: ") + e.what()));
+                            }
+
+                            emit(sse_finish_chunk());
+                            static const std::string done = "data: [DONE]\n\n";
+                            sink.write(done.data(), done.size());
+                            sink.done();
+                            return true;
+                        });
+                } else {
+                    agent::AgentLoop loop(llama_url, llama_model_name, model_supports_tools);
+                    auto result = loop.process(messages);
+
+                    if (!result.success) {
+                        json err = {{"error", {{"message", result.error}, {"type", "server_error"}}}};
+                        res.status = 500;
+                        res.set_content(err.dump(), "application/json");
+                        return;
+                    }
+
+                    json message = {{"role", "assistant"}, {"content", result.content}};
+                    if (!result.tool_calls.empty())
+                        message["tool_calls"] = result.tool_calls;
+                    json response = {{"id", "chatcmpl-delta"},
+                                     {"object", "chat.completion"},
+                                     {"choices", {{{"index", 0}, {"message", message}, {"finish_reason", "stop"}}}},
+                                     {"usage", {{"prompt_tokens", 0}, {"completion_tokens", 0}, {"total_tokens", 0}}}};
+                    if (result.tool_calls_made > 0) {
+                        response["tool_calls_made"] = result.tool_calls_made;
+                    }
+                    res.set_content(response.dump(), "application/json");
+                }
+            } catch (const json::parse_error&) {
+                json err = {
+                    {"error", {{"message", "Invalid JSON in request body"}, {"type", "invalid_request_error"}}}};
+                res.status = 400;
+                res.set_content(err.dump(), "application/json");
+            } catch (const nlohmann::json::type_error& e) {
+                std::cerr << "[delta-server] JSON type error in agent loop: " << e.what() << std::endl;
+                std::cerr << "[delta-server] Request body was: " << req.body.substr(0, 2000) << std::endl;
+                json err = {{"error", {{"message", std::string(e.what())}, {"type", "json_type_error"}}}};
+                res.status = 500;
+                res.set_content(err.dump(), "application/json");
+            } catch (const std::exception& e) {
+                std::cerr << "[delta-server] Exception in agent loop: " << e.what() << std::endl;
+                json err = {{"error", {{"message", e.what()}, {"type", "server_error"}}}};
+                res.status = 500;
+                res.set_content(err.dump(), "application/json");
+            }
         });
         server_->Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
             json out = {{"object", "list"}, {"data", json::array()}};
@@ -657,6 +856,99 @@ class ModelAPIServer {
                 res.set_content(error.dump(), "application/json");
             }
         });
+        // --- Agent tool endpoints ---
+
+        // GET /api/agent/tools - List available tools
+        server_->Get("/api/agent/tools", [](const httplib::Request&, httplib::Response& res) {
+            auto& registry = agent::ToolRegistry::instance();
+            json result = {{"tools", registry.get_tools_array()}, {"tool_names", registry.get_tool_names()}};
+            res.set_content(result.dump(), "application/json");
+        });
+
+        // GET /api/agent/events - List calendar events
+        server_->Get("/api/agent/events", [](const httplib::Request& req, httplib::Response& res) {
+            auto& db = agent::AgentDatabase::instance();
+            std::string start = req.has_param("start") ? req.get_param_value("start") : "";
+            std::string end = req.has_param("end") ? req.get_param_value("end") : "";
+            int limit = 50;
+            if (req.has_param("limit")) {
+                try {
+                    limit = std::stoi(req.get_param_value("limit"));
+                } catch (...) {
+                }
+            }
+            std::string type = req.has_param("type") ? req.get_param_value("type") : "";
+            std::string status = req.has_param("status") ? req.get_param_value("status") : "";
+            std::string priority = req.has_param("priority") ? req.get_param_value("priority") : "";
+            std::string tags = req.has_param("tags") ? req.get_param_value("tags") : "";
+            auto events = db.list_events(start, end, limit, type, status, priority, tags);
+            json result = {{"events", json::array()}, {"count", events.size()}};
+            for (auto& e : events)
+                result["events"].push_back(e);
+            res.set_content(result.dump(), "application/json");
+        });
+
+        // POST /api/agent/events - Create calendar event
+        server_->Post("/api/agent/events", [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                auto& db = agent::AgentDatabase::instance();
+                json body = json::parse(req.body);
+                std::string id = db.create_event(body);
+                if (id.empty()) {
+                    res.status = 400;
+                    res.set_content(json({{"error", "Failed to create event"}}).dump(), "application/json");
+                    return;
+                }
+                auto event = db.get_event(id);
+                res.set_content(event.dump(), "application/json");
+            } catch (const std::exception& e) {
+                res.status = 400;
+                res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+            }
+        });
+
+        // PUT /api/agent/events/:id - Update calendar event
+        server_->Put(R"(/api/agent/events/(.+))", [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                auto& db = agent::AgentDatabase::instance();
+                std::string id = req.matches[1];
+                json body = json::parse(req.body);
+                if (!db.update_event(id, body)) {
+                    res.status = 404;
+                    res.set_content(json({{"error", "Event not found"}}).dump(), "application/json");
+                    return;
+                }
+                auto event = db.get_event(id);
+                res.set_content(event.dump(), "application/json");
+            } catch (const std::exception& e) {
+                res.status = 400;
+                res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+            }
+        });
+
+        // DELETE /api/agent/events/:id - Delete calendar event
+        server_->Delete(R"(/api/agent/events/(.+))", [](const httplib::Request& req, httplib::Response& res) {
+            auto& db = agent::AgentDatabase::instance();
+            std::string id = req.matches[1];
+            if (!db.delete_event(id)) {
+                res.status = 404;
+                res.set_content(json({{"error", "Event not found"}}).dump(), "application/json");
+                return;
+            }
+            res.set_content(json({{"deleted", true}}).dump(), "application/json");
+        });
+
+        // GET /api/agent/reminders/pending - Get upcoming reminders and mark them as fired
+        server_->Get("/api/agent/reminders/pending", [](const httplib::Request&, httplib::Response& res) {
+            auto& db = agent::AgentDatabase::instance();
+            auto reminders = db.get_upcoming_reminders();
+            for (auto& r : reminders) {
+                db.mark_reminded(r.value("id", ""));
+            }
+            json result = {{"reminders", reminders}, {"count", reminders.size()}};
+            res.set_content(result.dump(), "application/json");
+        });
+
         // Serve web UI static files when path is set (for first-time users with no model; no llama-server)
         if (!webui_path_.empty() && tools::FileOps::dir_exists(webui_path_)) {
             server_->set_mount_point("/", webui_path_);
@@ -676,6 +968,10 @@ class ModelAPIServer {
     ModelAPIServer(int port = 8081, const std::string& webui_path = "")
         : port_(port), webui_path_(webui_path), running_(false) {
         server_ = std::make_unique<httplib::Server>();
+        if (!agent::AgentDatabase::instance().init()) {
+            std::cerr << "[WARNING] Failed to initialize agent database — tools will not persist data" << std::endl;
+        }
+        agent::register_all_tools();
         setup_routes();
     }
 

@@ -145,6 +145,7 @@ export interface ApiLlamaCppServerProps {
 		audio: boolean;
 	};
 	chat_template: string;
+	chat_template_caps?: Record<string, boolean>;
 	bos_token: string;
 	eos_token: string;
 	build_info: string;
@@ -197,6 +198,7 @@ export interface ApiChatCompletionStreamChunk {
 			content?: string;
 			reasoning_content?: string;
 			model?: string;
+			tool_calls?: DatabaseMessageToolCall[];
 		};
 	}>;
 	timings?: {
@@ -218,6 +220,7 @@ export interface ApiChatCompletionResponse {
 			content: string;
 			reasoning_content?: string;
 			model?: string;
+			tool_calls?: DatabaseMessageToolCall[];
 		};
 	}>;
 }

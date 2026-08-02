@@ -9,7 +9,7 @@ Install these before building anything.
 | CMake | 3.14+ | C++ build system |
 | C++17 compiler | clang or gcc | Engine compilation |
 | Node.js | 18+ | Web UI build |
-| pnpm | 9+ | Package manager |
+| pnpm | 11+ | Package manager |
 | Rust | stable | Desktop app (Tauri) |
 | Make | any | Build automation |
 
@@ -17,9 +17,16 @@ Install these before building anything.
 
 ```bash
 xcode-select --install       # C++ toolchain
-brew install cmake node pnpm
+brew install cmake node
+npm install -g pnpm@latest   # pnpm 11+
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
+
+> On macOS 26+ the system SDK requires **clang 17+ (Xcode 16+)**. If `clang --version`
+> is older, the build fails in llama.cpp with `unrecognized platform name visionOS`.
+> Fix: `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` (full Xcode),
+> or refresh CLT: `sudo rm -rf /Library/Developer/CommandLineTools && sudo xcode-select --install`.
+> The build runs this check up front (`scripts/check-toolchain.sh`) and stops early if the toolchain is too old.
 
 ### Linux (Ubuntu/Debian)
 
@@ -45,16 +52,22 @@ npm install -g pnpm
 ```bash
 git clone --recursive https://github.com/nile-agi/delta.git
 cd delta
-make engine     # Build C++ engine (delta-server + llama-server)
-make sidecars   # Copy sidecar binaries to src-tauri/binaries/
-make web        # Build SvelteKit web UI
+make            # Builds sidecars (delta-server + llama-server) + web UI
 make dev        # Run the Tauri desktop app
 ```
 
-Or build everything in one go:
+`make` (a.k.a. `make all`) builds `sidecars` + `web` — the two things the app
+ships. `sidecars` compiles the C++ engine **and** copies the binaries into
+`src-tauri/binaries/` with the target-triple suffix Tauri requires; `make
+engine` alone does not do that copy, so it is not part of `all`. `make dev` also
+auto-builds the sidecars if they're missing, so a plain `make dev` on a fresh
+clone works too.
+
+Prefer step-by-step:
 
 ```bash
-make            # Builds engine + sidecars + web
+make sidecars   # Build C++ engine + copy binaries into src-tauri/binaries/
+make web        # Build SvelteKit web UI
 make dev        # Run the app
 ```
 
@@ -62,22 +75,34 @@ make dev        # Run the app
 
 | Changed | Rebuild with | Then |
 |---------|-------------|------|
-| C++ source (`engine/`) | `make engine sidecars` | Restart the app |
+| C++ source (`engine/`) | `make sidecars` | Restart the app |
 | Web source (`web/app/`) | `make web` | Restart the app |
 | Rust source (`src-tauri/`) | Nothing | `make dev` rebuilds automatically |
 
 ### All make targets
 
 ```
-make            Build everything (engine + sidecars + web)
-make engine     Build C++ engine (delta-server + llama-server)
-make sidecars   Copy sidecar binaries into src-tauri/binaries/
+make            Build what the app ships: sidecars + web
+make sidecars   Build C++ engine + copy binaries into src-tauri/binaries/
+make engine     Build C++ engine only, into build/ (standalone CLI; not used by the app)
 make web        Build SvelteKit web UI
-make dev        Run Tauri desktop app (cargo tauri dev)
-make run        Full rebuild then run
+make preview    Build web + serve it WITH the engine at http://localhost:8080 (browser)
+make dev        Run Tauri desktop app (auto-builds sidecars if missing)
+make run        Full rebuild then run (all + dev)
 make clean      Remove build artifacts
 make submodules Init git submodules
 ```
+
+### Preview in a browser (no desktop build)
+
+`make preview` builds the web UI and serves it **together with the engine** at
+`http://localhost:8080` via the CLI's UI-only server, so the app actually works
+in a browser — pick a model in the UI and go. It builds the `delta` CLI once on
+first run.
+
+> Note: `pnpm run preview` (Vite's own hint after `make web`) serves the static
+> files **only** — with no engine behind it the app just shows
+> "Server Connection Error". Use `make preview` (or `make dev`) instead.
 
 ## Project Structure
 

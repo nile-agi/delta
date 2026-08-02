@@ -194,6 +194,8 @@ export default defineConfig({
 	},
 
 	server: {
+		port: 5177,
+		strictPort: true,
 		proxy: {
 			'/v1': 'http://localhost:8080',
 			'/props': 'http://localhost:8080',

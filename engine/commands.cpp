@@ -806,7 +806,7 @@ std::string Commands::build_llama_server_cmd(const std::string& server_bin, cons
         cmd << " --path \"" << public_path << "\"";
     }
 
-    // Optional flags - some llama.cpp builds support these
+    cmd << " --jinja";
     if (ctx_size > 16384) {
         cmd << " --gpu-layers 0";
     }

@@ -19,9 +19,10 @@
 	interface Props {
 		content: string;
 		class?: string;
+		streaming?: boolean;
 	}
 
-	let { content, class: className = '' }: Props = $props();
+	let { content, class: className = '', streaming = false }: Props = $props();
 
 	let containerRef = $state<HTMLDivElement>();
 	let processedHtml = $state('');
@@ -178,9 +179,45 @@
 		return mutated ? tempDiv.innerHTML : html;
 	}
 
+	// Balance markdown left open by a streaming tail, so it renders instead of showing raw `**`/backticks.
+	function closeOpenMarkdown(text: string): string {
+		const fences = text.match(/^[ \t]*```/gm);
+		if (fences && fences.length % 2 === 1) {
+			return `${text}${text.endsWith('\n') ? '' : '\n'}\`\`\``;
+		}
+
+		// Drop a link or image that is still being typed.
+		let out = text.replace(/!?\[[^\]\n]*\]\([^)\s]*$/, '').replace(/!?\[[^\]\n]*$/, '');
+
+		if ((out.match(/`/g) ?? []).length % 2 === 1) return `${out}\``;
+
+		// Balance emphasis, ignoring inline code and list bullets.
+		const scan = out.replace(/`[^`]*`/g, '').replace(/^[ \t]*[*+-][ \t]/gm, '');
+		const stack: string[] = [];
+		for (let i = 0; i < scan.length; ) {
+			const token = scan.startsWith('**', i)
+				? '**'
+				: scan.startsWith('~~', i)
+					? '~~'
+					: scan[i] === '*'
+						? '*'
+						: '';
+			if (!token) {
+				i++;
+				continue;
+			}
+			if (stack[stack.length - 1] === token) stack.pop();
+			else stack.push(token);
+			i += token.length;
+		}
+		while (stack.length) out += stack.pop();
+
+		return out;
+	}
+
 	async function processMarkdown(text: string): Promise<string> {
 		try {
-			let normalized = preprocessLaTeX(text);
+			let normalized = preprocessLaTeX(streaming ? closeOpenMarkdown(text) : text);
 			const result = await processor.process(normalized);
 			const html = String(result);
 			const enhancedLinks = enhanceLinks(html);
@@ -296,8 +333,25 @@
 		}
 	}
 
+	const MARKDOWN_THROTTLE_MS = 100;
 	let markdownTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastProcessedContent = '';
+	let lastProcessedStreaming = false;
+	let lastRunAt = 0;
+
+	function runMarkdown(text: string) {
+		lastRunAt = Date.now();
+		lastProcessedContent = text;
+		lastProcessedStreaming = streaming;
+		processMarkdown(text)
+			.then((result) => {
+				processedHtml = result;
+			})
+			.catch((error) => {
+				console.error('Markdown processing error:', error);
+				processedHtml = text.replace(/\n/g, '<br>');
+			});
+	}
 
 	$effect(() => {
 		const text = content;
@@ -306,21 +360,25 @@
 			lastProcessedContent = '';
 			return;
 		}
-		if (text === lastProcessedContent) return;
+		// Also re-parse when streaming ends, to drop the healed-tail markers.
+		if (text === lastProcessedContent && streaming === lastProcessedStreaming) return;
 
-		if (markdownTimer) clearTimeout(markdownTimer);
-		markdownTimer = setTimeout(() => {
-			lastProcessedContent = text;
-			processMarkdown(text)
-				.then((result) => {
-					processedHtml = result;
-				})
-				.catch((error) => {
-					console.error('Markdown processing error:', error);
-					processedHtml = text.replace(/\n/g, '<br>');
-				});
-		}, 80);
+		// Throttle with a max wait. A plain debounce is starved by the ~16ms chunk drain and never
+		// fires until the stream ends, so a pending run must never be reset or cancelled.
+		const elapsed = Date.now() - lastRunAt;
+		if (elapsed >= MARKDOWN_THROTTLE_MS) {
+			runMarkdown(text);
+		} else if (!markdownTimer) {
+			markdownTimer = setTimeout(() => {
+				markdownTimer = null;
+				if (content !== lastProcessedContent || streaming !== lastProcessedStreaming) {
+					runMarkdown(content);
+				}
+			}, MARKDOWN_THROTTLE_MS - elapsed);
+		}
+	});
 
+	$effect(() => {
 		return () => {
 			if (markdownTimer) clearTimeout(markdownTimer);
 		};

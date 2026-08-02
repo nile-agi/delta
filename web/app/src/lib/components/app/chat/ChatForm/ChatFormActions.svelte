@@ -1,10 +1,19 @@
 <script lang="ts">
-	import { Square, ArrowUp } from '@lucide/svelte';
+	import { Square, ArrowUp, Wrench } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import ChatFormActionFileAttachments from './ChatFormActionFileAttachments.svelte';
 	import ChatFormActionRecord from './ChatFormActionRecord.svelte';
 	import ChatFormModelSelector from './ChatFormModelSelector.svelte';
+	import { config, updateConfig } from '$lib/stores/settings.svelte';
+	import { agentToolsActive, selectedModelSupportsTools } from '$lib/stores/models.svelte';
 	import type { FileTypeCategory } from '$lib/enums/files';
+
+	// The stored flag is the user's intent; the click below is its only writer. Deriving it from the
+	// model in an effect clobbered that choice on every remount (new chat, route swap).
+	let toolsEnabled = $derived(config().useAgentTools === true);
+	let modelSupportsTools = $derived(selectedModelSupportsTools());
+	let toolsActive = $derived(agentToolsActive());
 
 	interface Props {
 		canSend?: boolean;
@@ -49,6 +58,37 @@
 
 <div class="flex w-full items-center gap-2 {className}">
 	<ChatFormActionFileAttachments class="mr-auto" {disabled} {onFileUpload} />
+
+	<Tooltip.Root>
+		<Tooltip.Trigger>
+			<button
+				type="button"
+				class="flex h-8 w-8 items-center justify-center rounded-md transition-colors {toolsActive
+					? 'bg-primary text-primary-foreground'
+					: !modelSupportsTools
+						? 'text-muted-foreground/40 cursor-not-allowed'
+						: 'text-muted-foreground hover:text-foreground hover:bg-accent'}"
+				onclick={() => {
+					if (!modelSupportsTools) return;
+					updateConfig('useAgentTools', !toolsEnabled);
+				}}
+				disabled={!modelSupportsTools}
+			>
+				<Wrench class="h-4 w-4" />
+			</button>
+		</Tooltip.Trigger>
+		<Tooltip.Content>
+			<p>
+				{#if !modelSupportsTools}
+					This model does not support agent tools
+				{:else if toolsEnabled}
+					Agent tools enabled (calendar)
+				{:else}
+					Enable agent tools
+				{/if}
+			</p>
+		</Tooltip.Content>
+	</Tooltip.Root>
 
 	<ChatFormModelSelector class="shrink-0" openTrigger={openModelDropdownTrigger} />
 
