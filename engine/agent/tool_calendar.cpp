@@ -179,7 +179,11 @@ std::string resolve_datetime(const std::string& raw) {
                     days_ahead += 7;
                 time_t target = now + days_ahead * 24 * 3600;
                 struct tm t_target{};
+#ifdef _WIN32
+                localtime_s(&t_target, &target);
+#else
                 localtime_r(&target, &t_target);
+#endif
                 char tbuf[16];
                 strftime(tbuf, sizeof(tbuf), "%Y-%m-%d", &t_target);
                 date_part = std::string(tbuf);

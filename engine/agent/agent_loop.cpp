@@ -891,12 +891,20 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
 
                     time_t now_t = time(nullptr);
                     struct tm t_now{};
+#ifdef _WIN32
+                    localtime_s(&t_now, &now_t);
+#else
                     localtime_r(&now_t, &t_now);
+#endif
                     char today_s[16], week_s[16];
                     strftime(today_s, sizeof(today_s), "%Y-%m-%d", &t_now);
                     time_t week_t = now_t + 7 * 24 * 3600;
                     struct tm t_week{};
+#ifdef _WIN32
+                    localtime_s(&t_week, &week_t);
+#else
                     localtime_r(&week_t, &t_week);
+#endif
                     strftime(week_s, sizeof(week_s), "%Y-%m-%d", &t_week);
                     auto week_events = db.list_events(std::string(today_s), std::string(week_s), 5, "event");
                     items.insert(items.end(), week_events.begin(), week_events.end());

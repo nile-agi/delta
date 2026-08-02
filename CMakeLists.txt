@@ -200,6 +200,12 @@ target_compile_definitions(delta-server PRIVATE
     DELTA_VERSION="${PROJECT_VERSION}"
 )
 
+# windows.h (pulled in by curl/winsock) defines min/max macros that break std::min/std::max.
+if(WIN32)
+    target_compile_definitions(delta PRIVATE NOMINMAX)
+    target_compile_definitions(delta-server PRIVATE NOMINMAX)
+endif()
+
 # Include directories for delta-server
 target_include_directories(delta-server PRIVATE
     ${CMAKE_SOURCE_DIR}/engine
