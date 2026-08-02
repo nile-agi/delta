@@ -1,4 +1,5 @@
 #include "agent_database.h"
+#include "time_compat.h"
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -139,8 +140,8 @@ bool AgentDatabase::run_migrations() {
         current = 2;
     }
 
-    // Ensure status column exists (may have been missed if v2 batch partially failed)
-    exec_sql("ALTER TABLE calendar_events ADD COLUMN status TEXT DEFAULT 'upcoming';");
+    sqlite3_exec(db_, "ALTER TABLE calendar_events ADD COLUMN status TEXT DEFAULT 'upcoming';", nullptr, nullptr,
+                 nullptr);
 
     if (current < 3) {
         std::cerr << "[delta-db] running migration v3: adding type/priority/tags columns" << std::endl;
@@ -195,9 +196,10 @@ std::string AgentDatabase::generate_uuid() {
 
 std::string AgentDatabase::get_current_timestamp() {
     time_t now = time(nullptr);
-    struct tm* t = gmtime(&now);
+    struct tm t{};
+    utc_time(&now, &t);
     char buf[32];
-    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", t);
+    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &t);
     return std::string(buf);
 }
 

@@ -1,5 +1,6 @@
 #include "agent_loop.h"
 #include "agent_database.h"
+#include "time_compat.h"
 #include "tool_calendar.h"
 #include "tool_registry.h"
 #include <cctype>
@@ -92,11 +93,7 @@ void AgentLoop::set_max_iterations(int max) {
 std::string AgentLoop::build_system_prompt() {
     time_t now = time(nullptr);
     struct tm t_local{};
-#ifdef _WIN32
-    localtime_s(&t_local, &now);
-#else
-    localtime_r(&now, &t_local);
-#endif
+    local_time(&now, &t_local);
     char today_buf[16], iso_buf[32], day_buf[16];
     strftime(today_buf, sizeof(today_buf), "%Y-%m-%d", &t_local);
     strftime(iso_buf, sizeof(iso_buf), "%Y-%m-%dT%H:%M", &t_local);
@@ -104,11 +101,7 @@ std::string AgentLoop::build_system_prompt() {
 
     time_t tomorrow_t = now + 24 * 3600;
     struct tm tm_tom{};
-#ifdef _WIN32
-    localtime_s(&tm_tom, &tomorrow_t);
-#else
-    localtime_r(&tomorrow_t, &tm_tom);
-#endif
+    local_time(&tomorrow_t, &tm_tom);
     char tom_buf[16], tom_day_buf[16];
     strftime(tom_buf, sizeof(tom_buf), "%Y-%m-%d", &tm_tom);
     strftime(tom_day_buf, sizeof(tom_day_buf), "%A", &tm_tom);
@@ -147,11 +140,7 @@ std::string AgentLoop::build_system_prompt() {
     char week_buf[16];
     time_t week_later = now + 7 * 24 * 3600;
     struct tm wt_local{};
-#ifdef _WIN32
-    localtime_s(&wt_local, &week_later);
-#else
-    localtime_r(&week_later, &wt_local);
-#endif
+    local_time(&week_later, &wt_local);
     strftime(week_buf, sizeof(week_buf), "%Y-%m-%d", &wt_local);
 
     auto events = db.list_events(std::string(today_buf), std::string(week_buf), 5, "event");
@@ -891,20 +880,12 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
 
                     time_t now_t = time(nullptr);
                     struct tm t_now{};
-#ifdef _WIN32
-                    localtime_s(&t_now, &now_t);
-#else
-                    localtime_r(&now_t, &t_now);
-#endif
+                    local_time(&now_t, &t_now);
                     char today_s[16], week_s[16];
                     strftime(today_s, sizeof(today_s), "%Y-%m-%d", &t_now);
                     time_t week_t = now_t + 7 * 24 * 3600;
                     struct tm t_week{};
-#ifdef _WIN32
-                    localtime_s(&t_week, &week_t);
-#else
-                    localtime_r(&week_t, &t_week);
-#endif
+                    local_time(&week_t, &t_week);
                     strftime(week_s, sizeof(week_s), "%Y-%m-%d", &t_week);
                     auto week_events = db.list_events(std::string(today_s), std::string(week_s), 5, "event");
                     items.insert(items.end(), week_events.begin(), week_events.end());

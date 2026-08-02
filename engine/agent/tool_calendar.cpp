@@ -1,5 +1,6 @@
 #include "tool_calendar.h"
 #include "agent_database.h"
+#include "time_compat.h"
 #include "tool_registry.h"
 #include <cctype>
 #include <cstdio>
@@ -20,22 +21,14 @@ static nlohmann::json strip_id(nlohmann::json obj) {
 std::string resolve_datetime(const std::string& raw) {
     time_t now = time(nullptr);
     struct tm t_now{};
-#ifdef _WIN32
-    localtime_s(&t_now, &now);
-#else
-    localtime_r(&now, &t_now);
-#endif
+    local_time(&now, &t_now);
     char today_buf[16];
     strftime(today_buf, sizeof(today_buf), "%Y-%m-%d", &t_now);
     std::string today(today_buf);
 
     time_t tomorrow_t = now + 24 * 3600;
     struct tm tm_tom{};
-#ifdef _WIN32
-    localtime_s(&tm_tom, &tomorrow_t);
-#else
-    localtime_r(&tomorrow_t, &tm_tom);
-#endif
+    local_time(&tomorrow_t, &tm_tom);
     char tom_buf[16];
     strftime(tom_buf, sizeof(tom_buf), "%Y-%m-%d", &tm_tom);
     std::string tomorrow(tom_buf);
@@ -179,11 +172,7 @@ std::string resolve_datetime(const std::string& raw) {
                     days_ahead += 7;
                 time_t target = now + days_ahead * 24 * 3600;
                 struct tm t_target{};
-#ifdef _WIN32
-                localtime_s(&t_target, &target);
-#else
-                localtime_r(&target, &t_target);
-#endif
+                local_time(&target, &t_target);
                 char tbuf[16];
                 strftime(tbuf, sizeof(tbuf), "%Y-%m-%d", &t_target);
                 date_part = std::string(tbuf);
@@ -319,11 +308,7 @@ void register_calendar_tools() {
             if (start.empty()) {
                 time_t now = time(nullptr);
                 struct tm t{};
-#ifdef _WIN32
-                localtime_s(&t, &now);
-#else
-                localtime_r(&now, &t);
-#endif
+                local_time(&now, &t);
                 char buf[16];
                 strftime(buf, sizeof(buf), "%Y-%m-%d", &t);
                 start = std::string(buf);
@@ -496,11 +481,7 @@ void register_calendar_tools() {
         [](const nlohmann::json&) -> ToolResult {
             time_t now = time(nullptr);
             struct tm t{};
-#ifdef _WIN32
-            localtime_s(&t, &now);
-#else
-            localtime_r(&now, &t);
-#endif
+            local_time(&now, &t);
             char iso_buf[32], date_buf[16], day_buf[16];
             strftime(iso_buf, sizeof(iso_buf), "%Y-%m-%dT%H:%M:%S", &t);
             strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &t);
@@ -508,11 +489,7 @@ void register_calendar_tools() {
 
             time_t tomorrow_t = now + 24 * 3600;
             struct tm tm_tom{};
-#ifdef _WIN32
-            localtime_s(&tm_tom, &tomorrow_t);
-#else
-            localtime_r(&tomorrow_t, &tm_tom);
-#endif
+            local_time(&tomorrow_t, &tm_tom);
             char tom_buf[16], tom_day_buf[16];
             strftime(tom_buf, sizeof(tom_buf), "%Y-%m-%d", &tm_tom);
             strftime(tom_day_buf, sizeof(tom_day_buf), "%A", &tm_tom);
