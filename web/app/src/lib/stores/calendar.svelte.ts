@@ -1,4 +1,5 @@
 import { agentService, type CalendarEvent } from '$lib/services/agent';
+import { toLocalDateStr } from '$lib/utils/calendar';
 
 let events = $state<CalendarEvent[]>([]);
 let loading = $state(false);
@@ -20,10 +21,13 @@ export function setCurrentMonth(date: Date) {
 	currentMonth = date;
 }
 
+// A dense month can hold far more than the service's old default of 50.
+const MONTH_EVENT_LIMIT = 500;
+
 export async function loadEvents(start?: string, end?: string) {
 	loading = true;
 	try {
-		events = await agentService.listEvents(start, end);
+		events = await agentService.listEvents(start, end, MONTH_EVENT_LIMIT);
 	} catch (e) {
 		console.error('Failed to load events:', e);
 	} finally {
@@ -34,8 +38,9 @@ export async function loadEvents(start?: string, end?: string) {
 export async function loadMonthEvents(date: Date) {
 	const year = date.getFullYear();
 	const month = date.getMonth();
-	const start = new Date(year, month, 1).toISOString().split('T')[0];
-	const end = new Date(year, month + 1, 0).toISOString().split('T')[0];
+	// Local formatting, not toISOString() -- that converts to UTC and shifts the range by a day.
+	const start = toLocalDateStr(new Date(year, month, 1));
+	const end = toLocalDateStr(new Date(year, month + 1, 0));
 	await loadEvents(start, end);
 }
 

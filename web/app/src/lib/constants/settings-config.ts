@@ -4,6 +4,11 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> =
 	apiKey: '',
 	systemMessage: '',
 	theme: 'system',
+	// Personalization, collected during onboarding and editable in Settings -> You
+	userName: '',
+	replyStyle: 'balanced',
+	calendarWeekStart: 'monday',
+	onboardingCompleted: false,
 	showTokensPerSecond: false,
 	showThoughtInProgress: false,
 	disableReasoningFormat: false,
@@ -50,6 +55,9 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> =
 export const SETTING_CONFIG_INFO: Record<string, string> = {
 	apiKey: 'Set the API Key if you are using --api-key option for the server.',
 	systemMessage: 'The starting message that defines how model should behave.',
+	userName: 'How the assistant should address you. Left empty, it stays generic.',
+	replyStyle: 'How much detail the assistant puts into an answer.',
+	calendarWeekStart: 'Which day the calendar month grid starts on.',
 	theme:
 		'Choose the color theme for the interface. You can choose between System (follows your device settings), Light, or Dark.',
 	pasteLongTextToFileLen:

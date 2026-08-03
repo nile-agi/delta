@@ -48,6 +48,12 @@
 	let { showCenteredEmpty = false } = $props();
 
 	let currentConfig = $derived(config());
+	let greetingName = $derived(currentConfig.userName?.toString().trim() ?? '');
+	let timeOfDay = $derived.by(() => {
+		const hour = new Date().getHours();
+		if (hour < 12) return 'Good morning';
+		return hour < 18 ? 'Good afternoon' : 'Good evening';
+	});
 	let autoScrollEnabled = $state(true);
 	let effectiveAutoScroll = $derived(!currentConfig.disableAutoScroll && autoScrollEnabled);
 	let chatScrollContainer: HTMLDivElement | undefined = $state();
@@ -362,9 +368,13 @@
 	>
 		<div class="w-full max-w-2xl px-4">
 			<div class="mb-8 text-center" in:fade={{ duration: 300 }}>
-				<h1 class="mb-2 text-3xl font-semibold tracking-tight">Delta</h1>
+				<h1 class="mb-2 text-3xl font-semibold tracking-tight">
+					{greetingName ? `${timeOfDay}, ${greetingName}.` : 'Delta'}
+				</h1>
 
-				<p class="text-lg text-muted-foreground">How can I help you today?</p>
+				<p class="text-lg text-muted-foreground">
+					{greetingName ? 'What are we working on?' : 'How can I help you today?'}
+				</p>
 			</div>
 
 			{#if serverWarning()}

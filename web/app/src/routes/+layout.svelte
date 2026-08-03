@@ -17,6 +17,7 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import NotificationCenter from '$lib/components/app/notifications/NotificationCenter.svelte';
+	import OnboardingDialog from '$lib/components/app/onboarding/OnboardingDialog.svelte';
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 	import { startReminderPolling, stopReminderPolling } from '$lib/services/reminders';
@@ -290,6 +291,11 @@
 		/>
 	</div>
 {:else if serverReady && modelApiReady}
+	<!-- isInitialized distinguishes "not onboarded yet" from "localStorage not read yet". -->
+	{#if settingsStore.isInitialized && !config().onboardingCompleted}
+		<OnboardingDialog />
+	{/if}
+
 	<ConversationTitleUpdateDialog
 		bind:open={titleUpdateDialogOpen}
 		currentTitle={titleUpdateCurrentTitle}
