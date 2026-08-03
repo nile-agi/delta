@@ -11,14 +11,15 @@
 		ChevronLeft,
 		ChevronRight,
 		Database,
-		Package
+		Package,
+		User
 	} from '@lucide/svelte';
 	import { ChatSettingsFooter, ChatSettingsFields } from '$lib/components/app';
 	import ImportExportTab from './ImportExportTab.svelte';
 	import ModelManagementTab from '../ModelManagement/ModelManagementTab.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
-	import { config, updateMultipleConfig } from '$lib/stores/settings.svelte';
+	import { config, updateConfig, updateMultipleConfig } from '$lib/stores/settings.svelte';
 	import { setMode } from 'mode-watcher';
 	import type { Component } from 'svelte';
 
@@ -34,6 +35,32 @@
 		icon: Component;
 		title: string;
 	}> = [
+		{
+			title: 'You',
+			icon: User,
+			fields: [
+				{ key: 'userName', label: 'What should Delta call you?', type: 'input' },
+				{
+					key: 'replyStyle',
+					label: 'Reply style',
+					type: 'select',
+					options: [
+						{ value: 'concise', label: 'Concise' },
+						{ value: 'balanced', label: 'Balanced' },
+						{ value: 'detailed', label: 'Detailed' }
+					]
+				},
+				{
+					key: 'calendarWeekStart',
+					label: 'Week starts on',
+					type: 'select',
+					options: [
+						{ value: 'monday', label: 'Monday' },
+						{ value: 'sunday', label: 'Sunday' }
+					]
+				}
+			]
+		},
 		{
 			title: 'General',
 			icon: Settings,
@@ -315,6 +342,12 @@
 		onOpenChange?.(false);
 	}
 
+	// Clearing the flag remounts the onboarding dialog, which rewrites these answers itself.
+	function runSetupAgain() {
+		updateConfig('onboardingCompleted', false);
+		handleClose();
+	}
+
 	function handleReset() {
 		localConfig = { ...config() };
 
@@ -545,6 +578,20 @@
 										onConfigChange={handleConfigChange}
 										onThemeChange={handleThemeChange}
 									/>
+								</div>
+							{/if}
+
+							{#if currentSection.title === 'You'}
+								<div class="border-t pt-6">
+									<button
+										class="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+										onclick={runSetupAgain}
+									>
+										Run setup again
+									</button>
+									<p class="mt-1 text-xs text-muted-foreground">
+										Walks you back through the questions from your first launch.
+									</p>
 								</div>
 							{/if}
 

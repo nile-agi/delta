@@ -1,12 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ChevronLeft, ChevronRight, Plus, Check, X, Undo2, Trash2, MapPin, Clock, Play, Pencil } from '@lucide/svelte';
+	import { ChevronLeft, ChevronRight, Plus, X } from '@lucide/svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import Input from '$lib/components/ui/input/input.svelte';
-	import Textarea from '$lib/components/ui/textarea/textarea.svelte';
-	import Label from '$lib/components/ui/label/label.svelte';
+	import CalendarDayPanel from '$lib/components/app/calendar/CalendarDayPanel.svelte';
+	import EventFormDialog from '$lib/components/app/calendar/EventFormDialog.svelte';
 	import type { CalendarEvent } from '$lib/services/agent';
+	import { config } from '$lib/stores/settings.svelte';
 	import {
 		calendarEvents,
 		calendarCurrentMonth,
@@ -16,235 +15,132 @@
 		updateEvent,
 		deleteEvent
 	} from '$lib/stores/calendar.svelte';
+	import {
+		collectTags,
+		formatTime,
+		parseTags,
+		sortDayItems,
+		toLocalDateStr,
+		weekdayColumn,
+		weekdayNames
+	} from '$lib/utils/calendar';
 
-	let showCreateDialog = $state(false);
-	let newEventType = $state<'event' | 'task'>('event');
-	let newTitle = $state('');
-	let newDescription = $state('');
-	let newLocation = $state('');
-	let newPriority = $state('medium');
-	let startDate = $state('');
-	let startTime = $state('');
-	let endDate = $state('');
-	let endTime = $state('');
-	let createError = $state('');
-	let creating = $state(false);
-	let selectedDate = $state('');
-
-	let showEditDialog = $state(false);
+	let selectedDate = $state(toLocalDateStr(new Date()));
+	let activeTag = $state('');
+	let showForm = $state(false);
+	let formMode = $state<'create' | 'edit'>('create');
 	let editingItem = $state<CalendarEvent | null>(null);
-	let editTitle = $state('');
-	let editDescription = $state('');
-	let editLocation = $state('');
-	let editPriority = $state('medium');
-	let editStartDate = $state('');
-	let editStartTime = $state('');
-	let editEndDate = $state('');
-	let editEndTime = $state('');
-	let editError = $state('');
-	let saving = $state(false);
-
-	function handleTimeInput(e: Event, setter: (v: string) => void) {
-		const input = e.currentTarget as HTMLInputElement;
-		let raw = input.value.replace(/[^0-9]/g, '');
-		if (raw.length > 4) raw = raw.slice(0, 4);
-		if (raw.length >= 3) {
-			raw = raw.slice(0, 2) + ':' + raw.slice(2);
-		}
-		input.value = raw;
-		setter(raw);
-	}
-
-	function isValidTime(v: string): boolean {
-		const m = v.match(/^(\d{1,2}):(\d{2})$/);
-		if (!m) return false;
-		const h = parseInt(m[1]), min = parseInt(m[2]);
-		return h >= 0 && h <= 23 && min >= 0 && min <= 59;
-	}
 
 	const month = $derived(calendarCurrentMonth());
 	const events = $derived(calendarEvents());
+	const weekStart = $derived(String(config().calendarWeekStart ?? 'monday'));
+	const dayNames = $derived(weekdayNames(weekStart));
+	const tags = $derived(collectTags(events));
 
-	const selectedDayItems = $derived.by(() => {
-		if (!selectedDate) return [];
-		return events.filter((e) => e.start_time?.startsWith(selectedDate));
-	});
+	const monthLabel = $derived(
+		month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+	);
 
-	const daysInMonth = $derived.by(() => {
-		const y = month.getFullYear();
-		const m = month.getMonth();
-		return new Date(y, m + 1, 0).getDate();
-	});
-
-	const firstDayOfWeek = $derived.by(() => {
-		return new Date(month.getFullYear(), month.getMonth(), 1).getDay();
-	});
-
-	const monthLabel = $derived.by(() => {
-		return month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-	});
-
-	function itemsForDay(day: number): CalendarEvent[] {
-		const dateStr = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-		return events.filter((e) => e.start_time?.startsWith(dateStr));
-	}
-
-	function isToday(day: number): boolean {
+	const onCurrentMonth = $derived.by(() => {
 		const now = new Date();
-		return (
-			now.getFullYear() === month.getFullYear() &&
-			now.getMonth() === month.getMonth() &&
-			now.getDate() === day
-		);
-	}
+		return now.getFullYear() === month.getFullYear() && now.getMonth() === month.getMonth();
+	});
 
-	function prevMonth() {
-		const d = new Date(month);
-		d.setMonth(d.getMonth() - 1);
-		setCurrentMonth(d);
-		loadMonthEvents(d);
-	}
+	const visibleEvents = $derived(
+		activeTag ? events.filter((e) => parseTags(e.tags ?? '').includes(activeTag)) : events
+	);
 
-	function nextMonth() {
-		const d = new Date(month);
-		d.setMonth(d.getMonth() + 1);
-		setCurrentMonth(d);
-		loadMonthEvents(d);
-	}
-
-	function selectDay(day: number) {
-		const dateStr = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-		selectedDate = dateStr;
-	}
-
-	function resetCreateForm() {
-		newEventType = 'event';
-		newTitle = '';
-		newDescription = '';
-		newLocation = '';
-		newPriority = 'medium';
-		startDate = '';
-		startTime = '';
-		endDate = '';
-		endTime = '';
-		createError = '';
-	}
-
-	function openCreateDialog() {
-		const now = new Date();
-		const pad = (n: number) => n.toString().padStart(2, '0');
-		resetCreateForm();
-		startDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-		startTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-		endDate = startDate;
-		endTime = startTime;
-		showCreateDialog = true;
-	}
-
-	async function handleCreateEvent() {
-		createError = '';
-		if (!newTitle) { createError = 'Title is required'; return; }
-		if (!startDate) { createError = 'Start date is required'; return; }
-		if (!startTime) { createError = 'Start time is required'; return; }
-		if (!isValidTime(startTime)) { createError = 'Invalid time format (use HH:MM)'; return; }
-		if (endTime && !isValidTime(endTime)) { createError = 'Invalid end time format (use HH:MM)'; return; }
-
-		const data: Partial<CalendarEvent> = {
-			title: newTitle,
-			start_time: `${startDate}T${startTime}:00`,
-			description: newDescription,
-			type: newEventType
-		};
-
-		if (newEventType === 'event') {
-			data.location = newLocation;
-			if (endDate && endTime) {
-				data.end_time = `${endDate}T${endTime}:00`;
-			}
-		} else {
-			data.priority = newPriority as CalendarEvent['priority'];
+	// One pass into a date -> items map; the grid would otherwise re-filter for every cell.
+	const byDate = $derived.by(() => {
+		const map = new Map<string, CalendarEvent[]>();
+		for (const event of visibleEvents) {
+			const key = (event.start_time ?? '').split('T')[0];
+			if (!key) continue;
+			const bucket = map.get(key);
+			if (bucket) bucket.push(event);
+			else map.set(key, [event]);
 		}
+		for (const [key, bucket] of map) map.set(key, sortDayItems(bucket));
+		return map;
+	});
 
-		creating = true;
-		try {
-			await createEvent(data);
-			resetCreateForm();
-			showCreateDialog = false;
-			await loadMonthEvents(month);
-		} catch (e) {
-			createError = e instanceof Error ? e.message : 'Failed to create';
-			console.error('Failed to create:', e);
-		} finally {
-			creating = false;
+	const selectedDayItems = $derived(byDate.get(selectedDate) ?? []);
+	const todayStr = toLocalDateStr(new Date());
+
+	// Full weeks, padded with the neighbouring months so the grid never has holes.
+	const cells = $derived.by(() => {
+		const year = month.getFullYear();
+		const index = month.getMonth();
+		const lead = weekdayColumn(new Date(year, index, 1).getDay(), weekStart);
+		const length = new Date(year, index + 1, 0).getDate();
+		const out: Array<{ date: string; day: number; inMonth: boolean }> = [];
+
+		for (let back = lead; back > 0; back--) {
+			const date = new Date(year, index, 1 - back);
+			out.push({ date: toLocalDateStr(date), day: date.getDate(), inMonth: false });
 		}
+		for (let day = 1; day <= length; day++) {
+			out.push({ date: toLocalDateStr(new Date(year, index, day)), day, inMonth: true });
+		}
+		for (let ahead = 1; out.length % 7 !== 0; ahead++) {
+			const date = new Date(year, index + 1, ahead);
+			out.push({ date: toLocalDateStr(date), day: date.getDate(), inMonth: false });
+		}
+		return out;
+	});
+
+	async function goToMonth(date: Date) {
+		setCurrentMonth(date);
+		await loadMonthEvents(date);
 	}
 
-	async function handleMarkStatus(id: string, status: 'completed' | 'cancelled' | 'upcoming' | 'in_progress') {
-		await updateEvent(id, { status } as Partial<CalendarEvent>);
+	function shiftMonth(delta: number) {
+		const next = new Date(month);
+		next.setMonth(next.getMonth() + delta);
+		goToMonth(next);
+	}
+
+	function goToToday() {
+		selectedDate = todayStr;
+		goToMonth(new Date());
+	}
+
+	// Clicking a padding day follows it into its own month rather than doing nothing.
+	function selectCell(cell: { date: string; inMonth: boolean }) {
+		selectedDate = cell.date;
+		if (!cell.inMonth) goToMonth(new Date(cell.date + 'T00:00:00'));
+	}
+
+	function openCreate() {
+		formMode = 'create';
+		editingItem = null;
+		showForm = true;
+	}
+
+	function openEdit(item: CalendarEvent) {
+		formMode = 'edit';
+		editingItem = item;
+		showForm = true;
+	}
+
+	async function handleSubmit(data: Partial<CalendarEvent>) {
+		if (formMode === 'edit' && editingItem) await updateEvent(editingItem.id, data);
+		else await createEvent(data);
 		await loadMonthEvents(month);
 	}
 
-	async function handleDeleteItem(id: string) {
+	async function handleStatus(id: string, status: CalendarEvent['status']) {
+		await updateEvent(id, { status });
+		await loadMonthEvents(month);
+	}
+
+	async function handleDelete(id: string) {
 		await deleteEvent(id);
 		await loadMonthEvents(month);
 	}
 
-	function openEditDialog(item: CalendarEvent) {
-		editingItem = item;
-		editTitle = item.title;
-		editDescription = item.description || '';
-		editLocation = item.location || '';
-		editPriority = item.priority || 'medium';
-		if (item.start_time) {
-			const [d, t] = item.start_time.split('T');
-			editStartDate = d;
-			editStartTime = t?.substring(0, 5) || '';
-		}
-		if (item.end_time) {
-			const [d, t] = item.end_time.split('T');
-			editEndDate = d;
-			editEndTime = t?.substring(0, 5) || '';
-		} else {
-			editEndDate = '';
-			editEndTime = '';
-		}
-		editError = '';
-		showEditDialog = true;
-	}
-
-	async function handleSaveEdit() {
-		if (!editingItem) return;
-		editError = '';
-		if (!editTitle) { editError = 'Title is required'; return; }
-		if (!editStartDate || !editStartTime) { editError = 'Date and time are required'; return; }
-		if (!isValidTime(editStartTime)) { editError = 'Invalid time format (use HH:MM)'; return; }
-		if (editEndTime && !isValidTime(editEndTime)) { editError = 'Invalid end time format (use HH:MM)'; return; }
-
-		const updates: Partial<CalendarEvent> = {
-			title: editTitle,
-			start_time: `${editStartDate}T${editStartTime}:00`,
-			description: editDescription,
-			location: editLocation
-		};
-
-		if (editingItem.type === 'task') {
-			updates.priority = editPriority as CalendarEvent['priority'];
-		}
-		if (editingItem.type === 'event' && editEndDate && editEndTime) {
-			updates.end_time = `${editEndDate}T${editEndTime}:00`;
-		}
-
-		saving = true;
-		try {
-			await updateEvent(editingItem.id, updates);
-			showEditDialog = false;
-			editingItem = null;
-			await loadMonthEvents(month);
-		} catch (e) {
-			editError = e instanceof Error ? e.message : 'Failed to save';
-		} finally {
-			saving = false;
-		}
+	function toggleTag(tag: string) {
+		activeTag = activeTag === tag ? '' : tag;
 	}
 
 	onMount(() => {
@@ -267,414 +163,130 @@
 </script>
 
 <div class="flex h-full flex-col">
-	<div class="flex items-center justify-between border-b py-4 pl-14 pr-6">
-		<div class="flex items-center gap-4">
-			<h1 class="text-2xl font-semibold">Calendar</h1>
-			<div class="flex items-center gap-1">
-				<Button variant="ghost" size="icon" onclick={prevMonth}>
-					<ChevronLeft class="h-4 w-4" />
-				</Button>
-				<span class="min-w-[160px] text-center text-sm font-medium">{monthLabel}</span>
-				<Button variant="ghost" size="icon" onclick={nextMonth}>
-					<ChevronRight class="h-4 w-4" />
-				</Button>
-			</div>
+	<div class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b py-3 pl-14 pr-4">
+		<div class="flex items-center gap-1">
+			<Button variant="ghost" size="icon" class="size-8" onclick={() => shiftMonth(-1)}>
+				<ChevronLeft class="size-4" />
+			</Button>
+			<Button variant="ghost" size="icon" class="size-8" onclick={() => shiftMonth(1)}>
+				<ChevronRight class="size-4" />
+			</Button>
+			<Button
+				variant="outline"
+				size="sm"
+				class="ml-1 h-8"
+				disabled={onCurrentMonth && selectedDate === todayStr}
+				onclick={goToToday}
+			>
+				Today
+			</Button>
+			<h1 class="ml-3 text-base font-semibold tracking-tight">{monthLabel}</h1>
 		</div>
-		<Button size="sm" onclick={openCreateDialog}>
-			<Plus class="mr-1 h-4 w-4" />
+
+		{#if tags.length > 0}
+			<div class="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+				{#each tags as tag (tag)}
+					<button
+						class="rounded-full border px-2 py-0.5 text-xs transition-colors {activeTag === tag
+							? 'border-primary bg-primary/10 text-primary'
+							: 'text-muted-foreground hover:border-foreground/30 hover:text-foreground'}"
+						onclick={() => toggleTag(tag)}
+					>
+						{tag}
+					</button>
+				{/each}
+				{#if activeTag}
+					<button
+						class="flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
+						onclick={() => (activeTag = '')}
+					>
+						<X class="size-3" /> clear
+					</button>
+				{/if}
+			</div>
+		{/if}
+
+		<Button size="sm" class="ml-auto h-8" onclick={openCreate}>
+			<Plus class="mr-1 size-4" />
 			New
 		</Button>
 	</div>
 
-	<div class="flex flex-1 overflow-hidden">
-		<div class="flex-1 overflow-auto p-4">
-			<div class="grid grid-cols-7 gap-px rounded-lg border bg-border">
-				{#each ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as day}
-					<div class="bg-muted p-2 text-center text-xs font-medium text-muted-foreground">
-						{day}
+	<div class="flex min-h-0 flex-1">
+		<div class="flex min-w-0 flex-1 flex-col p-3">
+			<div class="grid grid-cols-7">
+				{#each dayNames as name (name)}
+					<div class="pb-2 text-center text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+						{name}
 					</div>
 				{/each}
+			</div>
 
-				{#each Array(firstDayOfWeek) as _}
-					<div class="min-h-[80px] bg-background p-1"></div>
-				{/each}
-
-				{#each Array(daysInMonth) as _, i}
-					{@const day = i + 1}
-					{@const dayItems = itemsForDay(day)}
+			<div
+				class="grid flex-1 grid-cols-7 gap-px overflow-hidden rounded-lg border bg-border"
+				style="grid-auto-rows: minmax(0, 1fr)"
+			>
+				{#each cells as cell (cell.date)}
+					{@const items = byDate.get(cell.date) ?? []}
+					{@const isToday = cell.date === todayStr}
 					<button
-						class="min-h-[80px] bg-background p-1 text-left transition-colors hover:bg-accent/50"
-						class:ring-2={selectedDate ===
-							`${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`}
-						class:ring-primary={selectedDate ===
-							`${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`}
-						onclick={() => selectDay(day)}
+						class="flex min-h-0 flex-col items-start overflow-hidden bg-background p-1.5 text-left transition-colors hover:bg-accent/50
+							{cell.inMonth ? '' : 'bg-muted/30 text-muted-foreground'}
+							{selectedDate === cell.date ? 'ring-2 ring-inset ring-primary' : ''}"
+						onclick={() => selectCell(cell)}
 					>
 						<span
-							class="inline-flex h-6 w-6 items-center justify-center rounded-full text-xs"
-							class:bg-primary={isToday(day)}
-							class:text-primary-foreground={isToday(day)}
+							class="mb-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-xs tabular-nums
+								{isToday ? 'bg-primary font-semibold text-primary-foreground' : ''}
+								{!cell.inMonth && !isToday ? 'opacity-50' : ''}"
 						>
-							{day}
+							{cell.day}
 						</span>
-						{#each dayItems.slice(0, 2) as item}
-							<div
-								class="mt-0.5 truncate rounded px-1 text-[10px] {item.type === 'task' ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400' : 'bg-primary/10 text-primary'} {item.status === 'completed' ? 'line-through opacity-50' : ''} {item.status === 'cancelled' ? 'line-through opacity-30' : ''}"
-							>
-								{item.title}
-							</div>
-						{/each}
-						{#if dayItems.length > 2}
-							<div class="mt-0.5 text-[10px] text-muted-foreground">
-								+{dayItems.length - 2} more
-							</div>
-						{/if}
+
+						<div class="flex min-h-0 w-full flex-col gap-px overflow-hidden">
+							{#each items.slice(0, 3) as item (item.id)}
+								<div
+									class="flex w-full items-center gap-1 overflow-hidden rounded-sm border-l-2 pl-1 pr-0.5 text-[10px] leading-4
+										{item.status === 'completed' || item.status === 'cancelled'
+										? 'border-muted-foreground/40 text-muted-foreground line-through'
+										: item.type === 'task'
+											? 'border-orange-500 text-foreground'
+											: 'border-primary text-foreground'}"
+								>
+									{#if !item.all_day}
+										<span class="shrink-0 tabular-nums text-muted-foreground">
+											{formatTime(item.start_time)}
+										</span>
+									{/if}
+									<span class="truncate">{item.title}</span>
+								</div>
+							{/each}
+							{#if items.length > 3}
+								<span class="pl-1 text-[10px] text-muted-foreground">
+									+{items.length - 3} more
+								</span>
+							{/if}
+						</div>
 					</button>
 				{/each}
 			</div>
 		</div>
 
-		{#if selectedDate}
-			<div class="w-72 overflow-y-auto border-l p-4">
-				<h3 class="mb-3 text-sm font-semibold">
-					{new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
-						weekday: 'long',
-						month: 'short',
-						day: 'numeric'
-					})}
-				</h3>
-				{#if selectedDayItems.length === 0}
-					<p class="text-sm text-muted-foreground">Nothing scheduled</p>
-				{:else}
-					<div class="space-y-2">
-						{#each selectedDayItems as item (item.id)}
-							<div class="rounded-lg border p-3 {item.type === 'task' ? 'border-orange-500/30' : ''} {item.status === 'completed' ? 'opacity-60' : ''} {item.status === 'cancelled' ? 'opacity-40' : ''}">
-								<div class="flex items-start gap-2">
-									{#if item.status === 'completed'}
-										<button
-											class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-500 text-white"
-											title="Mark as upcoming"
-											onclick={() => handleMarkStatus(item.id, 'upcoming')}
-										>
-											<Check class="h-3 w-3" />
-										</button>
-									{:else if item.status === 'cancelled'}
-										<button
-											class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
-											title="Restore"
-											onclick={() => handleMarkStatus(item.id, 'upcoming')}
-										>
-											<Undo2 class="h-3 w-3" />
-										</button>
-									{:else if item.status === 'in_progress'}
-										<button
-											class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-500 text-white"
-											title="Mark as done"
-											onclick={() => handleMarkStatus(item.id, 'completed')}
-										>
-											<Play class="h-2.5 w-2.5" />
-										</button>
-									{:else}
-										<button
-											class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 {item.type === 'task' ? 'border-orange-500/30 hover:border-green-500 hover:bg-green-500/10' : 'border-muted-foreground/30 hover:border-green-500 hover:bg-green-500/10'}"
-											title="Mark as done"
-											onclick={() => handleMarkStatus(item.id, 'completed')}
-										>
-										</button>
-									{/if}
-									<div class="min-w-0 flex-1">
-										<div class="flex items-center gap-1.5">
-											{#if item.type === 'task'}
-												<span class="inline-block h-2 w-2 shrink-0 rounded-full bg-orange-500"></span>
-											{/if}
-											<p class="text-sm font-medium {item.status === 'completed' || item.status === 'cancelled' ? 'line-through' : ''}">{item.title}</p>
-										</div>
-										{#if item.start_time}
-											<div class="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-												<Clock class="h-3 w-3" />
-												{new Date(item.start_time).toLocaleTimeString('en-US', {
-													hour: 'numeric',
-													minute: '2-digit'
-												})}{#if item.end_time}
-													<span class="text-muted-foreground/60">-</span>
-													{new Date(item.end_time).toLocaleTimeString('en-US', {
-														hour: 'numeric',
-														minute: '2-digit'
-													})}
-												{/if}
-											</div>
-										{/if}
-										{#if item.location}
-											<div class="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-												<MapPin class="h-3 w-3" />
-												{item.location}
-											</div>
-										{/if}
-										{#if item.type === 'task' && item.priority && item.priority !== 'medium'}
-											<span class="mt-0.5 inline-block rounded px-1 text-[10px] font-medium {item.priority === 'urgent' ? 'bg-red-500/10 text-red-600' : item.priority === 'high' ? 'bg-orange-500/10 text-orange-600' : 'bg-muted text-muted-foreground'}">
-												{item.priority}
-											</span>
-										{/if}
-										{#if item.status === 'in_progress'}
-											<span class="mt-0.5 inline-block rounded bg-blue-500/10 px-1 text-[10px] font-medium text-blue-600 dark:text-blue-400">
-												in progress
-											</span>
-										{/if}
-										{#if item.description}
-											<p class="mt-1.5 rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{item.description}</p>
-										{/if}
-									</div>
-								</div>
-								<div class="mt-2 flex items-center gap-1 border-t pt-2">
-									<button
-										title="Edit"
-										class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-										onclick={() => openEditDialog(item)}
-									>
-										<Pencil class="h-3.5 w-3.5" />
-									</button>
-									{#if item.status !== 'cancelled' && item.status !== 'completed'}
-										<button
-											title="Cancel"
-											class="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-											onclick={() => handleMarkStatus(item.id, 'cancelled')}
-										>
-											<X class="h-3.5 w-3.5" />
-										</button>
-									{/if}
-									<button
-										title="Delete"
-										class="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-destructive transition-colors hover:bg-destructive/10"
-										onclick={() => handleDeleteItem(item.id)}
-									>
-										<Trash2 class="h-3.5 w-3.5" />
-									</button>
-								</div>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</div>
-		{/if}
+		<CalendarDayPanel
+			date={selectedDate}
+			items={selectedDayItems}
+			onEdit={openEdit}
+			onStatus={handleStatus}
+			onDelete={handleDelete}
+			onTagSelect={toggleTag}
+		/>
 	</div>
 </div>
 
-<Dialog.Root bind:open={showCreateDialog}>
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>New {newEventType === 'task' ? 'Task' : 'Event'}</Dialog.Title>
-		</Dialog.Header>
-		<div class="space-y-4 py-4">
-			<div class="flex gap-2">
-				<button
-					type="button"
-					class="flex-1 rounded-md border px-3 py-1.5 text-sm transition-colors {newEventType === 'event' ? 'border-primary bg-primary/10 text-primary' : 'border-input text-muted-foreground hover:bg-accent'}"
-					onclick={() => { newEventType = 'event'; }}
-				>
-					Event
-				</button>
-				<button
-					type="button"
-					class="flex-1 rounded-md border px-3 py-1.5 text-sm transition-colors {newEventType === 'task' ? 'border-orange-500 bg-orange-500/10 text-orange-600' : 'border-input text-muted-foreground hover:bg-accent'}"
-					onclick={() => { newEventType = 'task'; }}
-				>
-					Task
-				</button>
-			</div>
-			<div>
-				<Label>Title <span class="text-destructive">*</span></Label>
-				<Input bind:value={newTitle} placeholder={newEventType === 'task' ? 'Task name' : 'Event title'} class="mt-1" />
-			</div>
-			<div class="grid grid-cols-2 gap-3">
-				<div>
-					<Label>{newEventType === 'task' ? 'Due date' : 'Start date'} <span class="text-destructive">*</span></Label>
-					<input
-						type="date"
-						value={startDate}
-						oninput={(e) => { startDate = e.currentTarget.value; }}
-						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-					/>
-				</div>
-				<div>
-					<Label>{newEventType === 'task' ? 'Due time' : 'Start time'} <span class="text-destructive">*</span></Label>
-					<input
-						type="text"
-						inputmode="numeric"
-						placeholder="HH:MM"
-						maxlength={5}
-						value={startTime}
-						oninput={(e) => handleTimeInput(e, (v) => { startTime = v; })}
-						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-					/>
-				</div>
-			</div>
-			{#if newEventType === 'event'}
-				<div class="grid grid-cols-2 gap-3">
-					<div>
-						<Label>End date</Label>
-						<input
-							type="date"
-							value={endDate}
-							oninput={(e) => { endDate = e.currentTarget.value; }}
-							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-						/>
-					</div>
-					<div>
-						<Label>End time</Label>
-						<input
-							type="text"
-							inputmode="numeric"
-							placeholder="HH:MM"
-							maxlength={5}
-							value={endTime}
-							oninput={(e) => handleTimeInput(e, (v) => { endTime = v; })}
-							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-						/>
-					</div>
-				</div>
-			{/if}
-			{#if newEventType === 'task'}
-				<div>
-					<Label>Priority</Label>
-					<select
-						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-						value={newPriority}
-						onchange={(e) => { newPriority = e.currentTarget.value; }}
-					>
-						<option value="low">Low</option>
-						<option value="medium">Medium</option>
-						<option value="high">High</option>
-						<option value="urgent">Urgent</option>
-					</select>
-				</div>
-			{/if}
-			{#if newEventType === 'event'}
-				<div>
-					<Label>Location</Label>
-					<Input bind:value={newLocation} placeholder="Location" class="mt-1" />
-				</div>
-			{/if}
-			<div>
-				<Label>Description</Label>
-				<Textarea
-					bind:value={newDescription}
-					placeholder="Description"
-					class="mt-1 max-h-[120px] resize-none"
-					rows={3}
-				/>
-			</div>
-			{#if createError}
-				<p class="text-sm text-destructive">{createError}</p>
-			{/if}
-		</div>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (showCreateDialog = false)}>Cancel</Button>
-			<Button onclick={handleCreateEvent} disabled={creating}>
-				{creating ? 'Creating...' : 'Create'}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
-<Dialog.Root bind:open={showEditDialog}>
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>Edit {editingItem?.type === 'task' ? 'Task' : 'Event'}</Dialog.Title>
-		</Dialog.Header>
-		{#if editingItem}
-			<div class="space-y-4 py-4">
-				<div>
-					<Label>Title <span class="text-destructive">*</span></Label>
-					<Input bind:value={editTitle} class="mt-1" />
-				</div>
-				<div class="grid grid-cols-2 gap-3">
-					<div>
-						<Label>{editingItem.type === 'task' ? 'Due date' : 'Start date'} <span class="text-destructive">*</span></Label>
-						<input
-							type="date"
-							value={editStartDate}
-							oninput={(e) => { editStartDate = e.currentTarget.value; }}
-							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-						/>
-					</div>
-					<div>
-						<Label>{editingItem.type === 'task' ? 'Due time' : 'Start time'} <span class="text-destructive">*</span></Label>
-						<input
-							type="text"
-							inputmode="numeric"
-							placeholder="HH:MM"
-							maxlength={5}
-							value={editStartTime}
-							oninput={(e) => handleTimeInput(e, (v) => { editStartTime = v; })}
-							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-						/>
-					</div>
-				</div>
-				{#if editingItem.type === 'event'}
-					<div class="grid grid-cols-2 gap-3">
-						<div>
-							<Label>End date</Label>
-							<input
-								type="date"
-								value={editEndDate}
-								oninput={(e) => { editEndDate = e.currentTarget.value; }}
-								class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-							/>
-						</div>
-						<div>
-							<Label>End time</Label>
-							<input
-								type="text"
-								inputmode="numeric"
-								placeholder="HH:MM"
-								maxlength={5}
-								value={editEndTime}
-								oninput={(e) => handleTimeInput(e, (v) => { editEndTime = v; })}
-								class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-							/>
-						</div>
-					</div>
-				{/if}
-				{#if editingItem.type === 'task'}
-					<div>
-						<Label>Priority</Label>
-						<select
-							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-							value={editPriority}
-							onchange={(e) => { editPriority = e.currentTarget.value; }}
-						>
-							<option value="low">Low</option>
-							<option value="medium">Medium</option>
-							<option value="high">High</option>
-							<option value="urgent">Urgent</option>
-						</select>
-					</div>
-				{/if}
-				{#if editingItem.type === 'event'}
-					<div>
-						<Label>Location</Label>
-						<Input bind:value={editLocation} placeholder="Location" class="mt-1" />
-					</div>
-				{/if}
-				<div>
-					<Label>Description</Label>
-					<Textarea
-						bind:value={editDescription}
-						placeholder="Description"
-						class="mt-1 max-h-[120px] resize-none"
-						rows={3}
-					/>
-				</div>
-				{#if editError}
-					<p class="text-sm text-destructive">{editError}</p>
-				{/if}
-			</div>
-			<Dialog.Footer>
-				<Button variant="outline" onclick={() => { showEditDialog = false; editingItem = null; }}>Cancel</Button>
-				<Button onclick={handleSaveEdit} disabled={saving}>
-					{saving ? 'Saving...' : 'Save'}
-				</Button>
-			</Dialog.Footer>
-		{/if}
-	</Dialog.Content>
-</Dialog.Root>
+<EventFormDialog
+	bind:open={showForm}
+	mode={formMode}
+	item={editingItem}
+	defaultDate={selectedDate}
+	onSubmit={handleSubmit}
+/>

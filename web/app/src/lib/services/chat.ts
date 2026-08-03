@@ -849,18 +849,38 @@ export class ChatService {
 	 */
 	private injectSystemMessage(messages: ApiChatMessageData[]): ApiChatMessageData[] {
 		const currentConfig = config();
-		const systemMessage = currentConfig.systemMessage?.toString().trim();
+		const parts: string[] = [];
 
-		if (!systemMessage) {
+		const systemMessage = currentConfig.systemMessage?.toString().trim();
+		if (systemMessage) parts.push(systemMessage);
+
+		// Onboarding preferences. Emitted only when set, so an untouched install is unchanged.
+		const userName = currentConfig.userName?.toString().trim();
+		if (userName) {
+			parts.push(
+				`The user's name is ${userName}. Address them by name naturally, not in every sentence.`
+			);
+		}
+
+		const replyStyle = currentConfig.replyStyle?.toString();
+		if (replyStyle === 'concise') {
+			parts.push('Keep answers short and to the point. Skip preamble.');
+		} else if (replyStyle === 'detailed') {
+			parts.push('Give thorough answers with the reasoning and relevant context included.');
+		}
+
+		if (parts.length === 0) {
 			return messages;
 		}
 
+		const content = parts.join('\n\n');
+
 		if (messages.length > 0 && messages[0].role === 'system') {
-			if (messages[0].content !== systemMessage) {
+			if (messages[0].content !== content) {
 				const updatedMessages = [...messages];
 				updatedMessages[0] = {
 					role: 'system',
-					content: systemMessage
+					content
 				};
 				return updatedMessages;
 			}
@@ -870,7 +890,7 @@ export class ChatService {
 
 		const systemMsg: ApiChatMessageData = {
 			role: 'system',
-			content: systemMessage
+			content
 		};
 
 		return [systemMsg, ...messages];
