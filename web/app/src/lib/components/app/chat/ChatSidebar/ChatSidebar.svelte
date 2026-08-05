@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Trash2, Calendar } from '@lucide/svelte';
+	// import { Settings, Calendar } from '@lucide/svelte';
+	import { Settings, Calendar, Trash2 } from '@lucide/svelte';
+	import { config } from '$lib/stores/settings.svelte';
+	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { ChatSidebarConversationItem, ConfirmationDialog } from '$lib/components/app';
 	import ScrollArea from '$lib/components/ui/scroll-area/scroll-area.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar';
@@ -173,7 +176,19 @@
 		</Sidebar.GroupContent>
 	</Sidebar.Group>
 
-	<div class="bottom-0 z-10 bg-sidebar bg-sidebar/50 px-4 py-4 backdrop-blur-lg md:sticky"></div>
+	<div class="bottom-0 z-10 flex items-center justify-between border-t border-border/30 bg-sidebar/50 px-4 py-3 backdrop-blur-lg md:sticky">
+		<span class="text-sm font-medium text-muted-foreground truncate">
+			{config().userName || 'User'}
+		</span>
+		<button
+			class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+			onclick={() => settingsWindow.toggle()}
+			title="Settings"
+			aria-label="Settings"
+		>
+			<Settings class="h-4 w-4" />
+		</button>
+	</div>
 </ScrollArea>
 
 <ConfirmationDialog

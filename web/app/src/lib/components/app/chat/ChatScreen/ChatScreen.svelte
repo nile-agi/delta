@@ -42,8 +42,9 @@
 	import { processFilesToChatUploaded } from '$lib/utils/process-uploaded-files';
 	import { onMount, tick } from 'svelte';
 	import { fade, fly, slide } from 'svelte/transition';
-	import { Trash2 } from '@lucide/svelte';
+	import { Trash2, Settings, X } from '@lucide/svelte';
 	import ChatScreenDragOverlay from './ChatScreenDragOverlay.svelte';
+	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 
 	let { showCenteredEmpty = false } = $props();
 
@@ -337,6 +338,21 @@
 				<ChatScreenWarning class="pointer-events-auto mx-auto max-w-[48rem] px-4" />
 			{/if}
 
+			{#if settingsWindow.state.open && settingsWindow.state.minimized}
+				<div class="pointer-events-auto mx-auto mb-2 flex max-w-[48rem] items-center gap-2 rounded-lg border border-border/30 bg-background/80 px-3 py-2 shadow-sm backdrop-blur-md">
+					<Settings class="h-4 w-4 text-muted-foreground" />
+					<span class="text-sm font-medium">Settings</span>
+					<button
+						class="ml-auto flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						onclick={() => settingsWindow.close()}
+						aria-label="Close settings"
+						title="Close settings"
+					>
+						<X class="h-3.5 w-3.5" />
+					</button>
+				</div>
+			{/if}
+
 			<div class="conversation-chat-form pointer-events-auto rounded-t-3xl pb-4">
 				<ChatForm
 					isLoading={isCurrentConversationLoading}
@@ -379,6 +395,21 @@
 
 			{#if serverWarning()}
 				<ChatScreenWarning />
+			{/if}
+
+			{#if settingsWindow.state.open && settingsWindow.state.minimized}
+				<div class="pointer-events-auto mx-auto mb-2 flex max-w-[48rem] items-center gap-2 rounded-lg border border-border/30 bg-background/80 px-3 py-2 shadow-sm backdrop-blur-md">
+					<Settings class="h-4 w-4 text-muted-foreground" />
+					<span class="text-sm font-medium">Settings</span>
+					<button
+						class="ml-auto flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						onclick={() => settingsWindow.close()}
+						aria-label="Close settings"
+						title="Close settings"
+					>
+						<X class="h-3.5 w-3.5" />
+					</button>
+				</div>
 			{/if}
 
 			<div in:fly={{ y: 10, duration: 250, delay: 300 }}>

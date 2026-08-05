@@ -12,14 +12,17 @@
 		ChevronRight,
 		Database,
 		Package,
-		User
+		User,
+		Minus,
+		X,
+		GripVertical
 	} from '@lucide/svelte';
 	import { ChatSettingsFooter, ChatSettingsFields } from '$lib/components/app';
 	import ImportExportTab from './ImportExportTab.svelte';
 	import ModelManagementTab from '../ModelManagement/ModelManagementTab.svelte';
-	import * as Dialog from '$lib/components/ui/dialog';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { config, updateConfig, updateMultipleConfig } from '$lib/stores/settings.svelte';
+	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { setMode } from 'mode-watcher';
 	import type { Component } from 'svelte';
 
@@ -28,7 +31,7 @@
 		open?: boolean;
 	}
 
-	let { onOpenChange, open = false }: Props = $props();
+	let { onOpenChange, open: _open = false }: Props = $props();
 
 	const settingSections: Array<{
 		fields: SettingsFieldConfig[];
@@ -299,19 +302,6 @@
 				}
 			]
 		}
-		// TODO: Experimental features section will be implemented after initial release
-		// This includes Python interpreter (Pyodide integration) and other experimental features
-		// {
-		// 	title: 'Experimental',
-		// 	icon: Beaker,
-		// 	fields: [
-		// 		{
-		// 			key: 'pyInterpreterEnabled',
-		// 			label: 'Enable Python interpreter',
-		// 			type: 'checkbox'
-		// 		}
-		// 	]
-		// }
 	];
 
 	let activeSection = $state('General');
@@ -325,9 +315,23 @@
 	let canScrollRight = $state(false);
 	let scrollContainer: HTMLDivElement | undefined = $state();
 
+	// Drag state
+	let isDragging = $state(false);
+	let dragOffsetX = $state(0);
+	let dragOffsetY = $state(0);
+
+	// Resize state
+	let isResizing = $state(false);
+	let resizeStartX = $state(0);
+	let resizeStartY = $state(0);
+	let resizeStartWidth = $state(0);
+	let resizeStartHeight = $state(0);
+
+	// Window element ref
+	let windowEl: HTMLDivElement | undefined = $state();
+
 	function handleThemeChange(newTheme: string) {
 		localConfig.theme = newTheme;
-
 		setMode(newTheme as 'light' | 'dark' | 'system');
 	}
 
@@ -340,9 +344,13 @@
 			setMode(originalTheme as 'light' | 'dark' | 'system');
 		}
 		onOpenChange?.(false);
+		settingsWindow.close();
 	}
 
-	// Clearing the flag remounts the onboarding dialog, which rewrites these answers itself.
+	function handleMinimize() {
+		settingsWindow.minimize();
+	}
+
 	function runSetupAgain() {
 		updateConfig('onboardingCompleted', false);
 		handleClose();
@@ -350,7 +358,6 @@
 
 	function handleReset() {
 		localConfig = { ...config() };
-
 		setMode(localConfig.theme as 'light' | 'dark' | 'system');
 		originalTheme = localConfig.theme as string;
 	}
@@ -366,7 +373,6 @@
 			}
 		}
 
-		// Convert numeric strings to numbers for numeric fields
 		const processedConfig = { ...localConfig };
 		const numericFields = [
 			'temperature',
@@ -404,46 +410,93 @@
 
 		updateMultipleConfig(processedConfig);
 		onOpenChange?.(false);
+		settingsWindow.close();
 	}
 
 	function scrollToCenter(element: HTMLElement) {
 		if (!scrollContainer) return;
-
 		const containerRect = scrollContainer.getBoundingClientRect();
 		const elementRect = element.getBoundingClientRect();
-
 		const elementCenter = elementRect.left + elementRect.width / 2;
 		const containerCenter = containerRect.left + containerRect.width / 2;
 		const scrollOffset = elementCenter - containerCenter;
-
 		scrollContainer.scrollBy({ left: scrollOffset, behavior: 'smooth' });
 	}
 
 	function scrollLeft() {
 		if (!scrollContainer) return;
-
 		scrollContainer.scrollBy({ left: -250, behavior: 'smooth' });
 	}
 
 	function scrollRight() {
 		if (!scrollContainer) return;
-
 		scrollContainer.scrollBy({ left: 250, behavior: 'smooth' });
 	}
 
 	function updateScrollButtons() {
 		if (!scrollContainer) return;
-
 		const { scrollLeft, scrollWidth, clientWidth } = scrollContainer;
 		canScrollLeft = scrollLeft > 0;
-		canScrollRight = scrollLeft < scrollWidth - clientWidth - 1; // -1 for rounding
+		canScrollRight = scrollLeft < scrollWidth - clientWidth - 1;
+	}
+
+	// Drag handlers
+	function onDragStart(e: MouseEvent) {
+		if (isResizing) return;
+		isDragging = true;
+		dragOffsetX = e.clientX - settingsWindow.state.x;
+		dragOffsetY = e.clientY - settingsWindow.state.y;
+		document.addEventListener('mousemove', onDragMove);
+		document.addEventListener('mouseup', onDragEnd);
+	}
+
+	function onDragMove(e: MouseEvent) {
+		if (!isDragging) return;
+		let newX = e.clientX - dragOffsetX;
+		let newY = e.clientY - dragOffsetY;
+		// Clamp to viewport
+		const maxX = window.innerWidth - 100;
+		const maxY = window.innerHeight - 40;
+		newX = Math.max(0, Math.min(newX, maxX));
+		newY = Math.max(0, Math.min(newY, maxY));
+		settingsWindow.setPosition(newX, newY);
+	}
+
+	function onDragEnd() {
+		isDragging = false;
+		document.removeEventListener('mousemove', onDragMove);
+		document.removeEventListener('mouseup', onDragEnd);
+	}
+
+	// Resize handlers
+	function onResizeStart(e: MouseEvent) {
+		e.preventDefault();
+		isResizing = true;
+		resizeStartX = e.clientX;
+		resizeStartY = e.clientY;
+		resizeStartWidth = settingsWindow.state.width;
+		resizeStartHeight = settingsWindow.state.height;
+		document.addEventListener('mousemove', onResizeMove);
+		document.addEventListener('mouseup', onResizeEnd);
+	}
+
+	function onResizeMove(e: MouseEvent) {
+		if (!isResizing) return;
+		const newWidth = Math.max(400, resizeStartWidth + (e.clientX - resizeStartX));
+		const newHeight = Math.max(300, resizeStartHeight + (e.clientY - resizeStartY));
+		settingsWindow.setSize(newWidth, newHeight);
+	}
+
+	function onResizeEnd() {
+		isResizing = false;
+		document.removeEventListener('mousemove', onResizeMove);
+		document.removeEventListener('mouseup', onResizeEnd);
 	}
 
 	$effect(() => {
-		if (open) {
+		if (settingsWindow.state.open && !settingsWindow.state.minimized) {
 			localConfig = { ...config() };
 			originalTheme = config().theme as string;
-
 			setTimeout(updateScrollButtons, 100);
 		}
 	});
@@ -453,159 +506,301 @@
 			updateScrollButtons();
 		}
 	});
+
+	$effect(() => {
+		return () => {
+			document.removeEventListener('mousemove', onDragMove);
+			document.removeEventListener('mouseup', onDragEnd);
+			document.removeEventListener('mousemove', onResizeMove);
+			document.removeEventListener('mouseup', onResizeEnd);
+		};
+	});
 </script>
 
-<Dialog.Root {open} onOpenChange={handleClose}>
-	<Dialog.Content
-		class="z-999999 flex h-[100dvh] max-h-[100dvh] min-h-[100dvh] flex-col gap-0 rounded-none p-0
-			md:h-[64vh] md:max-h-[64vh] md:min-h-0 md:rounded-lg"
-		style="max-width: 48rem;"
+{#if settingsWindow.state.open && !settingsWindow.state.minimized}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		bind:this={windowEl}
+		class="settings-floating-window"
+		style="left: {settingsWindow.state.x}px; top: {settingsWindow.state.y}px; width: {settingsWindow.state.width}px; height: {settingsWindow.state.height}px;"
 	>
-		<div class="flex flex-1 flex-col overflow-hidden md:flex-row">
-			<!-- Desktop Sidebar -->
-			<div class="hidden w-64 border-r border-border/30 p-6 md:block">
-				<nav class="space-y-1 py-2">
-					<Dialog.Title class="mb-6 flex items-center gap-2">Settings</Dialog.Title>
-
-					{#each settingSections as section (section.title)}
-						<button
-							class="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-accent {activeSection ===
-							section.title
-								? 'bg-accent text-accent-foreground'
-								: 'text-muted-foreground'}"
-							onclick={() => (activeSection = section.title)}
-						>
-							<section.icon class="h-4 w-4" />
-
-							<span class="ml-2">{section.title}</span>
-						</button>
-					{/each}
-				</nav>
+		<!-- Window Title Bar (draggable) -->
+		<div
+			class="settings-window-titlebar"
+			onmousedown={onDragStart}
+			role="button"
+			tabindex="0"
+		>
+			<div class="flex items-center gap-2 select-none">
+				<GripVertical class="h-4 w-4 text-muted-foreground" />
+				<span class="text-sm font-semibold">Settings</span>
 			</div>
-
-			<!-- Mobile Header with Horizontal Scrollable Menu -->
-			<div class="flex flex-col md:hidden">
-				<div class="border-b border-border/30 py-4">
-					<Dialog.Title class="mb-6 flex items-center gap-2 px-4">Settings</Dialog.Title>
-
-					<!-- Horizontal Scrollable Category Menu with Navigation -->
-					<div class="relative flex items-center" style="scroll-padding: 1rem;">
-						<button
-							class="absolute left-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-muted shadow-md backdrop-blur-sm transition-opacity hover:bg-accent {canScrollLeft
-								? 'opacity-100'
-								: 'pointer-events-none opacity-0'}"
-							onclick={scrollLeft}
-							aria-label="Scroll left"
-						>
-							<ChevronLeft class="h-4 w-4" />
-						</button>
-
-						<div
-							class="scrollbar-hide overflow-x-auto py-2"
-							bind:this={scrollContainer}
-							onscroll={updateScrollButtons}
-						>
-							<div class="flex min-w-max gap-2">
-								{#each settingSections as section (section.title)}
-									<button
-										class="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm whitespace-nowrap transition-colors first:ml-4 last:mr-4 hover:bg-accent {activeSection ===
-										section.title
-											? 'bg-accent text-accent-foreground'
-											: 'text-muted-foreground'}"
-										onclick={(e: MouseEvent) => {
-											activeSection = section.title;
-											scrollToCenter(e.currentTarget as HTMLElement);
-										}}
-									>
-										<section.icon class="h-4 w-4 flex-shrink-0" />
-										<span>{section.title}</span>
-									</button>
-								{/each}
-							</div>
-						</div>
-
-						<button
-							class="absolute right-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-muted shadow-md backdrop-blur-sm transition-opacity hover:bg-accent {canScrollRight
-								? 'opacity-100'
-								: 'pointer-events-none opacity-0'}"
-							onclick={scrollRight}
-							aria-label="Scroll right"
-						>
-							<ChevronRight class="h-4 w-4" />
-						</button>
-					</div>
-				</div>
+			<div class="flex items-center gap-1">
+				<button
+					class="settings-window-btn"
+					onclick={handleMinimize}
+					aria-label="Minimize"
+					title="Minimize"
+				>
+					<Minus class="h-3.5 w-3.5" />
+				</button>
+				<button
+					class="settings-window-btn"
+					onclick={handleClose}
+					aria-label="Close"
+					title="Close"
+				>
+					<X class="h-3.5 w-3.5" />
+				</button>
 			</div>
-
-			{#if currentSection.title === 'Model Management'}
-				<!-- Bounded container so the tab owns its scroll: fixed header + scrollable list -->
-				<div class="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6">
-					<div class="mb-4 hidden shrink-0 items-center gap-2 border-b border-border/30 pb-4 md:flex">
-						<currentSection.icon class="h-5 w-5" />
-						<h3 class="text-lg font-semibold">{currentSection.title}</h3>
-					</div>
-					<p class="mb-4 shrink-0 text-sm text-muted-foreground">
-						Manage your installed models and download new ones. Use the model selector in the chat
-						input to choose models in the chat interface.
-					</p>
-					<ModelManagementTab />
-				</div>
-			{:else}
-				<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-					<!-- Fixed section header (desktop); options scroll below -->
-					<div class="hidden shrink-0 items-center gap-2 border-b border-border/30 px-4 pt-4 pb-4 md:flex md:px-6 md:pt-6">
-						<currentSection.icon class="h-5 w-5" />
-						<h3 class="text-lg font-semibold">{currentSection.title}</h3>
-					</div>
-					<ScrollArea class="min-h-0 flex-1">
-						<div class="space-y-6 p-4 md:p-6">
-							{#if currentSection.title === 'Import/Export'}
-								<ImportExportTab />
-							{:else if currentSection.title === 'Developer'}
-								<div class="space-y-6">
-									<ChatSettingsFields
-										fields={currentSection.fields}
-										{localConfig}
-										onConfigChange={handleConfigChange}
-										onThemeChange={handleThemeChange}
-									/>
-								</div>
-							{:else}
-								<div class="space-y-6">
-									<ChatSettingsFields
-										fields={currentSection.fields}
-										{localConfig}
-										onConfigChange={handleConfigChange}
-										onThemeChange={handleThemeChange}
-									/>
-								</div>
-							{/if}
-
-							{#if currentSection.title === 'You'}
-								<div class="border-t pt-6">
-									<button
-										class="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-										onclick={runSetupAgain}
-									>
-										Run setup again
-									</button>
-									<p class="mt-1 text-xs text-muted-foreground">
-										Walks you back through the questions from your first launch.
-									</p>
-								</div>
-							{/if}
-
-							<div class="mt-8 border-t pt-6">
-								<p class="text-xs text-muted-foreground">
-									Settings are saved in browser's localStorage
-								</p>
-							</div>
-						</div>
-					</ScrollArea>
-				</div>
-			{/if}
 		</div>
 
-		<ChatSettingsFooter onReset={handleReset} onSave={handleSave} />
-	</Dialog.Content>
-</Dialog.Root>
+		<!-- Window Body -->
+		<div class="settings-window-body">
+			<div class="flex h-full flex-col overflow-hidden md:flex-row">
+				<!-- Desktop Sidebar -->
+				<div class="hidden w-56 shrink-0 border-r border-border/30 p-4 md:block overflow-y-auto">
+					<nav class="space-y-1 py-2">
+						{#each settingSections as section (section.title)}
+							<button
+								class="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-accent {activeSection ===
+								section.title
+									? 'bg-accent text-accent-foreground'
+									: 'text-muted-foreground'}"
+								onclick={() => (activeSection = section.title)}
+							>
+								<section.icon class="h-4 w-4" />
+								<span class="ml-2">{section.title}</span>
+							</button>
+						{/each}
+					</nav>
+				</div>
+
+				<!-- Mobile Header with Horizontal Scrollable Menu -->
+				<div class="flex flex-col md:hidden">
+					<div class="border-b border-border/30 py-4">
+						<h3 class="mb-4 flex items-center gap-2 px-4 text-lg font-semibold">Settings</h3>
+
+						<div class="relative flex items-center" style="scroll-padding: 1rem;">
+							<button
+								class="absolute left-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-muted shadow-md backdrop-blur-sm transition-opacity hover:bg-accent {canScrollLeft
+									? 'opacity-100'
+									: 'pointer-events-none opacity-0'}"
+								onclick={scrollLeft}
+								aria-label="Scroll left"
+							>
+								<ChevronLeft class="h-4 w-4" />
+							</button>
+
+							<div
+								class="scrollbar-hide overflow-x-auto py-2"
+								bind:this={scrollContainer}
+								onscroll={updateScrollButtons}
+							>
+								<div class="flex min-w-max gap-2">
+									{#each settingSections as section (section.title)}
+										<button
+											class="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm whitespace-nowrap transition-colors first:ml-4 last:mr-4 hover:bg-accent {activeSection ===
+											section.title
+												? 'bg-accent text-accent-foreground'
+												: 'text-muted-foreground'}"
+											onclick={(e: MouseEvent) => {
+												activeSection = section.title;
+												scrollToCenter(e.currentTarget as HTMLElement);
+											}}
+										>
+											<section.icon class="h-4 w-4 flex-shrink-0" />
+											<span>{section.title}</span>
+										</button>
+									{/each}
+								</div>
+							</div>
+
+							<button
+								class="absolute right-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-muted shadow-md backdrop-blur-sm transition-opacity hover:bg-accent {canScrollRight
+									? 'opacity-100'
+									: 'pointer-events-none opacity-0'}"
+								onclick={scrollRight}
+								aria-label="Scroll right"
+							>
+								<ChevronRight class="h-4 w-4" />
+							</button>
+						</div>
+					</div>
+				</div>
+
+				{#if currentSection.title === 'Model Management'}
+					<div class="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6">
+						<div class="mb-4 hidden shrink-0 items-center gap-2 border-b border-border/30 pb-4 md:flex">
+							<currentSection.icon class="h-5 w-5" />
+							<h3 class="text-lg font-semibold">{currentSection.title}</h3>
+						</div>
+						<p class="mb-4 shrink-0 text-sm text-muted-foreground">
+							Manage your installed models and download new ones. Use the model selector in the chat
+							input to choose models in the chat interface.
+						</p>
+						<ModelManagementTab />
+					</div>
+				{:else}
+					<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+						<div class="hidden shrink-0 items-center gap-2 border-b border-border/30 px-4 pt-4 pb-4 md:flex md:px-6 md:pt-6">
+							<currentSection.icon class="h-5 w-5" />
+							<h3 class="text-lg font-semibold">{currentSection.title}</h3>
+						</div>
+						<ScrollArea class="min-h-0 flex-1">
+							<div class="space-y-6 p-4 md:p-6">
+								{#if currentSection.title === 'Import/Export'}
+									<ImportExportTab />
+								{:else if currentSection.title === 'Developer'}
+									<div class="space-y-6">
+										<ChatSettingsFields
+											fields={currentSection.fields}
+											{localConfig}
+											onConfigChange={handleConfigChange}
+											onThemeChange={handleThemeChange}
+										/>
+									</div>
+								{:else}
+									<div class="space-y-6">
+										<ChatSettingsFields
+											fields={currentSection.fields}
+											{localConfig}
+											onConfigChange={handleConfigChange}
+											onThemeChange={handleThemeChange}
+										/>
+									</div>
+								{/if}
+
+								{#if currentSection.title === 'You'}
+									<div class="border-t pt-6">
+										<button
+											class="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+											onclick={runSetupAgain}
+										>
+											Run setup again
+										</button>
+										<p class="mt-1 text-xs text-muted-foreground">
+											Walks you back through the questions from your first launch.
+										</p>
+									</div>
+								{/if}
+
+								<div class="mt-8 border-t pt-6">
+									<p class="text-xs text-muted-foreground">
+										Settings are saved in browser's localStorage
+									</p>
+								</div>
+							</div>
+						</ScrollArea>
+					</div>
+				{/if}
+			</div>
+		</div>
+
+		<!-- Resize Handle -->
+		<div
+			class="settings-resize-handle"
+			onmousedown={onResizeStart}
+			role="button"
+			tabindex="0"
+			aria-label="Resize"
+		/>
+	</div>
+{/if}
+
+<style>
+	.settings-floating-window {
+		position: fixed;
+		z-index: 99999;
+		display: flex;
+		flex-direction: column;
+		border-radius: 0.75rem;
+		border: 1px solid hsl(var(--border) / 0.3);
+		background-color: hsl(var(--background));
+		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+		overflow: hidden;
+		min-width: 320px;
+		min-height: 240px;
+	}
+
+	.settings-window-titlebar {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.5rem 0.75rem;
+		border-bottom: 1px solid hsl(var(--border) / 0.3);
+		background-color: hsl(var(--muted) / 0.5);
+		cursor: grab;
+		user-select: none;
+		border-top-left-radius: 0.75rem;
+		border-top-right-radius: 0.75rem;
+	}
+
+	.settings-window-titlebar:active {
+		cursor: grabbing;
+	}
+
+	.settings-window-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.75rem;
+		height: 1.75rem;
+		border-radius: 0.375rem;
+		color: hsl(var(--muted-foreground));
+		transition: background-color 0.15s, color 0.15s;
+	}
+
+	.settings-window-btn:hover {
+		background-color: hsl(var(--accent));
+		color: hsl(var(--accent-foreground));
+	}
+
+	.settings-window-body {
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	.settings-resize-handle {
+		position: absolute;
+		bottom: 0;
+		right: 0;
+		width: 16px;
+		height: 16px;
+		cursor: nwse-resize;
+		z-index: 10;
+	}
+
+	.settings-resize-handle::after {
+		content: '';
+		position: absolute;
+		bottom: 3px;
+		right: 3px;
+		width: 8px;
+		height: 8px;
+		border-right: 2px solid hsl(var(--muted-foreground) / 0.4);
+		border-bottom: 2px solid hsl(var(--muted-foreground) / 0.4);
+		border-bottom-right-radius: 2px;
+	}
+
+	.settings-resize-handle:hover::after {
+		border-color: hsl(var(--muted-foreground) / 0.7);
+	}
+
+	@media (max-width: 768px) {
+		.settings-floating-window {
+			left: 0.5rem !important;
+			right: 0.5rem !important;
+			top: 0.5rem !important;
+			bottom: 0.5rem !important;
+			width: auto !important;
+			height: auto !important;
+		}
+
+		.settings-resize-handle {
+			display: none;
+		}
+	}
+</style>

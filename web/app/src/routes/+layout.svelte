@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
-	import { ChatSidebar, ConversationTitleUpdateDialog } from '$lib/components/app';
+	import { ChatSidebar, ChatSettingsDialog, ConversationTitleUpdateDialog } from '$lib/components/app';
 	import {
 		activeMessages,
 		isLoading,
@@ -11,6 +11,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { serverStore } from '$lib/stores/server.svelte';
 	import { config, settingsStore } from '$lib/stores/settings.svelte';
+	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { resolveModelApiBaseUrl, resetModelApiResolution } from '$lib/utils/model-api-url';
 	import { getServerBaseUrl } from '$lib/utils/server-base-url';
 	import { ServerErrorSplash } from '$lib/components/app';
@@ -67,8 +68,6 @@
 		window.addEventListener('delta-server-ready', onReady);
 		window.addEventListener('delta-server-error', onError);
 
-		// Poll via Tauri command as fallback — handles the race where
-		// window.eval() fires before SvelteKit hydrates and the event is lost
 		let pollFailures = 0;
 		const poll = setInterval(async () => {
 			try {
@@ -210,6 +209,13 @@
 		}
 	});
 
+	// Close main sidebar when settings docks to left so they don't overlap
+	$effect(() => {
+		if (settingsWindow.state.docked === 'left' && sidebarOpen) {
+			sidebarOpen = false;
+		}
+	});
+
 	$effect(() => {
 		if (!serverReady) return;
 		serverStore.fetchServerProps();
@@ -304,6 +310,8 @@
 		onCancel={handleTitleUpdateCancel}
 	/>
 
+	<ChatSettingsDialog />
+
 	<Sidebar.Provider bind:open={sidebarOpen}>
 		<div class="flex h-screen w-full" style:height="{innerHeight}px">
 			<Sidebar.Root class="h-full">
@@ -311,9 +319,9 @@
 			</Sidebar.Root>
 
 			<Sidebar.Trigger
-				class="transition-left absolute left-0 z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
+				class="transition-left absolute z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
 					? 'md:left-[var(--sidebar-width)]'
-					: ''}"
+					: 'left-0'} {settingsWindow.state.docked === 'left' ? '!z-[100000] md:left-[var(--sidebar-width)]' : ''}"
 				style="translate: 1rem 1rem;"
 			/>
 
