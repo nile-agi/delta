@@ -63,7 +63,8 @@ preview: ensure-submodules web
 	./build/delta --server
 
 dev:
-	@TRIPLE=$$(rustc -vV 2>/dev/null | grep host | cut -d' ' -f2 || echo "aarch64-apple-darwin"); \
+	@TRIPLE=$$(rustc -vV 2>/dev/null | grep host | cut -d' ' -f2); \
+	TRIPLE=$${TRIPLE:-$$(uname -m | sed 's/arm64/aarch64/')-$$(case $$(uname -s) in Darwin) echo apple-darwin;; Linux) echo unknown-linux-gnu;; *) echo pc-windows-msvc;; esac)}; \
 	if [ ! -f src-tauri/binaries/delta-server-$$TRIPLE ] || [ ! -f src-tauri/binaries/llama-server-$$TRIPLE ]; then \
 		echo ""; \
 		echo ">>> Sidecar binaries missing for $$TRIPLE -- building them now ('make sidecars')."; \

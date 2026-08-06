@@ -65,7 +65,7 @@
 	});
 
 	const selectedDayItems = $derived(byDate.get(selectedDate) ?? []);
-	const todayStr = toLocalDateStr(new Date());
+	let todayStr = $state(toLocalDateStr(new Date()));
 
 	// Full weeks, padded with the neighbouring months so the grid never has holes.
 	const cells = $derived.by(() => {
@@ -147,7 +147,10 @@
 		loadMonthEvents(month);
 
 		function onVisible() {
-			if (document.visibilityState === 'visible') loadMonthEvents(month);
+			if (document.visibilityState === 'visible') {
+				todayStr = toLocalDateStr(new Date());
+				loadMonthEvents(month);
+			}
 		}
 		document.addEventListener('visibilitychange', onVisible);
 

@@ -225,6 +225,13 @@ fn kill_stale_server_processes() {
 }
 
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_err() {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        }
+    }
+
     startup_info("Cleaning stale server processes before startup");
     kill_stale_server_processes();
 

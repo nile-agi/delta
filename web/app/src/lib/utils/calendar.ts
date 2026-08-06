@@ -35,7 +35,7 @@ export function handleTimeInput(event: Event, setter: (value: string) => void) {
 }
 
 export function isValidTime(value: string): boolean {
-	const match = value.match(/^(\d{1,2}):(\d{2})$/);
+	const match = value.match(/^(\d{2}):(\d{2})$/);
 	if (!match) return false;
 	return parseInt(match[1]) <= 23 && parseInt(match[2]) <= 59;
 }

@@ -79,7 +79,8 @@ export const agentService = {
 	},
 
 	async deleteEvent(id: string): Promise<void> {
-		await fetch(apiUrl(`/api/agent/events/${id}`), { method: 'DELETE' });
+		const res = await fetch(apiUrl(`/api/agent/events/${id}`), { method: 'DELETE' });
+		if (!res.ok) throw new Error(`Delete failed (${res.status})`);
 	},
 
 	async fetchPendingReminders(): Promise<Reminder[]> {

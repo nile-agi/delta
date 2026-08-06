@@ -131,6 +131,17 @@
 				error = 'End time needs to look like HH:MM.';
 				return;
 			}
+			if (!isTask && endDate && endTime) {
+				const start = `${startDate}T${startTime}`;
+				const end = `${endDate}T${endTime}`;
+				if (end < start) {
+					error = 'End time must be after start time.';
+					return;
+				}
+			}
+		} else if (!isTask && endDate && endDate < startDate) {
+			error = 'End date must be after start date.';
+			return;
 		}
 
 		const data: Partial<CalendarEvent> = {
