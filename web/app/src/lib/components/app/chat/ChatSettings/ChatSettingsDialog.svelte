@@ -15,9 +15,11 @@
 		User,
 		Minus,
 		X,
-		GripVertical
+		GripVertical,
+		RotateCcw
 	} from '@lucide/svelte';
-	import { ChatSettingsFooter, ChatSettingsFields } from '$lib/components/app';
+	import Button from '$lib/components/ui/button/button.svelte';
+	import { ChatSettingsFields } from '$lib/components/app';
 	import ImportExportTab from './ImportExportTab.svelte';
 	import ModelManagementTab from '../ModelManagement/ModelManagementTab.svelte';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
@@ -409,8 +411,7 @@
 		}
 
 		updateMultipleConfig(processedConfig);
-		onOpenChange?.(false);
-		settingsWindow.close();
+		originalTheme = localConfig.theme as string;
 	}
 
 	function scrollToCenter(element: HTMLElement) {
@@ -454,7 +455,6 @@
 		if (!isDragging) return;
 		let newX = e.clientX - dragOffsetX;
 		let newY = e.clientY - dragOffsetY;
-		// Clamp to viewport
 		const maxX = window.innerWidth - 100;
 		const maxY = window.innerHeight - 40;
 		newX = Math.max(0, Math.min(newX, maxX));
@@ -697,6 +697,17 @@
 			</div>
 		</div>
 
+		<!-- Footer -->
+		<div class="settings-window-footer">
+			<Button variant="outline" onclick={handleReset}>
+				<RotateCcw class="mr-2 h-4 w-4" />
+				Reset to default
+			</Button>
+			<Button variant="default" onclick={handleSave}>
+				Save settings
+			</Button>
+		</div>
+
 		<!-- Resize Handle -->
 		<div
 			class="settings-resize-handle"
@@ -715,8 +726,8 @@
 		display: flex;
 		flex-direction: column;
 		border-radius: 0.75rem;
-		border: 1px solid hsl(var(--border) / 0.3);
-		background-color: hsl(var(--background));
+		border: 1px solid color-mix(in oklch, var(--border) 30%, transparent);
+		background-color: var(--background);
 		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
 		overflow: hidden;
 		min-width: 320px;
@@ -729,8 +740,8 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 0.5rem 0.75rem;
-		border-bottom: 1px solid hsl(var(--border) / 0.3);
-		background-color: hsl(var(--muted) / 0.5);
+		border-bottom: 1px solid color-mix(in oklch, var(--border) 30%, transparent);
+		background-color: color-mix(in oklch, var(--muted) 50%, transparent);
 		cursor: grab;
 		user-select: none;
 		border-top-left-radius: 0.75rem;
@@ -748,19 +759,30 @@
 		width: 1.75rem;
 		height: 1.75rem;
 		border-radius: 0.375rem;
-		color: hsl(var(--muted-foreground));
+		color: var(--muted-foreground);
 		transition: background-color 0.15s, color 0.15s;
 	}
 
 	.settings-window-btn:hover {
-		background-color: hsl(var(--accent));
-		color: hsl(var(--accent-foreground));
+		background-color: var(--accent);
+		color: var(--accent-foreground);
 	}
 
 	.settings-window-body {
 		flex: 1;
 		min-height: 0;
 		overflow: hidden;
+	}
+
+	.settings-window-footer {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.875rem 1.25rem;
+		border-top: 1px solid color-mix(in oklch, var(--border) 30%, transparent);
+		background-color: var(--background);
 	}
 
 	.settings-resize-handle {
@@ -780,13 +802,13 @@
 		right: 3px;
 		width: 8px;
 		height: 8px;
-		border-right: 2px solid hsl(var(--muted-foreground) / 0.4);
-		border-bottom: 2px solid hsl(var(--muted-foreground) / 0.4);
+		border-right: 2px solid color-mix(in oklch, var(--muted-foreground) 40%, transparent);
+		border-bottom: 2px solid color-mix(in oklch, var(--muted-foreground) 40%, transparent);
 		border-bottom-right-radius: 2px;
 	}
 
 	.settings-resize-handle:hover::after {
-		border-color: hsl(var(--muted-foreground) / 0.7);
+		border-color: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
 	}
 
 	@media (max-width: 768px) {

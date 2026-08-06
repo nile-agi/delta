@@ -80,9 +80,7 @@
 	});
 
 	let showDeleteDialog = $state(false);
-
 	let showEmptyFileDialog = $state(false);
-
 	let emptyFileNames = $state<string[]>([]);
 
 	let isEmpty = $derived(
@@ -91,7 +89,6 @@
 
 	let activeErrorDialog = $derived(errorDialog());
 	let isServerLoading = $derived(serverLoading());
-
 	let isCurrentConversationLoading = $derived(isLoading());
 
 	async function handleDeleteConfirm() {
@@ -202,7 +199,6 @@
 
 		const extras = result?.extras;
 
-		// Enable autoscroll for user-initiated message sending (unless disabled in settings)
 		userScrolledUp = false;
 		autoScrollEnabled = true;
 		await sendMessage(message, extras);
@@ -338,17 +334,33 @@
 				<ChatScreenWarning class="pointer-events-auto mx-auto max-w-[48rem] px-4" />
 			{/if}
 
+			<!-- Settings pill above input field (active chat) -->
 			{#if settingsWindow.state.open && settingsWindow.state.minimized}
-				<div class="pointer-events-auto mx-auto mb-2 flex max-w-[48rem] items-center gap-2 rounded-lg border border-border/30 bg-background/80 px-3 py-2 shadow-sm backdrop-blur-md">
-					<Settings class="h-4 w-4 text-muted-foreground" />
-					<span class="text-sm font-medium">Settings</span>
+				<div
+					class="pointer-events-auto mx-auto mb-2 flex w-fit items-center gap-1 rounded-full border border-border/30 bg-background/80 px-2 py-1 shadow-sm backdrop-blur-md"
+					transition:fade={{ duration: 150 }}
+				>
 					<button
-						class="ml-auto flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-						onclick={() => settingsWindow.close()}
-						aria-label="Close settings"
-						title="Close settings"
+						type="button"
+						class="flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						onclick={() => {
+							settingsWindow.state.minimized = false;
+						}}
+						aria-label="Restore Settings"
+						title="Restore Settings"
 					>
-						<X class="h-3.5 w-3.5" />
+						<Settings class="h-3.5 w-3.5" />
+						<span>Settings</span>
+					</button>
+					<div class="h-3 w-px bg-border/50" aria-hidden="true"></div>
+					<button
+						type="button"
+						class="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						onclick={() => settingsWindow.close()}
+						aria-label="Close Settings"
+						title="Close Settings"
+					>
+						<X class="h-3 w-3" />
 					</button>
 				</div>
 			{/if}
@@ -367,12 +379,10 @@
 		</div>
 	</div>
 {:else if isServerLoading}
-	<!-- Server Loading State -->
 	<ServerLoadingSplash />
 {:else if serverStore.error && !serverStore.modelName}
 	<ServerErrorSplash error={serverStore.error} />
 {:else if serverStore.serverProps != null}
-	<!-- Server reachable (with or without model): show welcome and input so user can download a model or chat -->
 	<div
 		aria-label="Welcome screen with file drop zone"
 		class="flex h-full items-center justify-center"
@@ -387,7 +397,6 @@
 				<h1 class="mb-2 text-3xl font-semibold tracking-tight">
 					{greetingName ? `${timeOfDay}, ${greetingName}.` : 'Delta'}
 				</h1>
-
 				<p class="text-lg text-muted-foreground">
 					{greetingName ? 'What are we working on?' : 'How can I help you today?'}
 				</p>
@@ -397,22 +406,38 @@
 				<ChatScreenWarning />
 			{/if}
 
-			{#if settingsWindow.state.open && settingsWindow.state.minimized}
-				<div class="pointer-events-auto mx-auto mb-2 flex max-w-[48rem] items-center gap-2 rounded-lg border border-border/30 bg-background/80 px-3 py-2 shadow-sm backdrop-blur-md">
-					<Settings class="h-4 w-4 text-muted-foreground" />
-					<span class="text-sm font-medium">Settings</span>
-					<button
-						class="ml-auto flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-						onclick={() => settingsWindow.close()}
-						aria-label="Close settings"
-						title="Close settings"
-					>
-						<X class="h-3.5 w-3.5" />
-					</button>
-				</div>
-			{/if}
-
 			<div in:fly={{ y: 10, duration: 250, delay: 300 }}>
+				<!-- Settings pill above input field (welcome/empty state) -->
+				{#if settingsWindow.state.open && settingsWindow.state.minimized}
+					<div
+						class="mx-auto mb-2 flex w-fit items-center gap-1 rounded-full border border-border/30 bg-background/80 px-2 py-1 shadow-sm backdrop-blur-md"
+						transition:fade={{ duration: 150 }}
+					>
+						<button
+							type="button"
+							class="flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+							onclick={() => {
+								settingsWindow.state.minimized = false;
+							}}
+							aria-label="Restore Settings"
+							title="Restore Settings"
+						>
+							<Settings class="h-3.5 w-3.5" />
+							<span>Settings</span>
+						</button>
+						<div class="h-3 w-px bg-border/50" aria-hidden="true"></div>
+						<button
+							type="button"
+							class="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+							onclick={() => settingsWindow.close()}
+							aria-label="Close Settings"
+							title="Close Settings"
+						>
+							<X class="h-3 w-3" />
+						</button>
+					</div>
+				{/if}
+
 				<ChatForm
 					isLoading={isCurrentConversationLoading}
 					onFileRemove={handleFileRemove}
@@ -427,50 +452,37 @@
 	</div>
 {/if}
 
-<!-- File Upload Error Alert Dialog -->
 <AlertDialog.Root bind:open={showFileErrorDialog}>
 	<AlertDialog.Portal>
 		<AlertDialog.Overlay />
-
 		<AlertDialog.Content class="max-w-md">
 			<AlertDialog.Header>
 				<AlertDialog.Title>File Upload Error</AlertDialog.Title>
-
 				<AlertDialog.Description class="text-sm text-muted-foreground">
 					Some files cannot be uploaded with the current model.
 				</AlertDialog.Description>
 			</AlertDialog.Header>
-
 			<div class="space-y-4">
 				{#if fileErrorData.generallyUnsupported.length > 0}
 					<div class="space-y-2">
 						<h4 class="text-sm font-medium text-destructive">Unsupported File Types</h4>
-
 						<div class="space-y-1">
 							{#each fileErrorData.generallyUnsupported as file (file.name)}
 								<div class="rounded-md bg-destructive/10 px-3 py-2">
-									<p class="font-mono text-sm break-all text-destructive">
-										{file.name}
-									</p>
-
+									<p class="font-mono text-sm break-all text-destructive">{file.name}</p>
 									<p class="mt-1 text-xs text-muted-foreground">File type not supported</p>
 								</div>
 							{/each}
 						</div>
 					</div>
 				{/if}
-
 				{#if fileErrorData.modalityUnsupported.length > 0}
 					<div class="space-y-2">
 						<h4 class="text-sm font-medium text-destructive">Model Compatibility Issues</h4>
-
 						<div class="space-y-1">
 							{#each fileErrorData.modalityUnsupported as file (file.name)}
 								<div class="rounded-md bg-destructive/10 px-3 py-2">
-									<p class="font-mono text-sm break-all text-destructive">
-										{file.name}
-									</p>
-
+									<p class="font-mono text-sm break-all text-destructive">{file.name}</p>
 									<p class="mt-1 text-xs text-muted-foreground">
 										{fileErrorData.modalityReasons[file.name] || 'Not supported by current model'}
 									</p>
@@ -479,20 +491,13 @@
 						</div>
 					</div>
 				{/if}
-
 				<div class="rounded-md bg-muted/50 p-3">
 					<h4 class="mb-2 text-sm font-medium">This model supports:</h4>
-
-					<p class="text-sm text-muted-foreground">
-						{fileErrorData.supportedTypes.join(', ')}
-					</p>
+					<p class="text-sm text-muted-foreground">{fileErrorData.supportedTypes.join(', ')}</p>
 				</div>
 			</div>
-
 			<AlertDialog.Footer>
-				<AlertDialog.Action onclick={() => (showFileErrorDialog = false)}>
-					Got it
-				</AlertDialog.Action>
+				<AlertDialog.Action onclick={() => (showFileErrorDialog = false)}>Got it</AlertDialog.Action>
 			</AlertDialog.Footer>
 		</AlertDialog.Content>
 	</AlertDialog.Portal>
@@ -514,9 +519,7 @@
 	bind:open={showEmptyFileDialog}
 	emptyFiles={emptyFileNames}
 	onOpenChange={(open) => {
-		if (!open) {
-			emptyFileNames = [];
-		}
+		if (!open) emptyFileNames = [];
 	}}
 />
 
@@ -530,17 +533,16 @@
 <style>
 	.conversation-chat-form {
 		position: relative;
-
-		&::after {
-			content: '';
-			position: fixed;
-			bottom: 0;
-			z-index: -1;
-			left: 0;
-			right: 0;
-			width: 100%;
-			height: 2.375rem;
-			background-color: var(--background);
-		}
+	}
+	.conversation-chat-form::after {
+		content: '';
+		position: fixed;
+		bottom: 0;
+		z-index: -1;
+		left: 0;
+		right: 0;
+		width: 100%;
+		height: 2.375rem;
+		background-color: var(--background);
 	}
 </style>

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	// import { Settings, Calendar } from '@lucide/svelte';
 	import { Settings, Calendar, Trash2 } from '@lucide/svelte';
 	import { config } from '$lib/stores/settings.svelte';
 	import { settingsWindow } from '$lib/stores/settings-window.svelte';
@@ -33,7 +32,6 @@
 				conversation.name.toLowerCase().includes(searchQuery.toLowerCase())
 			);
 		}
-
 		return conversations();
 	});
 
@@ -57,19 +55,16 @@
 	function handleConfirmDelete() {
 		if (selectedConversation) {
 			showDeleteDialog = false;
-
 			setTimeout(() => {
 				deleteConversation(selectedConversation.id);
 				selectedConversation = null;
-			}, 100); // Wait for animation to finish
+			}, 100);
 		}
 	}
 
 	function handleConfirmEdit() {
 		if (!editedName.trim() || !selectedConversation) return;
-
 		showEditDialog = false;
-
 		updateConversationName(selectedConversation.id, editedName);
 		selectedConversation = null;
 	}
@@ -87,7 +82,6 @@
 	export function editActiveConversation() {
 		if (currentChatId) {
 			const activeConversation = filteredConversations.find((conv) => conv.id === currentChatId);
-
 			if (activeConversation) {
 				const event = new CustomEvent('edit-active-conversation', {
 					detail: { conversationId: currentChatId }
@@ -102,81 +96,95 @@
 			isSearchModeActive = false;
 			searchQuery = '';
 		}
-
 		await goto(`#/chat/${id}`);
 	}
 </script>
 
-<ScrollArea class="h-[100vh]">
-	<Sidebar.Header class=" top-0 z-10 gap-6 bg-sidebar/50 px-4 pt-4 pb-2 backdrop-blur-lg md:sticky">
-		<a href="#/" onclick={handleMobileSidebarItemClick}>
-			<h1 class="inline-flex items-center gap-1 px-2 text-xl font-semibold">Delta</h1>
-		</a>
+<!-- 
+  relative + h-full + overflow-hidden creates a bounded positioning context.
+  The ScrollArea fills the entire sidebar height.
+  The footer is absolute bottom-0 with z-50 so it ALWAYS stays visible
+  and conversations scroll underneath it, no matter how long the list is.
+-->
+<div class="relative h-full overflow-hidden">
+	<ScrollArea class="h-full">
+		<!-- pb-16 ensures the last conversation item can scroll fully 
+		     into view above the fixed footer -->
+		<div class="pb-16">
+			<Sidebar.Header class="top-0 z-10 gap-6 bg-sidebar/50 px-4 pt-4 pb-2 backdrop-blur-lg md:sticky">
+				<a href="#/" onclick={handleMobileSidebarItemClick}>
+					<h1 class="inline-flex items-center gap-1 px-2 text-xl font-semibold">Delta</h1>
+				</a>
+				<ChatSidebarActions {handleMobileSidebarItemClick} bind:isSearchModeActive bind:searchQuery />
+			</Sidebar.Header>
 
-		<ChatSidebarActions {handleMobileSidebarItemClick} bind:isSearchModeActive bind:searchQuery />
-	</Sidebar.Header>
+			<Sidebar.Group class="mt-2 space-y-1 p-0 px-4">
+				<Sidebar.GroupLabel>Tools</Sidebar.GroupLabel>
+				<Sidebar.GroupContent>
+					<Sidebar.Menu>
+						<Sidebar.MenuItem>
+							<Sidebar.MenuButton
+								class="flex items-center gap-2 text-sm"
+								data-active={page.route.id === '/calendar'}
+								onclick={() => { goto('#/calendar'); handleMobileSidebarItemClick(); }}
+							>
+								<Calendar class="h-4 w-4" />
+								Calendar
+							</Sidebar.MenuButton>
+						</Sidebar.MenuItem>
+					</Sidebar.Menu>
+				</Sidebar.GroupContent>
+			</Sidebar.Group>
 
-	<Sidebar.Group class="mt-2 space-y-1 p-0 px-4">
-		<Sidebar.GroupLabel>Tools</Sidebar.GroupLabel>
-		<Sidebar.GroupContent>
-			<Sidebar.Menu>
-				<Sidebar.MenuItem>
-					<Sidebar.MenuButton
-						class="flex items-center gap-2 text-sm"
-						data-active={page.route.id === '/calendar'}
-						onclick={() => { goto('#/calendar'); handleMobileSidebarItemClick(); }}
-					>
-						<Calendar class="h-4 w-4" />
-						Calendar
-					</Sidebar.MenuButton>
-				</Sidebar.MenuItem>
-			</Sidebar.Menu>
-		</Sidebar.GroupContent>
-	</Sidebar.Group>
-
-	<Sidebar.Group class="mt-4 space-y-2 p-0 px-4">
-		{#if (filteredConversations.length > 0 && isSearchModeActive) || !isSearchModeActive}
-			<Sidebar.GroupLabel>
-				{isSearchModeActive ? 'Search results' : 'Conversations'}
-			</Sidebar.GroupLabel>
-		{/if}
-
-		<Sidebar.GroupContent>
-			<Sidebar.Menu>
-				{#each filteredConversations as conversation (conversation.id)}
-					<Sidebar.MenuItem class="mb-1">
-						<ChatSidebarConversationItem
-							conversation={{
-								id: conversation.id,
-								name: conversation.name,
-								lastModified: conversation.lastModified,
-								currNode: conversation.currNode
-							}}
-							{handleMobileSidebarItemClick}
-							isActive={currentChatId === conversation.id}
-							onSelect={selectConversation}
-							onEdit={handleEditConversation}
-							onDelete={handleDeleteConversation}
-						/>
-					</Sidebar.MenuItem>
-				{/each}
-
-				{#if filteredConversations.length === 0}
-					<div class="px-2 py-4 text-center">
-						<p class="mb-4 p-4 text-sm text-muted-foreground">
-							{searchQuery.length > 0
-								? 'No results found'
-								: isSearchModeActive
-									? 'Start typing to see results'
-									: 'No conversations yet'}
-						</p>
-					</div>
+			<Sidebar.Group class="mt-4 space-y-2 p-0 px-4">
+				{#if (filteredConversations.length > 0 && isSearchModeActive) || !isSearchModeActive}
+					<Sidebar.GroupLabel>
+						{isSearchModeActive ? 'Search results' : 'Conversations'}
+					</Sidebar.GroupLabel>
 				{/if}
-			</Sidebar.Menu>
-		</Sidebar.GroupContent>
-	</Sidebar.Group>
+				<Sidebar.GroupContent>
+					<Sidebar.Menu>
+						{#each filteredConversations as conversation (conversation.id)}
+							<Sidebar.MenuItem class="mb-1">
+								<ChatSidebarConversationItem
+									conversation={{
+										id: conversation.id,
+										name: conversation.name,
+										lastModified: conversation.lastModified,
+										currNode: conversation.currNode
+									}}
+									{handleMobileSidebarItemClick}
+									isActive={currentChatId === conversation.id}
+									onSelect={selectConversation}
+									onEdit={handleEditConversation}
+									onDelete={handleDeleteConversation}
+								/>
+							</Sidebar.MenuItem>
+						{/each}
+						{#if filteredConversations.length === 0}
+							<div class="px-2 py-4 text-center">
+								<p class="mb-4 p-4 text-sm text-muted-foreground">
+									{searchQuery.length > 0
+										? 'No results found'
+										: isSearchModeActive
+											? 'Start typing to see results'
+											: 'No conversations yet'}
+								</p>
+							</div>
+						{/if}
+					</Sidebar.Menu>
+				</Sidebar.GroupContent>
+			</Sidebar.Group>
+		</div>
+	</ScrollArea>
 
-	<div class="bottom-0 z-10 flex items-center justify-between border-t border-border/30 bg-sidebar/50 px-4 py-3 backdrop-blur-lg md:sticky">
+	<!-- 
+	  FIXED FOOTER — absolute positioning keeps it permanently pinned 
+	  at the bottom regardless of scroll position. z-50 places it above 
+	  the scrollable content so conversations slide underneath.
+	  bg-sidebar/80 + backdrop-blur-lg gives it a frosted-glass look.
+	-->
+	<div class="absolute bottom-0 left-0 right-0 z-50 flex items-center justify-between border-t border-border/30 bg-sidebar/80 px-4 py-3 backdrop-blur-lg">
 		<span class="text-sm font-medium text-muted-foreground truncate">
 			{config().userName || 'User'}
 		</span>
@@ -189,7 +197,7 @@
 			<Settings class="h-4 w-4" />
 		</button>
 	</div>
-</ScrollArea>
+</div>
 
 <ConfirmationDialog
 	bind:open={showDeleteDialog}
