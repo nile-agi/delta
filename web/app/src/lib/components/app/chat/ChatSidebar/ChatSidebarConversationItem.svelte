@@ -44,14 +44,14 @@
 		}
 	}
 
-	function handleMouseLeave() {
+	function showActions() {
+		renderActionsDropdown = true;
+	}
+
+	function hideActions() {
 		if (!dropdownOpen) {
 			renderActionsDropdown = false;
 		}
-	}
-
-	function handleMouseOver() {
-		renderActionsDropdown = true;
 	}
 
 	function handleSelect() {
@@ -82,8 +82,10 @@
 		? 'bg-foreground/5 text-accent-foreground'
 		: ''}"
 	onclick={handleSelect}
-	onmouseover={handleMouseOver}
-	onmouseleave={handleMouseLeave}
+	onmouseover={showActions}
+	onmouseleave={hideActions}
+	onfocusin={showActions}
+	onfocusout={hideActions}
 >
 	<div class="flex min-w-0 flex-1 items-center gap-2">
 		{#if isLoading}
@@ -138,7 +140,7 @@
 			opacity: 0;
 		}
 
-		&:is(:hover) :global([data-slot='dropdown-menu-trigger']) {
+		&:is(:hover, :focus-within) :global([data-slot='dropdown-menu-trigger']) {
 			opacity: 1;
 		}
 		@media (max-width: 768px) {

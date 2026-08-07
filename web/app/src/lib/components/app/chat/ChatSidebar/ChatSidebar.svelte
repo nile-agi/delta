@@ -54,10 +54,11 @@
 
 	function handleConfirmDelete() {
 		if (selectedConversation) {
+			const id = selectedConversation.id;
 			showDeleteDialog = false;
+			selectedConversation = null;
 			setTimeout(() => {
-				deleteConversation(selectedConversation.id);
-				selectedConversation = null;
+				deleteConversation(id);
 			}, 100);
 		}
 	}
@@ -81,7 +82,7 @@
 
 	export function editActiveConversation() {
 		if (currentChatId) {
-			const activeConversation = filteredConversations.find((conv) => conv.id === currentChatId);
+			const activeConversation = conversations().find((conv) => conv.id === currentChatId);
 			if (activeConversation) {
 				const event = new CustomEvent('edit-active-conversation', {
 					detail: { conversationId: currentChatId }
@@ -112,7 +113,7 @@
 		     into view above the fixed footer -->
 		<div class="pb-16">
 			<Sidebar.Header class="top-0 z-10 gap-6 bg-sidebar/50 px-4 pt-4 pb-2 backdrop-blur-lg md:sticky">
-				<a href="#/" onclick={handleMobileSidebarItemClick}>
+				<a href="#/" onclick={handleMobileSidebarItemClick} aria-label="Go to home">
 					<h1 class="inline-flex items-center gap-1 px-2 text-xl font-semibold">Delta</h1>
 				</a>
 				<ChatSidebarActions {handleMobileSidebarItemClick} bind:isSearchModeActive bind:searchQuery />
@@ -220,21 +221,20 @@
 	<AlertDialog.Content>
 		<AlertDialog.Header>
 			<AlertDialog.Title>Edit Conversation Name</AlertDialog.Title>
-			<AlertDialog.Description>
-				<Input
-					class="mt-4 text-foreground"
-					onkeydown={(e) => {
-						if (e.key === 'Enter') {
-							e.preventDefault();
-							handleConfirmEdit();
-						}
-					}}
-					placeholder="Enter a new name"
-					type="text"
-					bind:value={editedName}
-				/>
-			</AlertDialog.Description>
+			<AlertDialog.Description>Enter a new name for this conversation.</AlertDialog.Description>
 		</AlertDialog.Header>
+		<Input
+			class="mt-2 text-foreground"
+			onkeydown={(e) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					handleConfirmEdit();
+				}
+			}}
+			placeholder="Enter a new name"
+			type="text"
+			bind:value={editedName}
+		/>
 		<AlertDialog.Footer>
 			<AlertDialog.Cancel
 				onclick={() => {
