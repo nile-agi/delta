@@ -11,7 +11,7 @@
 		ChevronLeft,
 		ChevronRight,
 		Database,
-		Package,
+		Waypoints,
 		User,
 		Minus,
 		X,
@@ -287,7 +287,7 @@
 		},
 		{
 			title: 'Model Management',
-			icon: Package,
+			icon: Waypoints,
 			fields: []
 		},
 		{
