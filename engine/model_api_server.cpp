@@ -10,12 +10,18 @@
  * - POST /api/models/use - Switch to a model
  */
 
+/**
+ * Model Management API Server
+ * Provides HTTP endpoints for model management operations
+ */
+
 #include "delta_cli.h"
 #include "model_api_server.h"
 #include "agent/agent_database.h"
 #include "agent/tool_registry.h"
 #include "agent/agent_loop.h"
 #include <cpp-httplib/httplib.h>
+#include "api/note_routes.h"  
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <thread>
@@ -46,21 +52,20 @@ namespace delta {
 
 // OpenAI-compatible SSE frames for /v1/chat/completions streaming.
 static json sse_content_chunk(const std::string& text) {
-    return {{"id", "chatcmpl-delta"},
-            {"object", "chat.completion.chunk"},
-            {"choices", {{{"index", 0}, {"delta", {{"content", text}}}, {"finish_reason", nullptr}}}}};
+    json delta{{"content", text}};
+    json choice{{"index", 0}, {"delta", delta}, {"finish_reason", nullptr}};
+    return json{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
 }
 
 static json sse_tool_calls_chunk(const json& tool_calls) {
-    return {{"id", "chatcmpl-delta"},
-            {"object", "chat.completion.chunk"},
-            {"choices", {{{"index", 0}, {"delta", {{"tool_calls", tool_calls}}}, {"finish_reason", nullptr}}}}};
+    json delta{{"tool_calls", tool_calls}};
+    json choice{{"index", 0}, {"delta", delta}, {"finish_reason", nullptr}};
+    return json{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
 }
 
 static json sse_finish_chunk() {
-    return {{"id", "chatcmpl-delta"},
-            {"object", "chat.completion.chunk"},
-            {"choices", {{{"index", 0}, {"delta", json::object()}, {"finish_reason", "stop"}}}}};
+    json choice{{"index", 0}, {"delta", json::object()}, {"finish_reason", "stop"}};
+    return json{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
 }
 
 // Forward declaration for model switch callback
@@ -893,7 +898,7 @@ class ModelAPIServer {
                     json message = {{"role", "assistant"}, {"content", result.content}};
                     if (!result.tool_calls.empty())
                         message["tool_calls"] = result.tool_calls;
-                    json response = {{"id", "chatcmpl-delta"},
+                                        json response = {{"id", "chatcmpl-delta"},
                                      {"object", "chat.completion"},
                                      {"choices", {{{"index", 0}, {"message", message}, {"finish_reason", "stop"}}}},
                                      {"usage", {{"prompt_tokens", 0}, {"completion_tokens", 0}, {"total_tokens", 0}}}};
@@ -1067,6 +1072,94 @@ class ModelAPIServer {
             }
             json result = {{"reminders", reminders}, {"count", reminders.size()}};
             res.set_content(result.dump(), "application/json");
+        });
+
+        // ========================================================================
+        // NOTE ROUTES (inlined — no external header needed)
+        // ========================================================================
+
+        // GET /api/notes - List notes
+        server_->Get("/api/notes", [](const httplib::Request& req, httplib::Response& res) {
+            auto& db = agent::AgentDatabase::instance();
+            std::string search = req.has_param("search") ? req.get_param_value("search") : "";
+            std::string folder = req.has_param("folder") ? req.get_param_value("folder") : "";
+            std::string tags   = req.has_param("tags")   ? req.get_param_value("tags")   : "";
+            int limit = 50;
+            if (req.has_param("limit")) {
+                try { limit = std::stoi(req.get_param_value("limit")); } catch (...) {}
+            }
+            bool pinned_only = req.has_param("pinned_only") && req.get_param_value("pinned_only") == "true";
+
+            auto notes = db.list_notes(folder, search, tags, limit, pinned_only);
+            json result = {{"notes", json::array()}, {"count", notes.size()}};
+            for (auto& n : notes) result["notes"].push_back(n);
+            res.set_content(result.dump(), "application/json");
+        });
+
+        // POST /api/notes - Create note
+        server_->Post("/api/notes", [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                auto& db = agent::AgentDatabase::instance();
+                json body = json::parse(req.body);
+                if (!body.contains("title") || !body.contains("content")) {
+                    res.status = 400;
+                    res.set_content(json({{"error", "title and content are required"}}).dump(), "application/json");
+                    return;
+                }
+                std::string id = db.create_note(body);
+                if (id.empty()) {
+                    res.status = 500;
+                    res.set_content(json({{"error", "Failed to create note"}}).dump(), "application/json");
+                    return;
+                }
+                res.set_content(db.get_note(id).dump(), "application/json");
+            } catch (const std::exception& e) {
+                res.status = 400;
+                res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+            }
+        });
+
+        // GET /api/notes/:id - Get single note
+        server_->Get(R"(/api/notes/(.+))", [](const httplib::Request& req, httplib::Response& res) {
+            auto& db = agent::AgentDatabase::instance();
+            std::string id = req.matches[1];
+            auto note = db.get_note(id);
+            if (note.is_null()) {
+                res.status = 404;
+                res.set_content(json({{"error", "Note not found"}}).dump(), "application/json");
+                return;
+            }
+            res.set_content(note.dump(), "application/json");
+        });
+
+        // PUT /api/notes/:id - Update note
+        server_->Put(R"(/api/notes/(.+))", [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                auto& db = agent::AgentDatabase::instance();
+                std::string id = req.matches[1];
+                json body = json::parse(req.body);
+                if (!db.update_note(id, body)) {
+                    res.status = 404;
+                    res.set_content(json({{"error", "Note not found"}}).dump(), "application/json");
+                    return;
+                }
+                res.set_content(db.get_note(id).dump(), "application/json");
+            } catch (const std::exception& e) {
+                res.status = 400;
+                res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+            }
+        });
+
+        // DELETE /api/notes/:id - Delete note
+        server_->Delete(R"(/api/notes/(.+))", [](const httplib::Request& req, httplib::Response& res) {
+            auto& db = agent::AgentDatabase::instance();
+            std::string id = req.matches[1];
+            if (!db.delete_note(id)) {
+                res.status = 404;
+                res.set_content(json({{"error", "Note not found"}}).dump(), "application/json");
+                return;
+            }
+            res.set_content(json({{"deleted", true}}).dump(), "application/json");
         });
 
         // Serve web UI static files when path is set (for first-time users with no model; no llama-server)
