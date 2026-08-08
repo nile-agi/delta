@@ -24,9 +24,17 @@
 	import ModelManagementTab from '../ModelManagement/ModelManagementTab.svelte';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { config, updateConfig, updateMultipleConfig } from '$lib/stores/settings.svelte';
-	import { settingsWindow } from '$lib/stores/settings-window.svelte';
+	import {
+		settingsWindow,
+		SETTINGS_WINDOW_MIN_WIDTH,
+		SETTINGS_WINDOW_MIN_HEIGHT,
+		SETTINGS_WINDOW_MIN_VISIBLE_X,
+		SETTINGS_WINDOW_MIN_VISIBLE_Y
+	} from '$lib/stores/settings-window.svelte';
+	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
+	import { SETTINGS_WINDOW_FULLBLEED_BREAKPOINT } from '$lib/constants/viewport';
 	import { setMode } from 'mode-watcher';
-	import type { Component } from 'svelte';
+	import { untrack, type Component } from 'svelte';
 
 	interface Props {
 		onOpenChange?: (open: boolean) => void;
@@ -329,8 +337,10 @@
 	let resizeStartWidth = $state(0);
 	let resizeStartHeight = $state(0);
 
-	// Window element ref
-	let windowEl: HTMLDivElement | undefined = $state();
+	// Below this width the window drops its floating frame entirely. Dragging and resizing
+	// are meaningless there, so the handlers and the resize grip come off with it rather
+	// than being left as controls that silently do nothing.
+	const fullBleed = new IsMobile(SETTINGS_WINDOW_FULLBLEED_BREAKPOINT);
 
 	function handleThemeChange(newTheme: string) {
 		localConfig.theme = newTheme;
@@ -441,56 +451,85 @@
 		canScrollRight = scrollLeft < scrollWidth - clientWidth - 1;
 	}
 
+	// Drag and resize both use pointer capture rather than document-level listeners: the
+	// capturing element keeps receiving events even when the pointer leaves the viewport, so
+	// a button released outside the window still ends the gesture instead of leaving the
+	// frame stuck to the cursor.
+	function releaseCapture(e: PointerEvent) {
+		const el = e.currentTarget as HTMLElement | null;
+		if (el?.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+	}
+
 	// Drag handlers
-	function onDragStart(e: MouseEvent) {
-		if (isResizing) return;
+	function onDragStart(e: PointerEvent) {
+		if (fullBleed.current || isResizing) return;
+		// Minimize and close sit inside the title bar; their clicks must not become drags.
+		if ((e.target as HTMLElement).closest('button')) return;
+		// Without this Gecko starts its own selection/native-drag session on the title bar.
+		e.preventDefault();
 		isDragging = true;
 		dragOffsetX = e.clientX - settingsWindow.state.x;
 		dragOffsetY = e.clientY - settingsWindow.state.y;
-		document.addEventListener('mousemove', onDragMove);
-		document.addEventListener('mouseup', onDragEnd);
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 	}
 
-	function onDragMove(e: MouseEvent) {
+	function onDragMove(e: PointerEvent) {
 		if (!isDragging) return;
-		let newX = e.clientX - dragOffsetX;
-		let newY = e.clientY - dragOffsetY;
-		const maxX = window.innerWidth - 100;
-		const maxY = window.innerHeight - 40;
-		newX = Math.max(0, Math.min(newX, maxX));
-		newY = Math.max(0, Math.min(newY, maxY));
-		settingsWindow.setPosition(newX, newY);
+		const maxX = window.innerWidth - SETTINGS_WINDOW_MIN_VISIBLE_X;
+		const maxY = window.innerHeight - SETTINGS_WINDOW_MIN_VISIBLE_Y;
+		const newX = Math.max(0, Math.min(e.clientX - dragOffsetX, maxX));
+		const newY = Math.max(0, Math.min(e.clientY - dragOffsetY, maxY));
+		// Don't persist per pointer sample — save() is a synchronous localStorage write.
+		settingsWindow.setPosition(newX, newY, false);
 	}
 
-	function onDragEnd() {
+	function onDragEnd(e: PointerEvent) {
+		if (!isDragging) return;
 		isDragging = false;
-		document.removeEventListener('mousemove', onDragMove);
-		document.removeEventListener('mouseup', onDragEnd);
+		releaseCapture(e);
+		settingsWindow.commit();
 	}
 
 	// Resize handlers
-	function onResizeStart(e: MouseEvent) {
+	function onResizeStart(e: PointerEvent) {
+		if (fullBleed.current) return;
 		e.preventDefault();
 		isResizing = true;
 		resizeStartX = e.clientX;
 		resizeStartY = e.clientY;
 		resizeStartWidth = settingsWindow.state.width;
 		resizeStartHeight = settingsWindow.state.height;
-		document.addEventListener('mousemove', onResizeMove);
-		document.addEventListener('mouseup', onResizeEnd);
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 	}
 
-	function onResizeMove(e: MouseEvent) {
+	function onResizeMove(e: PointerEvent) {
 		if (!isResizing) return;
-		const newWidth = Math.max(400, resizeStartWidth + (e.clientX - resizeStartX));
-		const newHeight = Math.max(300, resizeStartHeight + (e.clientY - resizeStartY));
-		settingsWindow.setSize(newWidth, newHeight);
+		const newWidth = Math.max(
+			SETTINGS_WINDOW_MIN_WIDTH,
+			resizeStartWidth + (e.clientX - resizeStartX)
+		);
+		const newHeight = Math.max(
+			SETTINGS_WINDOW_MIN_HEIGHT,
+			resizeStartHeight + (e.clientY - resizeStartY)
+		);
+		settingsWindow.setSize(newWidth, newHeight, false);
 	}
 
-	function onResizeEnd() {
+	function onResizeEnd(e: PointerEvent) {
+		if (!isResizing) return;
 		isResizing = false;
-		document.removeEventListener('mousemove', onResizeMove);
-		document.removeEventListener('mouseup', onResizeEnd);
+		releaseCapture(e);
+		settingsWindow.commit();
+	}
+
+	// Persisted geometry outlives the viewport it was saved in, so a frame from a wider
+	// display (or one left behind by full-bleed mode) has to be pulled back into view.
+	function clampIfFloating() {
+		if (fullBleed.current) return;
+		if (!settingsWindow.state.open || settingsWindow.state.minimized) return;
+		// Never fight a gesture in progress — onDragMove/onResizeMove own the geometry then.
+		if (isDragging || isResizing) return;
+		settingsWindow.clampToViewport();
 	}
 
 	$effect(() => {
@@ -507,29 +546,37 @@
 		}
 	});
 
+	// Runs on open and whenever the window crosses back above the full-bleed breakpoint.
+	// untrack keeps clampToViewport's own reads of x/y/width/height out of the dependency
+	// set: it writes those, so tracking them would re-run this effect on every pointer
+	// sample of a drag.
 	$effect(() => {
-		return () => {
-			document.removeEventListener('mousemove', onDragMove);
-			document.removeEventListener('mouseup', onDragEnd);
-			document.removeEventListener('mousemove', onResizeMove);
-			document.removeEventListener('mouseup', onResizeEnd);
-		};
+		void fullBleed.current;
+		void settingsWindow.state.open;
+		void settingsWindow.state.minimized;
+		untrack(clampIfFloating);
 	});
 </script>
+
+<svelte:window onresize={clampIfFloating} />
 
 {#if settingsWindow.state.open && !settingsWindow.state.minimized}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		bind:this={windowEl}
 		class="settings-floating-window"
-		style="left: {settingsWindow.state.x}px; top: {settingsWindow.state.y}px; width: {settingsWindow.state.width}px; height: {settingsWindow.state.height}px;"
+		class:full-bleed={fullBleed.current}
+		style={fullBleed.current
+			? ''
+			: `left: ${settingsWindow.state.x}px; top: ${settingsWindow.state.y}px; width: ${settingsWindow.state.width}px; height: ${settingsWindow.state.height}px;`}
 	>
-		<!-- Window Title Bar (draggable) -->
+		<!-- Window Title Bar (draggable above the full-bleed breakpoint) -->
 		<div
 			class="settings-window-titlebar"
-			onmousedown={onDragStart}
-			role="button"
-			tabindex="0"
+			class:draggable={!fullBleed.current}
+			onpointerdown={fullBleed.current ? undefined : onDragStart}
+			onpointermove={fullBleed.current ? undefined : onDragMove}
+			onpointerup={fullBleed.current ? undefined : onDragEnd}
+			onpointercancel={fullBleed.current ? undefined : onDragEnd}
 		>
 			<div class="flex items-center gap-2 select-none">
 				<GripVertical class="h-4 w-4 text-muted-foreground" />
@@ -709,13 +756,18 @@
 		</div>
 
 		<!-- Resize Handle -->
-		<div
-			class="settings-resize-handle"
-			onmousedown={onResizeStart}
-			role="button"
-			tabindex="0"
-			aria-label="Resize"
-		/>
+		{#if !fullBleed.current}
+			<div
+				class="settings-resize-handle"
+				onpointerdown={onResizeStart}
+				onpointermove={onResizeMove}
+				onpointerup={onResizeEnd}
+				onpointercancel={onResizeEnd}
+				role="button"
+				tabindex="0"
+				aria-label="Resize"
+			></div>
+		{/if}
 	</div>
 {/if}
 
@@ -730,8 +782,23 @@
 		background-color: var(--background);
 		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
 		overflow: hidden;
-		min-width: 320px;
-		min-height: 240px;
+	}
+
+	/* Minimums apply to the floating frame only — full-bleed follows the viewport. */
+	.settings-floating-window:not(.full-bleed) {
+		min-width: 400px;
+		min-height: 300px;
+	}
+
+	/*
+	 * Below SETTINGS_WINDOW_FULLBLEED_BREAKPOINT the component stops writing inline
+	 * left/top/width/height, so this needs no !important to win — and nothing here can
+	 * silently discard a drag the way the old media query did.
+	 */
+	.settings-floating-window.full-bleed {
+		inset: 0.5rem;
+		width: auto;
+		height: auto;
 	}
 
 	.settings-window-titlebar {
@@ -742,13 +809,18 @@
 		padding: 0.5rem 0.75rem;
 		border-bottom: 1px solid color-mix(in oklch, var(--border) 30%, transparent);
 		background-color: color-mix(in oklch, var(--muted) 50%, transparent);
-		cursor: grab;
 		user-select: none;
 		border-top-left-radius: 0.75rem;
 		border-top-right-radius: 0.75rem;
 	}
 
-	.settings-window-titlebar:active {
+	/* Show the grab affordance only where dragging actually does something. */
+	.settings-window-titlebar.draggable {
+		cursor: grab;
+		touch-action: none;
+	}
+
+	.settings-window-titlebar.draggable:active {
 		cursor: grabbing;
 	}
 
@@ -792,6 +864,7 @@
 		width: 16px;
 		height: 16px;
 		cursor: nwse-resize;
+		touch-action: none;
 		z-index: 10;
 	}
 
@@ -809,20 +882,5 @@
 
 	.settings-resize-handle:hover::after {
 		border-color: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
-	}
-
-	@media (max-width: 768px) {
-		.settings-floating-window {
-			left: 0.5rem !important;
-			right: 0.5rem !important;
-			top: 0.5rem !important;
-			bottom: 0.5rem !important;
-			width: auto !important;
-			height: auto !important;
-		}
-
-		.settings-resize-handle {
-			display: none;
-		}
 	}
 </style>

@@ -11,6 +11,13 @@ interface WindowState {
 	preDock: { x: number; y: number; width: number; height: number } | null;
 }
 
+export const SETTINGS_WINDOW_MIN_WIDTH = 400;
+export const SETTINGS_WINDOW_MIN_HEIGHT = 300;
+
+/** Slivers of the window that must stay on-screen so the title bar remains grabbable. */
+export const SETTINGS_WINDOW_MIN_VISIBLE_X = 100;
+export const SETTINGS_WINDOW_MIN_VISIBLE_Y = 40;
+
 const DEFAULT_STATE: WindowState = {
 	open: false,
 	minimized: false,
@@ -114,13 +121,54 @@ class SettingsWindowStore {
 		this.save();
 	}
 
-	setPosition(x: number, y: number) {
+	/**
+	 * `persist` is opted out of during a drag/resize gesture: this runs once per pointer
+	 * sample, and save() is a synchronous JSON.stringify + localStorage.setItem. Call
+	 * commit() once the gesture ends.
+	 */
+	setPosition(x: number, y: number, persist = true) {
 		this.state.x = x;
 		this.state.y = y;
+		if (persist) this.save();
+	}
+
+	setSize(width: number, height: number, persist = true) {
+		this.state.width = width;
+		this.state.height = height;
+		if (persist) this.save();
+	}
+
+	/** Persist the geometry accumulated by non-persisting setPosition/setSize calls. */
+	commit() {
 		this.save();
 	}
 
-	setSize(width: number, height: number) {
+	/**
+	 * Geometry survives across sessions and viewport changes, so a frame saved on a wide
+	 * display can end up oversized or entirely off-screen. Pull it back into view.
+	 */
+	clampToViewport() {
+		if (!browser) return;
+
+		const vw = window.innerWidth;
+		const vh = window.innerHeight;
+
+		const width = Math.max(SETTINGS_WINDOW_MIN_WIDTH, Math.min(this.state.width, vw));
+		const height = Math.max(SETTINGS_WINDOW_MIN_HEIGHT, Math.min(this.state.height, vh));
+		const x = Math.max(0, Math.min(this.state.x, vw - SETTINGS_WINDOW_MIN_VISIBLE_X));
+		const y = Math.max(0, Math.min(this.state.y, vh - SETTINGS_WINDOW_MIN_VISIBLE_Y));
+
+		if (
+			x === this.state.x &&
+			y === this.state.y &&
+			width === this.state.width &&
+			height === this.state.height
+		) {
+			return;
+		}
+
+		this.state.x = x;
+		this.state.y = y;
 		this.state.width = width;
 		this.state.height = height;
 		this.save();
