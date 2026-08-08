@@ -192,8 +192,9 @@ class ModelManager {
     typedef void (*ProgressCallback)(double progress, long long current, long long total);
     void set_progress_callback(ProgressCallback callback);
 
-    // Request cancellation of any in-progress download (checked via progress callback).
-    void cancel_download();
+    // Request cancellation of one in-progress download by model name (checked via the
+    // progress callback). Downloads are cancelled individually — several can run at once.
+    void cancel_download(const std::string& model_name);
 
     // ===== DEFAULT MODEL SUPPORT =====
 
@@ -212,12 +213,13 @@ class ModelManager {
 
   private:
     std::string models_dir_;
-    ProgressCallback progress_callback_;
 
     // Default model constant
     static const std::string DEFAULT_MODEL_NAME;
 
     void ensure_models_dir();
+    /** Delete partial "*.tmp" downloads orphaned by a previous run being killed mid-transfer. */
+    void cleanup_stale_downloads();
     void init_model_registry();
     /** Resolve model name to registry map key (by exact key or by entry.name for catalog names). Returns empty if not
      * found. */

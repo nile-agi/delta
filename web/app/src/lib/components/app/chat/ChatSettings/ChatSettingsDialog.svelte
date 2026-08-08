@@ -32,6 +32,7 @@
 		SETTINGS_WINDOW_MIN_VISIBLE_Y
 	} from '$lib/stores/settings-window.svelte';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
+	import { downloads } from '$lib/stores/downloads.svelte';
 	import { SETTINGS_WINDOW_FULLBLEED_BREAKPOINT } from '$lib/constants/viewport';
 	import { setMode } from 'mode-watcher';
 	import { untrack, type Component } from 'svelte';
@@ -546,6 +547,14 @@
 		}
 	});
 
+	// Lets other surfaces (e.g. the download pill) open settings straight to a section.
+	$effect(() => {
+		const pending = settingsWindow.pendingSection;
+		if (!pending) return;
+		activeSection = pending;
+		settingsWindow.pendingSection = null;
+	});
+
 	// Runs on open and whenever the window crosses back above the full-bleed breakpoint.
 	// untrack keeps clampToViewport's own reads of x/y/width/height out of the dependency
 	// set: it writes those, so tracking them would re-run this effect on every pointer
@@ -559,6 +568,18 @@
 </script>
 
 <svelte:window onresize={clampIfFloating} />
+
+<!-- Nudge on the Model Management entry while downloads are running. -->
+{#snippet sectionBadge(title: string, extraClass: string)}
+	{#if title === 'Model Management' && downloads.activeCount > 0}
+		<span
+			class="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[0.6875rem] font-semibold text-primary-foreground {extraClass}"
+			aria-label="{downloads.activeCount} download{downloads.activeCount === 1 ? '' : 's'} in progress"
+		>
+			{downloads.activeCount}
+		</span>
+	{/if}
+{/snippet}
 
 {#if settingsWindow.state.open && !settingsWindow.state.minimized}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -618,6 +639,7 @@
 							>
 								<section.icon class="h-4 w-4" />
 								<span class="ml-2">{section.title}</span>
+								{@render sectionBadge(section.title, 'ml-auto')}
 							</button>
 						{/each}
 					</nav>
@@ -658,6 +680,7 @@
 										>
 											<section.icon class="h-4 w-4 flex-shrink-0" />
 											<span>{section.title}</span>
+											{@render sectionBadge(section.title, '')}
 										</button>
 									{/each}
 								</div>

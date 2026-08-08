@@ -75,14 +75,58 @@ static std::mutex g_props_fallback_mutex;
 
 // Progress tracking structure
 struct DownloadProgress {
+  public:
     std::atomic<double> progress{0.0};
     std::atomic<long long> current_bytes{0};
     std::atomic<long long> total_bytes{0};
     std::atomic<bool> completed{false};
     std::atomic<bool> failed{false};
+    // Set when the user cancels, so the download thread's failure path can report a cancel
+    // rather than an error and the UI can skip the red toast.
+    std::atomic<bool> cancelled{false};
+    /** Step (in whole percent) last written to the console; see log_progress_line(). */
+    std::atomic<int> last_logged_step{-1};
+
+    /**
+     * error_message is the only non-atomic field, and it is written by the download thread
+     * while the HTTP handlers read it. Always go through these accessors so the two never
+     * race. Lock order is g_progress_mutex -> this->mutex; never the reverse.
+     */
+    void set_error(const std::string& message) {
+        std::lock_guard<std::mutex> lock(mutex);
+        error_message = message;
+    }
+
+    std::string get_error() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return error_message;
+    }
+
+  private:
     std::string error_message;
     std::mutex mutex;
 };
+
+// Console output is shared by every download thread. Without serialising it, two concurrent
+// downloads interleave mid-escape-sequence and the terminal fills with garbled progress bars.
+static std::mutex g_console_mutex;
+/** Percent granularity for console logging when several downloads share the terminal. */
+static constexpr int LOG_STEP_PERCENT = 5;
+// Number of downloads currently running, so the single-download case can keep its live bar.
+static std::atomic<int> g_active_downloads{0};
+
+/** Increments g_active_downloads for as long as it is alive. */
+struct ActiveDownloadCount {
+    ActiveDownloadCount() { g_active_downloads.fetch_add(1); }
+    ~ActiveDownloadCount() { g_active_downloads.fetch_sub(1); }
+    ActiveDownloadCount(const ActiveDownloadCount&) = delete;
+    ActiveDownloadCount& operator=(const ActiveDownloadCount&) = delete;
+};
+
+static void log_download_line(const std::string& line) {
+    std::lock_guard<std::mutex> lock(g_console_mutex);
+    std::cout << line << std::endl;
+}
 
 // Global progress map (model_name -> progress)
 static std::map<std::string, std::shared_ptr<DownloadProgress>> g_download_progress;
@@ -284,16 +328,43 @@ class ModelAPIServer {
                 }
 
                 auto& prog = it->second;
-                json result = {{"progress", prog->progress.load()},
-                               {"current_bytes", prog->current_bytes.load()},
-                               {"total_bytes", prog->total_bytes.load()},
-                               {"completed", prog->completed.load()},
-                               {"failed", prog->failed.load()}};
+                json result = {{"progress", prog->progress.load()},       {"current_bytes", prog->current_bytes.load()},
+                               {"total_bytes", prog->total_bytes.load()}, {"completed", prog->completed.load()},
+                               {"failed", prog->failed.load()},           {"cancelled", prog->cancelled.load()}};
 
                 if (prog->failed.load()) {
-                    result["error_message"] = prog->error_message;
+                    result["error_message"] = prog->get_error();
                 }
 
+                res.set_content(result.dump(), "application/json");
+            } catch (const std::exception& e) {
+                json error = {{"error", {{"code", 500}, {"message", e.what()}}}};
+                res.status = 500;
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+
+        // GET /api/models/downloads - List every download still in flight
+        server_->Get("/api/models/downloads", [](const httplib::Request&, httplib::Response& res) {
+            try {
+                json downloads = json::array();
+                {
+                    std::lock_guard<std::mutex> lock(g_progress_mutex);
+                    for (const auto& entry : g_download_progress) {
+                        const auto& prog = entry.second;
+                        if (prog->completed.load() || prog->failed.load()) {
+                            continue; // finished one way or the other; not in flight
+                        }
+                        downloads.push_back({{"model", entry.first},
+                                             {"progress", prog->progress.load()},
+                                             {"current_bytes", prog->current_bytes.load()},
+                                             {"total_bytes", prog->total_bytes.load()},
+                                             {"completed", false},
+                                             {"failed", false}});
+                    }
+                }
+
+                json result = {{"downloads", downloads}};
                 res.set_content(result.dump(), "application/json");
             } catch (const std::exception& e) {
                 json error = {{"error", {{"code", 500}, {"message", e.what()}}}};
@@ -337,6 +408,9 @@ class ModelAPIServer {
 
                 // Start download in background thread
                 std::thread download_thread([this, model_name, progress]() {
+                    // Scoped so the count drops however this thread exits.
+                    ActiveDownloadCount active_downloads;
+                    (void)active_downloads;
                     try {
 #ifdef _WIN32
                         // Ensure UTF-8 so progress bar (█ ▓ ▙) and ✓/✗ display correctly in console
@@ -349,38 +423,63 @@ class ModelAPIServer {
 
                         // Static progress callback function (ASCII bar on Windows so it never garbles)
                         static auto progress_cb = [](double prog, long long current, long long total) {
-                            if (g_current_progress) {
-                                g_current_progress->progress.store(prog);
-                                g_current_progress->current_bytes.store(current);
-                                g_current_progress->total_bytes.store(total);
+                            if (!g_current_progress)
+                                return;
 
-                                double current_mb = current / (1024.0 * 1024.0);
-                                double total_mb = total / (1024.0 * 1024.0);
-                                int bar_width = 50;
-                                int pos = (int)(prog / 100.0 * bar_width);
+                            g_current_progress->progress.store(prog);
+                            g_current_progress->current_bytes.store(current);
+                            g_current_progress->total_bytes.store(total);
 
-                                std::cout << "\r[Download " << g_current_model_name << "] [";
-#ifdef _WIN32
-                                for (int i = 0; i < bar_width; i++) {
-                                    if (i < pos)
-                                        std::cout << "#";
-                                    else if (i == pos)
-                                        std::cout << ">";
-                                    else
-                                        std::cout << "-";
+                            const double current_mb = current / (1024.0 * 1024.0);
+                            const double total_mb = total / (1024.0 * 1024.0);
+
+                            // A redrawing bar only works when one download owns the line. With
+                            // several in flight, fall back to throttled one-line-per-step
+                            // updates so the threads stop overwriting each other.
+                            if (g_active_downloads.load() > 1) {
+                                const int step = (int)(prog / LOG_STEP_PERCENT);
+                                int previous = g_current_progress->last_logged_step.load();
+                                if (step <= previous)
+                                    return;
+                                if (!g_current_progress->last_logged_step.compare_exchange_strong(previous, step)) {
+                                    return; // another callback already logged this step
                                 }
-#else
-                                for (int i = 0; i < bar_width; i++) {
-                                    if (i < pos) std::cout << "█";
-                                    else if (i == pos) std::cout << "▓";
-                                    else std::cout << "░";
-                                }
-#endif
-                                std::cout << "] " << std::fixed << std::setprecision(1) << prog << "% ";
-                                std::cout << "(" << std::fixed << std::setprecision(1) << current_mb << " / ";
-                                std::cout << total_mb << " MB)";
-                                std::cout << std::flush;
+
+                                std::ostringstream line;
+                                line << "[Download " << g_current_model_name << "] " << std::fixed
+                                     << std::setprecision(1) << prog << "% (" << current_mb << " / " << total_mb
+                                     << " MB)";
+                                log_download_line(line.str());
+                                return;
                             }
+
+                            const int bar_width = 50;
+                            const int pos = (int)(prog / 100.0 * bar_width);
+
+                            std::ostringstream bar;
+                            bar << "\r[Download " << g_current_model_name << "] [";
+#ifdef _WIN32
+                            for (int i = 0; i < bar_width; i++) {
+                                if (i < pos)
+                                    bar << "#";
+                                else if (i == pos)
+                                    bar << ">";
+                                else
+                                    bar << "-";
+                            }
+#else
+                            for (int i = 0; i < bar_width; i++) {
+                                if (i < pos) bar << "█";
+                                else if (i == pos) bar << "▓";
+                                else bar << "░";
+                            }
+#endif
+                            bar << "] " << std::fixed << std::setprecision(1) << prog << "% ";
+                            bar << "(" << std::fixed << std::setprecision(1) << current_mb << " / ";
+                            bar << total_mb << " MB)";
+
+                            std::lock_guard<std::mutex> lock(g_console_mutex);
+                            std::cout << bar.str() << std::flush;
                         };
 
                         // Set up progress callback for terminal output
@@ -404,14 +503,15 @@ class ModelAPIServer {
                             std::cout << "[Download " << model_name << "] ✓ Download completed successfully!" << std::endl;
 #endif
                         } else {
+                            const bool was_cancelled = progress->cancelled.load();
+                            const std::string reason = was_cancelled ? "Download cancelled" : "Download failed";
                             progress->failed.store(true);
-                            progress->error_message = "Download failed";
-                            std::cout << std::endl;
-                            std::cout << "[Download " << model_name << "] Download failed" << std::endl;
+                            progress->set_error(reason);
+                            log_download_line("[Download " + model_name + "] " + reason);
                         }
                     } catch (const std::exception& e) {
                         progress->failed.store(true);
-                        progress->error_message = e.what();
+                        progress->set_error(e.what());
                         model_mgr_.set_progress_callback(nullptr);
                         g_current_progress = nullptr;
                         std::cout << std::endl;
@@ -439,10 +539,30 @@ class ModelAPIServer {
             try {
                 json body = json::parse(req.body);
                 std::string model_name = body.value("model", "");
-                (void)model_name; // Currently unused – global cancel affects any active download
 
-                // Signal cancellation to ModelManager via shared flag
-                model_mgr_.cancel_download();
+                if (model_name.empty()) {
+                    json error = {{"error", {{"code", 400}, {"message", "Model name is required"}}}};
+                    res.status = 400;
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+
+                // Signal cancellation for this model only
+                model_mgr_.cancel_download(model_name);
+
+                // Retire the progress entry immediately. libcurl aborts asynchronously, and until
+                // the entry is marked terminal the duplicate guard in POST /api/models/download
+                // treats the model as still downloading — which made a cancelled model
+                // permanently un-downloadable until the server restarted.
+                {
+                    std::lock_guard<std::mutex> lock(g_progress_mutex);
+                    auto it = g_download_progress.find(model_name);
+                    if (it != g_download_progress.end() && !it->second->completed.load()) {
+                        it->second->cancelled.store(true);
+                        it->second->failed.store(true);
+                        it->second->set_error("Download cancelled");
+                    }
+                }
 
                 json result = {{"success", true}, {"message", "Download cancellation requested"}};
                 res.set_content(result.dump(), "application/json");
@@ -800,7 +920,7 @@ class ModelAPIServer {
                 res.set_content(err.dump(), "application/json");
             }
         });
-        server_->Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
+        server_->Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
             json out = {{"object", "list"}, {"data", json::array()}};
             res.set_content(out.dump(), "application/json");
         });

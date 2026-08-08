@@ -49,13 +49,16 @@ web:
 # Build the web UI and serve it WITH the engine at http://localhost:8080 via the
 # UI-only server -- unlike `pnpm preview`, the app can reach the engine here.
 # Builds the `delta` CLI once if missing (one-time compile).
+# `delta --server` execs delta-server, which in turn execs llama-server, so all three
+# binaries must exist. Building only `delta` here left preview failing with
+# "delta-server binary not found" on any tree where the server had not been built separately.
 preview: ensure-submodules web
-	@if [ ! -x build/delta ]; then \
-		echo "=== Building delta CLI (one-time) ==="; \
+	@if [ ! -x build/delta ] || [ ! -x build/delta-server ] || [ ! -x build/bin/llama-server ]; then \
+		echo "=== Building delta CLI + server binaries (one-time) ==="; \
 		bash scripts/check-toolchain.sh && \
 		bash scripts/clean-stale-cmake-cache.sh build && \
 		cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON -DCMAKE_C_COMPILER=/usr/bin/cc -DCMAKE_CXX_COMPILER=/usr/bin/c++ && \
-		cmake --build build -j$$(sysctl -n hw.ncpu) --target delta; \
+		cmake --build build -j$$(sysctl -n hw.ncpu) --target delta --target delta-server --target llama-server; \
 	fi
 	@echo ""
 	@echo ">>> Serving Delta at http://localhost:8080  (Ctrl+C to stop)"

@@ -42,9 +42,9 @@
 	import { processFilesToChatUploaded } from '$lib/utils/process-uploaded-files';
 	import { onMount, tick } from 'svelte';
 	import { fade, fly, slide } from 'svelte/transition';
-	import { Trash2, Settings, X } from '@lucide/svelte';
+	import { Trash2 } from '@lucide/svelte';
 	import ChatScreenDragOverlay from './ChatScreenDragOverlay.svelte';
-	import { settingsWindow } from '$lib/stores/settings-window.svelte';
+	import StatusPillRail from './StatusPillRail.svelte';
 
 	let { showCenteredEmpty = false } = $props();
 
@@ -334,36 +334,7 @@
 				<ChatScreenWarning class="pointer-events-auto mx-auto max-w-[48rem] px-4" />
 			{/if}
 
-			<!-- Settings pill above input field (active chat) -->
-			{#if settingsWindow.state.open && settingsWindow.state.minimized}
-				<div
-					class="pointer-events-auto mx-auto mb-2 flex w-fit items-center gap-1 rounded-full border border-border/30 bg-background/80 px-2 py-1 shadow-sm backdrop-blur-md"
-					transition:fade={{ duration: 150 }}
-				>
-					<button
-						type="button"
-						class="flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-						onclick={() => {
-							settingsWindow.state.minimized = false;
-						}}
-						aria-label="Restore Settings"
-						title="Restore Settings"
-					>
-						<Settings class="h-3.5 w-3.5" />
-						<span>Settings</span>
-					</button>
-					<div class="h-3 w-px bg-border/50" aria-hidden="true"></div>
-					<button
-						type="button"
-						class="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-						onclick={() => settingsWindow.close()}
-						aria-label="Close Settings"
-						title="Close Settings"
-					>
-						<X class="h-3 w-3" />
-					</button>
-				</div>
-			{/if}
+			<StatusPillRail />
 
 			<div class="conversation-chat-form pointer-events-auto rounded-t-3xl pb-4">
 				<ChatForm
@@ -407,36 +378,7 @@
 			{/if}
 
 			<div in:fly={{ y: 10, duration: 250, delay: 300 }}>
-				<!-- Settings pill above input field (welcome/empty state) -->
-				{#if settingsWindow.state.open && settingsWindow.state.minimized}
-					<div
-						class="mx-auto mb-2 flex w-fit items-center gap-1 rounded-full border border-border/30 bg-background/80 px-2 py-1 shadow-sm backdrop-blur-md"
-						transition:fade={{ duration: 150 }}
-					>
-						<button
-							type="button"
-							class="flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-							onclick={() => {
-								settingsWindow.state.minimized = false;
-							}}
-							aria-label="Restore Settings"
-							title="Restore Settings"
-						>
-							<Settings class="h-3.5 w-3.5" />
-							<span>Settings</span>
-						</button>
-						<div class="h-3 w-px bg-border/50" aria-hidden="true"></div>
-						<button
-							type="button"
-							class="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-							onclick={() => settingsWindow.close()}
-							aria-label="Close Settings"
-							title="Close Settings"
-						>
-							<X class="h-3 w-3" />
-						</button>
-					</div>
-				{/if}
+				<StatusPillRail />
 
 				<ChatForm
 					isLoading={isCurrentConversationLoading}

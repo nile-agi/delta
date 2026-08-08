@@ -12,6 +12,7 @@
 	import { serverStore } from '$lib/stores/server.svelte';
 	import { config, settingsStore } from '$lib/stores/settings.svelte';
 	import { settingsWindow } from '$lib/stores/settings-window.svelte';
+	import { downloads } from '$lib/stores/downloads.svelte';
 	import { resolveModelApiBaseUrl, resetModelApiResolution } from '$lib/utils/model-api-url';
 	import { getServerBaseUrl } from '$lib/utils/server-base-url';
 	import { ServerErrorSplash } from '$lib/components/app';
@@ -120,6 +121,12 @@
 			}
 			modelApiReady = true;
 		});
+	});
+
+	// Pick up any download still running in the backend — e.g. one started before a reload.
+	$effect(() => {
+		if (!modelApiReady) return;
+		void downloads.hydrate();
 	});
 
 	$effect(() => {

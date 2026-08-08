@@ -4,6 +4,7 @@
 	import type { ModelFamily } from '$lib/data/models_catalog';
 	import { isLogoPath } from '$lib/data/models_catalog';
 	import ModelCard from './ModelCard.svelte';
+	import { downloads } from '$lib/stores/downloads.svelte';
 	import { fly } from 'svelte/transition';
 
 	interface Props {
@@ -14,16 +15,7 @@
 		onModelDownload?: (modelName: string) => void;
 		onModelRemove?: (modelName: string) => void;
 		onModelStopDownload?: (modelName: string) => void;
-		downloadingModel?: string | null;
 		removingModel?: string | null;
-		downloadProgress?: {
-			progress: number;
-			current_bytes: number;
-			total_bytes: number;
-			completed: boolean;
-			failed: boolean;
-			error_message?: string;
-		} | null;
 	}
 
 	let {
@@ -34,9 +26,7 @@
 		onModelDownload,
 		onModelRemove,
 		onModelStopDownload,
-		downloadingModel,
-		removingModel,
-		downloadProgress
+		removingModel
 	}: Props = $props();
 
 	let isExpanded = $state(expanded);
@@ -110,9 +100,9 @@
 						onDownload={onModelDownload}
 						onRemove={onModelRemove}
 						onStopDownload={onModelStopDownload}
-						downloading={downloadingModel === model.name}
+						downloading={downloads.isActive(model.name)}
 						removing={removingModel === model.name}
-						downloadProgress={downloadingModel === model.name ? downloadProgress : null}
+						downloadProgress={downloads.get(model.name)}
 					/>
 				{/each}
 			</div>

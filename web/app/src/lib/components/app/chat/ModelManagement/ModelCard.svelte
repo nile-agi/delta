@@ -5,6 +5,8 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { ModelCatalogModel } from '$lib/data/models_catalog';
 	import { getQuantizationSuggestions, isLogoPath } from '$lib/data/models_catalog';
+	import type { DownloadState } from '$lib/stores/downloads.svelte';
+	import DownloadProgressBar from './DownloadProgressBar.svelte';
 
 	interface Props {
 		model: ModelCatalogModel;
@@ -16,14 +18,7 @@
 		onStopDownload?: (modelName: string) => void;
 		downloading?: boolean;
 		removing?: boolean;
-		downloadProgress?: {
-			progress: number;
-			current_bytes: number;
-			total_bytes: number;
-			completed: boolean;
-			failed: boolean;
-			error_message?: string;
-		} | null;
+		downloadProgress?: DownloadState | null;
 	}
 
 	/* eslint-disable @typescript-eslint/no-unused-vars -- onRemove, removing: parent passes for API consistency; remove lives in InstalledModelRow */
@@ -144,25 +139,12 @@
 
 		<!-- Download Progress -->
 		{#if downloading && downloadProgress}
-			<div class="mt-3 space-y-1.5">
-				<div class="flex items-center justify-between text-xs text-muted-foreground">
-					<span class="font-medium">
-						<!-- Downloading:  -->
-						{downloadProgress.progress.toFixed(1)}%
-					</span>
-					<span>
-						{(downloadProgress.current_bytes / (1024 * 1024)).toFixed(1)} MB / {(downloadProgress.total_bytes / (1024 * 1024)).toFixed(1)} MB
-					</span>
-				</div>
-				<div class="h-2 w-full overflow-hidden rounded-full bg-muted">
-					<div
-						class="h-full rounded-full bg-primary transition-all duration-300 ease-out"
-						style="width: {Math.max(0, Math.min(100, downloadProgress.progress))}%;"
-					></div>
-				</div>
-				{#if downloadProgress.failed && downloadProgress.error_message}
-					<p class="text-xs text-destructive">{downloadProgress.error_message}</p>
-				{/if}
+			<div class="mt-3">
+				<DownloadProgressBar
+					progress={downloadProgress.progress}
+					currentBytes={downloadProgress.currentBytes}
+					totalBytes={downloadProgress.totalBytes}
+				/>
 			</div>
 		{/if}
 	</div>

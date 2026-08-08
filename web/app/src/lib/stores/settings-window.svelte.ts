@@ -32,6 +32,12 @@ const DEFAULT_STATE: WindowState = {
 class SettingsWindowStore {
 	state = $state<WindowState>({ ...DEFAULT_STATE });
 
+	/**
+	 * Section the dialog should switch to the next time it renders. Lives outside `state`
+	 * because it is transient UI intent, not window geometry, and must not be persisted.
+	 */
+	pendingSection = $state<string | null>(null);
+
 	constructor() {
 		if (browser) {
 			this.load();
@@ -68,6 +74,12 @@ class SettingsWindowStore {
 		this.state.open = true;
 		this.state.minimized = false;
 		this.save();
+	}
+
+	/** Open (or restore) the window with a specific section selected. */
+	openTo(section: string) {
+		this.pendingSection = section;
+		this.open();
 	}
 
 	close() {

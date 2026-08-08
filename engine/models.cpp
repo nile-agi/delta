@@ -12,26 +12,92 @@
 #include <iostream>
 #include <cctype>
 #include <atomic>
+#include <mutex>
+#include <set>
+#include <filesystem>
 
 namespace delta {
 
-// Global cancellation flag for downloads (shared between CLI and API server)
-static std::atomic<bool> g_download_cancel_requested{false};
+// Cancellation is tracked per model name, not globally: several downloads can be in flight at
+// once (the API server spawns a detached thread per model), and a single shared flag made
+// cancelling one abort whichever transfer happened to poll it next.
+static std::set<std::string> g_cancel_requested;
+static std::mutex g_cancel_mutex;
+
+// The model this thread is currently downloading. libcurl invokes the progress callback on the
+// same thread as curl_easy_perform, so this is how the callback knows which download it is.
+static thread_local std::string t_current_download_model;
+
+// Per-thread progress callback. Previously a single ModelManager member, which meant two
+// concurrent downloads clobbered each other: whichever finished first cleared it and the other
+// silently stopped reporting.
+static thread_local ModelManager::ProgressCallback t_progress_callback = nullptr;
+
+static bool is_cancel_requested(const std::string& model_name) {
+    if (model_name.empty())
+        return false;
+    std::lock_guard<std::mutex> lock(g_cancel_mutex);
+    return g_cancel_requested.count(model_name) > 0;
+}
+
+namespace {
+// Scopes t_current_download_model to one pull_model call.
+struct CurrentDownloadGuard {
+    std::string previous;
+    explicit CurrentDownloadGuard(const std::string& name) : previous(t_current_download_model) {
+        t_current_download_model = name;
+    }
+    ~CurrentDownloadGuard() { t_current_download_model = previous; }
+};
+} // namespace
 
 // Define the default model (qwen3:0.6b - 400 MB, ultra-compact multilingual)
 const std::string ModelManager::DEFAULT_MODEL_NAME = "qwen3:0.6b";
 
-ModelManager::ModelManager() : progress_callback_(nullptr) {
+ModelManager::ModelManager() {
     std::string home = tools::FileOps::get_home_dir();
     std::string base_dir = tools::FileOps::join_path(home, ".delta-cli");
     models_dir_ = tools::FileOps::join_path(base_dir, "models");
     context_overrides_path_ = tools::FileOps::join_path(base_dir, "model_context_overrides.json");
     ensure_models_dir();
+    cleanup_stale_downloads();
     init_model_registry();
     load_context_overrides();
 }
 
 ModelManager::~ModelManager() {}
+
+void ModelManager::cleanup_stale_downloads() {
+    // Downloads write to "<model>.tmp" and rename on success, so a leftover .tmp means a
+    // previous run was killed mid-transfer (quitting the app during a download does this).
+    // There is no resume support — download_file always restarts from scratch — so any .tmp
+    // present at startup is dead weight and would otherwise accumulate forever.
+    //
+    // once_flag: sweeping is only safe before any download can be in flight. A second
+    // ModelManager constructed later in the same process must not delete a live .tmp.
+    static std::once_flag swept;
+    std::call_once(swept, [this]() {
+        std::error_code ec;
+        if (!std::filesystem::is_directory(models_dir_, ec))
+            return;
+
+        for (const auto& entry : std::filesystem::directory_iterator(models_dir_, ec)) {
+            if (ec)
+                break;
+            if (!entry.is_regular_file(ec))
+                continue;
+            if (entry.path().extension() != ".tmp")
+                continue;
+
+            std::error_code remove_ec;
+            std::filesystem::remove(entry.path(), remove_ec);
+            if (!remove_ec) {
+                std::cout << "[Models] Removed stale partial download: " << entry.path().filename().string()
+                          << std::endl;
+            }
+        }
+    });
+}
 
 void ModelManager::ensure_models_dir() {
     if (!tools::FileOps::dir_exists(models_dir_)) {
@@ -248,9 +314,12 @@ std::map<std::string, std::string> ModelManager::get_model_info(const std::strin
     return info;
 }
 
-void ModelManager::cancel_download() {
-    // Signal any in-progress libcurl transfer to abort on next progress callback
-    g_download_cancel_requested.store(true);
+void ModelManager::cancel_download(const std::string& model_name) {
+    // Signal only this model's transfer to abort on its next progress callback.
+    if (model_name.empty())
+        return;
+    std::lock_guard<std::mutex> lock(g_cancel_mutex);
+    g_cancel_requested.insert(model_name);
 }
 
 // ============================================================================
@@ -2164,7 +2233,7 @@ void ModelManager::save_context_overrides() {
 }
 
 void ModelManager::set_progress_callback(ProgressCallback callback) {
-    progress_callback_ = callback;
+    t_progress_callback = callback;
 }
 
 // ============================================================================
@@ -2357,24 +2426,44 @@ static size_t write_callback(void* contents, size_t size, size_t nmemb, void* us
     return total_size;
 }
 
+// Passed to libcurl as XFERINFODATA so the progress callback can inspect the transfer.
+struct ProgressContext {
+    CURL* curl;
+    ModelManager::ProgressCallback* callback;
+};
+
 // libcurl progress callback
 static int progress_callback_wrapper(void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal,
                                      curl_off_t ulnow) {
     (void)ultotal;
     (void)ulnow;
 
-    // If cancellation was requested, abort the transfer
-    if (g_download_cancel_requested.load()) {
+    // If cancellation was requested for THIS download, abort the transfer
+    if (is_cancel_requested(t_current_download_model)) {
         return 1; // Non-zero return value tells libcurl to abort
     }
 
-    if (dltotal > 0) {
-        ModelManager::ProgressCallback* callback = static_cast<ModelManager::ProgressCallback*>(clientp);
-        if (*callback) {
-            double progress = (double)dlnow / (double)dltotal * 100.0;
-            (*callback)(progress, dlnow, dltotal);
+    if (dltotal <= 0) {
+        return 0; // Headers not in yet; nothing meaningful to report
+    }
+
+    ProgressContext* ctx = static_cast<ProgressContext*>(clientp);
+    if (!ctx || !ctx->callback || !*(ctx->callback)) {
+        return 0;
+    }
+
+    // With CURLOPT_FOLLOWLOCATION libcurl reports the small 3xx redirect bodies as transfers
+    // in their own right. Reporting those made the UI jump to 100% on a ~1 KB "file" before
+    // the real download had even started, then snap back to 0%. Skip them.
+    long response_code = 0;
+    if (ctx->curl && curl_easy_getinfo(ctx->curl, CURLINFO_RESPONSE_CODE, &response_code) == CURLE_OK) {
+        if (response_code >= 300 && response_code < 400) {
+            return 0;
         }
     }
+
+    double progress = (double)dlnow / (double)dltotal * 100.0;
+    (*(ctx->callback))(progress, dlnow, dltotal);
     return 0; // Return 0 to continue download
 }
 
@@ -2383,8 +2472,12 @@ bool ModelManager::download_file(const std::string& url, const std::string& dest
     CURLcode res;
     bool success = false;
 
-    // Clear any previous cancellation request for a new download
-    g_download_cancel_requested.store(false);
+    // Clear any previous cancellation request for this model only — clearing globally would
+    // discard a cancel that was just requested for a different, still-running download.
+    {
+        std::lock_guard<std::mutex> lock(g_cancel_mutex);
+        g_cancel_requested.erase(t_current_download_model);
+    }
 
     // Create temporary file path
     std::string temp_path = dest_path + ".tmp";
@@ -2415,10 +2508,11 @@ bool ModelManager::download_file(const std::string& url, const std::string& dest
         curl_easy_setopt(curl, CURLOPT_USERAGENT, "Delta-CLI/1.0");
 
         // Enable progress meter
+        ProgressContext progress_ctx{curl, &progress};
         if (progress) {
             curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
             curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback_wrapper);
-            curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progress);
+            curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progress_ctx);
         }
 
         // Set timeout (30 seconds connect, 0 = infinite transfer)
@@ -2494,6 +2588,9 @@ bool ModelManager::download_file(const std::string& url, const std::string& dest
 }
 
 bool ModelManager::pull_model(const std::string& model_name, const std::string& quantization) {
+    // Tell this thread's progress/cancel plumbing which download it is running.
+    CurrentDownloadGuard current_download(model_name);
+
     // Note: quantization parameter reserved for future use (multiple quantization support)
     // Currently using default Q4_K_M/Q4_0 from registry
     if (!quantization.empty()) {
@@ -2544,7 +2641,7 @@ bool ModelManager::pull_model(const std::string& model_name, const std::string& 
     // Download with progress
     UI::print_info("Downloading... (this may take a while)");
 
-    bool success = download_file(url, dest_path, progress_callback_);
+    bool success = download_file(url, dest_path, t_progress_callback);
 
     if (success) {
         std::cout << std::endl;
