@@ -9,7 +9,7 @@
 	let search = $state('');
 
 	let filteredNotes = $derived(
-		notesStore.notes.filter(n =>
+		notesStore.notes.filter((n) =>
 			n.title.toLowerCase().includes(search.toLowerCase()) ||
 			n.content.toLowerCase().includes(search.toLowerCase())
 		)
@@ -64,7 +64,12 @@
 						class="group flex items-start gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors cursor-pointer
 							{notesStore.activeNoteId === note.id ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}"
 						onclick={() => selectNote(note.id)}
-						onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectNote(note.id); } }}
+						onkeydown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault();
+								selectNote(note.id);
+							}
+						}}
 					>
 						<FileText class="mt-0.5 h-4 w-4 shrink-0 opacity-50" />
 						<div class="flex-1 overflow-hidden">

@@ -24,7 +24,6 @@
 	let searchQuery = $state('');
 	let showDeleteDialog = $state(false);
 	let showEditDialog = $state(false);
-	// FIX: DatabaseConversation was not imported anywhere. Use inline type.
 	let selectedConversation = $state<{ id: string; name: string } | null>(null);
 	let editedName = $state('');
 
@@ -101,6 +100,8 @@
 		}
 		await goto(`#/chat/${id}`);
 	}
+
+	let toolsOpen = $state(false);
 </script>
 
 <div class="relative h-full overflow-hidden">
@@ -117,19 +118,17 @@
 			<Sidebar.Group class="mt-2 space-y-1 p-0 px-4">
 				<Sidebar.GroupLabel>Tools</Sidebar.GroupLabel>
 				<Sidebar.GroupContent>
-					<DropdownMenu.Root>
-						<DropdownMenu.Trigger asChild let:builder>
-							<button
-								use:builder.action
-								{...builder}
-								class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+					<DropdownMenu.Root bind:open={toolsOpen}>
+						<DropdownMenu.Trigger class="w-full">
+							<div
+								class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground cursor-pointer"
 							>
 								<span class="flex items-center gap-2">
 									<Wrench class="h-4 w-4" />
 									<span>Tools</span>
 								</span>
-								<ChevronDown class="h-3 w-3" />
-							</button>
+								<ChevronDown class="h-3 w-3 transition-transform {toolsOpen ? 'rotate-180' : ''}" />
+							</div>
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content side="right" align="start" class="w-48">
 							<DropdownMenu.Group>

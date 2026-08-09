@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '../app.css';
-	import { browser } from '$app/environment';           // FIX: single $
-	import { page } from '$app/state';                     // FIX: single $
+	import { browser } from '$app/environment';
+	import { page } from '$app/state';
 	import { ChatSidebar, ChatSettingsDialog, ConversationTitleUpdateDialog } from '$lib/components/app';
 	import {
 		activeMessages,
@@ -113,30 +113,34 @@
 			return;
 		}
 		Promise.race([
-			resolveModelApiBaseUrl().then(() => true),
+			resolveModelApiBaseUrl().then(() => true).catch(() => false),
 			new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000))
 		]).then((resolved) => {
 			if (!resolved) {
 				console.warn('Model API readiness check timed out after 3s, proceeding anyway');
 			}
 			modelApiReady = true;
+		}).catch((e) => {
+			console.error('Model API readiness error:', e);
+			modelApiReady = true;
 		});
 	});
 
+	// CRITICAL FIX: Always remove splash after 4s no matter what
 	$effect(() => {
-		if ((serverReady && modelApiReady) || serverError) {
+		const timer = setTimeout(() => {
 			const el = document.getElementById('app-loading');
 			if (el) {
 				el.style.transition = 'opacity 0.3s';
 				el.style.opacity = '0';
 				setTimeout(() => el.remove(), 400);
 			}
-		}
+		}, 4000);
+		return () => clearTimeout(timer);
 	});
 
 	let isChatRoute = $derived(page.route.id === '/chat/[id]');
 	let isHomeRoute = $derived(page.route.id === '/');
-	// FIX: include /notes in tool route detection
 	let isToolRoute = $derived(page.route.id === '/calendar' || page.route.id === '/notes');
 	let isNewChatMode = $derived(page.url.searchParams.get('new_chat') === 'true');
 	let showSidebarByDefault = $derived(activeMessages().length > 0 || isLoading());
@@ -147,19 +151,16 @@
 		| { activateSearchMode?: () => void; editActiveConversation?: () => void }
 		| undefined = $state();
 
-	// Conversation title update dialog state
 	let titleUpdateDialogOpen = $state(false);
 	let titleUpdateCurrentTitle = $state('');
 	let titleUpdateNewTitle = $state('');
 	let titleUpdateResolve: ((value: boolean) => void) | null = null;
 
-	// Global keyboard shortcuts
 	function handleKeydown(event: KeyboardEvent) {
 		const isCtrlOrCmd = event.ctrlKey || event.metaKey;
 
 		if (isCtrlOrCmd && event.key === 'k') {
 			event.preventDefault();
-			// FIX: optional chaining syntax
 			if (chatSidebar?.activateSearchMode) {
 				chatSidebar.activateSearchMode();
 				sidebarOpen = true;
@@ -173,7 +174,6 @@
 
 		if (event.shiftKey && isCtrlOrCmd && event.key === 'E') {
 			event.preventDefault();
-
 			if (chatSidebar?.editActiveConversation) {
 				chatSidebar.editActiveConversation();
 			}
@@ -212,7 +212,6 @@
 		}
 	});
 
-	// Close main sidebar when settings docks to left so they don't overlap
 	$effect(() => {
 		if (settingsWindow.state.docked === 'left' && sidebarOpen) {
 			sidebarOpen = false;
@@ -234,10 +233,8 @@
 		stopReminderPolling();
 	});
 
-	// Sync settings when server props are loaded
 	$effect(() => {
 		const serverProps = serverStore.serverProps;
-
 		if (serverProps?.default_generation_settings?.params) {
 			settingsStore.syncWithServerDefaults();
 		}
@@ -246,7 +243,6 @@
 	$effect(() => {
 		if (!serverReady) return;
 		const apiKey = config().apiKey;
-
 		if (
 			(page.route.id === '/' || page.route.id === '/chat/[id]') &&
 			page.status !== 401 &&
@@ -255,11 +251,9 @@
 			const headers: Record<string, string> = {
 				'Content-Type': 'application/json'
 			};
-
 			if (apiKey && apiKey.trim() !== '') {
 				headers.Authorization = `Bearer ${apiKey.trim()}`;
 			}
-
 			fetch(`${getServerBaseUrl()}/props`, { headers })
 				.then((response) => {
 					if (response.status === 401 || response.status === 403) {
@@ -271,7 +265,6 @@
 		}
 	});
 
-	// Set up title update confirmation callback
 	$effect(() => {
 		setTitleUpdateConfirmationCallback(async (currentTitle: string, newTitle: string) => {
 			return new Promise<boolean>((resolve) => {
@@ -285,7 +278,6 @@
 </script>
 
 <ModeWatcher />
-
 <Toaster richColors />
 <NotificationCenter />
 
@@ -300,7 +292,6 @@
 		/>
 	</div>
 {:else if serverReady && modelApiReady}
-	<!-- isInitialized distinguishes "not onboarded yet" from "localStorage not read yet". -->
 	{#if settingsStore.isInitialized && !config().onboardingCompleted}
 		<OnboardingDialog />
 	{/if}
