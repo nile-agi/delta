@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { dockStore } from './dock.svelte';
 
 interface WindowState {
 	open: boolean;
@@ -7,6 +8,8 @@ interface WindowState {
 	y: number;
 	width: number;
 	height: number;
+	preMinimizeX: number;
+	preMinimizeY: number;
 }
 
 const MIN_WIDTH = 400;
@@ -17,10 +20,12 @@ const MIN_VISIBLE_Y = 40;
 const DEFAULT_STATE: WindowState = {
 	open: false,
 	minimized: false,
-	x: 120,
+	x: 140,
 	y: 100,
 	width: 720,
-	height: 540
+	height: 540,
+	preMinimizeX: 140,
+	preMinimizeY: 100
 };
 
 class NotesWindowStore {
@@ -55,18 +60,28 @@ class NotesWindowStore {
 	}
 
 	close() {
+		dockStore.unregister('notes');
 		this.state.open = false;
 		this.state.minimized = false;
 		this.save();
 	}
 
 	minimize() {
+		this.state.preMinimizeX = this.state.x;
+		this.state.preMinimizeY = this.state.y;
 		this.state.minimized = true;
+		dockStore.register('notes', 'Notes');
+		const pos = dockStore.getPosition('notes');
+		this.state.x = pos.x;
+		this.state.y = pos.y;
 		this.save();
 	}
 
 	restore() {
+		dockStore.unregister('notes');
 		this.state.minimized = false;
+		this.state.x = this.state.preMinimizeX;
+		this.state.y = this.state.preMinimizeY;
 		this.save();
 	}
 

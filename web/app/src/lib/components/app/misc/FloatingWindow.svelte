@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Minus, X, GripVertical, Square } from '@lucide/svelte';
+	import { Minus, X, GripVertical } from '@lucide/svelte';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 	import { SETTINGS_WINDOW_FULLBLEED_BREAKPOINT } from '$lib/constants/viewport';
 	import { untrack } from 'svelte';
@@ -116,10 +116,6 @@
 		store.close();
 	}
 
-	function handleRestore() {
-		store.restore();
-	}
-
 	$effect(() => {
 		void fullBleed.current;
 		void store.state.open;
@@ -177,25 +173,6 @@
 				aria-label="Resize"
 			></div>
 		{/if}
-	</div>
-{:else if store.state.open && store.state.minimized}
-	<!-- Minimized bar -->
-	<div
-		class="floating-window-minimized"
-		style="left: {store.state.x}px; top: {store.state.y}px;"
-	>
-		<div class="flex items-center gap-2 select-none">
-			<GripVertical class="h-4 w-4 text-muted-foreground" />
-			<span class="text-sm font-semibold">{title}</span>
-		</div>
-		<div class="flex items-center gap-1">
-			<button class="floating-window-btn" onclick={handleRestore} aria-label="Restore" title="Restore">
-				<Square class="h-3.5 w-3.5" />
-			</button>
-			<button class="floating-window-btn" onclick={handleClose} aria-label="Close" title="Close">
-				<X class="h-3.5 w-3.5" />
-			</button>
-		</div>
 	</div>
 {/if}
 
@@ -283,21 +260,5 @@
 
 	.floating-window-resize:hover::after {
 		border-color: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
-	}
-
-	.floating-window-minimized {
-		position: fixed;
-		z-index: 99999;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 0.5rem 0.75rem;
-		border-radius: 0.5rem;
-		border: 1px solid color-mix(in oklch, var(--border) 30%, transparent);
-		background-color: var(--background);
-		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
-		min-width: 200px;
-		cursor: grab;
-		user-select: none;
 	}
 </style>

@@ -1,4 +1,10 @@
 import { browser } from '$app/environment';
+import { dockStore } from './dock.svelte';
+
+export const SETTINGS_WINDOW_MIN_WIDTH = 400;
+export const SETTINGS_WINDOW_MIN_HEIGHT = 300;
+export const SETTINGS_WINDOW_MIN_VISIBLE_X = 100;
+export const SETTINGS_WINDOW_MIN_VISIBLE_Y = 40;
 
 interface WindowState {
 	open: boolean;
@@ -7,54 +13,41 @@ interface WindowState {
 	y: number;
 	width: number;
 	height: number;
-	docked: 'none' | 'left' | 'right';
-	preDock: { x: number; y: number; width: number; height: number } | null;
+	preMinimizeX: number;
+	preMinimizeY: number;
+	docked: 'left' | 'right' | 'floating';
+	pendingSection: string | null;
 }
 
-export const SETTINGS_WINDOW_MIN_WIDTH = 400;
-export const SETTINGS_WINDOW_MIN_HEIGHT = 300;
-
-/** Slivers of the window that must stay on-screen so the title bar remains grabbable. */
-export const SETTINGS_WINDOW_MIN_VISIBLE_X = 100;
-export const SETTINGS_WINDOW_MIN_VISIBLE_Y = 40;
+const MIN_WIDTH = 400;
+const MIN_HEIGHT = 300;
+const MIN_VISIBLE_X = 100;
+const MIN_VISIBLE_Y = 40;
 
 const DEFAULT_STATE: WindowState = {
 	open: false,
 	minimized: false,
-	x: 100,
-	y: 80,
-	width: 768,
-	height: 600,
-	docked: 'none',
-	preDock: null
+	x: 120,
+	y: 100,
+	width: 720,
+	height: 540,
+	preMinimizeX: 120,
+	preMinimizeY: 100,
+	docked: 'floating',
+	pendingSection: null
 };
 
 class SettingsWindowStore {
-	state = $state<WindowState>({ ...DEFAULT_STATE });
-
-	/**
-	 * Section the dialog should switch to the next time it renders. Lives outside `state`
-	 * because it is transient UI intent, not window geometry, and must not be persisted.
-	 */
-	pendingSection = $state<string | null>(null);
+	state = $state({ ...DEFAULT_STATE });
 
 	constructor() {
-		if (browser) {
-			this.load();
-		}
+		if (browser) this.load();
 	}
 
 	private load() {
 		try {
 			const saved = localStorage.getItem('settingsWindow');
-			if (saved) {
-				const parsed = JSON.parse(saved);
-				this.state = {
-					...DEFAULT_STATE,
-					...parsed,
-					preDock: null
-				};
-			}
+			if (saved) this.state = { ...DEFAULT_STATE, ...JSON.parse(saved) };
 		} catch (e) {
 			console.error('Failed to load settings window state', e);
 		}
@@ -63,11 +56,18 @@ class SettingsWindowStore {
 	private save() {
 		if (!browser) return;
 		try {
-			const { preDock, ...persist } = this.state;
-			localStorage.setItem('settingsWindow', JSON.stringify(persist));
+			localStorage.setItem('settingsWindow', JSON.stringify(this.state));
 		} catch (e) {
 			console.error('Failed to save settings window state', e);
 		}
+	}
+
+	get pendingSection() {
+		return this.state.pendingSection;
+	}
+
+	set pendingSection(value: string | null) {
+		this.state.pendingSection = value;
 	}
 
 	open() {
@@ -76,68 +76,47 @@ class SettingsWindowStore {
 		this.save();
 	}
 
-	/** Open (or restore) the window with a specific section selected. */
-	openTo(section: string) {
-		this.pendingSection = section;
-		this.open();
-	}
-
 	close() {
+		dockStore.unregister('settings');
 		this.state.open = false;
 		this.state.minimized = false;
-		this.state.docked = 'none';
-		this.state.preDock = null;
 		this.save();
 	}
 
 	minimize() {
+		this.state.preMinimizeX = this.state.x;
+		this.state.preMinimizeY = this.state.y;
 		this.state.minimized = true;
+		dockStore.register('settings', 'Settings');
+		const pos = dockStore.getPosition('settings');
+		this.state.x = pos.x;
+		this.state.y = pos.y;
 		this.save();
 	}
 
 	restore() {
+		dockStore.unregister('settings');
 		this.state.minimized = false;
+		this.state.x = this.state.preMinimizeX;
+		this.state.y = this.state.preMinimizeY;
 		this.save();
 	}
 
 	toggle() {
-		if (this.state.open && !this.state.minimized && this.state.docked === 'none') {
-			this.minimize();
-		} else {
-			this.open();
-		}
+		if (this.state.open && !this.state.minimized) this.minimize();
+		else this.open();
 	}
 
 	dock(side: 'left' | 'right') {
-		if (this.state.docked === 'none') {
-			this.state.preDock = {
-				x: this.state.x,
-				y: this.state.y,
-				width: this.state.width,
-				height: this.state.height
-			};
-		}
 		this.state.docked = side;
-		this.state.minimized = false;
 		this.save();
 	}
 
 	undock() {
-		if (this.state.preDock) {
-			this.state.x = this.state.preDock.x;
-			this.state.y = this.state.preDock.y;
-			this.state.width = this.state.preDock.width;
-			this.state.height = this.state.preDock.height;
-		}
-		this.state.docked = 'none';
+		this.state.docked = 'floating';
 		this.save();
 	}
 
-	/**
-	 * `persist` is opted out of during a drag/resize gesture: this runs once per pointer
-	 * sample, and save() is a synchronous JSON.stringify + localStorage.setItem. Call
-	 * commit() once the gesture ends.
-	 */
 	setPosition(x: number, y: number, persist = true) {
 		this.state.x = x;
 		this.state.y = y;
@@ -150,40 +129,25 @@ class SettingsWindowStore {
 		if (persist) this.save();
 	}
 
-	/** Persist the geometry accumulated by non-persisting setPosition/setSize calls. */
 	commit() {
 		this.save();
 	}
 
-	/**
-	 * Geometry survives across sessions and viewport changes, so a frame saved on a wide
-	 * display can end up oversized or entirely off-screen. Pull it back into view.
-	 */
 	clampToViewport() {
 		if (!browser) return;
-
 		const vw = window.innerWidth;
 		const vh = window.innerHeight;
-
-		const width = Math.max(SETTINGS_WINDOW_MIN_WIDTH, Math.min(this.state.width, vw));
-		const height = Math.max(SETTINGS_WINDOW_MIN_HEIGHT, Math.min(this.state.height, vh));
-		const x = Math.max(0, Math.min(this.state.x, vw - SETTINGS_WINDOW_MIN_VISIBLE_X));
-		const y = Math.max(0, Math.min(this.state.y, vh - SETTINGS_WINDOW_MIN_VISIBLE_Y));
-
-		if (
-			x === this.state.x &&
-			y === this.state.y &&
-			width === this.state.width &&
-			height === this.state.height
-		) {
-			return;
+		const w = Math.max(MIN_WIDTH, Math.min(this.state.width, vw));
+		const h = Math.max(MIN_HEIGHT, Math.min(this.state.height, vh));
+		const x = Math.max(0, Math.min(this.state.x, vw - MIN_VISIBLE_X));
+		const y = Math.max(0, Math.min(this.state.y, vh - MIN_VISIBLE_Y));
+		if (x !== this.state.x || y !== this.state.y || w !== this.state.width || h !== this.state.height) {
+			this.state.x = x;
+			this.state.y = y;
+			this.state.width = w;
+			this.state.height = h;
+			this.save();
 		}
-
-		this.state.x = x;
-		this.state.y = y;
-		this.state.width = width;
-		this.state.height = height;
-		this.save();
 	}
 }
 

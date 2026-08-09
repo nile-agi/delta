@@ -527,7 +527,7 @@
 	// display (or one left behind by full-bleed mode) has to be pulled back into view.
 	function clampIfFloating() {
 		if (fullBleed.current) return;
-		if (!settingsWindow.state.open || settingsWindow.state.minimized) return;
+		// if (!settingsWindow.state.open || settingsWindow.state.minimized) return;
 		// Never fight a gesture in progress — onDragMove/onResizeMove own the geometry then.
 		if (isDragging || isResizing) return;
 		settingsWindow.clampToViewport();

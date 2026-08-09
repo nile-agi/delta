@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { dockStore } from './dock.svelte';
 
 interface WindowState {
 	open: boolean;
@@ -7,6 +8,8 @@ interface WindowState {
 	y: number;
 	width: number;
 	height: number;
+	preMinimizeX: number;
+	preMinimizeY: number;
 }
 
 const MIN_WIDTH = 400;
@@ -17,10 +20,12 @@ const MIN_VISIBLE_Y = 40;
 const DEFAULT_STATE: WindowState = {
 	open: false,
 	minimized: false,
-	x: 160,
+	x: 180,
 	y: 120,
 	width: 520,
-	height: 580
+	height: 580,
+	preMinimizeX: 180,
+	preMinimizeY: 120
 };
 
 class CalendarWindowStore {
@@ -55,18 +60,28 @@ class CalendarWindowStore {
 	}
 
 	close() {
+		dockStore.unregister('calendar');
 		this.state.open = false;
 		this.state.minimized = false;
 		this.save();
 	}
 
 	minimize() {
+		this.state.preMinimizeX = this.state.x;
+		this.state.preMinimizeY = this.state.y;
 		this.state.minimized = true;
+		dockStore.register('calendar', 'Calendar');
+		const pos = dockStore.getPosition('calendar');
+		this.state.x = pos.x;
+		this.state.y = pos.y;
 		this.save();
 	}
 
 	restore() {
+		dockStore.unregister('calendar');
 		this.state.minimized = false;
+		this.state.x = this.state.preMinimizeX;
+		this.state.y = this.state.preMinimizeY;
 		this.save();
 	}
 

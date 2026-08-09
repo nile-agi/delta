@@ -2,6 +2,8 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Settings, Calendar, Trash2, StickyNote, ChevronDown, Wrench } from '@lucide/svelte';
+	import { notesWindow } from '$lib/stores/notes-window.svelte';
+	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
 	import { config } from '$lib/stores/settings.svelte';
 	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { ChatSidebarConversationItem, ConfirmationDialog } from '$lib/components/app';
@@ -133,15 +135,15 @@
 						<DropdownMenu.Content side="right" align="start" class="w-48">
 							<DropdownMenu.Group>
 								<DropdownMenu.Item
-									class="flex items-center gap-2 cursor-pointer {page.route.id === '/calendar' ? 'bg-accent' : ''}"
-									onclick={() => { goto('#/calendar'); handleMobileSidebarItemClick(); }}
+									class="flex items-center gap-2 cursor-pointer"
+									onclick={() => { calendarWindow.open(); handleMobileSidebarItemClick(); }}
 								>
 									<Calendar class="h-4 w-4" />
 									<span>Calendar</span>
 								</DropdownMenu.Item>
 								<DropdownMenu.Item
-									class="flex items-center gap-2 cursor-pointer {page.route.id === '/notes' ? 'bg-accent' : ''}"
-									onclick={() => { goto('#/notes'); handleMobileSidebarItemClick(); }}
+									class="flex items-center gap-2 cursor-pointer"
+									onclick={() => { notesWindow.open(); handleMobileSidebarItemClick(); }}
 								>
 									<StickyNote class="h-4 w-4" />
 									<span>Notes</span>
