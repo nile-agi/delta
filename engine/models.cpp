@@ -1704,158 +1704,6 @@ void ModelManager::init_model_registry() {
         true // supports_tools
     };
 
-    // ===== GRANITE4 SERIES (IBM Granite models) (128K) =====
-    model_registry_["granite4:350m"] = {
-        "granite4:350m",
-        "granite4-350m",
-        "unsloth/granite-4.0-350m-GGUF",
-        "granite-4.0-350m-Q4_K_M.gguf",
-        "Q4_K_M",
-        237LL * 1024 * 1024, // ~237 MB
-        "Ultra-compact Granite 4 model",
-        "Granite 4 350M",
-        0,    // use model default (-c from model)
-        false // supports_tools
-    };
-
-    model_registry_["granite4:350m-h"] = {
-        "granite4:350m-h",
-        "granite4-350m-h",
-        "unsloth/granite-4.0-h-350m-GGUF",
-        "granite-4.0-h-350m-Q4_K_M.gguf",
-        "Q4_K_M",
-        223LL * 1024 * 1024, // ~223 MB
-        "Ultra-compact Granite 4 model (HF format)",
-        "Granite 4 350M-H",
-        0,    // use model default (-c from model)
-        false // supports_tools
-    };
-
-    model_registry_["granite4:1b"] = {
-        "granite4:1b",
-        "granite4-1b",
-        "unsloth/granite-4.0-1b-GGUF",
-        "granite-4.0-1b-Q4_K_M.gguf",
-        "Q4_K_M",
-        1020LL * 1024 * 1024, // ~1.02 GB
-        "Compact Granite 4 model",
-        "Granite 4 1B",
-        0,   // use model default (-c from model)
-        true // supports_tools
-    };
-
-    model_registry_["granite4:1b-h"] = {
-        "granite4:1b-h",
-        "granite4-1b-h",
-        "unsloth/granite-4.0-h-1b-GGUF",
-        "granite-4.0-h-1b-Q4_K_M.gguf",
-        "Q4_K_M",
-        901LL * 1024 * 1024, // ~901 MB
-        "Compact Granite 4 model (HF format)",
-        "Granite 4 1B-H",
-        0,   // use model default (-c from model)
-        true // supports_tools
-    };
-
-    // model_registry_["granite4:3b"] = {
-    //     "granite4:3b",
-    //     "granite4-3b",
-    //     "ibm/Granite-4-3B-Instruct-GGUF",
-    //     "granite-4-3b-instruct-Q4_K_M.gguf",
-    //     "Q4_K_M",
-    //     1946LL * 1024 * 1024,     // ~1.9 GB
-    //     "Balanced Granite 4 model",
-    //     "Granite 4 3B",
-    //     131072                      // 128K native context
-    // };
-
-    model_registry_["granite4:micro"] = {
-        "granite4:micro",
-        "granite4-micro",
-        "ibm-granite/granite-4.0-micro-GGUF",
-        "granite-4.0-micro-Q4_K_M.gguf",
-        "Q4_K_M",
-        2100LL * 1024 * 1024, // ~2.1 GB (estimated)
-        "Tiny Granite 4 model",
-        "Granite 4 Micro",
-        0,   // use model default (-c from model)
-        true // supports_tools
-    };
-
-    // model_registry_["granite4:3b-h"] = {
-    //     "granite4:3b-h",
-    //     "granite4-3b-h",
-    //     "granite-4-3b-instruct-hf-Q4_K_M.gguf",
-    //     "granite-4-3b-instruct-hf-Q4_K_M.gguf",
-    //     "Q4_K_M",
-    //     1946LL * 1024 * 1024,     // ~1.9 GB
-    //     "Balanced Granite 4 model (HF format)",
-    //     "Granite 4 3B-H",
-    //     131072                      // 128K native context
-    // };
-
-    model_registry_["granite4:h-micro"] = {
-        "granite4:h-micro",
-        "granite4-h-micro",
-        "ibm-granite/granite-4.0-h-micro-GGUF",
-        "granite-4.0-h-micro-Q4_K_M.gguf",
-        "Q4_K_M",
-        1940LL * 1024 * 1024, // ~1.94 GB (estimated)
-        "Tiny Granite 4 model (HF format)",
-        "Granite 4 Micro-H",
-        0,   // use model default (-c from model)
-        true // supports_tools
-    };
-
-    // model_registry_["granite4:7b-a1b-h"] = {
-    //     "granite4:7b-a1b-h",
-    //     "granite4-7b-a1b-h",
-    //     "ibm/Granite-4-7B-A1B-Instruct-GGUF",
-    //     "granite-4-7b-a1b-instruct-hf-Q4_K_M.gguf",
-    //     "Q4_K_M",
-    //     4608LL * 1024 * 1024,     // ~4.5 GB
-    //     "Powerful Granite 4 7B A1B model (HF format)",
-    //     "Granite 4 7B-A1B-H",
-    //     131072                      // 128K native context
-    // };
-
-    model_registry_["granite4:h-tiny"] = {
-        "granite4:h-tiny",
-        "granite4-h-tiny",
-        "unsloth/granite-4.0-h-tiny-GGUF",
-        "granite-4.0-h-tiny-Q4_K_M.gguf",
-        "Q4_K_M",
-        4250LL * 1024 * 1024, // ~4.25 GB (estimated)
-        "Ultra-tiny Granite 4 model (HF format)",
-        "Granite 4 Tiny-H",
-        0,   // use model default (-c from model)
-        true // supports_tools
-    };
-
-    // model_registry_["granite4:32b-a9b-h"] = {
-    //     "granite4:32b-a9b-h",
-    //     "granite4-32b-a9b-h",
-    //     "ibm/Granite-4-32B-A9B-Instruct-GGUF",
-    //     "granite-4-32b-a9b-instruct-hf-Q4_K_M.gguf",
-    //     "Q4_K_M",
-    //     18432LL * 1024 * 1024,    // ~18 GB
-    //     "Large Granite 4 32B A9B model (HF format)",
-    //     "Granite 4 32B-A9B-H",
-    //     131072                      // 128K native context
-    // };
-
-    // model_registry_["granite4:small-h"] = {
-    //     "granite4:small-h",
-    //     "granite4-small-h",
-    //     "ibm-granite/granite-4.0-h-small-GGUF",
-    //     "granite-4.0-h-small-Q4_K_M.gguf",
-    //     "Q4_K_M",
-    //     512LL * 1024 * 1024,      // ~512 MB (estimated)
-    //     "Small Granite 4 model (HF format)",
-    //     "Granite 4 Small-H",
-    //     131072                      // 128K native context
-    // };
-
     model_registry_["mistral-3:3b"] = {
         "mistral-3:3b",
         "mistral-3-3b",
@@ -2111,6 +1959,269 @@ void ModelManager::init_model_registry() {
         0,    // use model default (-c from model)
         false // supports_tools
     };
+
+
+        // ===== LFM models from LiquidAI =====
+
+    model_registry_["lfm2.5-2.6b"] = {
+        "lfm2.5-2.6b",
+        "lfm2.5-2.6b",
+        "LiquidAI/LFM2.5-2.6B-GGUF",
+        "LFM2.5-2.6B-Q5_K_M.gguf",
+        "Q5_K_M",
+        1800LL * 1024 * 1024, // ~1.8 GB
+        "General-purpose agentic model. 131K context. Good for tool use, RAG, and data extraction.",
+        "LFM2.5 2.6B",
+        131072,
+        true // supports_tools
+    };
+
+    model_registry_["lfm2.5-230m"] = {
+        "lfm2.5-230m",
+        "lfm2.5-230m",
+        "LiquidAI/LFM2.5-230M-GGUF",
+        "LFM2.5-230M-F16.gguf",
+        "F16",
+        460LL * 1024 * 1024, // ~460 MB
+        "Ultra-lightweight edge model. Runs on Raspberry Pi 5 and mobile devices.",
+        "LFM2.5 230M",
+        32768,
+        false // supports_tools
+    };
+
+    model_registry_["lfm2.5-8b-a1b"] = {
+        "lfm2.5-8b-a1b",
+        "lfm2.5-8b-a1b",
+        "LiquidAI/LFM2.5-8B-A1B-GGUF",
+        "LFM2.5-8B-A1B-Q4_K_M.gguf",
+        "Q4_K_M",
+        5100LL * 1024 * 1024, // ~5.1 GB
+        "High-capability agentic model with 131K context. Best for complex workflows.",
+        "LFM2.5 8B A1B",
+        131072,
+        true // supports_tools
+    };
+
+    model_registry_["lfm2.5-350m"] = {
+        "lfm2.5-350m",
+        "lfm2.5-350m",
+        "LiquidAI/LFM2.5-350M-GGUF",
+        "LFM2.5-350M-F16.gguf",
+        "F16",
+        700LL * 1024 * 1024, // ~700 MB
+        "Fast edge model balancing capability and speed.",
+        "LFM2.5 350M",
+        32768,
+        false // supports_tools
+    };
+
+    model_registry_["lfm2.5-1.2b-thinking"] = {
+        "lfm2.5-1.2b-thinking",
+        "lfm2.5-1.2b-thinking",
+        "LiquidAI/LFM2.5-1.2B-Thinking-GGUF",
+        "LFM2.5-1.2B-Thinking-Q8_0.gguf",
+        "Q8_0",
+        1300LL * 1024 * 1024, // ~1.3 GB
+        "Reasoning-specialized model with chain-of-thought capabilities.",
+        "LFM2.5 1.2B Thinking",
+        32768,
+        false // supports_tools
+    };
+
+    // ===== GRANITE 4.1 SERIES (IBM) =====
+
+    model_registry_["granite-vision-4.1-4b"] = {
+        "granite-vision-4.1-4b",
+        "granite-vision-4.1-4b",
+        "ibm-granite/granite-vision-4.1-4b-GGUF",
+        "granite-vision-4.1-4b-Q5_K_M.gguf",
+        "Q5_K_M",
+        2800LL * 1024 * 1024, // ~2.8 GB
+        "IBM Granite vision-language model. Supports image understanding and visual reasoning.",
+        "Granite Vision 4.1 4B",
+        8192,
+        false // supports_tools
+    };
+
+    model_registry_["granite-guardian-4.1-8b"] = {
+        "granite-guardian-4.1-8b",
+        "granite-guardian-4.1-8b",
+        "ibm-granite/granite-guardian-4.1-8b-GGUF",
+        "granite-guardian-4.1-8b-Q4_0.gguf",
+        "Q4_0",
+        4700LL * 1024 * 1024, // ~4.7 GB
+        "IBM Granite safety model for content moderation and risk detection.",
+        "Granite Guardian 4.1 8B",
+        8192,
+        false // supports_tools
+    };
+
+    model_registry_["granite-4.1-3b"] = {
+        "granite-4.1-3b",
+        "granite-4.1-3b",
+        "ibm-granite/granite-4.1-3b-GGUF",
+        "granite-4.1-3b-Q5_K_M.gguf",
+        "Q5_K_M",
+        2100LL * 1024 * 1024, // ~2.1 GB
+        "IBM Granite 4.1 instruct model. Enterprise-grade general-purpose assistant.",
+        "Granite 4.1 3B",
+        8192,
+        true // supports_tools
+    };
+
+    // ===== GRANITE4 SERIES (IBM Granite models) (128K) =====
+    model_registry_["granite4:350m"] = {
+        "granite4:350m",
+        "granite4-350m",
+        "unsloth/granite-4.0-350m-GGUF",
+        "granite-4.0-350m-Q4_K_M.gguf",
+        "Q4_K_M",
+        237LL * 1024 * 1024, // ~237 MB
+        "Ultra-compact Granite 4 model",
+        "Granite 4 350M",
+        0,    // use model default (-c from model)
+        false // supports_tools
+    };
+
+    model_registry_["granite4:350m-h"] = {
+        "granite4:350m-h",
+        "granite4-350m-h",
+        "unsloth/granite-4.0-h-350m-GGUF",
+        "granite-4.0-h-350m-Q4_K_M.gguf",
+        "Q4_K_M",
+        223LL * 1024 * 1024, // ~223 MB
+        "Ultra-compact Granite 4 model (HF format)",
+        "Granite 4 350M-H",
+        0,    // use model default (-c from model)
+        false // supports_tools
+    };
+
+    model_registry_["granite4:1b"] = {
+        "granite4:1b",
+        "granite4-1b",
+        "unsloth/granite-4.0-1b-GGUF",
+        "granite-4.0-1b-Q4_K_M.gguf",
+        "Q4_K_M",
+        1020LL * 1024 * 1024, // ~1.02 GB
+        "Compact Granite 4 model",
+        "Granite 4 1B",
+        0,   // use model default (-c from model)
+        true // supports_tools
+    };
+
+    model_registry_["granite4:1b-h"] = {
+        "granite4:1b-h",
+        "granite4-1b-h",
+        "unsloth/granite-4.0-h-1b-GGUF",
+        "granite-4.0-h-1b-Q4_K_M.gguf",
+        "Q4_K_M",
+        901LL * 1024 * 1024, // ~901 MB
+        "Compact Granite 4 model (HF format)",
+        "Granite 4 1B-H",
+        0,   // use model default (-c from model)
+        true // supports_tools
+    };
+
+    // model_registry_["granite4:3b"] = {
+    //     "granite4:3b",
+    //     "granite4-3b",
+    //     "ibm/Granite-4-3B-Instruct-GGUF",
+    //     "granite-4-3b-instruct-Q4_K_M.gguf",
+    //     "Q4_K_M",
+    //     1946LL * 1024 * 1024,     // ~1.9 GB
+    //     "Balanced Granite 4 model",
+    //     "Granite 4 3B",
+    //     131072                      // 128K native context
+    // };
+
+    model_registry_["granite4:micro"] = {
+        "granite4:micro",
+        "granite4-micro",
+        "ibm-granite/granite-4.0-micro-GGUF",
+        "granite-4.0-micro-Q4_K_M.gguf",
+        "Q4_K_M",
+        2100LL * 1024 * 1024, // ~2.1 GB (estimated)
+        "Tiny Granite 4 model",
+        "Granite 4 Micro",
+        0,   // use model default (-c from model)
+        true // supports_tools
+    };
+
+    // model_registry_["granite4:3b-h"] = {
+    //     "granite4:3b-h",
+    //     "granite4-3b-h",
+    //     "granite-4-3b-instruct-hf-Q4_K_M.gguf",
+    //     "granite-4-3b-instruct-hf-Q4_K_M.gguf",
+    //     "Q4_K_M",
+    //     1946LL * 1024 * 1024,     // ~1.9 GB
+    //     "Balanced Granite 4 model (HF format)",
+    //     "Granite 4 3B-H",
+    //     131072                      // 128K native context
+    // };
+
+    model_registry_["granite4:h-micro"] = {
+        "granite4:h-micro",
+        "granite4-h-micro",
+        "ibm-granite/granite-4.0-h-micro-GGUF",
+        "granite-4.0-h-micro-Q4_K_M.gguf",
+        "Q4_K_M",
+        1940LL * 1024 * 1024, // ~1.94 GB (estimated)
+        "Tiny Granite 4 model (HF format)",
+        "Granite 4 Micro-H",
+        0,   // use model default (-c from model)
+        true // supports_tools
+    };
+
+    model_registry_["granite4:7b-a1b-h"] = {
+        "granite4:7b-a1b-h",
+        "granite4-7b-a1b-h",
+        "ibm/Granite-4-7B-A1B-Instruct-GGUF",
+        "granite-4-7b-a1b-instruct-hf-Q4_K_M.gguf",
+        "Q4_K_M",
+        4608LL * 1024 * 1024,     // ~4.5 GB
+        "Powerful Granite 4 7B A1B model (HF format)",
+        "Granite 4 7B-A1B-H",
+        0,                      // 128K native context
+        true
+    };
+
+    model_registry_["granite4:h-tiny"] = {
+        "granite4:h-tiny",
+        "granite4-h-tiny",
+        "unsloth/granite-4.0-h-tiny-GGUF",
+        "granite-4.0-h-tiny-Q4_K_M.gguf",
+        "Q4_K_M",
+        4250LL * 1024 * 1024, // ~4.25 GB (estimated)
+        "Ultra-tiny Granite 4 model (HF format)",
+        "Granite 4 Tiny-H",
+        0,   // use model default (-c from model)
+        true // supports_tools
+    };
+
+    // model_registry_["granite4:32b-a9b-h"] = {
+    //     "granite4:32b-a9b-h",
+    //     "granite4-32b-a9b-h",
+    //     "ibm/Granite-4-32B-A9B-Instruct-GGUF",
+    //     "granite-4-32b-a9b-instruct-hf-Q4_K_M.gguf",
+    //     "Q4_K_M",
+    //     18432LL * 1024 * 1024,    // ~18 GB
+    //     "Large Granite 4 32B A9B model (HF format)",
+    //     "Granite 4 32B-A9B-H",
+    //     131072                      // 128K native context
+    // };
+
+    model_registry_["granite4:small-h"] = {
+        "granite4:small-h",
+        "granite4-small-h",
+        "ibm-granite/granite-4.0-h-small-GGUF",
+        "granite-4.0-h-small-Q4_K_M.gguf",
+        "Q4_K_M",
+        512LL * 1024 * 1024,      // ~512 MB (estimated)
+        "Small Granite 4 model (HF format)",
+        "Granite 4 Small-H",
+        131072                      // 128K native context
+    };
+
 }
 
 std::vector<ModelRegistry> ModelManager::get_registry_models() {

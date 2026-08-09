@@ -808,6 +808,97 @@ export const modelsCatalog: ModelFamily[] = [
 	// 		},
 	// 	]	
 	// }
+
+		{
+		id: 'lfm2.5',
+		name: 'LFM 2.5',
+		description:
+			"LiquidAI's LFM 2.5 series: state-of-the-art small models for edge and agentic use. Features ultra-long context (up to 131K), tool use, and reasoning variants.",
+		icon: 'liquidai logo.svg',
+		models: [
+			{
+				name: 'lfm2.5-2.6b',
+				display_name: 'LFM2.5 2.6B',
+				download_url: 'LiquidAI/LFM2.5-2.6B-GGUF',
+				file_size_gb: 1.8,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(1.8),
+				quantization: 'Q5_K_M'
+			},
+			{
+				name: 'lfm2.5-230m',
+				display_name: 'LFM2.5 230M',
+				download_url: 'LiquidAI/LFM2.5-230M-GGUF',
+				file_size_gb: 0.46,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(0.46),
+				quantization: 'F16'
+			},
+			{
+				name: 'lfm2.5-8b-a1b',
+				display_name: 'LFM2.5 8B A1B',
+				download_url: 'LiquidAI/LFM2.5-8B-A1B-GGUF',
+				file_size_gb: 5.1,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(5.1),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'lfm2.5-350m',
+				display_name: 'LFM2.5 350M',
+				download_url: 'LiquidAI/LFM2.5-350M-GGUF',
+				file_size_gb: 0.7,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(0.7),
+				quantization: 'F16'
+			},
+			{
+				name: 'lfm2.5-1.2b-thinking',
+				display_name: 'LFM2.5 1.2B Thinking',
+				download_url: 'LiquidAI/LFM2.5-1.2B-Thinking-GGUF',
+				file_size_gb: 1.3,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(1.3),
+				quantization: 'Q8_0'
+			}
+		]
+	},
+	{
+		id: 'granite-4.1',
+		name: 'Granite 4.1',
+		description:
+			"IBM Granite 4.1 series: enterprise-grade open models for text, vision, and safety tasks. Built for business applications with strong reasoning and moderation capabilities.",
+		icon: 'ibm logo.svg',
+		models: [
+			{
+				name: 'granite-vision-4.1-4b',
+				display_name: 'Granite Vision 4.1 4B',
+				download_url: 'ibm-granite/granite-vision-4.1-4b-GGUF',
+				file_size_gb: 2.8,
+				context_size: 8192,
+				required_ram_gb: calculateRequiredRAM(2.8),
+				quantization: 'Q5_K_M'
+			},
+			{
+				name: 'granite-guardian-4.1-8b',
+				display_name: 'Granite Guardian 4.1 8B',
+				download_url: 'ibm-granite/granite-guardian-4.1-8b-GGUF',
+				file_size_gb: 4.7,
+				context_size: 8192,
+				required_ram_gb: calculateRequiredRAM(4.7),
+				quantization: 'Q4_0'
+			},
+			{
+				name: 'granite-4.1-3b',
+				display_name: 'Granite 4.1 3B',
+				download_url: 'ibm-granite/granite-4.1-3b-GGUF',
+				file_size_gb: 2.1,
+				context_size: 8192,
+				required_ram_gb: calculateRequiredRAM(2.1),
+				quantization: 'Q5_K_M'
+			}
+		]
+	},
 ];
 
 /**
@@ -840,6 +931,9 @@ export const FAMILY_LOGO_FILES: Record<string, string> = {
 	cohere: 'cohere logo.webp',
 	nvidia: 'nvidia logo.webp',
 	Bonsai: 'bonsai-logo.svg',
+	liquidai: 'liquidai logo.png',
+	ibm: 'ibm logo.png',
+	granite: 'ibm logo.png',
 };
 
 /** True if icon is a logo filename (has file extension). */
@@ -871,6 +965,8 @@ export function getFamilyIconForModelName(name: string): string {
 	if (lower.includes('cohere')) return FAMILY_LOGO_FILES.cohere;
 	if (lower.includes('nvidia')) return FAMILY_LOGO_FILES.nvidia;
 	if (lower.includes('Bonsai')) return FAMILY_LOGO_FILES.Bonsai;
+	if (lower.includes('lfm')) return FAMILY_LOGO_FILES.liquidai;
+	if (lower.includes('granite')) return FAMILY_LOGO_FILES.ibm;
 	return '●';
 }
 
@@ -889,6 +985,8 @@ const PROVIDER_BY_LOGO: Record<string, string> = {
 	'cohere logo.webp': 'Cohere',
 	'GPT logo.png': 'OpenAI',
 	'bonsai-logo.svg': 'Bonsai',
+	'liquidai logo.png': 'LiquidAI',
+	'ibm logo.png': 'IBM',
 };
 
 /** Display order for provider sections in the Catalog; unknown providers fall after these. */
@@ -904,6 +1002,8 @@ export const PROVIDER_ORDER: string[] = [
 	'Cohere',
 	'OpenAI',
 	'Bonsai',
+	'LiquidAI',
+	'IBM',
 	'Other',
 ];
 
