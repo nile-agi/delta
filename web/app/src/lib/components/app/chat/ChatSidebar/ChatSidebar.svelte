@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Settings, Calendar, Trash2 } from '@lucide/svelte';
+	import { Settings, Calendar, Trash2, StickyNote, ChevronDown, Wrench } from '@lucide/svelte';
 	import { config } from '$lib/stores/settings.svelte';
 	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { ChatSidebarConversationItem, ConfirmationDialog } from '$lib/components/app';
 	import ScrollArea from '$lib/components/ui/scroll-area/scroll-area.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import Input from '$lib/components/ui/input/input.svelte';
 	import {
 		conversations,
@@ -23,7 +24,8 @@
 	let searchQuery = $state('');
 	let showDeleteDialog = $state(false);
 	let showEditDialog = $state(false);
-	let selectedConversation = $state<DatabaseConversation | null>(null);
+	// FIX: DatabaseConversation was not imported anywhere. Use inline type.
+	let selectedConversation = $state<{ id: string; name: string } | null>(null);
 	let editedName = $state('');
 
 	let filteredConversations = $derived.by(() => {
@@ -101,16 +103,8 @@
 	}
 </script>
 
-<!-- 
-  relative + h-full + overflow-hidden creates a bounded positioning context.
-  The ScrollArea fills the entire sidebar height.
-  The footer is absolute bottom-0 with z-50 so it ALWAYS stays visible
-  and conversations scroll underneath it, no matter how long the list is.
--->
 <div class="relative h-full overflow-hidden">
 	<ScrollArea class="h-full">
-		<!-- pb-16 ensures the last conversation item can scroll fully 
-		     into view above the fixed footer -->
 		<div class="pb-16">
 			<Sidebar.Header class="top-0 z-10 gap-6 bg-sidebar/50 px-4 pt-4 pb-2 backdrop-blur-lg md:sticky">
 				<a href="#/" onclick={handleMobileSidebarItemClick} aria-label="Go to home">
@@ -119,21 +113,43 @@
 				<ChatSidebarActions {handleMobileSidebarItemClick} bind:isSearchModeActive bind:searchQuery />
 			</Sidebar.Header>
 
+			<!-- TOOLS DROPDOWN -->
 			<Sidebar.Group class="mt-2 space-y-1 p-0 px-4">
 				<Sidebar.GroupLabel>Tools</Sidebar.GroupLabel>
 				<Sidebar.GroupContent>
-					<Sidebar.Menu>
-						<Sidebar.MenuItem>
-							<Sidebar.MenuButton
-								class="flex items-center gap-2 text-sm"
-								data-active={page.route.id === '/calendar'}
-								onclick={() => { goto('#/calendar'); handleMobileSidebarItemClick(); }}
+					<DropdownMenu.Root>
+						<DropdownMenu.Trigger asChild let:builder>
+							<button
+								use:builder.action
+								{...builder}
+								class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
 							>
-								<Calendar class="h-4 w-4" />
-								Calendar
-							</Sidebar.MenuButton>
-						</Sidebar.MenuItem>
-					</Sidebar.Menu>
+								<span class="flex items-center gap-2">
+									<Wrench class="h-4 w-4" />
+									<span>Tools</span>
+								</span>
+								<ChevronDown class="h-3 w-3" />
+							</button>
+						</DropdownMenu.Trigger>
+						<DropdownMenu.Content side="right" align="start" class="w-48">
+							<DropdownMenu.Group>
+								<DropdownMenu.Item
+									class="flex items-center gap-2 cursor-pointer {page.route.id === '/calendar' ? 'bg-accent' : ''}"
+									onclick={() => { goto('#/calendar'); handleMobileSidebarItemClick(); }}
+								>
+									<Calendar class="h-4 w-4" />
+									<span>Calendar</span>
+								</DropdownMenu.Item>
+								<DropdownMenu.Item
+									class="flex items-center gap-2 cursor-pointer {page.route.id === '/notes' ? 'bg-accent' : ''}"
+									onclick={() => { goto('#/notes'); handleMobileSidebarItemClick(); }}
+								>
+									<StickyNote class="h-4 w-4" />
+									<span>Notes</span>
+								</DropdownMenu.Item>
+							</DropdownMenu.Group>
+						</DropdownMenu.Content>
+					</DropdownMenu.Root>
 				</Sidebar.GroupContent>
 			</Sidebar.Group>
 
@@ -179,12 +195,6 @@
 		</div>
 	</ScrollArea>
 
-	<!-- 
-	  FIXED FOOTER — absolute positioning keeps it permanently pinned 
-	  at the bottom regardless of scroll position. z-50 places it above 
-	  the scrollable content so conversations slide underneath.
-	  bg-sidebar/80 + backdrop-blur-lg gives it a frosted-glass look.
-	-->
 	<div class="absolute bottom-0 left-0 right-0 z-50 flex items-center justify-between border-t border-border/30 bg-sidebar/80 px-4 py-3 backdrop-blur-lg">
 		<span class="text-sm font-medium text-muted-foreground truncate">
 			{config().userName || 'User'}

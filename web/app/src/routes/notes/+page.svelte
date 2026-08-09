@@ -1,159 +1,125 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import type { Note } from './+page';
+	import { notesStore } from '$lib/stores/notes.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Textarea } from '$lib/components/ui/textarea/index.js';
+	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
+	import { Plus, Trash2, FileText } from '@lucide/svelte';
 
-  export let data: { notes: Note[]; search: string; folder: string; tags: string };
+	let search = $state('');
 
-  let search = data.search || '';
-  let folder = data.folder || '';
-  let tags = data.tags || '';
-  let creating = false;
-  let newTitle = '';
-  let newContent = '';
-  let newFolder = 'General';
+	let filteredNotes = $derived(
+		notesStore.notes.filter(n =>
+			n.title.toLowerCase().includes(search.toLowerCase()) ||
+			n.content.toLowerCase().includes(search.toLowerCase())
+		)
+	);
 
-  function applyFilters() {
-    const params = new URLSearchParams();
-    if (search) params.set('search', search);
-    if (folder) params.set('folder', folder);
-    if (tags) params.set('tags', tags);
-    goto(`/notes?${params.toString()}`, { replaceState: true });
-  }
+	function handleCreate() {
+		notesStore.createNote();
+	}
 
-  async function createNote() {
-    if (!newTitle.trim()) return;
-    creating = true;
-    const res = await fetch('/api/notes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: newTitle,
-        content: newContent,
-        folder: newFolder
-      })
-    });
-    if (res.ok) {
-      newTitle = '';
-      newContent = '';
-      creating = false;
-      applyFilters();
-    } else {
-      creating = false;
-      alert('Failed to create note');
-    }
-  }
+	function handleDelete(id: string, e: Event) {
+		e.stopPropagation();
+		notesStore.deleteNote(id);
+	}
 
-  function formatDate(iso: string) {
-    return new Date(iso).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  }
+	function selectNote(id: string) {
+		notesStore.setActive(id);
+	}
+
+	function updateTitle(e: Event) {
+		const target = e.target as HTMLInputElement;
+		if (notesStore.activeNoteId) {
+			notesStore.updateNote(notesStore.activeNoteId, { title: target.value });
+		}
+	}
+
+	function updateContent(e: Event) {
+		const target = e.target as HTMLTextAreaElement;
+		if (notesStore.activeNoteId) {
+			notesStore.updateNote(notesStore.activeNoteId, { content: target.value });
+		}
+	}
 </script>
 
-<svelte:head>
-  <title>Notes — Delta</title>
-</svelte:head>
+<div class="flex h-full w-full">
+	<!-- Notes List -->
+	<div class="flex w-72 flex-col border-r bg-background">
+		<div class="flex items-center justify-between border-b p-4">
+			<h2 class="text-lg font-semibold">Notes</h2>
+			<Button size="icon" variant="ghost" onclick={handleCreate}>
+				<Plus class="h-4 w-4" />
+			</Button>
+		</div>
+		<div class="p-3">
+			<Input placeholder="Search notes..." bind:value={search} class="h-8" />
+		</div>
+		<ScrollArea class="flex-1">
+			<div class="flex flex-col gap-1 p-2">
+				{#each filteredNotes as note (note.id)}
+					<div
+						role="button"
+						tabindex="0"
+						class="group flex items-start gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors cursor-pointer
+							{notesStore.activeNoteId === note.id ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}"
+						onclick={() => selectNote(note.id)}
+						onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectNote(note.id); } }}
+					>
+						<FileText class="mt-0.5 h-4 w-4 shrink-0 opacity-50" />
+						<div class="flex-1 overflow-hidden">
+							<div class="truncate font-medium">{note.title || 'Untitled'}</div>
+							<div class="truncate text-xs text-muted-foreground">
+								{new Date(note.updatedAt).toLocaleDateString()}
+							</div>
+						</div>
+						<button
+							class="h-6 w-6 rounded opacity-0 transition-opacity hover:bg-destructive/10 group-hover:opacity-100 focus:opacity-100 flex items-center justify-center"
+							onclick={(e: Event) => handleDelete(note.id, e)}
+							title="Delete note"
+						>
+							<Trash2 class="h-3 w-3 text-destructive" />
+						</button>
+					</div>
+				{:else}
+					<div class="px-3 py-8 text-center text-sm text-muted-foreground">
+						No notes yet. Click + to create one.
+					</div>
+				{/each}
+			</div>
+		</ScrollArea>
+	</div>
 
-<div class="max-w-4xl mx-auto p-6">
-  <div class="flex items-center justify-between mb-6">
-    <h1 class="text-2xl font-bold">Notes</h1>
-    <button
-      class="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition"
-      on:click={() => { newTitle = ''; newContent = ''; document.getElementById('new-note-form')?.scrollIntoView({ behavior: 'smooth' }); }}
-    >
-      + New Note
-    </button>
-  </div>
-
-  <div class="flex flex-wrap gap-2 mb-6">
-    <input
-      class="flex-1 min-w-[200px] px-3 py-2 border rounded-md bg-background text-sm"
-      placeholder="Search notes..."
-      bind:value={search}
-      on:input={applyFilters}
-    />
-    <input
-      class="w-40 px-3 py-2 border rounded-md bg-background text-sm"
-      placeholder="Folder"
-      bind:value={folder}
-      on:change={applyFilters}
-    />
-    <input
-      class="w-40 px-3 py-2 border rounded-md bg-background text-sm"
-      placeholder="Tags"
-      bind:value={tags}
-      on:change={applyFilters}
-    />
-  </div>
-
-  <div id="new-note-form" class="border rounded-lg p-4 mb-6 bg-muted/30">
-    <h3 class="text-sm font-semibold mb-3">Create New Note</h3>
-    <input
-      class="w-full px-3 py-2 border rounded-md bg-background text-sm mb-2"
-      placeholder="Title"
-      bind:value={newTitle}
-    />
-    <textarea
-      class="w-full px-3 py-2 border rounded-md bg-background text-sm mb-2 min-h-[100px] resize-y"
-      placeholder="Content..."
-      bind:value={newContent}
-    />
-    <div class="flex gap-2">
-      <input
-        class="w-40 px-3 py-2 border rounded-md bg-background text-sm"
-        placeholder="Folder"
-        bind:value={newFolder}
-      />
-      <button
-        class="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition disabled:opacity-50"
-        on:click={createNote}
-        disabled={creating || !newTitle.trim()}
-      >
-        {creating ? 'Saving...' : 'Save Note'}
-      </button>
-    </div>
-  </div>
-
-  {#if data.notes.length === 0}
-    <div class="text-center py-12 text-muted-foreground">
-      <p class="text-lg mb-1">No notes found</p>
-      <p class="text-sm">Create your first note above or ask the assistant to save one for you.</p>
-    </div>
-  {:else}
-    <div class="grid gap-3">
-      {#each data.notes as note (note.id)}
-        <a
-          href="/notes/{note.id}"
-          class="block p-4 border rounded-lg hover:bg-accent/50 transition-colors group"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 mb-1">
-                <h3 class="font-semibold truncate">{note.title}</h3>
-                {#if note.pinned}
-                  <span class="shrink-0 text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded">
-                    Pinned
-                  </span>
-                {/if}
-              </div>
-              <p class="text-sm text-muted-foreground line-clamp-2">{note.content || 'No content'}</p>
-            </div>
-            <span class="text-xs text-muted-foreground shrink-0 mt-1">{formatDate(note.updated_at)}</span>
-          </div>
-          <div class="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-            {#if note.folder}
-              <span class="bg-muted px-2 py-0.5 rounded">{note.folder}</span>
-            {/if}
-            {#if note.tags}
-              <span>{note.tags}</span>
-            {/if}
-          </div>
-        </a>
-      {/each}
-    </div>
-  {/if}
+	<!-- Editor -->
+	<div class="flex flex-1 flex-col">
+		{#if notesStore.activeNote}
+			<div class="border-b px-6 py-4">
+				<Input
+					value={notesStore.activeNote.title}
+					oninput={updateTitle}
+					class="border-0 bg-transparent text-xl font-semibold shadow-none focus-visible:ring-0 px-0"
+					placeholder="Note title..."
+				/>
+			</div>
+			<div class="flex-1 p-6">
+				<Textarea
+					value={notesStore.activeNote.content}
+					oninput={updateContent}
+					class="h-full resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 px-0 text-base leading-relaxed"
+					placeholder="Start typing your note..."
+				/>
+			</div>
+		{:else}
+			<div class="flex flex-1 items-center justify-center text-muted-foreground">
+				<div class="text-center">
+					<FileText class="mx-auto mb-3 h-10 w-10 opacity-20" />
+					<p>Select a note or create a new one</p>
+					<Button class="mt-4" onclick={handleCreate}>
+						<Plus class="mr-2 h-4 w-4" />
+						New Note
+					</Button>
+				</div>
+			</div>
+		{/if}
+	</div>
 </div>

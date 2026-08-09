@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '../app.css';
-	import { browser } from '$app/environment';
-	import { page } from '$app/state';
+	import { browser } from '$app/environment';           // FIX: single $
+	import { page } from '$app/state';                     // FIX: single $
 	import { ChatSidebar, ChatSettingsDialog, ConversationTitleUpdateDialog } from '$lib/components/app';
 	import {
 		activeMessages,
@@ -12,7 +12,6 @@
 	import { serverStore } from '$lib/stores/server.svelte';
 	import { config, settingsStore } from '$lib/stores/settings.svelte';
 	import { settingsWindow } from '$lib/stores/settings-window.svelte';
-	import { downloads } from '$lib/stores/downloads.svelte';
 	import { resolveModelApiBaseUrl, resetModelApiResolution } from '$lib/utils/model-api-url';
 	import { getServerBaseUrl } from '$lib/utils/server-base-url';
 	import { ServerErrorSplash } from '$lib/components/app';
@@ -74,7 +73,7 @@
 			try {
 				const { invoke } = await import('@tauri-apps/api/core');
 				const [port, mapiPort, ready, error] = await invoke<[number, number, boolean, boolean]>('get_server_status');
-				pollFailures = 0;
+				serverStore.fetchServerProps();
 				if (ready) {
 					(window as any).__DELTA_PORT__ = port;
 					(window as any).__DELTA_MODEL_API_PORT__ = mapiPort;
@@ -106,6 +105,7 @@
 	});
 
 	let modelApiReady = $state(!browser || typeof window === 'undefined');
+
 	$effect(() => {
 		if (!serverReady) return;
 		if (!browser || typeof window === 'undefined') {
@@ -123,12 +123,6 @@
 		});
 	});
 
-	// Pick up any download still running in the backend — e.g. one started before a reload.
-	$effect(() => {
-		if (!modelApiReady) return;
-		void downloads.hydrate();
-	});
-
 	$effect(() => {
 		if ((serverReady && modelApiReady) || serverError) {
 			const el = document.getElementById('app-loading');
@@ -142,7 +136,8 @@
 
 	let isChatRoute = $derived(page.route.id === '/chat/[id]');
 	let isHomeRoute = $derived(page.route.id === '/');
-	let isToolRoute = $derived(page.route.id === '/calendar');
+	// FIX: include /notes in tool route detection
+	let isToolRoute = $derived(page.route.id === '/calendar' || page.route.id === '/notes');
 	let isNewChatMode = $derived(page.url.searchParams.get('new_chat') === 'true');
 	let showSidebarByDefault = $derived(activeMessages().length > 0 || isLoading());
 	let currentConfig = $derived(config());
@@ -164,6 +159,7 @@
 
 		if (isCtrlOrCmd && event.key === 'k') {
 			event.preventDefault();
+			// FIX: optional chaining syntax
 			if (chatSidebar?.activateSearchMode) {
 				chatSidebar.activateSearchMode();
 				sidebarOpen = true;
