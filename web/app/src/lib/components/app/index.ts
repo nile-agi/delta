@@ -51,3 +51,9 @@ export { default as ServerInfo } from './server/ServerInfo.svelte';
 export { default as ActionButton } from './misc/ActionButton.svelte';
 export { default as ActionDropdown } from './misc/ActionDropdown.svelte';
 export { default as ConfirmationDialog } from './dialogs/ConfirmationDialog.svelte';
+
+// ... existing exports ...
+
+export { default as FloatingWindow } from './misc/FloatingWindow.svelte';
+export { default as NotesWindow } from './misc/NotesWindow.svelte';
+export { default as CalendarWindow } from './misc/CalendarWindow.svelte';
