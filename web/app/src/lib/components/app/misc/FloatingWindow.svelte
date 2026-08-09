@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Minus, X, GripVertical } from '@lucide/svelte';
+	import { Minus, X, GripVertical, Square } from '@lucide/svelte';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 	import { SETTINGS_WINDOW_FULLBLEED_BREAKPOINT } from '$lib/constants/viewport';
 	import { untrack } from 'svelte';
@@ -190,7 +190,7 @@
 		</div>
 		<div class="flex items-center gap-1">
 			<button class="floating-window-btn" onclick={handleRestore} aria-label="Restore" title="Restore">
-				<GripVertical class="h-3.5 w-3.5" />
+				<Square class="h-3.5 w-3.5" />
 			</button>
 			<button class="floating-window-btn" onclick={handleClose} aria-label="Close" title="Close">
 				<X class="h-3.5 w-3.5" />

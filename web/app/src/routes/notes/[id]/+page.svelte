@@ -145,10 +145,11 @@
             Pinned
           </label>
         </div>
+        <!-- CORRECT -->
         <textarea
-          class="w-full px-3 py-2 border rounded-md bg-background min-h-[300px] resize-y font-mono text-sm leading-relaxed"
-          bind:value={editContent}
-        />
+        class="w-full px-3 py-2 border rounded-md bg-background min-h-[300px] resize-y font-mono text-sm leading-relaxed"
+        bind:value={editContent}
+        ></textarea>
         <div class="flex justify-end">
           <button
             class="px-6 py-2 bg-primary text-primary-foreground rounded-md font-medium hover:bg-primary/90 transition disabled:opacity-50"
