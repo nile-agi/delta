@@ -11,6 +11,9 @@
 		calendar: { store: calendarWindow, title: 'Calendar', icon: Calendar }
 	};
 
+	const ACTION_BAR_IDS = new Set(['calendar', 'notes']);
+	let dockWindows = $derived(dockStore.windows.filter(w => !ACTION_BAR_IDS.has(w.id)));
+
 	function handleRestore(id: string) {
 		windowMap[id as keyof typeof windowMap]?.store.restore();
 	}
@@ -20,10 +23,10 @@
 	}
 </script>
 
-{#if dockStore.windows.length > 0}
+{#if dockWindows.length > 0}
 	<div class="window-dock-layer">
 		<div class="dock-inner">
-			{#each dockStore.windows as win (win.id)}
+			{#each dockWindows as win (win.id)}
 				{@const cfg = windowMap[win.id as keyof typeof windowMap]}
 				{@const Icon = cfg?.icon}
 				<div class="dock-pill">
