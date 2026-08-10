@@ -11,11 +11,10 @@
 		ListOrdered, ListChecks, Quote, Table, Image as ImageIcon, Paperclip,
 		Pencil, Share2, MoreHorizontal, Pin, Palette, Smile,
 		Download, Printer, X, Minus, ChevronDown, Sparkles,
-		ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Trash
+		ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Trash, GripVertical
 	} from '@lucide/svelte';
 	import FloatingWindow from './FloatingWindow.svelte';
 
-	/* ===== STATE ===== */
 	let search = $state('');
 	let editorRef = $state<HTMLDivElement | null>(null);
 	let showStyleMenu = $state(false);
@@ -41,6 +40,17 @@
 	let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 	let exportToastTimeout: ReturnType<typeof setTimeout> | null = null;
 
+	let tableDlgX = $state(0);
+	let tableDlgY = $state(0);
+	let tableDlgDragging = $state(false);
+	let tableDlgDragOffX = $state(0);
+	let tableDlgDragOffY = $state(0);
+	let sketchDlgX = $state(0);
+	let sketchDlgY = $state(0);
+	let sketchDlgDragging = $state(false);
+	let sketchDlgDragOffX = $state(0);
+	let sketchDlgDragOffY = $state(0);
+
 	const emojis = ['📝', '💡', '🔥', '⭐', '❤️', '⚡', '📌', '✅', '🔔', '🎨', '💼', '📚', '🎯', '🚀', '💻', '🏠', '❓', '💰'];
 
 	const noteColors = [
@@ -54,7 +64,6 @@
 		{ name: 'Pink', value: 'pink', border: 'border-l-pink-400' },
 	];
 
-	/* ===== DERIVED ===== */
 	let filteredNotes = $derived(
 		notesStore.notes
 			.filter(n =>
@@ -70,7 +79,53 @@
 
 	let activeNote = $derived(notesStore.activeNote);
 
-	/* ===== EDITOR CORE ===== */
+	function centerDialog() {
+		tableDlgX = Math.max(20, window.innerWidth / 2 - 160);
+		tableDlgY = Math.max(20, window.innerHeight / 2 - 120);
+	}
+
+	function onTableDragStart(e: PointerEvent) {
+		if ((e.target as HTMLElement).closest('button, input')) return;
+		e.preventDefault();
+		tableDlgDragging = true;
+		tableDlgDragOffX = e.clientX - tableDlgX;
+		tableDlgDragOffY = e.clientY - tableDlgY;
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+	}
+
+	function onTableDragMove(e: PointerEvent) {
+		if (!tableDlgDragging) return;
+		tableDlgX = Math.max(0, Math.min(e.clientX - tableDlgDragOffX, window.innerWidth - 320));
+		tableDlgY = Math.max(0, Math.min(e.clientY - tableDlgDragOffY, window.innerHeight - 200));
+	}
+
+	function onTableDragEnd(e: PointerEvent) {
+		tableDlgDragging = false;
+		const el = e.currentTarget as HTMLElement;
+		if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+	}
+
+	function onSketchDragStart(e: PointerEvent) {
+		if ((e.target as HTMLElement).closest('button, input, canvas')) return;
+		e.preventDefault();
+		sketchDlgDragging = true;
+		sketchDlgDragOffX = e.clientX - sketchDlgX;
+		sketchDlgDragOffY = e.clientY - sketchDlgY;
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+	}
+
+	function onSketchDragMove(e: PointerEvent) {
+		if (!sketchDlgDragging) return;
+		sketchDlgX = Math.max(0, Math.min(e.clientX - sketchDlgDragOffX, window.innerWidth - 600));
+		sketchDlgY = Math.max(0, Math.min(e.clientY - sketchDlgDragOffY, window.innerHeight - 400));
+	}
+
+	function onSketchDragEnd(e: PointerEvent) {
+		sketchDlgDragging = false;
+		const el = e.currentTarget as HTMLElement;
+		if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+	}
+
 	function updateCounts() {
 		if (!editorRef) return;
 		const text = editorRef.innerText || '';
@@ -129,7 +184,6 @@
 		if (exportToastTimeout) clearTimeout(exportToastTimeout);
 	});
 
-	/* ===== FORMATTING ===== */
 	function exec(cmd: string, val?: string) {
 		document.execCommand(cmd, false, val);
 		updateContentFromEditor();
@@ -190,7 +244,6 @@
 		}
 	}
 
-	/* ===== CHECKLIST ===== */
 	function isInChecklist(): boolean {
 		const sel = window.getSelection();
 		if (!sel) return false;
@@ -276,19 +329,16 @@
 		return li;
 	}
 
-	/* ===== TABLES ===== */
 	function insertTable() {
 		if (!editorRef) return;
 		const rows = Math.max(1, Math.min(20, Number(tableRows)));
 		const cols = Math.max(1, Math.min(10, Number(tableCols)));
-
 		const table = document.createElement('table');
 		table.className = 'editor-table';
 		table.style.width = '100%';
 		table.style.borderCollapse = 'collapse';
 		table.style.margin = '1rem 0';
 		table.dataset.tableId = crypto.randomUUID();
-
 		const tbody = document.createElement('tbody');
 		for (let r = 0; r < rows; r++) {
 			const tr = document.createElement('tr');
@@ -374,7 +424,6 @@
 		currentTable = td?.closest('table') ?? null;
 	}
 
-	/* ===== INSERTION HELPER ===== */
 	function insertNodeAtCursor(node: Node) {
 		const sel = window.getSelection();
 		if (!sel || sel.rangeCount === 0 || !editorRef) {
@@ -390,13 +439,11 @@
 		sel.addRange(range);
 	}
 
-	/* ===== FILES & MEDIA ===== */
 	function handleFileSelect(e: Event) {
 		const target = e.target as HTMLInputElement;
 		if (!target.files || !editorRef) return;
 		Array.from(target.files).forEach(file => {
 			const isText = file.type.startsWith('text/') || /\.(txt|md|json|js|ts|html|css|py|csv|xml|yaml|yml)$/i.test(file.name);
-
 			if (isText) {
 				const reader = new FileReader();
 				reader.onload = ev => {
@@ -412,20 +459,17 @@
 					wrapper.style.wordBreak = 'break-word';
 					wrapper.style.maxHeight = '300px';
 					wrapper.style.overflow = 'auto';
-
 					const header = document.createElement('div');
 					header.style.fontWeight = '600';
 					header.style.marginBottom = '0.5rem';
 					header.style.fontSize = '0.75rem';
 					header.style.color = 'hsl(var(--muted-foreground))';
 					header.textContent = `📄 ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-
 					const pre = document.createElement('pre');
 					pre.style.margin = '0';
 					pre.style.background = 'transparent';
 					pre.style.padding = '0';
 					pre.textContent = text;
-
 					wrapper.appendChild(header);
 					wrapper.appendChild(pre);
 					insertNodeAtCursor(wrapper);
@@ -492,7 +536,6 @@
 		else mediaInput?.click();
 	}
 
-	/* ===== SKETCH ===== */
 	function initSketch(node: HTMLCanvasElement) {
 		const ctx = node.getContext('2d');
 		if (!ctx) return;
@@ -546,10 +589,11 @@
 		sketchContext.clearRect(0, 0, sketchCanvas.width, sketchCanvas.height);
 	}
 
-	/* ===== SHARE & EXPORT ===== */
 	function shareNote() {
 		if (!activeNote) return;
-		const text = `${activeNote.title}\n\n${editorRef?.innerText || ''}`;
+		const text = `${activeNote.title}
+
+${editorRef?.innerText || ''}`;
 		if (navigator.share) {
 			navigator.share({ title: activeNote.title, text }).catch(() => {});
 		} else {
@@ -566,7 +610,9 @@
 
 	function exportNote() {
 		if (!activeNote) return;
-		const blob = new Blob([`# ${activeNote.title}\n\n${editorRef?.innerText || ''}`], { type: 'text/plain' });
+		const blob = new Blob([`# ${activeNote.title}
+
+${editorRef?.innerText || ''}`], { type: 'text/plain' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
@@ -581,19 +627,11 @@
 		if (!editorRef || !activeNote) return;
 		const w = window.open('', '_blank');
 		if (!w) return;
-		w.document.write(`
-			<html><head><title>${activeNote.title}</title>
-			<style>body{font-family:system-ui;max-width:800px;margin:2rem auto;padding:1rem;line-height:1.6}</style>
-			</head><body>
-			<h1>${activeNote.title || 'Untitled'}</h1>
-			${editorRef.innerHTML}
-			</body></html>
-		`);
+		w.document.write(`<html><head><title>${activeNote.title}</title><style>body{font-family:system-ui;max-width:800px;margin:2rem auto;padding:1rem;line-height:1.6}</style></head><body><h1>${activeNote.title || 'Untitled'}</h1>${editorRef.innerHTML}</body></html>`);
 		w.document.close();
 		w.print();
 	}
 
-	/* ===== NOTE LIST ACTIONS ===== */
 	function handleCreate() {
 		notesStore.createNote();
 		setTimeout(() => {
@@ -630,15 +668,12 @@
 		return noteColors.find(c => c.value === note.color)?.border || '';
 	}
 
-	/* ===== EVENT HANDLERS ===== */
 	function handleEditorKeyDown(e: KeyboardEvent) {
 		if ((e.ctrlKey || e.metaKey) && e.key === 's') {
 			e.preventDefault();
 			if (saveTimeout) clearTimeout(saveTimeout);
 			doSave();
 		}
-
-		// Checklist Enter behavior
 		if (e.key === 'Enter' && !e.shiftKey) {
 			const sel = window.getSelection();
 			const li = getCurrentChecklistItem();
@@ -646,7 +681,6 @@
 				e.preventDefault();
 				const textContent = li.textContent?.replace(/^\s*/, '') || '';
 				if (textContent.trim() === '') {
-					// Empty item: exit checklist
 					const ul = li.parentElement;
 					const p = document.createElement('p');
 					p.innerHTML = '<br>';
@@ -662,7 +696,6 @@
 					sel?.removeAllRanges();
 					sel?.addRange(range);
 				} else {
-					// Non-empty: create new checklist item
 					const newLi = createCheckItem('');
 					li.after(newLi);
 					const range = document.createRange();
@@ -681,7 +714,6 @@
 				return;
 			}
 		}
-
 		setTimeout(checkTableSelection, 0);
 	}
 
@@ -699,6 +731,7 @@
 	});
 </script>
 
+<!-- ===== MAIN FLOATING WINDOW ===== -->
 <FloatingWindow title="Notes" store={notesWindow}>
 	<div class="flex h-full w-full overflow-hidden">
 		<!-- Sidebar -->
@@ -880,7 +913,7 @@
 					<!-- Add Table -->
 					<button
 						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
-						onclick={() => showTableDialog = true}
+						onclick={() => { centerDialog(); showTableDialog = true; }}
 						title="Add Table"
 					>
 						<Table class="h-3.5 w-3.5" />
@@ -989,67 +1022,105 @@
 	</div>
 </FloatingWindow>
 
-<!-- Hidden file inputs -->
+<!-- ===== HIDDEN FILE INPUTS ===== -->
 <input type="file" bind:this={fileInput} class="hidden" onchange={handleFileSelect} accept="*/*" multiple />
 <input type="file" bind:this={mediaInput} class="hidden" onchange={handleFileSelect} accept="image/*,video/*" multiple />
 
-<!-- Table Dialog -->
+<!-- ===== TABLE DIALOG — OUTSIDE FloatingWindow (not clipped by overflow:hidden) ===== -->
 {#if showTableDialog}
-	<div class="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center">
-		<div class="bg-background border rounded-lg shadow-xl p-6 w-80">
-			<h3 class="text-lg font-semibold mb-4">Insert Table</h3>
-			<div class="space-y-4">
-				<div>
-					<label class="text-sm text-muted-foreground block mb-1">Rows</label>
-					<Input type="number" bind:value={tableRows} min={1} max={20} />
-				</div>
-				<div>
-					<label class="text-sm text-muted-foreground block mb-1">Columns</label>
-					<Input type="number" bind:value={tableCols} min={1} max={10} />
-				</div>
+	<div
+		class="fixed inset-0 bg-black/40"
+		style="z-index: 100000;"
+		onclick={() => showTableDialog = false}
+	></div>
+	<div
+		class="fixed bg-background border rounded-lg shadow-2xl p-6 w-80"
+		style="left: {tableDlgX}px; top: {tableDlgY}px; z-index: 100001;"
+	>
+		<div
+			class="flex items-center justify-between mb-4 cursor-grab active:cursor-grabbing select-none"
+			onpointerdown={onTableDragStart}
+			onpointermove={onTableDragMove}
+			onpointerup={onTableDragEnd}
+			onpointercancel={onTableDragEnd}
+		>
+			<h3 class="text-lg font-semibold flex items-center gap-2">
+				<GripVertical class="h-4 w-4 text-muted-foreground" />
+				Insert Table
+			</h3>
+			<Button size="icon" variant="ghost" onclick={() => showTableDialog = false}>
+				<X class="h-4 w-4" />
+			</Button>
+		</div>
+		<div class="space-y-4">
+			<div>
+				<label class="text-sm text-muted-foreground block mb-1">Rows</label>
+				<Input type="number" bind:value={tableRows} min={1} max={20} />
 			</div>
-			<div class="flex justify-end gap-2 mt-6">
-				<Button variant="ghost" onclick={() => showTableDialog = false}>Cancel</Button>
-				<Button onclick={insertTable}>Insert</Button>
+			<div>
+				<label class="text-sm text-muted-foreground block mb-1">Columns</label>
+				<Input type="number" bind:value={tableCols} min={1} max={10} />
 			</div>
+		</div>
+		<div class="flex justify-end gap-2 mt-6">
+			<Button variant="ghost" onclick={() => showTableDialog = false}>Cancel</Button>
+			<Button onclick={insertTable}>Insert</Button>
 		</div>
 	</div>
 {/if}
 
-<!-- Sketch Modal -->
+<!-- ===== SKETCH MODAL — OUTSIDE FloatingWindow ===== -->
 {#if showSketchModal}
-	<div class="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center">
-		<div class="bg-background border rounded-lg shadow-xl p-4 w-[600px] max-w-[90vw]">
-			<div class="flex items-center justify-between mb-4">
-				<h3 class="text-lg font-semibold">Sketch</h3>
-				<Button size="icon" variant="ghost" onclick={() => showSketchModal = false}>
-					<X class="h-4 w-4" />
-				</Button>
-			</div>
-			<canvas
-				bind:this={sketchCanvas}
-				use:initSketch
-				width={560}
-				height={300}
-				class="border rounded bg-white cursor-crosshair w-full touch-none block"
-				onmousedown={startSketch}
-				onmousemove={drawSketch}
-				onmouseup={endSketch}
-				onmouseleave={endSketch}
-				onclick={(e) => e.stopPropagation()}
-			></canvas>
-			<div class="flex justify-end gap-2 mt-4">
-				<Button variant="ghost" onclick={clearSketch}>Clear</Button>
-				<Button variant="ghost" onclick={() => showSketchModal = false}>Cancel</Button>
-				<Button onclick={saveSketch}>Save Sketch</Button>
-			</div>
+	<div
+		class="fixed inset-0 bg-black/40"
+		style="z-index: 100000;"
+		onclick={() => showSketchModal = false}
+	></div>
+	<div
+		class="fixed bg-background border rounded-lg shadow-2xl p-4 max-w-[90vw]"
+		style="left: {sketchDlgX}px; top: {sketchDlgY}px; z-index: 100001; width: 600px;"
+	>
+		<div
+			class="flex items-center justify-between mb-4 cursor-grab active:cursor-grabbing select-none"
+			onpointerdown={onSketchDragStart}
+			onpointermove={onSketchDragMove}
+			onpointerup={onSketchDragEnd}
+			onpointercancel={onSketchDragEnd}
+		>
+			<h3 class="text-lg font-semibold flex items-center gap-2">
+				<GripVertical class="h-4 w-4 text-muted-foreground" />
+				Sketch
+			</h3>
+			<Button size="icon" variant="ghost" onclick={() => showSketchModal = false}>
+				<X class="h-4 w-4" />
+			</Button>
+		</div>
+		<canvas
+			bind:this={sketchCanvas}
+			use:initSketch
+			width={560}
+			height={300}
+			class="border rounded bg-white cursor-crosshair w-full touch-none block"
+			onmousedown={startSketch}
+			onmousemove={drawSketch}
+			onmouseup={endSketch}
+			onmouseleave={endSketch}
+			onclick={(e) => e.stopPropagation()}
+		></canvas>
+		<div class="flex justify-end gap-2 mt-4">
+			<Button variant="ghost" onclick={clearSketch}>Clear</Button>
+			<Button variant="ghost" onclick={() => showSketchModal = false}>Cancel</Button>
+			<Button onclick={saveSketch}>Save Sketch</Button>
 		</div>
 	</div>
 {/if}
 
-<!-- Export Toast -->
+<!-- ===== EXPORT TOAST — OUTSIDE FloatingWindow ===== -->
 {#if showExportToast}
-	<div class="fixed bottom-6 right-6 z-[9999] bg-popover border rounded-lg shadow-xl px-4 py-3 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+	<div
+		class="fixed bottom-6 right-6 bg-popover border rounded-lg shadow-xl px-4 py-3 flex items-center gap-2"
+		style="z-index: 100001;"
+	>
 		<Download class="h-4 w-4 text-green-500" />
 		<span class="text-sm font-medium">{exportToastMsg}</span>
 	</div>

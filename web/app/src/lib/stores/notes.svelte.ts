@@ -21,7 +21,6 @@ function createNotesStore() {
 		if (saved) {
 			try {
 				const parsed = JSON.parse(saved);
-				// Migrate old notes gracefully
 				notes = parsed.map((n: any) => ({
 					...n,
 					pinned: n.pinned ?? false,
@@ -43,7 +42,6 @@ function createNotesStore() {
 			localStorage.setItem('delta_notes', JSON.stringify(notes));
 			if (activeNoteId) localStorage.setItem('delta_active_note', activeNoteId);
 		} catch (e) {
-			// Guard against quota exceeded on large notes with embedded media
 			console.error('Failed to persist notes:', e);
 			alert('Storage full: try deleting old notes or removing large images.');
 		}
