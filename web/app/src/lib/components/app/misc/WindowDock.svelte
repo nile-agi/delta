@@ -11,7 +11,7 @@
 		calendar: { store: calendarWindow, title: 'Calendar', icon: Calendar }
 	};
 
-	const ACTION_BAR_IDS = new Set(['calendar', 'notes']);
+	const ACTION_BAR_IDS = new Set(['calendar', 'notes', 'settings']);
 	let dockWindows = $derived(dockStore.windows.filter(w => !ACTION_BAR_IDS.has(w.id)));
 
 	function handleRestore(id: string) {

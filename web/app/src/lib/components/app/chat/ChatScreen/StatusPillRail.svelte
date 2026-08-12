@@ -34,9 +34,7 @@
 				<button
 					type="button"
 					class="flex h-6 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-					onclick={() => {
-						settingsWindow.state.minimized = false;
-					}}
+					onclick={() => settingsWindow.restore()}
 					aria-label="Restore Settings"
 					title="Restore Settings"
 				>
