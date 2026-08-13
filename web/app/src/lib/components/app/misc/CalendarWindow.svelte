@@ -59,7 +59,7 @@
 	});
 
 	const selectedDayItems = $derived(byDate.get(selectedDate) ?? []);
-	const todayStr = toLocalDateStr(new Date());
+	let todayStr = $state(toLocalDateStr(new Date()));
 
 	const cells = $derived.by(() => {
 		const year = month.getFullYear();
@@ -137,7 +137,10 @@
 	onMount(() => {
 		loadMonthEvents(month);
 		function onVisible() {
-			if (document.visibilityState === 'visible') loadMonthEvents(month);
+			if (document.visibilityState === 'visible') {
+				todayStr = toLocalDateStr(new Date());
+				loadMonthEvents(month);
+			}
 		}
 		document.addEventListener('visibilitychange', onVisible);
 		const refreshInterval = setInterval(() => {

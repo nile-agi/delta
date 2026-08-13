@@ -183,6 +183,24 @@ cmake -S . -B build -DCMAKE_OSX_ARCHITECTURES=arm64 -DGGML_METAL=ON   # Apple Si
 cmake -S . -B build -DCMAKE_OSX_ARCHITECTURES=x86_64 -DGGML_METAL=ON  # Intel
 ```
 
+## Linux Troubleshooting
+
+**Blank screen on Ubuntu / Linux:**
+The app sets `WEBKIT_DISABLE_COMPOSITING_MODE=1` automatically to work around WebKitGTK GPU compositing issues. If you still see a blank screen, try these environment variables:
+
+```bash
+# Sandbox issues inside AppImage
+WEBKIT_FORCE_SANDBOX=0 ./Delta_*.AppImage
+
+# Wayland display server issues
+GDK_BACKEND=x11 ./Delta_*.AppImage
+
+# Combine all workarounds
+GDK_BACKEND=x11 WEBKIT_FORCE_SANDBOX=0 ./Delta_*.AppImage
+```
+
+To diagnose, run the AppImage from a terminal and check stderr for WebKit errors.
+
 ## Run Locally
 
 ### CLI

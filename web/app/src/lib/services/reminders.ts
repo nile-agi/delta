@@ -2,6 +2,7 @@ import { pushNotification } from '$lib/stores/notifications.svelte';
 import { agentService } from './agent';
 
 let pollInterval: ReturnType<typeof setInterval> | undefined;
+let checking = false;
 let nativeSend: ((opts: { title: string; body: string }) => void) | null = null;
 let nativeInitDone = false;
 
@@ -42,6 +43,8 @@ function notify(
 }
 
 async function checkReminders() {
+	if (checking) return;
+	checking = true;
 	try {
 		const reminders = await agentService.fetchPendingReminders();
 		if (reminders.length === 0) return;
@@ -69,6 +72,8 @@ async function checkReminders() {
 		}
 	} catch {
 		// Server may not be ready yet
+	} finally {
+		checking = false;
 	}
 }
 

@@ -16,6 +16,7 @@
 
 	const sorted = $derived(sortDayItems(items));
 	const relative = $derived(relativeDayLabel(date));
+	let confirmDeleteId = $state<string | null>(null);
 
 	const heading = $derived(
 		new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
@@ -85,6 +86,7 @@
 									<button
 										class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-green-500 text-white"
 										title="Move back to upcoming"
+										aria-label="Move back to upcoming"
 										onclick={() => onStatus(item.id, 'upcoming')}
 									>
 										<Check class="size-3" />
@@ -93,6 +95,7 @@
 									<button
 										class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
 										title="Restore"
+										aria-label="Restore"
 										onclick={() => onStatus(item.id, 'upcoming')}
 									>
 										<Undo2 class="size-3" />
@@ -101,6 +104,7 @@
 									<button
 										class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-blue-500 text-white"
 										title="Mark as done"
+										aria-label="Mark as done"
 										onclick={() => onStatus(item.id, 'completed')}
 									>
 										<Play class="size-2.5" />
@@ -166,6 +170,7 @@
 							<div class="mt-1.5 flex items-center gap-0.5">
 								<button
 									title="Edit"
+									aria-label="Edit"
 									class="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 									onclick={() => onEdit(item)}
 								>
@@ -174,19 +179,40 @@
 								{#if !done}
 									<button
 										title="Cancel"
+										aria-label="Cancel"
 										class="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 										onclick={() => onStatus(item.id, 'cancelled')}
 									>
 										<X class="size-3.5" />
 									</button>
 								{/if}
-								<button
-									title="Delete"
-									class="ml-auto flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-									onclick={() => onDelete(item.id)}
-								>
-									<Trash2 class="size-3.5" />
-								</button>
+								{#if confirmDeleteId === item.id}
+									<span class="ml-auto flex items-center gap-1 text-[11px] text-destructive">
+										Delete?
+										<button
+											title="Confirm delete"
+											class="flex size-6 items-center justify-center rounded-md bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/80"
+											onclick={() => { onDelete(item.id); confirmDeleteId = null; }}
+										>
+											<Check class="size-3" />
+										</button>
+										<button
+											title="Cancel"
+											class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted"
+											onclick={() => (confirmDeleteId = null)}
+										>
+											<X class="size-3" />
+										</button>
+									</span>
+								{:else}
+									<button
+										title="Delete"
+										class="ml-auto flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+										onclick={() => (confirmDeleteId = item.id)}
+									>
+										<Trash2 class="size-3.5" />
+									</button>
+								{/if}
 							</div>
 						</div>
 					</div>

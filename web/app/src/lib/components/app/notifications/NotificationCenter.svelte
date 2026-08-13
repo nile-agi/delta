@@ -9,15 +9,22 @@
 	} from '$lib/stores/notifications.svelte';
 	import { updateEvent } from '$lib/stores/calendar.svelte';
 	import type { CalendarEvent } from '$lib/services/agent';
-	import { goto } from '$app/navigation';
 
 	let expanded = $state<Record<string, boolean>>({});
 	const items = $derived(activeNotifications());
-	let prevCount = $state(0);
+	let prevCount = -1;
+	let audioCtx: AudioContext | null = null;
+
+	function getAudioCtx(): AudioContext {
+		if (!audioCtx || audioCtx.state === 'closed') {
+			audioCtx = new AudioContext();
+		}
+		return audioCtx;
+	}
 
 	function playChime() {
 		try {
-			const ctx = new AudioContext();
+			const ctx = getAudioCtx();
 			const now = ctx.currentTime;
 
 			const g = ctx.createGain();
@@ -43,18 +50,17 @@
 			o2.connect(g2);
 			o2.start(now + 0.12);
 			o2.stop(now + 0.35);
-
-			setTimeout(() => ctx.close(), 700);
 		} catch {
 			// Audio not available
 		}
 	}
 
 	$effect(() => {
-		if (items.length > prevCount) {
+		const count = items.length;
+		if (prevCount >= 0 && count > prevCount) {
 			playChime();
 		}
-		prevCount = items.length;
+		prevCount = count;
 	});
 
 	function toggle(id: string) {
@@ -73,15 +79,25 @@
 		}
 	}
 
+	function dismiss(id: string) {
+		dismissNotification(id);
+		const { [id]: _, ...rest } = expanded;
+		expanded = rest;
+	}
+
 	async function markDone(n: { eventId?: string; id: string }) {
-		if (n.eventId) {
-			await updateEvent(n.eventId, { status: 'completed' } as Partial<CalendarEvent>);
+		try {
+			if (n.eventId) {
+				await updateEvent(n.eventId, { status: 'completed' } as Partial<CalendarEvent>);
+			}
+		} catch {
+			// Server unreachable -- dismiss anyway so the user isn't stuck
 		}
-		dismissNotification(n.id);
+		dismiss(n.id);
 	}
 
 	function viewInCalendar(n: { time?: string; id: string }) {
-		dismissNotification(n.id);
+		dismiss(n.id);
 		calendarWindow.open();
 	}
 </script>
@@ -133,7 +149,7 @@
 				<!-- Dismiss button (always visible on hover) -->
 				<button
 					class="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
-					onclick={() => dismissNotification(item.id)}
+					onclick={() => dismiss(item.id)}
 				>
 					<X class="h-3 w-3" />
 				</button>
@@ -167,7 +183,7 @@
 							{/if}
 							<button
 								class="rounded-md px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-								onclick={() => dismissNotification(item.id)}
+								onclick={() => dismiss(item.id)}
 							>
 								Dismiss
 							</button>
