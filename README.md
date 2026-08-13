@@ -85,7 +85,7 @@ Grab the latest release for your platform from [Releases](https://github.com/nil
 
 ### Build from Source
 
-See [docs/building.md](docs/building.md) for prerequisites and full instructions.
+See [docs/building.md](docs/building.md) for prerequisites and full instructions
 
 ```bash
 git clone --recursive https://github.com/nile-agi/delta.git

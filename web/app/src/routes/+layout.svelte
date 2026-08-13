@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
-	import { ChatSidebar, ConversationTitleUpdateDialog } from '$lib/components/app';
+	import { ChatSidebar, ChatSettingsDialog, ConversationTitleUpdateDialog } from '$lib/components/app';
 	import {
 		activeMessages,
 		isLoading,
@@ -11,6 +11,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { serverStore } from '$lib/stores/server.svelte';
 	import { config, settingsStore } from '$lib/stores/settings.svelte';
+	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { resolveModelApiBaseUrl, resetModelApiResolution } from '$lib/utils/model-api-url';
 	import { getServerBaseUrl } from '$lib/utils/server-base-url';
 	import { ServerErrorSplash } from '$lib/components/app';
@@ -21,7 +22,12 @@
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 	import { startReminderPolling, stopReminderPolling } from '$lib/services/reminders';
-
+	import { notesWindow } from '$lib/stores/notes-window.svelte';
+	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
+	import NotesWindow from '$lib/components/app/misc/NotesWindow.svelte';
+	import CalendarWindow from '$lib/components/app/misc/CalendarWindow.svelte';
+	import WindowDock from '$lib/components/app/misc/WindowDock.svelte';
+	
 	let { children } = $props();
 
 	const IS_TAURI_ENV =
@@ -67,8 +73,6 @@
 		window.addEventListener('delta-server-ready', onReady);
 		window.addEventListener('delta-server-error', onError);
 
-		// Poll via Tauri command as fallback — handles the race where
-		// window.eval() fires before SvelteKit hydrates and the event is lost
 		let pollFailures = 0;
 		const poll = setInterval(async () => {
 			try {
@@ -106,6 +110,7 @@
 	});
 
 	let modelApiReady = $state(!browser || typeof window === 'undefined');
+
 	$effect(() => {
 		if (!serverReady) return;
 		if (!browser || typeof window === 'undefined') {
@@ -136,7 +141,6 @@
 
 	let isChatRoute = $derived(page.route.id === '/chat/[id]');
 	let isHomeRoute = $derived(page.route.id === '/');
-	let isToolRoute = $derived(page.route.id === '/calendar');
 	let isNewChatMode = $derived(page.url.searchParams.get('new_chat') === 'true');
 	let showSidebarByDefault = $derived(activeMessages().length > 0 || isLoading());
 	let currentConfig = $derived(config());
@@ -146,13 +150,11 @@
 		| { activateSearchMode?: () => void; editActiveConversation?: () => void }
 		| undefined = $state();
 
-	// Conversation title update dialog state
 	let titleUpdateDialogOpen = $state(false);
 	let titleUpdateCurrentTitle = $state('');
 	let titleUpdateNewTitle = $state('');
 	let titleUpdateResolve: ((value: boolean) => void) | null = null;
 
-	// Global keyboard shortcuts
 	function handleKeydown(event: KeyboardEvent) {
 		const isCtrlOrCmd = event.ctrlKey || event.metaKey;
 
@@ -171,7 +173,6 @@
 
 		if (event.shiftKey && isCtrlOrCmd && event.key === 'E') {
 			event.preventDefault();
-
 			if (chatSidebar?.editActiveConversation) {
 				chatSidebar.editActiveConversation();
 			}
@@ -203,10 +204,16 @@
 			sidebarOpen = false;
 		} else if (isHomeRoute && isNewChatMode) {
 			sidebarOpen = autoShowOnNewChat;
-		} else if (isChatRoute || isToolRoute) {
+		} else if (isChatRoute) {
 			sidebarOpen = true;
 		} else {
 			sidebarOpen = showSidebarByDefault;
+		}
+	});
+
+	$effect(() => {
+		if (settingsWindow.state.docked === 'left' && sidebarOpen) {
+			sidebarOpen = false;
 		}
 	});
 
@@ -225,10 +232,8 @@
 		stopReminderPolling();
 	});
 
-	// Sync settings when server props are loaded
 	$effect(() => {
 		const serverProps = serverStore.serverProps;
-
 		if (serverProps?.default_generation_settings?.params) {
 			settingsStore.syncWithServerDefaults();
 		}
@@ -262,7 +267,6 @@
 		}
 	});
 
-	// Set up title update confirmation callback
 	$effect(() => {
 		setTitleUpdateConfirmationCallback(async (currentTitle: string, newTitle: string) => {
 			return new Promise<boolean>((resolve) => {
@@ -291,7 +295,6 @@
 		/>
 	</div>
 {:else if serverReady && modelApiReady}
-	<!-- isInitialized distinguishes "not onboarded yet" from "localStorage not read yet". -->
 	{#if settingsStore.isInitialized && !config().onboardingCompleted}
 		<OnboardingDialog />
 	{/if}
@@ -304,16 +307,21 @@
 		onCancel={handleTitleUpdateCancel}
 	/>
 
+	<ChatSettingsDialog />
+	<NotesWindow />
+	<CalendarWindow />
+	<WindowDock />
+
 	<Sidebar.Provider bind:open={sidebarOpen}>
-		<div class="flex h-screen w-full" style:height="{innerHeight}px">
+		<div class="flex h-screen w-full" style:height={innerHeight}px>
 			<Sidebar.Root class="h-full">
 				<ChatSidebar bind:this={chatSidebar} />
 			</Sidebar.Root>
 
 			<Sidebar.Trigger
-				class="transition-left absolute left-0 z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
+				class="transition-left absolute z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
 					? 'md:left-[var(--sidebar-width)]'
-					: ''}"
+					: 'left-0'} {settingsWindow.state.docked === 'left' ? '!z-[100000] md:left-[var(--sidebar-width)]' : ''}"
 				style="translate: 1rem 1rem;"
 			/>
 

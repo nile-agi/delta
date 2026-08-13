@@ -44,6 +44,7 @@
 	import { fade, fly, slide } from 'svelte/transition';
 	import { Trash2 } from '@lucide/svelte';
 	import ChatScreenDragOverlay from './ChatScreenDragOverlay.svelte';
+	import StatusPillRail from './StatusPillRail.svelte';
 
 	let { showCenteredEmpty = false } = $props();
 
@@ -79,9 +80,7 @@
 	});
 
 	let showDeleteDialog = $state(false);
-
 	let showEmptyFileDialog = $state(false);
-
 	let emptyFileNames = $state<string[]>([]);
 
 	let isEmpty = $derived(
@@ -90,7 +89,6 @@
 
 	let activeErrorDialog = $derived(errorDialog());
 	let isServerLoading = $derived(serverLoading());
-
 	let isCurrentConversationLoading = $derived(isLoading());
 
 	async function handleDeleteConfirm() {
@@ -201,7 +199,6 @@
 
 		const extras = result?.extras;
 
-		// Enable autoscroll for user-initiated message sending (unless disabled in settings)
 		userScrolledUp = false;
 		autoScrollEnabled = true;
 		await sendMessage(message, extras);
@@ -337,6 +334,8 @@
 				<ChatScreenWarning class="pointer-events-auto mx-auto max-w-[48rem] px-4" />
 			{/if}
 
+			<StatusPillRail />
+
 			<div class="conversation-chat-form pointer-events-auto rounded-t-3xl pb-4">
 				<ChatForm
 					isLoading={isCurrentConversationLoading}
@@ -351,12 +350,10 @@
 		</div>
 	</div>
 {:else if isServerLoading}
-	<!-- Server Loading State -->
 	<ServerLoadingSplash />
 {:else if serverStore.error && !serverStore.modelName}
 	<ServerErrorSplash error={serverStore.error} />
 {:else if serverStore.serverProps != null}
-	<!-- Server reachable (with or without model): show welcome and input so user can download a model or chat -->
 	<div
 		aria-label="Welcome screen with file drop zone"
 		class="flex h-full items-center justify-center"
@@ -371,7 +368,6 @@
 				<h1 class="mb-2 text-3xl font-semibold tracking-tight">
 					{greetingName ? `${timeOfDay}, ${greetingName}.` : 'Delta'}
 				</h1>
-
 				<p class="text-lg text-muted-foreground">
 					{greetingName ? 'What are we working on?' : 'How can I help you today?'}
 				</p>
@@ -382,6 +378,8 @@
 			{/if}
 
 			<div in:fly={{ y: 10, duration: 250, delay: 300 }}>
+				<StatusPillRail />
+
 				<ChatForm
 					isLoading={isCurrentConversationLoading}
 					onFileRemove={handleFileRemove}
@@ -396,50 +394,37 @@
 	</div>
 {/if}
 
-<!-- File Upload Error Alert Dialog -->
 <AlertDialog.Root bind:open={showFileErrorDialog}>
 	<AlertDialog.Portal>
 		<AlertDialog.Overlay />
-
 		<AlertDialog.Content class="max-w-md">
 			<AlertDialog.Header>
 				<AlertDialog.Title>File Upload Error</AlertDialog.Title>
-
 				<AlertDialog.Description class="text-sm text-muted-foreground">
 					Some files cannot be uploaded with the current model.
 				</AlertDialog.Description>
 			</AlertDialog.Header>
-
 			<div class="space-y-4">
 				{#if fileErrorData.generallyUnsupported.length > 0}
 					<div class="space-y-2">
 						<h4 class="text-sm font-medium text-destructive">Unsupported File Types</h4>
-
 						<div class="space-y-1">
 							{#each fileErrorData.generallyUnsupported as file (file.name)}
 								<div class="rounded-md bg-destructive/10 px-3 py-2">
-									<p class="font-mono text-sm break-all text-destructive">
-										{file.name}
-									</p>
-
+									<p class="font-mono text-sm break-all text-destructive">{file.name}</p>
 									<p class="mt-1 text-xs text-muted-foreground">File type not supported</p>
 								</div>
 							{/each}
 						</div>
 					</div>
 				{/if}
-
 				{#if fileErrorData.modalityUnsupported.length > 0}
 					<div class="space-y-2">
 						<h4 class="text-sm font-medium text-destructive">Model Compatibility Issues</h4>
-
 						<div class="space-y-1">
 							{#each fileErrorData.modalityUnsupported as file (file.name)}
 								<div class="rounded-md bg-destructive/10 px-3 py-2">
-									<p class="font-mono text-sm break-all text-destructive">
-										{file.name}
-									</p>
-
+									<p class="font-mono text-sm break-all text-destructive">{file.name}</p>
 									<p class="mt-1 text-xs text-muted-foreground">
 										{fileErrorData.modalityReasons[file.name] || 'Not supported by current model'}
 									</p>
@@ -448,20 +433,13 @@
 						</div>
 					</div>
 				{/if}
-
 				<div class="rounded-md bg-muted/50 p-3">
 					<h4 class="mb-2 text-sm font-medium">This model supports:</h4>
-
-					<p class="text-sm text-muted-foreground">
-						{fileErrorData.supportedTypes.join(', ')}
-					</p>
+					<p class="text-sm text-muted-foreground">{fileErrorData.supportedTypes.join(', ')}</p>
 				</div>
 			</div>
-
 			<AlertDialog.Footer>
-				<AlertDialog.Action onclick={() => (showFileErrorDialog = false)}>
-					Got it
-				</AlertDialog.Action>
+				<AlertDialog.Action onclick={() => (showFileErrorDialog = false)}>Got it</AlertDialog.Action>
 			</AlertDialog.Footer>
 		</AlertDialog.Content>
 	</AlertDialog.Portal>
@@ -483,9 +461,7 @@
 	bind:open={showEmptyFileDialog}
 	emptyFiles={emptyFileNames}
 	onOpenChange={(open) => {
-		if (!open) {
-			emptyFileNames = [];
-		}
+		if (!open) emptyFileNames = [];
 	}}
 />
 
@@ -499,17 +475,16 @@
 <style>
 	.conversation-chat-form {
 		position: relative;
-
-		&::after {
-			content: '';
-			position: fixed;
-			bottom: 0;
-			z-index: -1;
-			left: 0;
-			right: 0;
-			width: 100%;
-			height: 2.375rem;
-			background-color: var(--background);
-		}
+	}
+	.conversation-chat-form::after {
+		content: '';
+		position: fixed;
+		bottom: 0;
+		z-index: -1;
+		left: 0;
+		right: 0;
+		width: 100%;
+		height: 2.375rem;
+		background-color: var(--background);
 	}
 </style>

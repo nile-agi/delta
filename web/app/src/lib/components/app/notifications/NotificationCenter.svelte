@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Clock, Calendar, CheckCircle, X, ChevronDown, ChevronUp } from '@lucide/svelte';
+	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
 	import { fly, fade } from 'svelte/transition';
 	import {
 		activeNotifications,
@@ -8,7 +9,6 @@
 	} from '$lib/stores/notifications.svelte';
 	import { updateEvent } from '$lib/stores/calendar.svelte';
 	import type { CalendarEvent } from '$lib/services/agent';
-	import { goto } from '$app/navigation';
 
 	let expanded = $state<Record<string, boolean>>({});
 	const items = $derived(activeNotifications());
@@ -98,7 +98,7 @@
 
 	function viewInCalendar(n: { time?: string; id: string }) {
 		dismiss(n.id);
-		goto('#/calendar');
+		calendarWindow.open();
 	}
 </script>
 

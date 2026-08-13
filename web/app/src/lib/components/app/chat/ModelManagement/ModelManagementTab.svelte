@@ -1,15 +1,17 @@
 <script lang="ts">
 	import { ModelsService, type ModelInfo } from '$lib/services/models';
 	import { slotsService } from '$lib/services/slots';
-	import { modelsCatalog, groupFamiliesByProvider } from '$lib/data/models_catalog';
+	import { modelsCatalog, groupFamiliesByProvider, findModelByName } from '$lib/data/models_catalog';
 	import { selectedModelName as getSelectedModelName, fetchModels } from '$lib/stores/models.svelte';
 	import FamilyAccordion from './FamilyAccordion.svelte';
 	import InstalledModelRow from './InstalledModelRow.svelte';
+	import DownloadingModelRow from './DownloadingModelRow.svelte';
+	import { downloads } from '$lib/stores/downloads.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Search, RefreshCw, Loader2 } from '@lucide/svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	type ViewMode = 'catalog' | 'installed';
@@ -20,16 +22,6 @@
 	let loadingRAM = $state(false);
 	let installedModels: ModelInfo[] = $state([]);
 	let loadingInstalled = $state(false);
-	let downloadingModel = $state<string | null>(null);
-	let downloadProgress = $state<{
-		progress: number;
-		current_bytes: number;
-		total_bytes: number;
-		completed: boolean;
-		failed: boolean;
-		error_message?: string;
-	} | null>(null);
-	let progressPollInterval: ReturnType<typeof setInterval> | null = null;
 	let removingModel = $state<string | null>(null);
 	let confirmDeleteModel = $state<string | null>(null);
 
@@ -53,6 +45,19 @@
 						model.name.toLowerCase().includes(query) ||
 						model.display_name.toLowerCase().includes(query)
 				)
+		);
+	});
+
+	// In-flight downloads aren't installed yet, so they have no ModelInfo — surface them in the
+	// Installed view from the store instead, filtered by the same search box.
+	const filteredDownloads = $derived.by(() => {
+		const query = searchQuery.trim().toLowerCase();
+		if (!query) return downloads.active;
+		// Match display name too, so searching behaves the same as it does for installed rows.
+		return downloads.active.filter(
+			(d) =>
+				d.model.toLowerCase().includes(query) ||
+				(findModelByName(d.model)?.display_name ?? '').toLowerCase().includes(query)
 		);
 	});
 
@@ -107,90 +112,13 @@
 	}
 
 	async function handleDownload(modelName: string) {
-		console.log('[Download] Starting download for:', modelName);
-		downloadingModel = modelName;
-		downloadProgress = {
-			progress: 0,
-			current_bytes: 0,
-			total_bytes: 0,
-			completed: false,
-			failed: false
-		};
-
-		try {
-			await ModelsService.download(modelName);
-
-			const pollProgress = async () => {
-				try {
-					const progress = await ModelsService.getDownloadProgress(modelName);
-					downloadProgress = progress;
-
-					if (progress.completed || progress.failed) {
-						if (progressPollInterval) {
-							clearInterval(progressPollInterval);
-							progressPollInterval = null;
-						}
-
-						if (progress.completed) {
-							toast.success(`Model ${modelName} downloaded successfully`);
-							await loadInstalledModels();
-							await fetchModels(true);
-							setTimeout(() => {
-								downloadProgress = null;
-								downloadingModel = null;
-							}, 2000);
-						} else if (progress.failed) {
-							toast.error(progress.error_message || 'Download failed');
-							downloadProgress = null;
-							downloadingModel = null;
-						}
-					}
-				} catch (e) {
-					console.error('[Download] Error polling progress:', e);
-				}
-			};
-
-			await pollProgress();
-			progressPollInterval = setInterval(pollProgress, 500);
-		} catch (e) {
-			const errorMessage = e instanceof Error ? e.message : 'Failed to download model';
-			toast.error(errorMessage);
-			console.error('[Download] Error downloading model:', e);
-			if (progressPollInterval) {
-				clearInterval(progressPollInterval);
-				progressPollInterval = null;
-			}
-			downloadProgress = null;
-			downloadingModel = null;
-		}
+		// The store owns the poll loop and the terminal toasts, so progress survives this
+		// component being unmounted when settings is closed, minimized or switched away from.
+		await downloads.start(modelName);
 	}
 
 	async function handleStopDownload(modelName: string) {
-		console.log('[Download] Stopping download for:', modelName);
-
-		// Only stop if this model is currently tracked as downloading
-		if (downloadingModel !== modelName) {
-			return;
-		}
-
-		// Stop polling progress while we send cancel request
-		if (progressPollInterval) {
-			clearInterval(progressPollInterval);
-			progressPollInterval = null;
-		}
-
-		try {
-			await ModelsService.cancelDownload(modelName);
-		} catch (e) {
-			const errorMessage = e instanceof Error ? e.message : 'Failed to cancel download';
-			toast.error(errorMessage);
-			console.error('[Download] Error cancelling download:', e);
-		} finally {
-			// Reset local UI state regardless of backend outcome; libcurl will
-			// observe cancellation flag on next progress callback when possible.
-			downloadProgress = null;
-			downloadingModel = null;
-		}
+		await downloads.cancel(modelName);
 	}
 
 	async function handleRemove(modelName: string) {
@@ -230,15 +158,20 @@
 	}
 
 	onMount(async () => {
-		console.log('ModelManagementTab mounted');
 		await loadSystemRAM();
 		await loadInstalledModels();
 	});
 
-	onDestroy(() => {
-		if (progressPollInterval) {
-			clearInterval(progressPollInterval);
-		}
+	// downloads.completionTick bumps whenever a download reaches a terminal state; a newly
+	// finished model needs to appear in the installed list without a manual refresh.
+	// Plain `let`, not $state: the effect writes this, and tracking it would make the effect
+	// re-run on its own write.
+	let lastCompletionTick = downloads.completionTick;
+	$effect(() => {
+		const tick = downloads.completionTick;
+		if (tick === lastCompletionTick) return;
+		lastCompletionTick = tick;
+		void loadInstalledModels();
 	});
 </script>
 
@@ -267,7 +200,9 @@
 					}}
 					type="button"
 				>
-					Installed ({installedModels.length})
+					Installed ({installedModels.length}){downloads.activeCount > 0
+						? ` · ${downloads.activeCount} downloading`
+						: ''}
 				</button>
 				<button
 					class="rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200 {viewMode ===
@@ -328,11 +263,11 @@
 	<div class="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
 		<!-- Installed Models View -->
 		{#if viewMode === 'installed'}
-			{#if loadingInstalled && installedModels.length === 0}
+			{#if loadingInstalled && installedModels.length === 0 && filteredDownloads.length === 0}
 				<div class="flex items-center justify-center py-16">
 					<Loader2 class="h-8 w-8 animate-spin text-primary" />
 				</div>
-			{:else if filteredInstalledModels.length === 0}
+			{:else if filteredInstalledModels.length === 0 && filteredDownloads.length === 0}
 				<div class="py-16 text-center text-muted-foreground">
 					<p class="mb-2">
 						{#if searchQuery}
@@ -348,6 +283,10 @@
 			{:else}
 				<!-- Installed Models List: manage context length and delete only. Load/select model via chat model selector. -->
 				<div class="space-y-2">
+					<!-- In-flight downloads first: they're the thing the user is waiting on. -->
+					{#each filteredDownloads as download (download.model)}
+						<DownloadingModelRow {download} onCancel={handleStopDownload} />
+					{/each}
 					{#each filteredInstalledModels as model (model.name)}
 						<InstalledModelRow
 							{model}
@@ -386,9 +325,7 @@
 									onModelDownload={handleDownload}
 									onModelRemove={handleRemove}
 									onModelStopDownload={handleStopDownload}
-									{downloadingModel}
 									{removingModel}
-									{downloadProgress}
 								/>
 							{/each}
 						</div>

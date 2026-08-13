@@ -31,6 +31,35 @@ export interface ModelOperationResponse {
 	ctx_size?: number;
 }
 
+/** Carries the HTTP status so callers can tell 409 "already downloading" from a real failure. */
+export class ModelApiError extends Error {
+	constructor(
+		message: string,
+		readonly status: number
+	) {
+		super(message);
+		this.name = 'ModelApiError';
+	}
+}
+
+export interface DownloadProgressResponse {
+	progress: number;
+	current_bytes: number;
+	total_bytes: number;
+	completed: boolean;
+	failed: boolean;
+	/** True when the user cancelled, so callers can skip the error toast. */
+	cancelled?: boolean;
+	error_message?: string;
+}
+
+export interface ActiveDownload {
+	model: string;
+	progress: number;
+	current_bytes: number;
+	total_bytes: number;
+}
+
 export class ModelsService {
 	/**
 	 * List models from main server (llama-server).
@@ -127,14 +156,7 @@ export class ModelsService {
 	/**
 	 * Get download progress for a model
 	 */
-	static async getDownloadProgress(modelName: string): Promise<{
-		progress: number;
-		current_bytes: number;
-		total_bytes: number;
-		completed: boolean;
-		failed: boolean;
-		error_message?: string;
-	}> {
+	static async getDownloadProgress(modelName: string): Promise<DownloadProgressResponse> {
 		try {
 			const url = `${getModelApiBaseUrl()}/api/models/download/progress/${encodeURIComponent(modelName)}`;
 			console.log('[ModelsService] Fetching progress from:', url);
@@ -164,6 +186,29 @@ export class ModelsService {
 	}
 
 	/**
+	 * List every download still in flight. Unlike per-model progress this is authoritative
+	 * without knowing the model names up front, so it can seed the UI after a page reload.
+	 */
+	static async listActiveDownloads(): Promise<ActiveDownload[]> {
+		const response = await fetch(`${getModelApiBaseUrl()}/api/models/downloads`, {
+			method: 'GET',
+			headers: {
+				'Content-Type': 'application/json'
+			}
+		});
+
+		if (!response.ok) {
+			throw new ModelApiError(
+				`Failed to list downloads (status ${response.status})`,
+				response.status
+			);
+		}
+
+		const data = await response.json();
+		return Array.isArray(data?.downloads) ? data.downloads : [];
+	}
+
+	/**
 	 * Download a model (returns immediately, use getDownloadProgress to track)
 	 */
 	static async download(modelName: string): Promise<ModelOperationResponse> {
@@ -188,8 +233,9 @@ export class ModelsService {
 
 		if (!response.ok) {
 			const error = await response.json().catch(() => ({}));
-			throw new Error(
-				error.error?.message || `Failed to download model (status ${response.status})`
+			throw new ModelApiError(
+				error.error?.message || `Failed to download model (status ${response.status})`,
+				response.status
 			);
 		}
 

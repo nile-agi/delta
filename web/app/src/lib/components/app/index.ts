@@ -33,7 +33,6 @@ export { default as ParameterSourceIndicator } from './chat/ChatSettings/Paramet
 
 export { default as ChatSidebar } from './chat/ChatSidebar/ChatSidebar.svelte';
 export { default as ChatSidebarConversationItem } from './chat/ChatSidebar/ChatSidebarConversationItem.svelte';
-export { default as ChatSidebarSearch } from './chat/ChatSidebar/ChatSidebarSearch.svelte';
 export { default as ChatErrorDialog } from './dialogs/ChatErrorDialog.svelte';
 export { default as EmptyFileAlertDialog } from './dialogs/EmptyFileAlertDialog.svelte';
 
@@ -52,3 +51,11 @@ export { default as ServerInfo } from './server/ServerInfo.svelte';
 export { default as ActionButton } from './misc/ActionButton.svelte';
 export { default as ActionDropdown } from './misc/ActionDropdown.svelte';
 export { default as ConfirmationDialog } from './dialogs/ConfirmationDialog.svelte';
+
+// ... existing exports ...
+
+export { default as FloatingWindow } from './misc/FloatingWindow.svelte';
+export { default as NotesWindow } from './misc/NotesWindow.svelte';
+export { default as CalendarWindow } from './misc/CalendarWindow.svelte';
+
+export { default as WindowDock } from './misc/WindowDock.svelte';

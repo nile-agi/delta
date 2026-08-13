@@ -44,8 +44,12 @@
 			/>
 
 			<X
-				class="cursor-pointertext-muted-foreground absolute top-2.5 right-2 h-4 w-4"
+				role="button"
+				tabindex={0}
+				aria-label="Close search"
+				class="cursor-pointer text-muted-foreground absolute top-2.5 right-2 h-4 w-4"
 				onclick={handleSearchModeDeactivate}
+				onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && handleSearchModeDeactivate()}
 			/>
 		</div>
 	{:else}
