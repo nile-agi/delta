@@ -1,19 +1,37 @@
 <script lang="ts">
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Calendar, StickyNote, ChevronDown, Wrench } from '@lucide/svelte';
+
+	import {
+		Calendar,
+		StickyNote,
+		ChevronDown,
+		Wrench,
+		Monitor
+	} from '@lucide/svelte';
+
 	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
-	import { Cpu } from '@lucide/svelte';
 	import { monitorWindow } from '$lib/stores/monitor-window.svelte';
-
 
 	let open = $state(false);
 
 	const tools = [
-		{ label: 'Calendar', icon: Calendar, open: () => calendarWindow.open() },
-		{ label: 'Notes', icon: StickyNote, open: () => notesWindow.open() },
-		{ label: 'System Monitor', icon: Cpu, open: () => monitorWindow.open() }
+		{
+			label: 'Calendar',
+			icon: Calendar,
+			open: () => calendarWindow.open()
+		},
+		{
+			label: 'Notes',
+			icon: StickyNote,
+			open: () => notesWindow.open()
+		},
+		{
+			label: 'System Monitor',
+			icon: Monitor,
+			open: () => monitorWindow.open()
+		}
 	];
 </script>
 
@@ -29,15 +47,23 @@
 					<Wrench class="h-4 w-4" />
 					<span>Tools</span>
 				</span>
-				<ChevronDown class="h-3 w-3 transition-transform {open ? 'rotate-180' : ''}" />
+
+				<ChevronDown
+					class="h-3 w-3 transition-transform {open ? 'rotate-180' : ''}"
+				/>
 			</Button>
 		{/snippet}
 	</DropdownMenu.Trigger>
 
-	<DropdownMenu.Content side="right" align="start" class="w-48">
+	<DropdownMenu.Content
+		side="right"
+		align="start"
+		class="w-48"
+	>
 		<DropdownMenu.Group>
 			{#each tools as tool}
 				{@const Icon = tool.icon}
+
 				<DropdownMenu.Item
 					class="flex items-center gap-2 cursor-pointer"
 					onclick={tool.open}
