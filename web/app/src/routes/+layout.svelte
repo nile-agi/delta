@@ -27,6 +27,7 @@
 	import NotesWindow from '$lib/components/app/misc/NotesWindow.svelte';
 	import CalendarWindow from '$lib/components/app/misc/CalendarWindow.svelte';
 	import WindowDock from '$lib/components/app/misc/WindowDock.svelte';
+	import SystemMonitor from '$lib/components/app/misc/SystemMonitor.svelte';
 	
 	let { children } = $props();
 
@@ -311,6 +312,7 @@
 	<NotesWindow />
 	<CalendarWindow />
 	<WindowDock />
+	<SystemMonitor />
 
 	<Sidebar.Provider bind:open={sidebarOpen}>
 		<div class="flex h-screen w-full" style:height={innerHeight}px>

@@ -4,12 +4,16 @@
 	import { Calendar, StickyNote, ChevronDown, Wrench } from '@lucide/svelte';
 	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
+	import { Cpu } from '@lucide/svelte';
+	import { monitorWindow } from '$lib/stores/monitor-window.svelte';
+
 
 	let open = $state(false);
 
 	const tools = [
 		{ label: 'Calendar', icon: Calendar, open: () => calendarWindow.open() },
-		{ label: 'Notes', icon: StickyNote, open: () => notesWindow.open() }
+		{ label: 'Notes', icon: StickyNote, open: () => notesWindow.open() },
+		{ label: 'System Monitor', icon: Cpu, open: () => monitorWindow.open() }
 	];
 </script>
 

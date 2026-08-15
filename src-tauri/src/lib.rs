@@ -1,3 +1,4 @@
+mod commands;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -242,7 +243,13 @@ pub fn run() {
         .manage(StreamAbortFlags {
             flags: Mutex::new(HashMap::new()),
         })
-        .invoke_handler(tauri::generate_handler![get_server_port, get_server_status, stream_chat, abort_stream])
+        .invoke_handler(tauri::generate_handler![
+            get_server_port, 
+            get_server_status, 
+            stream_chat, 
+            abort_stream,
+            commands::get_system_stats
+            ])
         .setup(|app| {
             let app_handle = app.handle().clone();
 

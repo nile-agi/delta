@@ -22,3 +22,5 @@ serde_json = "1"
 log = "0.4"
 ureq = { version = "2", default-features = false }
 tokio = { version = "1", features = ["rt"] }
+
+sysinfo = "0.31"
