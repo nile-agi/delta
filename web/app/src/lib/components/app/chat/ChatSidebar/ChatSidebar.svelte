@@ -6,13 +6,14 @@
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
 	import { monitorWindow } from '$lib/stores/monitor-window.svelte';
 	import { config } from '$lib/stores/settings.svelte';
-	import { settingsWindow } from '$lib/stores/settings-window.svelte';
+	// import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { ChatSidebarConversationItem, ConfirmationDialog } from '$lib/components/app';
 	import ScrollArea from '$lib/components/ui/scroll-area/scroll-area.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import Input from '$lib/components/ui/input/input.svelte';
+	import { openNativeWindow } from '$lib/utils/native-window';
 	import {
 		conversations,
 		deleteConversation,
@@ -134,36 +135,51 @@
 							</div>
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content side="right" align="start" class="w-48">
-							<DropdownMenu.Group>
-								
-								<!-- CALENDAR ITEM -->
+							<DropdownMenu.Group>			
+																<!-- Inside the Tools DropdownMenu -->
 								<DropdownMenu.Item
 									class="flex items-center gap-2 cursor-pointer"
-									onclick={() => { calendarWindow.open(); handleMobileSidebarItemClick(); }}
+									onclick={() => { 
+									openNativeWindow({ label: 'calendar', title: 'Calendar', url: '/calendar' }); 
+									handleMobileSidebarItemClick(); 
+									}}
 								>
 									<Calendar class="h-4 w-4" />
 									<span>Calendar</span>
 								</DropdownMenu.Item>
 
-								<!-- NOTES ITEM -->
 								<DropdownMenu.Item
 									class="flex items-center gap-2 cursor-pointer"
-									onclick={() => { notesWindow.open(); handleMobileSidebarItemClick(); }}
+									onclick={() => { 
+									openNativeWindow({ label: 'notes', title: 'Notes', url: '/notes' }); 
+									handleMobileSidebarItemClick(); 
+									}}
 								>
 									<StickyNote class="h-4 w-4" />
 									<span>Notes</span>
 								</DropdownMenu.Item>
 
-								<!-- 🔽 ADD THIS ENTIRE BLOCK RIGHT HERE 🔽 -->
 								<DropdownMenu.Item
 									class="flex items-center gap-2 cursor-pointer"
-									onclick={() => { monitorWindow.open(); handleMobileSidebarItemClick(); }}
+									onclick={() => { 
+										openNativeWindow({ label: 'monitor', title: 'System Monitor', url: '/monitor', width: 400, height: 600 }); 
+										handleMobileSidebarItemClick(); 
+									}}
 								>
 									<Monitor class="h-4 w-4" />
 									<span>System Monitor</span>
 								</DropdownMenu.Item>
-								<!-- 🔼 END OF ADDITION 🔼 -->
-							</DropdownMenu.Group>
+
+								<!-- Bottom Settings Gear Icon -->
+								<!-- <button
+									class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+									onclick={() => openNativeWindow({ label: 'settings', title: 'Settings', url: '/settings', width: 700, height: 640 })}
+									title="Settings"
+									aria-label="Settings"
+								>
+								<Settings class="h-4 w-4" />
+								</button> -->
+								</DropdownMenu.Group>
 						</DropdownMenu.Content>
 					</DropdownMenu.Root>
 				</Sidebar.GroupContent>
@@ -211,13 +227,27 @@
 		</div>
 	</ScrollArea>
 
-	<div class="absolute bottom-0 left-0 right-0 z-50 flex items-center justify-between border-t border-border/30 bg-sidebar/80 px-4 py-3 backdrop-blur-lg">
+	<!-- <div class="absolute bottom-0 left-0 right-0 z-50 flex items-center justify-between border-t border-border/30 bg-sidebar/80 px-4 py-3 backdrop-blur-lg">
 		<span class="text-sm font-medium text-muted-foreground truncate">
 			{config().userName || 'User'}
 		</span>
 		<button
 			class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 			onclick={() => settingsWindow.toggle()}
+			title="Settings"
+			aria-label="Settings"
+		>
+			<Settings class="h-4 w-4" />
+		</button>
+	</div> -->
+
+	<div class="absolute bottom-0 left-0 right-0 z-50 flex items-center justify-between border-t border-border/30 bg-sidebar/80 px-4 py-3 backdrop-blur-lg">
+		<span class="text-sm font-medium text-muted-foreground truncate">
+			{config().userName || 'User'}
+		</span>
+		<button
+			class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+			onclick={() => openNativeWindow({ label: 'settings', title: 'Settings', url: '/settings', width: 720, height: 640 })}
 			title="Settings"
 			aria-label="Settings"
 		>

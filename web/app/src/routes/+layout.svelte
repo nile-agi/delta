@@ -2,7 +2,11 @@
 	import '../app.css';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
-	import { ChatSidebar, ChatSettingsDialog, ConversationTitleUpdateDialog } from '$lib/components/app';
+	import { getCurrentWindow } from '@tauri-apps/api/window';
+
+	// Removed ChatSettingsDialog, NotesWindow, CalendarWindow, WindowDock, SystemMonitor from imports
+	// as they are now native OS windows served via their own routes.
+	import { ChatSidebar, ConversationTitleUpdateDialog, ServerErrorSplash } from '$lib/components/app';
 	import {
 		activeMessages,
 		isLoading,
@@ -14,7 +18,6 @@
 	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { resolveModelApiBaseUrl, resetModelApiResolution } from '$lib/utils/model-api-url';
 	import { getServerBaseUrl } from '$lib/utils/server-base-url';
-	import { ServerErrorSplash } from '$lib/components/app';
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import NotificationCenter from '$lib/components/app/notifications/NotificationCenter.svelte';
@@ -24,16 +27,19 @@
 	import { startReminderPolling, stopReminderPolling } from '$lib/services/reminders';
 	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
-	import NotesWindow from '$lib/components/app/misc/NotesWindow.svelte';
-	import CalendarWindow from '$lib/components/app/misc/CalendarWindow.svelte';
-	import WindowDock from '$lib/components/app/misc/WindowDock.svelte';
-	import SystemMonitor from '$lib/components/app/misc/SystemMonitor.svelte';
-	
+	import { toolDock } from '$lib/stores/tool-dock.svelte';
+
 	let { children } = $props();
 
-	const IS_TAURI_ENV =
+	const IS_TAIURI_ENV =
 		browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-	let serverReady = $state(!IS_TAURI_ENV);
+
+	// ✅ FIXED: Declare currentWindow BEFORE using it
+	const currentWindow = getCurrentWindow();
+	const isToolWindow = ['notes', 'calendar', 'monitor', 'settings'].includes(currentWindow.label);
+	const isMonitorWindow = currentWindow.label === 'monitor';
+
+	let serverReady = $state(!IS_TAIURI_ENV);
 	let serverError = $state(false);
 	let serverErrorMessage = $state('');
 
@@ -51,26 +57,38 @@
 	}
 
 	$effect(() => {
-		if (!IS_TAURI_ENV) return;
+		if (isToolWindow || !browser) return;
+		toolDock.refresh();
+		const interval = setInterval(() => toolDock.refresh(), 1000);
+		return () => clearInterval(interval);
+	});
+
+	$effect(() => {
+		if (!IS_TAIURI_ENV) return;
+
 		if ((window as any).__DELTA_PORT__ != null && !(window as any).__DELTA_SERVER_ERROR__) {
 			serverReady = true;
 			return;
 		}
+
 		if ((window as any).__DELTA_SERVER_ERROR__) {
 			serverError = true;
 			serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
 			return;
 		}
+
 		const onReady = () => {
 			resetModelApiResolution();
 			serverError = false;
 			serverReady = true;
 		};
+
 		const onError = () => {
 			resetModelApiResolution();
 			serverError = true;
 			serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
 		};
+
 		window.addEventListener('delta-server-ready', onReady);
 		window.addEventListener('delta-server-error', onError);
 
@@ -114,10 +132,12 @@
 
 	$effect(() => {
 		if (!serverReady) return;
+
 		if (!browser || typeof window === 'undefined') {
 			modelApiReady = true;
 			return;
 		}
+
 		Promise.race([
 			resolveModelApiBaseUrl().then(() => true),
 			new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000))
@@ -147,6 +167,7 @@
 	let currentConfig = $derived(config());
 	let sidebarOpen = $state(false);
 	let innerHeight = $state<number | undefined>();
+
 	let chatSidebar:
 		| { activateSearchMode?: () => void; editActiveConversation?: () => void }
 		| undefined = $state();
@@ -199,6 +220,7 @@
 	$effect(() => {
 		const alwaysShow = currentConfig.alwaysShowSidebar === true;
 		const autoShowOnNewChat = currentConfig.autoShowSidebarOnNewChat !== false;
+
 		if (alwaysShow) {
 			sidebarOpen = true;
 		} else if (isHomeRoute && !isNewChatMode) {
@@ -243,7 +265,6 @@
 	$effect(() => {
 		if (!serverReady) return;
 		const apiKey = config().apiKey;
-
 		if (
 			(page.route.id === '/' || page.route.id === '/chat/[id]') &&
 			page.status !== 401 &&
@@ -252,7 +273,6 @@
 			const headers: Record<string, string> = {
 				'Content-Type': 'application/json'
 			};
-
 			if (apiKey && apiKey.trim() !== '') {
 				headers.Authorization = `Bearer ${apiKey.trim()}`;
 			}
@@ -281,11 +301,21 @@
 </script>
 
 <ModeWatcher />
-
 <Toaster richColors />
 <NotificationCenter />
 
-{#if serverError}
+{#if isToolWindow}
+	<!-- ✅ FIXED: Monitor renders instantly, others wait for server -->
+	{#if isMonitorWindow || (serverReady && modelApiReady)}
+		<div class="h-screen w-screen overflow-auto bg-background text-foreground">
+			{@render children?.()}
+		</div>
+	{:else}
+		<div class="flex h-screen w-screen items-center justify-center bg-background">
+			<p class="text-sm text-muted-foreground">Loading…</p>
+		</div>
+	{/if}
+{:else if serverError}
 	<div class="splash-screen">
 		<ServerErrorSplash
 			error={serverErrorMessage}
@@ -296,6 +326,7 @@
 		/>
 	</div>
 {:else if serverReady && modelApiReady}
+	<!-- 🔵 MAIN DELTA APP (unchanged) -->
 	{#if settingsStore.isInitialized && !config().onboardingCompleted}
 		<OnboardingDialog />
 	{/if}
@@ -308,25 +339,17 @@
 		onCancel={handleTitleUpdateCancel}
 	/>
 
-	<ChatSettingsDialog />
-	<NotesWindow />
-	<CalendarWindow />
-	<WindowDock />
-	<SystemMonitor />
-
 	<Sidebar.Provider bind:open={sidebarOpen}>
 		<div class="flex h-screen w-full" style:height={innerHeight}px>
 			<Sidebar.Root class="h-full">
 				<ChatSidebar bind:this={chatSidebar} />
 			</Sidebar.Root>
-
 			<Sidebar.Trigger
 				class="transition-left absolute z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
 					? 'md:left-[var(--sidebar-width)]'
-					: 'left-0'} {settingsWindow.state.docked === 'left' ? '!z-[100000] md:left-[var(--sidebar-width)]' : ''}"
+					: 'left-0'}"
 				style="translate: 1rem 1rem;"
 			/>
-
 			<Sidebar.Inset class="flex flex-1 flex-col overflow-hidden">
 				{@render children?.()}
 			</Sidebar.Inset>

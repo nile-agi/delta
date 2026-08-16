@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { notesStore, type Note } from '$lib/stores/notes.svelte';
-	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
@@ -13,7 +12,6 @@
 		Download, Printer, X, Minus, ChevronDown, Sparkles,
 		ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Trash, GripVertical
 	} from '@lucide/svelte';
-	import FloatingWindow from './FloatingWindow.svelte';
 
 	let search = $state('');
 	let editorRef = $state<HTMLDivElement | null>(null);
@@ -51,7 +49,7 @@
 	let sketchDlgDragOffX = $state(0);
 	let sketchDlgDragOffY = $state(0);
 
-	const emojis = ['📝', '💡', '🔥', '⭐', '❤️', '⚡', '📌', '✅', '🔔', '🎨', '💼', '📚', '🎯', '🚀', '💻', '🏠', '❓', '💰'];
+	const emojis = ['📝', '', '🔥', '⭐', '❤️', '⚡', '📌', '✅', '🔔', '', '💼', '📚', '', '🚀', '💻', '🏠', '❓', '💰'];
 
 	const noteColors = [
 		{ name: 'Default', value: null, border: '' },
@@ -255,6 +253,7 @@
 		return false;
 	}
 
+	// ✅ FIXED: null-safe traversal (was "'node' is possibly 'null'")
 	function getCurrentChecklistItem(): HTMLLIElement | null {
 		const sel = window.getSelection();
 		if (!sel) return null;
@@ -591,9 +590,7 @@
 
 	function shareNote() {
 		if (!activeNote) return;
-		const text = `${activeNote.title}
-
-${editorRef?.innerText || ''}`;
+		const text = `${activeNote.title}\n\n${editorRef?.innerText || ''}`;
 		if (navigator.share) {
 			navigator.share({ title: activeNote.title, text }).catch(() => {});
 		} else {
@@ -610,9 +607,7 @@ ${editorRef?.innerText || ''}`;
 
 	function exportNote() {
 		if (!activeNote) return;
-		const blob = new Blob([`# ${activeNote.title}
-
-${editorRef?.innerText || ''}`], { type: 'text/plain' });
+		const blob = new Blob([`# ${activeNote.title}\n\n${editorRef?.innerText || ''}`], { type: 'text/plain' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
@@ -731,303 +726,302 @@ ${editorRef?.innerText || ''}`], { type: 'text/plain' });
 	});
 </script>
 
-<!-- ===== MAIN FLOATING WINDOW ===== -->
-<FloatingWindow title="Notes" store={notesWindow}>
-	<div class="flex h-full w-full overflow-hidden">
-		<!-- Sidebar -->
-		<div class="flex w-72 flex-col border-r bg-background">
-			<div class="flex items-center justify-between border-b p-4">
-				<h2 class="text-lg font-semibold flex items-center gap-2">
-					<Sparkles class="h-5 w-5 text-yellow-500" />
-					Notes
-				</h2>
-				<Button size="icon" variant="ghost" onclick={handleCreate} title="New note">
-					<Plus class="h-4 w-4" />
-				</Button>
-			</div>
-			<div class="p-3">
-				<Input placeholder="Search notes..." bind:value={search} class="h-8" />
-			</div>
-			<ScrollArea class="flex-1">
-				<div class="flex flex-col gap-1 p-2">
-					{#each filteredNotes as note (note.id)}
-						<div
-							role="button"
-							tabindex="0"
-							class="group relative flex items-start gap-2 rounded-md px-3 py-2 text-left text-sm transition-all cursor-pointer border-l-4 border-transparent
-								{notesStore.activeNoteId === note.id ? 'bg-accent text-accent-foreground ring-1 ring-accent' : 'hover:bg-muted'}
-								{getNoteColorBorder(note)}"
-							onclick={() => selectNote(note.id)}
-							onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectNote(note.id); } }}
-						>
-							<div class="shrink-0 mt-0.5">
-								{#if note.emoji}
-									<span class="text-base">{note.emoji}</span>
-								{:else}
-									<FileText class="h-4 w-4 opacity-50" />
-								{/if}
-							</div>
-							<div class="flex-1 overflow-hidden min-w-0">
-								<div class="truncate font-medium flex items-center gap-1">
-									{#if note.pinned}
-										<Pin class="h-3 w-3 fill-current text-yellow-500 shrink-0" />
-									{/if}
-									{note.title || 'Untitled'}
-								</div>
-								<div class="truncate text-xs text-muted-foreground">
-									{new Date(note.updatedAt).toLocaleDateString()} • {new Date(note.updatedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
-								</div>
-							</div>
-							<button
-								class="h-6 w-6 rounded opacity-0 transition-opacity hover:bg-destructive/10 group-hover:opacity-100 focus:opacity-100 flex items-center justify-center shrink-0"
-								onclick={(e: Event) => handleDelete(note.id, e)}
-								title="Delete note"
-							>
-								<Trash2 class="h-3 w-3 text-destructive" />
-							</button>
-						</div>
-					{:else}
-						<div class="px-3 py-8 text-center text-sm text-muted-foreground">
-							<div class="mb-2 text-4xl">📝</div>
-							<p>No notes yet. Click + to create one.</p>
-						</div>
-					{/each}
-				</div>
-			</ScrollArea>
+<!-- ===== MAIN WINDOW (native OS window provides the frame) ===== -->
+<div class="flex h-screen w-full overflow-hidden">
+	<!-- Sidebar -->
+	<div class="flex w-72 flex-col border-r bg-background">
+		<div class="flex items-center justify-between border-b p-4">
+			<h2 class="text-lg font-semibold flex items-center gap-2">
+				<Sparkles class="h-5 w-5 text-yellow-500" />
+				Notes
+			</h2>
+			<Button size="icon" variant="ghost" onclick={handleCreate} title="New note">
+				<Plus class="h-4 w-4" />
+			</Button>
 		</div>
-
-		<!-- Editor -->
-		<div class="flex flex-1 flex-col min-w-0 bg-background relative">
-			{#if activeNote}
-				<!-- Title Bar -->
-				<div class="border-b px-6 py-3 flex items-center gap-3 relative">
-					<Input
-						value={activeNote.title}
-						oninput={updateTitle}
-						class="note-title-input border-0 bg-transparent text-xl font-semibold shadow-none focus-visible:ring-0 px-0 flex-1"
-						placeholder="Note title..."
-					/>
-					<div class="flex items-center gap-1">
-						<Button size="icon" variant="ghost" onclick={() => showEmojiPicker = !showEmojiPicker} title="Emoji">
-							<Smile class="h-4 w-4" />
-						</Button>
-						{#if showEmojiPicker}
-							<div class="emoji-picker-container absolute right-4 top-14 z-50 bg-popover border rounded-lg shadow-lg p-2 grid grid-cols-6 gap-1 w-48">
-								{#each emojis as emoji}
-									<button class="hover:bg-accent rounded p-1 text-lg transition-colors" onclick={() => setNoteEmoji(emoji)}>{emoji}</button>
-								{/each}
-							</div>
-						{/if}
-						<Button size="icon" variant="ghost" onclick={() => showColorPicker = !showColorPicker} title="Color">
-							<Palette class="h-4 w-4" />
-						</Button>
-						{#if showColorPicker}
-							<div class="color-picker-container absolute right-4 top-14 z-50 bg-popover border rounded-lg shadow-lg p-2 flex flex-col gap-1 w-32">
-								{#each noteColors as color}
-									<button class="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent text-xs transition-colors" onclick={() => setNoteColor(color.value)}>
-										<div class="w-4 h-4 rounded-full border {color.value ? 'bg-' + color.value + '-400' : 'bg-background border-dashed'}"></div>
-										{color.name}
-									</button>
-								{/each}
-							</div>
-						{/if}
-						<Button size="icon" variant="ghost" onclick={() => notesStore.togglePin(activeNote.id)} title={activeNote.pinned ? 'Unpin' : 'Pin'}>
-							<Pin class="h-4 w-4 {activeNote.pinned ? 'fill-current text-yellow-500' : ''}" />
-						</Button>
-					</div>
-				</div>
-
-				<!-- Beautiful Toolbar -->
-				<div class="border-b px-4 py-2 flex items-center gap-1 flex-wrap bg-muted/20">
-					<!-- Style Dropdown -->
-					<div class="style-menu-container relative">
-						<button
-							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-l-md border border-r-0 border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
-							onclick={() => showStyleMenu = !showStyleMenu}
-						>
-							<Type class="h-3.5 w-3.5" />
-							<span>Style</span>
-							<ChevronDown class="h-3 w-3 opacity-60" />
-						</button>
-						{#if showStyleMenu}
-							<div class="absolute left-0 top-full mt-1 z-50 w-56 bg-popover border rounded-lg shadow-xl p-1 overflow-hidden">
-								<div class="grid grid-cols-2 gap-1 p-1 border-b">
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBold(); showStyleMenu = false; }}>
-										<Bold class="h-3 w-3" /> Bold
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatItalic(); showStyleMenu = false; }}>
-										<Italic class="h-3 w-3" /> Italic
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatUnderline(); showStyleMenu = false; }}>
-										<Underline class="h-3 w-3" /> Underline
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatHighlight(); showStyleMenu = false; }}>
-										<Highlighter class="h-3 w-3" /> Highlight
-									</button>
-								</div>
-								<div class="flex flex-col p-1">
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('h1'); showStyleMenu = false; }}>
-										<Heading1 class="h-3 w-3" /> Title (H1)
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('h2'); showStyleMenu = false; }}>
-										<Heading2 class="h-3 w-3" /> Heading (H2)
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('h3'); showStyleMenu = false; }}>
-										<Heading3 class="h-3 w-3" /> Subheading (H3)
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('p'); showStyleMenu = false; }}>
-										<Text class="h-3 w-3" /> Body (p)
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('pre'); showStyleMenu = false; }}>
-										<Code class="h-3 w-3" /> Monostyled (pre)
-									</button>
-								</div>
-								<div class="border-t p-1 flex flex-col">
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatList('bullet'); showStyleMenu = false; }}>
-										<List class="h-3 w-3" /> Bulleted List
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatList('dashed'); showStyleMenu = false; }}>
-										<Minus class="h-3 w-3" /> Dashed List
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatList('number'); showStyleMenu = false; }}>
-										<ListOrdered class="h-3 w-3" /> Number List
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlockQuote(); showStyleMenu = false; }}>
-										<Quote class="h-3 w-3" /> Block Quote
-									</button>
-								</div>
-							</div>
-						{/if}
-					</div>
-
-					<!-- Block Quote -->
-					<button
-						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
-						onclick={formatBlockQuote}
-						title="Block Quote"
-					>
-						<Quote class="h-3.5 w-3.5" />
-						<span class="hidden sm:inline">Block Quote</span>
-					</button>
-
-					<!-- Add Table -->
-					<button
-						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
-						onclick={() => { centerDialog(); showTableDialog = true; }}
-						title="Add Table"
-					>
-						<Table class="h-3.5 w-3.5" />
-						<span class="hidden sm:inline">Add Table</span>
-					</button>
-
-					<!-- Check List -->
-					<button
-						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors {isInChecklist() ? 'bg-accent text-accent-foreground' : ''}"
-						onclick={toggleCheckList}
-						title="Toggle Check List"
-					>
-						<ListChecks class="h-3.5 w-3.5" />
-						<span class="hidden sm:inline">Check List</span>
-					</button>
-
-					<!-- More >> -->
-					<div class="more-menu-container relative">
-						<button
-							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-r-md border border-l-0 border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
-							onclick={() => showMoreMenu = !showMoreMenu}
-							title="More options"
-						>
-							<MoreHorizontal class="h-3.5 w-3.5" />
-							<span>&gt;&gt;</span>
-						</button>
-						{#if showMoreMenu}
-							<div class="absolute right-0 top-full mt-1 z-50 w-56 bg-popover border rounded-lg shadow-xl p-1.5 overflow-hidden">
-								<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { triggerFileUpload('image'); showMoreMenu = false; }}>
-									<ImageIcon class="h-4 w-4 text-muted-foreground" /> Choose photo or video
-								</button>
-								<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { triggerFileUpload('file'); showMoreMenu = false; }}>
-									<Paperclip class="h-4 w-4 text-muted-foreground" /> Attach file
-								</button>
-								<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { showSketchModal = true; showMoreMenu = false; }}>
-									<Pencil class="h-4 w-4 text-muted-foreground" /> Add sketch
-								</button>
-								<div class="border-t my-1"></div>
-								<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { shareNote(); showMoreMenu = false; }}>
-									<Share2 class="h-4 w-4 text-muted-foreground" /> Share
-								</button>
-								<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { exportNote(); showMoreMenu = false; }}>
-									<Download class="h-4 w-4 text-muted-foreground" /> Export
-								</button>
-								<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { printNote(); showMoreMenu = false; }}>
-									<Printer class="h-4 w-4 text-muted-foreground" /> Print
-								</button>
-							</div>
-						{/if}
-					</div>
-				</div>
-
-				<!-- Editor Content -->
-				<div class="flex-1 relative overflow-hidden">
+		<div class="p-3">
+			<Input placeholder="Search notes..." bind:value={search} class="h-8" />
+		</div>
+		<ScrollArea class="flex-1">
+			<div class="flex flex-col gap-1 p-2">
+				{#each filteredNotes as note (note.id)}
 					<div
-						bind:this={editorRef}
-						use:setupEditor
-						contenteditable="true"
-						class="h-full w-full overflow-y-auto p-6 outline-none text-base leading-relaxed"
-						style="min-height: 200px;"
-						onkeydown={handleEditorKeyDown}
-						onmouseup={() => checkTableSelection()}
-						onblur={() => { currentTable = null; if (saveTimeout) { clearTimeout(saveTimeout); doSave(); } }}
-					></div>
+						role="button"
+						tabindex="0"
+						class="group relative flex items-start gap-2 rounded-md px-3 py-2 text-left text-sm transition-all cursor-pointer border-l-4 border-transparent
+							{notesStore.activeNoteId === note.id ? 'bg-accent text-accent-foreground ring-1 ring-accent' : 'hover:bg-muted'}
+							{getNoteColorBorder(note)}"
+						onclick={() => selectNote(note.id)}
+						onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectNote(note.id); } }}
+					>
+						<div class="shrink-0 mt-0.5">
+							{#if note.emoji}
+								<span class="text-base">{note.emoji}</span>
+							{:else}
+								<FileText class="h-4 w-4 opacity-50" />
+							{/if}
+						</div>
+						<div class="flex-1 overflow-hidden min-w-0">
+							<div class="truncate font-medium flex items-center gap-1">
+								{#if note.pinned}
+									<Pin class="h-3 w-3 fill-current text-yellow-500 shrink-0" />
+								{/if}
+								{note.title || 'Untitled'}
+							</div>
+							<div class="truncate text-xs text-muted-foreground">
+								{new Date(note.updatedAt).toLocaleDateString()} • {new Date(note.updatedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+							</div>
+						</div>
+						<button
+							class="h-6 w-6 rounded opacity-0 transition-opacity hover:bg-destructive/10 group-hover:opacity-100 focus:opacity-100 flex items-center justify-center shrink-0"
+							onclick={(e: Event) => handleDelete(note.id, e)}
+							title="Delete note"
+						>
+							<Trash2 class="h-3 w-3 text-destructive" />
+						</button>
+					</div>
+				{:else}
+					<div class="px-3 py-8 text-center text-sm text-muted-foreground">
+						<div class="mb-2 text-4xl">📝</div>
+						<p>No notes yet. Click + to create one.</p>
+					</div>
+				{/each}
+			</div>
+		</ScrollArea>
+	</div>
 
-					{#if currentTable}
-						<div class="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-popover border rounded-md shadow-xl p-1 z-40">
-							<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableRow(true)}><ArrowUp class="h-3 w-3" /> Row</Button>
-							<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableRow(false)}><ArrowDown class="h-3 w-3" /> Row</Button>
-							<div class="w-px h-4 bg-border mx-0.5"></div>
-							<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableCol(true)}><ArrowLeft class="h-3 w-3" /> Col</Button>
-							<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableCol(false)}><ArrowRight class="h-3 w-3" /> Col</Button>
-							<div class="w-px h-4 bg-border mx-0.5"></div>
-							<Button size="sm" variant="ghost" class="h-7 text-xs text-destructive px-2" onclick={deleteTableRow}>Del Row</Button>
-							<Button size="sm" variant="ghost" class="h-7 text-xs text-destructive px-2" onclick={deleteTableCol}>Del Col</Button>
-							<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs text-destructive px-2" onclick={deleteTable}><Trash class="h-3 w-3" /> Table</Button>
+	<!-- Editor -->
+	<div class="flex flex-1 flex-col min-w-0 bg-background relative">
+		{#if activeNote}
+			<!-- Title Bar -->
+			<div class="border-b px-6 py-3 flex items-center gap-3 relative">
+				<Input
+					value={activeNote.title}
+					oninput={updateTitle}
+					class="note-title-input border-0 bg-transparent text-xl font-semibold shadow-none focus-visible:ring-0 px-0 flex-1"
+					placeholder="Note title..."
+				/>
+				<div class="flex items-center gap-1">
+					<Button size="icon" variant="ghost" onclick={() => showEmojiPicker = !showEmojiPicker} title="Emoji">
+						<Smile class="h-4 w-4" />
+					</Button>
+					{#if showEmojiPicker}
+						<div class="emoji-picker-container absolute right-4 top-14 z-50 bg-popover border rounded-lg shadow-lg p-2 grid grid-cols-6 gap-1 w-48">
+							{#each emojis as emoji}
+								<button class="hover:bg-accent rounded p-1 text-lg transition-colors" onclick={() => setNoteEmoji(emoji)}>{emoji}</button>
+							{/each}
+						</div>
+					{/if}
+					<Button size="icon" variant="ghost" onclick={() => showColorPicker = !showColorPicker} title="Color">
+						<Palette class="h-4 w-4" />
+					</Button>
+					{#if showColorPicker}
+						<div class="color-picker-container absolute right-4 top-14 z-50 bg-popover border rounded-lg shadow-lg p-2 flex flex-col gap-1 w-32">
+							{#each noteColors as color}
+								<button class="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent text-xs transition-colors" onclick={() => setNoteColor(color.value)}>
+									<div class="w-4 h-4 rounded-full border {color.value ? 'bg-' + color.value + '-400' : 'bg-background border-dashed'}"></div>
+									{color.name}
+								</button>
+							{/each}
+						</div>
+					{/if}
+					<Button size="icon" variant="ghost" onclick={() => notesStore.togglePin(activeNote.id)} title={activeNote.pinned ? 'Unpin' : 'Pin'}>
+						<Pin class="h-4 w-4 {activeNote.pinned ? 'fill-current text-yellow-500' : ''}" />
+					</Button>
+				</div>
+			</div>
+
+			<!-- Beautiful Toolbar -->
+			<div class="border-b px-4 py-2 flex items-center gap-1 flex-wrap bg-muted/20">
+				<!-- Style Dropdown -->
+				<div class="style-menu-container relative">
+					<button
+						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-l-md border border-r-0 border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
+						onclick={() => showStyleMenu = !showStyleMenu}
+					>
+						<Type class="h-3.5 w-3.5" />
+						<span>Style</span>
+						<ChevronDown class="h-3 w-3 opacity-60" />
+					</button>
+					{#if showStyleMenu}
+						<div class="absolute left-0 top-full mt-1 z-50 w-56 bg-popover border rounded-lg shadow-xl p-1 overflow-hidden">
+							<div class="grid grid-cols-2 gap-1 p-1 border-b">
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBold(); showStyleMenu = false; }}>
+									<Bold class="h-3 w-3" /> Bold
+								</button>
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatItalic(); showStyleMenu = false; }}>
+									<Italic class="h-3 w-3" /> Italic
+								</button>
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatUnderline(); showStyleMenu = false; }}>
+									<Underline class="h-3 w-3" /> Underline
+								</button>
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatHighlight(); showStyleMenu = false; }}>
+									<Highlighter class="h-3 w-3" /> Highlight
+								</button>
+							</div>
+							<div class="flex flex-col p-1">
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('h1'); showStyleMenu = false; }}>
+									<Heading1 class="h-3 w-3" /> Title (H1)
+								</button>
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('h2'); showStyleMenu = false; }}>
+									<Heading2 class="h-3 w-3" /> Heading (H2)
+								</button>
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('h3'); showStyleMenu = false; }}>
+									<Heading3 class="h-3 w-3" /> Subheading (H3)
+								</button>
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('p'); showStyleMenu = false; }}>
+									<Text class="h-3 w-3" /> Body (p)
+								</button>
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('pre'); showStyleMenu = false; }}>
+									<Code class="h-3 w-3" /> Monostyled (pre)
+								</button>
+							</div>
+							<div class="border-t p-1 flex flex-col">
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatList('bullet'); showStyleMenu = false; }}>
+									<List class="h-3 w-3" /> Bulleted List
+								</button>
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatList('dashed'); showStyleMenu = false; }}>
+									<Minus class="h-3 w-3" /> Dashed List
+								</button>
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatList('number'); showStyleMenu = false; }}>
+									<ListOrdered class="h-3 w-3" /> Number List
+								</button>
+								<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlockQuote(); showStyleMenu = false; }}>
+									<Quote class="h-3 w-3" /> Block Quote
+								</button>
+							</div>
 						</div>
 					{/if}
 				</div>
 
-				<!-- Status Bar -->
-				<div class="border-t px-4 py-1.5 flex items-center justify-between text-xs text-muted-foreground bg-muted/20">
-					<div class="flex items-center gap-3">
-						<span>{wordCount} words</span>
-						<span>{charCount} chars</span>
-						{#if wordCount > 0}
-							<span>~{Math.ceil(wordCount / 200)} min read</span>
-						{/if}
-					</div>
-					<div class="flex items-center gap-2">
-						{#if lastSaved}<span>Saved at {lastSaved}</span>{/if}
-					</div>
+				<!-- Block Quote -->
+				<button
+					class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
+					onclick={formatBlockQuote}
+					title="Block Quote"
+				>
+					<Quote class="h-3.5 w-3.5" />
+					<span class="hidden sm:inline">Block Quote</span>
+				</button>
+
+				<!-- Add Table -->
+				<button
+					class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
+					onclick={() => { centerDialog(); showTableDialog = true; }}
+					title="Add Table"
+				>
+					<Table class="h-3.5 w-3.5" />
+					<span class="hidden sm:inline">Add Table</span>
+				</button>
+
+				<!-- Check List -->
+				<button
+					class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
+					onclick={toggleCheckList}
+					title="Toggle Check List"
+				>
+					<ListChecks class="h-3.5 w-3.5" />
+					<span class="hidden sm:inline">Check List</span>
+				</button>
+
+				<!-- More >> -->
+				<div class="more-menu-container relative">
+					<button
+						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-r-md border border-l-0 border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
+						onclick={() => showMoreMenu = !showMoreMenu}
+						title="More options"
+					>
+						<MoreHorizontal class="h-3.5 w-3.5" />
+						<span>&gt;&gt;</span>
+					</button>
+					{#if showMoreMenu}
+						<div class="absolute right-0 top-full mt-1 z-50 w-56 bg-popover border rounded-lg shadow-xl p-1.5 overflow-hidden">
+							<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { triggerFileUpload('image'); showMoreMenu = false; }}>
+								<ImageIcon class="h-4 w-4 text-muted-foreground" /> Choose photo or video
+							</button>
+							<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { triggerFileUpload('file'); showMoreMenu = false; }}>
+								<Paperclip class="h-4 w-4 text-muted-foreground" /> Attach file
+							</button>
+							<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { showSketchModal = true; showMoreMenu = false; }}>
+								<Pencil class="h-4 w-4 text-muted-foreground" /> Add sketch
+							</button>
+							<div class="border-t my-1"></div>
+							<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { shareNote(); showMoreMenu = false; }}>
+								<Share2 class="h-4 w-4 text-muted-foreground" /> Share
+							</button>
+							<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { exportNote(); showMoreMenu = false; }}>
+								<Download class="h-4 w-4 text-muted-foreground" /> Export
+							</button>
+							<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { printNote(); showMoreMenu = false; }}>
+								<Printer class="h-4 w-4 text-muted-foreground" /> Print
+							</button>
+						</div>
+					{/if}
 				</div>
-			{:else}
-				<div class="flex flex-1 items-center justify-center text-muted-foreground">
-					<div class="text-center">
-						<FileText class="mx-auto mb-3 h-10 w-10 opacity-20" />
-						<p>Select a note or create a new one</p>
-						<Button class="mt-4" onclick={handleCreate}>
-							<Plus class="mr-2 h-4 w-4" /> New Note
-						</Button>
+			</div>
+
+			<!-- Editor Content -->
+			<div class="flex-1 relative overflow-hidden">
+				<div
+					bind:this={editorRef}
+					use:setupEditor
+					contenteditable="true"
+					class="h-full w-full overflow-y-auto p-6 outline-none text-base leading-relaxed"
+					style="min-height: 200px;"
+					onkeydown={handleEditorKeyDown}
+					onmouseup={() => checkTableSelection()}
+					onblur={() => { currentTable = null; if (saveTimeout) { clearTimeout(saveTimeout); doSave(); } }}
+				></div>
+
+				{#if currentTable}
+					<div class="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-popover border rounded-md shadow-xl p-1 z-40">
+						<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableRow(true)}><ArrowUp class="h-3 w-3" /> Row</Button>
+						<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableRow(false)}><ArrowDown class="h-3 w-3" /> Row</Button>
+						<div class="w-px h-4 bg-border mx-0.5"></div>
+						<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableCol(true)}><ArrowLeft class="h-3 w-3" /> Col</Button>
+						<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableCol(false)}><ArrowRight class="h-3 w-3" /> Col</Button>
+						<div class="w-px h-4 bg-border mx-0.5"></div>
+						<Button size="sm" variant="ghost" class="h-7 text-xs text-destructive px-2" onclick={deleteTableRow}>Del Row</Button>
+						<Button size="sm" variant="ghost" class="h-7 text-xs text-destructive px-2" onclick={deleteTableCol}>Del Col</Button>
+						<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs text-destructive px-2" onclick={deleteTable}><Trash class="h-3 w-3" /> Table</Button>
 					</div>
+				{/if}
+			</div>
+
+			<!-- Status Bar -->
+			<div class="border-t px-4 py-1.5 flex items-center justify-between text-xs text-muted-foreground bg-muted/20">
+				<div class="flex items-center gap-3">
+					<span>{wordCount} words</span>
+					<span>{charCount} chars</span>
+					{#if wordCount > 0}
+						<span>~{Math.ceil(wordCount / 200)} min read</span>
+					{/if}
 				</div>
-			{/if}
-		</div>
+				<div class="flex items-center gap-2">
+					{#if lastSaved}<span>Saved at {lastSaved}</span>{/if}
+				</div>
+			</div>
+		{:else}
+			<div class="flex flex-1 items-center justify-center text-muted-foreground">
+				<div class="text-center">
+					<FileText class="mx-auto mb-3 h-10 w-10 opacity-20" />
+					<p>Select a note or create a new one</p>
+					<Button class="mt-4" onclick={handleCreate}>
+						<Plus class="mr-2 h-4 w-4" /> New Note
+					</Button>
+				</div>
+			</div>
+		{/if}
 	</div>
-</FloatingWindow>
+</div>
 
 <!-- ===== HIDDEN FILE INPUTS ===== -->
 <input type="file" bind:this={fileInput} class="hidden" onchange={handleFileSelect} accept="*/*" multiple />
 <input type="file" bind:this={mediaInput} class="hidden" onchange={handleFileSelect} accept="image/*,video/*" multiple />
 
-<!-- ===== TABLE DIALOG — OUTSIDE FloatingWindow (not clipped by overflow:hidden) ===== -->
+<!-- ===== TABLE DIALOG ===== -->
 {#if showTableDialog}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 	<div
 		class="fixed inset-0 bg-black/40"
 		style="z-index: 100000;"
@@ -1037,6 +1031,7 @@ ${editorRef?.innerText || ''}`], { type: 'text/plain' });
 		class="fixed bg-background border rounded-lg shadow-2xl p-6 w-80"
 		style="left: {tableDlgX}px; top: {tableDlgY}px; z-index: 100001;"
 	>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="flex items-center justify-between mb-4 cursor-grab active:cursor-grabbing select-none"
 			onpointerdown={onTableDragStart}
@@ -1054,12 +1049,12 @@ ${editorRef?.innerText || ''}`], { type: 'text/plain' });
 		</div>
 		<div class="space-y-4">
 			<div>
-				<label class="text-sm text-muted-foreground block mb-1">Rows</label>
-				<Input type="number" bind:value={tableRows} min={1} max={20} />
+				<label for="table-rows-input" class="text-sm text-muted-foreground block mb-1">Rows</label>
+				<Input id="table-rows-input" type="number" bind:value={tableRows} min={1} max={20} />
 			</div>
 			<div>
-				<label class="text-sm text-muted-foreground block mb-1">Columns</label>
-				<Input type="number" bind:value={tableCols} min={1} max={10} />
+				<label for="table-cols-input" class="text-sm text-muted-foreground block mb-1">Columns</label>
+				<Input id="table-cols-input" type="number" bind:value={tableCols} min={1} max={10} />
 			</div>
 		</div>
 		<div class="flex justify-end gap-2 mt-6">
@@ -1069,8 +1064,9 @@ ${editorRef?.innerText || ''}`], { type: 'text/plain' });
 	</div>
 {/if}
 
-<!-- ===== SKETCH MODAL — OUTSIDE FloatingWindow ===== -->
+<!-- ===== SKETCH MODAL ===== -->
 {#if showSketchModal}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 	<div
 		class="fixed inset-0 bg-black/40"
 		style="z-index: 100000;"
@@ -1080,6 +1076,7 @@ ${editorRef?.innerText || ''}`], { type: 'text/plain' });
 		class="fixed bg-background border rounded-lg shadow-2xl p-4 max-w-[90vw]"
 		style="left: {sketchDlgX}px; top: {sketchDlgY}px; z-index: 100001; width: 600px;"
 	>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="flex items-center justify-between mb-4 cursor-grab active:cursor-grabbing select-none"
 			onpointerdown={onSketchDragStart}
@@ -1115,7 +1112,7 @@ ${editorRef?.innerText || ''}`], { type: 'text/plain' });
 	</div>
 {/if}
 
-<!-- ===== EXPORT TOAST — OUTSIDE FloatingWindow ===== -->
+<!-- ===== EXPORT TOAST ===== -->
 {#if showExportToast}
 	<div
 		class="fixed bottom-6 right-6 bg-popover border rounded-lg shadow-xl px-4 py-3 flex items-center gap-2"

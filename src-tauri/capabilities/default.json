@@ -1,12 +1,17 @@
 {
   "identifier": "default",
   "description": "Default capabilities for the Delta app",
-  "windows": ["main"],
+  "windows": ["*"],
   "remote": {
     "urls": ["http://localhost:*", "http://127.0.0.1:*"]
   },
-    "permissions": [
+  "permissions": [
     "core:default",
+    "core:window:default",
+    "core:window:allow-set-focus",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-create-webview",
+    
     "shell:allow-open",
     "shell:allow-spawn",
     "shell:allow-stdin-write",
@@ -21,6 +26,8 @@
     "notification:default",
     "notification:allow-notify",
     "notification:allow-request-permission",
-    "notification:allow-is-permission-granted"
+    "notification:allow-is-permission-granted",
+    "core:window:allow-is-minimized",
+    "core:window:allow-unminimize"
   ]
 }
