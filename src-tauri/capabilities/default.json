@@ -5,7 +5,7 @@
   "remote": {
     "urls": ["http://localhost:*", "http://127.0.0.1:*"]
   },
-  "permissions": [
+    "permissions": [
     "core:default",
     "shell:allow-open",
     "shell:allow-spawn",
@@ -17,6 +17,7 @@
     "allow-abort-stream",
     "allow-get-server-port",
     "allow-get-server-status",
+    "allow-get-system-stats",
     "notification:default",
     "notification:allow-notify",
     "notification:allow-request-permission",

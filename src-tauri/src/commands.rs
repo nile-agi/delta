@@ -42,44 +42,46 @@ pub struct GpuInfo {
 
 #[tauri::command]
 pub async fn get_system_stats() -> Result<SystemStats, String> {
-    // We use spawn_blocking so the 250ms sleep doesn't freeze the Tauri UI thread pool
     tokio::task::spawn_blocking(|| {
-        // 1. FIXED: Changed RefreshKind::nothing() to RefreshKind::new() as your compiler suggested
         let mut sys = System::new_with_specifics(
             RefreshKind::new()
                 .with_cpu(CpuRefreshKind::new().with_cpu_usage())
-                .with_memory(MemoryRefreshKind::new())
+                .with_memory(MemoryRefreshKind::everything())
         );
-        
-        // Wait 250ms to measure CPU usage over time (required by sysinfo for accuracy)
+
+        // Wait 250ms so sysinfo can measure CPU usage over time
         std::thread::sleep(Duration::from_millis(250));
-        
+
         sys.refresh_specifics(
             RefreshKind::new()
                 .with_cpu(CpuRefreshKind::new().with_cpu_usage())
-                .with_memory(MemoryRefreshKind::new())
+                .with_memory(MemoryRefreshKind::everything())
         );
 
-        let os_name = System::long_os_version().unwrap_or_else(|| "Unknown OS".to_string());
-        let os_version = System::os_version().unwrap_or_else(|| "Unknown Version".to_string());
-        let arch = System::cpu_arch().unwrap_or_else(|| "Unknown Arch".to_string());
-        
-        // 2. FIXED: Changed System::physical_core_count() to sys.physical_core_count() 
-        // because your version of sysinfo defines it as an instance method (&self)
+        // Cosmetic: show "macOS" instead of the kernel name "Darwin"
+        let mut os_name = System::name().unwrap_or_else(|| "Unknown OS".to_string());
+        if os_name == "Darwin" {
+            os_name = "macOS".to_string();
+        }
+        let os_version = System::os_version().unwrap_or_else(|| "Unknown".to_string());
+        let arch = System::cpu_arch().unwrap_or_else(|| "Unknown".to_string());
         let cores = sys.physical_core_count().unwrap_or(0);
 
+        // ✅ FIXED: use used_memory() — the metric sysinfo actually implements
+        // on macOS (active + wired + compressed). available_memory() returns 0
+        // on macOS in this sysinfo version, which caused the fake 100%.
         let total_ram = sys.total_memory();
-        let available_ram = sys.available_memory();
+        let used_ram = sys.used_memory();
+        let available_ram = total_ram.saturating_sub(used_ram);
         let ram_usage = if total_ram > 0 {
-            ((total_ram - available_ram) as f32 / total_ram as f32) * 100.0
-        } else { 
-            0.0 
+            (used_ram as f32 / total_ram as f32) * 100.0
+        } else {
+            0.0
         };
 
         let cpu_model = sys.cpus().first()
             .map(|c| c.brand().to_string())
             .unwrap_or_else(|| "Unknown CPU".to_string());
-            
         let cpu_usage = sys.global_cpu_usage();
 
         Ok(SystemStats {
@@ -88,8 +90,8 @@ pub async fn get_system_stats() -> Result<SystemStats, String> {
             memory: MemoryInfo { total: total_ram, available: available_ram, usage: ram_usage },
             gpu: GpuInfo {
                 name: "Standard Output".to_string(),
-                usage: 0.0, 
-                total_memory: 0, 
+                usage: 0.0,
+                total_memory: 0,
                 available_memory: 0,
             },
         })

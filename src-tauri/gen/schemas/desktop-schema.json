@@ -405,6 +405,12 @@
           "markdownDescription": "Allows the get_server_status command."
         },
         {
+          "description": "Allows the get_system_stats command.",
+          "type": "string",
+          "const": "allow-get-system-stats",
+          "markdownDescription": "Allows the get_system_stats command."
+        },
+        {
           "description": "Allows the stream_chat command for streaming chat completions via Tauri IPC.",
           "type": "string",
           "const": "allow-stream-chat",
@@ -427,6 +433,12 @@
           "type": "string",
           "const": "deny-get-server-status",
           "markdownDescription": "Denies the get_server_status command."
+        },
+        {
+          "description": "Denies the get_system_stats command.",
+          "type": "string",
+          "const": "deny-get-system-stats",
+          "markdownDescription": "Denies the get_system_stats command."
         },
         {
           "description": "Denies the stream_chat command.",

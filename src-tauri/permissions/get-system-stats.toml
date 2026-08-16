@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-get-system-stats"
+description = "Allows the get_system_stats command."
+commands.allow = ["get_system_stats"]
+
+[[permission]]
+identifier = "deny-get-system-stats"
+description = "Denies the get_system_stats command."
+commands.deny = ["get_system_stats"]

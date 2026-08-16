@@ -1,9 +1,18 @@
 <script lang="ts">
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Calendar, StickyNote, ChevronDown, Wrench } from '@lucide/svelte';
+
+	import {
+		Calendar,
+		StickyNote,
+		ChevronDown,
+		Wrench,
+		Monitor // Added Monitor icon
+	} from '@lucide/svelte';
+
 	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
+	import { monitorWindow } from '$lib/stores/monitor-window.svelte'; // Added store
 
 	let open = $state(false);
 
@@ -15,6 +24,12 @@
 	function openNotes() {
 		open = false;
 		notesWindow.open();
+	}
+
+	// NEW FUNCTION FOR SYSTEM MONITOR
+	function openMonitor() {
+		open = false;
+		monitorWindow.open();
 	}
 </script>
 
@@ -30,6 +45,7 @@
 					<Wrench class="h-4 w-4" />
 					<span>Tools</span>
 				</span>
+
 				<ChevronDown class="h-3 w-3 transition-transform {open ? 'rotate-180' : ''}" />
 			</Button>
 		{/snippet}
@@ -44,12 +60,22 @@
 				<Calendar class="h-4 w-4" />
 				<span>Calendar</span>
 			</DropdownMenu.Item>
+
 			<DropdownMenu.Item
 				class="flex items-center gap-2 cursor-pointer"
 				onclick={openNotes}
 			>
 				<StickyNote class="h-4 w-4" />
 				<span>Notes</span>
+			</DropdownMenu.Item>
+
+			<!-- NEW SYSTEM MONITOR ITEM -->
+			<DropdownMenu.Item
+				class="flex items-center gap-2 cursor-pointer"
+				onclick={openMonitor}
+			>
+				<Monitor class="h-4 w-4" />
+				<span>System Monitor</span>
 			</DropdownMenu.Item>
 		</DropdownMenu.Group>
 	</DropdownMenu.Content>

@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Settings, Calendar, Trash2, StickyNote, ChevronDown, Wrench } from '@lucide/svelte';
+	import { Settings, Calendar, Trash2, StickyNote, ChevronDown, Wrench, Monitor } from '@lucide/svelte';
 	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
+	import { monitorWindow } from '$lib/stores/monitor-window.svelte';
 	import { config } from '$lib/stores/settings.svelte';
 	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { ChatSidebarConversationItem, ConfirmationDialog } from '$lib/components/app';
@@ -134,6 +135,8 @@
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content side="right" align="start" class="w-48">
 							<DropdownMenu.Group>
+								
+								<!-- CALENDAR ITEM -->
 								<DropdownMenu.Item
 									class="flex items-center gap-2 cursor-pointer"
 									onclick={() => { calendarWindow.open(); handleMobileSidebarItemClick(); }}
@@ -141,6 +144,8 @@
 									<Calendar class="h-4 w-4" />
 									<span>Calendar</span>
 								</DropdownMenu.Item>
+
+								<!-- NOTES ITEM -->
 								<DropdownMenu.Item
 									class="flex items-center gap-2 cursor-pointer"
 									onclick={() => { notesWindow.open(); handleMobileSidebarItemClick(); }}
@@ -148,6 +153,16 @@
 									<StickyNote class="h-4 w-4" />
 									<span>Notes</span>
 								</DropdownMenu.Item>
+
+								<!-- 🔽 ADD THIS ENTIRE BLOCK RIGHT HERE 🔽 -->
+								<DropdownMenu.Item
+									class="flex items-center gap-2 cursor-pointer"
+									onclick={() => { monitorWindow.open(); handleMobileSidebarItemClick(); }}
+								>
+									<Monitor class="h-4 w-4" />
+									<span>System Monitor</span>
+								</DropdownMenu.Item>
+								<!-- 🔼 END OF ADDITION 🔼 -->
 							</DropdownMenu.Group>
 						</DropdownMenu.Content>
 					</DropdownMenu.Root>
