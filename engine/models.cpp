@@ -346,6 +346,47 @@ void ModelManager::init_model_registry() {
         false // supports_tools
     };
 
+    // ===== HY-MT2 SERIES (Tencent) =====
+    model_registry_["hy-mt2:1.8b"] = {
+        "hy-mt2:1.8b",
+        "hy-mt2-1.8b",
+        "tencent/Hy-MT2-1.8B-GGUF",
+        "Hy-MT2-1.8B-Q4_K_M.gguf",
+        "Q4_K_M",
+        1130LL * 1024 * 1024, // ~1.13 GB
+        "Tencent Hy-MT2 1.8B, efficient multilingual model.",
+        "Hy-MT2 1.8B",
+        0, // use model default (-c from model)
+        true // supports_tools
+    };
+
+    model_registry_["hy-mt2:7b"] = {
+        "hy-mt2:7b",
+        "hy-mt2-7b",
+        "tencent/Hy-MT2-7B-GGUF",
+        "Hy-MT2-7B-Q4_K_M.gguf",
+        "Q4_K_M",
+        4620LL * 1024 * 1024, // ~4.62 GB
+        "Tencent Hy-MT2 7B, powerful multilingual reasoning model.",
+        "Hy-MT2 7B",
+        0, // use model default (-c from model)
+        true // supports_tools
+    };
+
+    // ===== TENCENT UI-MATE SERIES =====
+    model_registry_["tencent-ui:9b"] = {
+        "tencent-ui:9b",
+        "tencent-ui-9b",
+        "bartowski/tencent_UI-Mate-9B-GGUF",
+        "tencent_UI-Mate-9B-Q4_K_M.gguf",
+        "Q4_K_M",
+        5910LL * 1024 * 1024, // ~5.91 GB
+        "Tencent UI-Mate 9B, specialized for UI understanding and automation tasks.",
+        "Tencent UI-Mate 9B",
+        0, // use model default (-c from model)
+        true // supports_tools
+    };
+
     // ===== QWEN 3 SERIES (Latest generation) =====
     model_registry_["tinygemma3"] = {
         "tinygemma3",
@@ -998,6 +1039,46 @@ void ModelManager::init_model_registry() {
         true // supports_tools
     };
 
+    // ===== QWEN 3.8 SERIES (Distilled) =====
+    model_registry_["qwen3.8:2b"] = {
+        "qwen3.8:2b",
+        "qwen3.8-2b",
+        "empero-ai/Qwen3.8-2B-Distill-GGUF",
+        "Qwen3.8-2B-Q4_K_M.gguf",
+        "Q4_K_M",
+        1310LL * 1024 * 1024, // ~1.31 GB
+        "Qwen 3.8 2B Distill model, lightweight and fast for edge deployment.",
+        "Qwen 3.8 2B Distill",
+        0, // use model default (-c from model)
+        true // supports_tools
+    };
+
+    model_registry_["qwen3.8:4b"] = {
+        "qwen3.8:4b",
+        "qwen3.8-4b",
+        "empero-ai/Qwen3.8-4B-Distill-GGUF",
+        "Qwen3.8-4B-Q4_K_M.gguf",
+        "Q4_K_M",
+        2780LL * 1024 * 1024, // ~2.78 GB
+        "Qwen 3.8 4B Distill model, highly efficient and capable.",
+        "Qwen 3.8 4B Distill",
+        0, // use model default (-c from model)
+        true // supports_tools
+    };
+
+    model_registry_["qwen3.8:9b"] = {
+        "qwen3.8:9b",
+        "qwen3.8-9b",
+        "empero-ai/Qwen3.8-9B-Distill-GGUF",
+        "Qwen3.8-9B-Q4_K_M.gguf",
+        "Q4_K_M",
+        5780LL * 1024 * 1024, // ~5.78 GB
+        "Qwen 3.8 9B Distill model, powerful reasoning and instruction following.",
+        "Qwen 3.8 9B Distill",
+        0, // use model default (-c from model)
+        true // supports_tools
+    };
+
     // ===== GEMMA SERIES (8K) =====
     model_registry_["gemma1.1:2b"] = {
         "gemma1.1:2b",
@@ -1130,8 +1211,13 @@ void ModelManager::init_model_registry() {
         true // supports_tools
     };
     model_registry_["gemma3:27b"] = {
-        "gemma3:27b", "gemma3-27b",          "google/gemma-3-27b-it-GGUF", "gemma-3-27b-it-Q4_K_M.gguf",
-        "Q4_K_M",     16500LL * 1024 * 1024, "Gemma 3 27B Instruct",       "Gemma 3 27B",
+        "gemma3:27b", "gemma3-27b",          
+        "google/gemma-3-27b-it-GGUF", 
+        "gemma-3-27b-it-Q4_K_M.gguf",
+        "Q4_K_M",     
+        16500LL * 1024 * 1024, 
+        "Gemma 3 27B Instruct",       
+        "Gemma 3 27B",
         32768,
         true // supports_tools
     };
@@ -1174,7 +1260,7 @@ void ModelManager::init_model_registry() {
         "Gemma 3N E2B",
         0,   // use model default (-c from model)
         true // supports_tools
-    };
+    };  
 
     model_registry_["gemma3n:e4b"] = {
         "gemma3n:e4b",
@@ -1982,7 +2068,7 @@ void ModelManager::init_model_registry() {
         "LiquidAI/LFM2.5-230M-GGUF",
         "LFM2.5-230M-F16.gguf",
         "F16",
-        460LL * 1024 * 1024, // ~460 MB
+        462LL * 1024 * 1024, // ~462 MB
         "Ultra-lightweight edge model. Runs on Raspberry Pi 5 and mobile devices.",
         "LFM2.5 230M",
         32768,
@@ -2008,7 +2094,7 @@ void ModelManager::init_model_registry() {
         "LiquidAI/LFM2.5-350M-GGUF",
         "LFM2.5-350M-F16.gguf",
         "F16",
-        700LL * 1024 * 1024, // ~700 MB
+        711LL * 1024 * 1024, // ~711 MB
         "Fast edge model balancing capability and speed.",
         "LFM2.5 350M",
         32768,
@@ -2028,15 +2114,28 @@ void ModelManager::init_model_registry() {
         false // supports_tools
     };
 
+    model_registry_["lfm2.5:1.2b-instruct"] = {
+        "lfm2.5:1.2b-instruct",
+        "lfm2.5-1.2b-instruct",
+        "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
+        "LFM2.5-1.2B-Instruct-Q8_0.gguf",
+        "Q8_0",
+        1250LL * 1024 * 1024, // ~1.25 GB
+        "Instruction-tuned model for general tasks, chat, and reasoning.",
+        "LFM 2.5 1.2B Instruct",
+        32768,
+        true // supports_tools
+    };
+
     // ===== GRANITE 4.1 SERIES (IBM) =====
 
     model_registry_["granite-vision-4.1-4b"] = {
         "granite-vision-4.1-4b",
         "granite-vision-4.1-4b",
         "ibm-granite/granite-vision-4.1-4b-GGUF",
-        "granite-vision-4.1-4b-Q5_K_M.gguf",
-        "Q5_K_M",
-        2800LL * 1024 * 1024, // ~2.8 GB
+        "granite-vision-4.1-4b-Q4_K_M.gguf",
+        "Q4_K_M",
+        2100LL * 1024 * 1024, // ~2.1 GB
         "IBM Granite vision-language model. Supports image understanding and visual reasoning.",
         "Granite Vision 4.1 4B",
         8192,
@@ -2049,7 +2148,7 @@ void ModelManager::init_model_registry() {
         "ibm-granite/granite-guardian-4.1-8b-GGUF",
         "granite-guardian-4.1-8b-Q4_0.gguf",
         "Q4_0",
-        4700LL * 1024 * 1024, // ~4.7 GB
+        5070LL * 1024 * 1024, // ~5.07 GB
         "IBM Granite safety model for content moderation and risk detection.",
         "Granite Guardian 4.1 8B",
         8192,
@@ -2060,8 +2159,8 @@ void ModelManager::init_model_registry() {
         "granite-4.1-3b",
         "granite-4.1-3b",
         "ibm-granite/granite-4.1-3b-GGUF",
-        "granite-4.1-3b-Q5_K_M.gguf",
-        "Q5_K_M",
+        "granite-4.1-3b-Q4_K_M.gguf",
+        "Q4_K_M",
         2100LL * 1024 * 1024, // ~2.1 GB
         "IBM Granite 4.1 instruct model. Enterprise-grade general-purpose assistant.",
         "Granite 4.1 3B",

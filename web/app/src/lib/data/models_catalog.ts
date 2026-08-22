@@ -43,7 +43,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Nemotron 3 Nano',
 		description:
 			"Nemotron-3-Nano is a new Standard for Efficient, Open, and Intelligent Agentic Models, now updated with a 4B parameter count model.",
-		icon: 'nvidia logo.webp',
+		icon: 'nvidia-color.svg',
 		models: [
 			{
 				name: 'Nemotron-3-Nano:4B',
@@ -79,7 +79,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Ministral 3',
 		description:
 			"Mistral AI's compact edge models with vision capabilities. Offers best cost-to-performance ratio for on-device deployment in 3B, 8B, 14B sizes.",
-		icon: 'ministral logo.png',
+		icon: 'mistral-color.svg',
 		models: [
 			{
 				name: 'ministral-3:3b',
@@ -115,7 +115,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Qwen3 VL',
 		description:
 			"Alibaba's vision-language model for understanding text, images, and video. Features OCR in 32 languages, GUI agents, and spatial reasoning.",
-		icon: 'qwen logo.jpeg',
+		icon: 'qwen-color.svg',
 		models: [
 			{
 				name: 'qwen3-vl:2b',
@@ -160,7 +160,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Gemma 3',
 		description:
 			"Google's multimodal models built from Gemini technology. Supports 140+ languages, vision, and text tasks with up to 128K context for edge to cloud deployment.",
-		icon: 'gemma logo.svg',
+		icon: 'gemini-color.svg',
 		models: [
 			{
 				name: 'gemma3:270m',
@@ -214,7 +214,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Gemma 3N',
 		description:
 			"Gemma 3n Our powerful and efficient open model designed to run locally on phones, tablets, and laptops.",
-		icon: 'gemma logo.svg',
+		icon: 'gemini-color.svg',
 		models: [
 			{
 				name: 'gemma3n:e2b',
@@ -241,7 +241,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'TRANSLATE GEMMA',
 		description:
 			"A new collection of open translation models built on Gemma 3, helping people communicate across 55 languages.",
-		icon: 'gemma logo.svg',
+		icon: 'gemini-color.svg',
 		models: [
 			{
 				name: 'translategemma:4b',
@@ -277,7 +277,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'MedGemma',
 		description:
 			"Collection of Gemma 3 variants for performance on medical text and image comprehension to accelerate building healthcare-based AI applications.",
-		icon: 'gemma logo.svg',
+		icon: 'gemini-color.svg',
 		models: [
 			{
 				name: 'medgemma1.5:4b',
@@ -313,7 +313,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Gemma 4',
 		description:
 			"A new level of intelligence for mobile and IoT devices Audio and vision support for real-time edge processing. They can run completely offline with near-zero latency on edge devices like phones, Raspberry Pi, and Jetson Nano",
-		icon: 'gemma logo.svg',
+		icon: 'gemini-color.svg',
 		models: [
 			{
 				name: 'gemma4:e2b',
@@ -340,7 +340,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Qwen3',
 		description:
 			"Alibaba's hybrid reasoning models with thinking/non-thinking modes. Excels at coding, math, and multilingual tasks across 119 languages.",
-		icon: 'qwen logo.jpeg',
+		icon: 'qwen-color.svg',
 		models: [
 			{
 				name: 'qwen3:0.6b',
@@ -404,7 +404,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Qwen3.5',
 		description:
 			"Qwen 3.5 is a family of open-source multimodal models that delivers exceptional utility and performance.",
-		icon: 'qwen logo.jpeg',
+		icon: 'qwen-color.svg',
 		models: [
 			{
 				name: 'qwen3.5:0.8b',
@@ -486,7 +486,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Devstral 2',
 		description:
 			"Mistral AI's agentic coding models for software engineering tasks. Excels at exploring codebases, multi-file editing, and powering code agents.",
-		icon: 'ministral logo.png',
+		icon: 'mistral-color.svg',
 		models: [
 			{
 				name: 'devstral-2:24b',
@@ -513,7 +513,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Nemotron Nano 3',
 		description:
 			"NVIDIA's efficient hybrid MoE model for agentic AI. Built for reasoning, coding, and tool use with 1M token context and 4x faster throughput.",
-		icon: 'nemotron logo.png',
+		icon: 'nvidia-color.svg',
 		models: [
 			{
 				name: 'nemotron-nano-3:30b-a3b',
@@ -531,7 +531,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'GPT-OSS',
 		description:
 			"OpenAI's first open-weight models since GPT-2. Built for reasoning, agentic tasks, and developer use with function calling and tool use capabilities.",
-		icon: 'GPT logo.png',
+		icon: 'openai.svg',
 		models: [
 			{
 				name: 'gpt-oss:20b',
@@ -558,7 +558,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Qwen3 Coder',
 		description:
 			"Alibaba's specialized coding model for agentic software engineering. Optimized for function calling, tool use, and repository-scale reasoning.",
-		icon: 'qwen logo.jpeg',
+		icon: 'qwen-color.svg',
 		models: [
 			{
 				name: 'qwen3-coder:30b-a3b',
@@ -576,7 +576,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'DeepSeek R1',
 		description:
 			"DeepSeek-R1 is a family of open reasoning models with performance approaching that of leading models, such as O3 and Gemini 2.5 Pro.",
-		icon: 'deepseek logo.webp',
+		icon: 'deepseek-color.svg',
 		models: [
 			{
 				name: 'deepseek-r1:1.5b',
@@ -633,7 +633,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'DeepSeek OCR',
 		description:
 			"DeepSeek-OCR is a vision-language model that can perform token-efficient OCR.",
-		icon: 'deepseek logo.webp',
+		icon: 'deepseek-color.svg',
 		models: [
 			{
 				name: 'deepseek-ocr',
@@ -651,7 +651,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'DeepSeek Coder',
 		description:
 			"DeepSeek-Coder is a coding model that can perform token-efficient coding.",
-		icon: 'deepseek logo.webp',
+		icon: 'deepseek-color.svg',
 		models: [
 			{
 				name: 'deepseek-coder-1.3b',
@@ -687,7 +687,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Llama 3.2',
 		description:
 			"Llama 3.2 11B Vision-enabled models plus lightweight 1B and 3B models optimized for on-device and edge deployment.",
-		icon: 'meta-llama logo.webp',
+		icon: 'meta-color.svg',
 		models: [
 			{
 				name: 'llama3.2-1b',
@@ -714,7 +714,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Llama 3.1',
 		description:
 			"Llama 3.1 is a new state-of-the-art model from Meta available in 8B parameter sizes.",
-		icon: 'meta-llama logo.webp',
+		icon: 'meta-color.svg',
 		models: [
 			{
 				name: 'llama3.1-8b',
@@ -732,7 +732,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Tiny Aya',
 		description:
 			"A compact multilingual AI model family that runs locally on any device. Our 3.35B-parameter base model supports 70+ languages with specialized variants for different regions, delivering strong performance without cloud dependency.",
-		icon: 'cohere logo.webp',
+		icon: 'aya-color.svg',
 		models: [
 			{
 				name: 'tiny-aya-global',
@@ -814,7 +814,7 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'LFM 2.5',
 		description:
 			"LiquidAI's LFM 2.5 series: state-of-the-art small models for edge and agentic use. Features ultra-long context (up to 131K), tool use, and reasoning variants.",
-		icon: 'liquidai logo.svg',
+		icon: 'liquidai logo.webp',
 		models: [
 			{
 				name: 'lfm2.5-2.6b',
@@ -860,6 +860,15 @@ export const modelsCatalog: ModelFamily[] = [
 				context_size: 32768,
 				required_ram_gb: calculateRequiredRAM(1.3),
 				quantization: 'Q8_0'
+			},
+			{
+				name: 'lfm2.5:1.2b-instruct',
+				display_name: 'LFM 2.5 1.2B Instruct',
+				download_url: 'LiquidAI/LFM2.5-1.2B-Instruct-GGUF',
+				file_size_gb: 1.25,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(1.25),
+				quantization: 'Q8_0'
 			}
 		]
 	},
@@ -868,22 +877,22 @@ export const modelsCatalog: ModelFamily[] = [
 		name: 'Granite 4.1',
 		description:
 			"IBM Granite 4.1 series: enterprise-grade open models for text, vision, and safety tasks. Built for business applications with strong reasoning and moderation capabilities.",
-		icon: 'ibm logo.svg',
+		icon: 'ibm logo.png',
 		models: [
 			{
 				name: 'granite-vision-4.1-4b',
 				display_name: 'Granite Vision 4.1 4B',
 				download_url: 'ibm-granite/granite-vision-4.1-4b-GGUF',
-				file_size_gb: 2.8,
+				file_size_gb: 2.1,
 				context_size: 8192,
 				required_ram_gb: calculateRequiredRAM(2.8),
-				quantization: 'Q5_K_M'
+				quantization: 'Q4_K_M'
 			},
 			{
 				name: 'granite-guardian-4.1-8b',
 				display_name: 'Granite Guardian 4.1 8B',
 				download_url: 'ibm-granite/granite-guardian-4.1-8b-GGUF',
-				file_size_gb: 4.7,
+				file_size_gb: 5.7,
 				context_size: 8192,
 				required_ram_gb: calculateRequiredRAM(4.7),
 				quantization: 'Q4_0'
@@ -895,7 +904,88 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 2.1,
 				context_size: 8192,
 				required_ram_gb: calculateRequiredRAM(2.1),
-				quantization: 'Q5_K_M'
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
+	{
+		id: 'qwen3.8',
+		name: 'Qwen 3.8',
+		description:
+			"Qwen 3.8 Distill models: highly efficient and capable models optimized for edge deployment and powerful reasoning.",
+		icon: 'qwen-color.svg',
+		models: [
+			{
+				name: 'qwen3.8:2b',
+				display_name: 'Qwen 3.8 2B Distill',
+				download_url: 'empero-ai/Qwen3.8-2B-Distill-GGUF',
+				file_size_gb: 1.31,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(1.31),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'qwen3.8:4b',
+				display_name: 'Qwen 3.8 4B Distill',
+				download_url: 'empero-ai/Qwen3.8-4B-Distill-GGUF',
+				file_size_gb: 2.78,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(2.78),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'qwen3.8:9b',
+				display_name: 'Qwen 3.8 9B Distill',
+				download_url: 'empero-ai/Qwen3.8-9B-Distill-GGUF',
+				file_size_gb: 5.78,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(5.78),
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
+	{
+		id: 'hy-mt2',
+		name: 'Hy-MT2',
+		description:
+			"Tencent Hy-MT2 series: efficient multilingual models built for high-performance reasoning and edge deployment.",
+		icon: 'tencent-color.svg',
+		models: [
+			{
+				name: 'hy-mt2:1.8b',
+				display_name: 'Hy-MT2 1.8B',
+				download_url: 'tencent/Hy-MT2-1.8B-GGUF',
+				file_size_gb: 1.13,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(1.13),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'hy-mt2:7b',
+				display_name: 'Hy-MT2 7B',
+				download_url: 'tencent/Hy-MT2-7B-GGUF',
+				file_size_gb: 4.62,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(4.62),
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
+	{
+		id: 'tencent-ui',
+		name: 'Tencent UI-Mate',
+		description:
+			"Tencent UI-Mate: specialized models for UI understanding, automation, and visual reasoning tasks.",
+		icon: 'tencent-color.svg',
+		models: [
+			{
+				name: 'tencent-ui:9b',
+				display_name: 'Tencent UI-Mate 9B',
+				download_url: 'bartowski/tencent_UI-Mate-9B-GGUF',
+				file_size_gb: 5.91,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(5.91),
+				quantization: 'Q4_K_M'
 			}
 		]
 	},
@@ -917,23 +1007,24 @@ export function findModelByName(name: string): ModelCatalogModel | undefined {
 
 /** Logo filenames in assets/static (used for family icons in Catalog and Installed). */
 export const FAMILY_LOGO_FILES: Record<string, string> = {
-	gemma: 'gemma logo.svg',
-	qwen: 'qwen logo.jpeg',
-	ministral: 'ministral logo.png',
-	mistral: 'ministral logo.png',
+	gemma: 'gemini-color.svg',
+	qwen: 'qwen-color.svg',
+	ministral: 'mistral-color.svg',
+	mistral: 'mistral-color.svg',
 	devstral: 'ministral logo.png',
 	glm: 'glm logo.svg',
 	nemotron: 'nemotron logo.png',
-	gpt: 'GPT logo.png',
-	deepseek: 'deepseek logo.webp',
+	gpt: 'openai.svg',
+	deepseek: 'deepseek-color.svg',
 	angelslim: 'angelslim logo.webp',
-	llama: 'meta-llama logo.webp',
-	cohere: 'cohere logo.webp',
-	nvidia: 'nvidia logo.webp',
+	llama: 'meta-color.svg',
+	cohere: 'aya-color.svg',
+	nvidia: 'nvidia-color.svg',
 	Bonsai: 'bonsai-logo.svg',
-	liquidai: 'liquidai logo.png',
+	liquidai: 'liquidai logo.webp',
 	ibm: 'ibm logo.png',
 	granite: 'ibm logo.png',
+	tencent: 'tencent-color.svg',
 };
 
 /** True if icon is a logo filename (has file extension). */
@@ -965,28 +1056,28 @@ export function getFamilyIconForModelName(name: string): string {
 	if (lower.includes('cohere')) return FAMILY_LOGO_FILES.cohere;
 	if (lower.includes('nvidia')) return FAMILY_LOGO_FILES.nvidia;
 	if (lower.includes('Bonsai')) return FAMILY_LOGO_FILES.Bonsai;
-	if (lower.includes('lfm')) return FAMILY_LOGO_FILES.liquidai;
-	if (lower.includes('granite')) return FAMILY_LOGO_FILES.ibm;
+	if (lower.includes('liquidai')) return FAMILY_LOGO_FILES.liquidai;
+	if (lower.includes('granite') || lower.includes('ibm')) return FAMILY_LOGO_FILES.ibm;
 	return '●';
 }
 
 /** Provider display name keyed on the actual logo filenames used by catalog families. */
 const PROVIDER_BY_LOGO: Record<string, string> = {
-	'qwen logo.jpeg': 'Qwen',
-	'gemma logo.svg': 'Google',
-	'ministral logo.png': 'Mistral AI',
-	'nvidia logo.webp': 'NVIDIA',
-	'nemotron logo.png': 'NVIDIA',
+	'qwen-color.svg': 'Qwen',
+	'gemini-color.svg': 'Google',
+	'mistral-color.svg': 'Mistral AI',
+	'nvidia-color.svg': 'NVIDIA',
 	'angleslim logo.webp': 'Tencent',
 	'angelslim logo.webp': 'Tencent',
 	'glm logo.svg': 'GLM',
-	'deepseek logo.webp': 'DeepSeek',
-	'meta-llama logo.webp': 'Meta',
-	'cohere logo.webp': 'Cohere',
-	'GPT logo.png': 'OpenAI',
+	'deepseek-color.svg': 'DeepSeek',
+	'meta-color.svg': 'Meta',
+	'aya-color.svg': 'Cohere',
+	'openai.svg': 'OpenAI',
 	'bonsai-logo.svg': 'Bonsai',
-	'liquidai logo.png': 'LiquidAI',
+	'liquidai logo.webp': 'LiquidAI',
 	'ibm logo.png': 'IBM',
+	'tencent-color.svg': 'Tencent',
 };
 
 /** Display order for provider sections in the Catalog; unknown providers fall after these. */
@@ -1004,6 +1095,7 @@ export const PROVIDER_ORDER: string[] = [
 	'Bonsai',
 	'LiquidAI',
 	'IBM',
+	'Tencent',
 	'Other',
 ];
 
