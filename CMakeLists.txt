@@ -25,19 +25,19 @@ endif()
 
 # Options for llama-cpp features
 option(LLAMA_CUDA "Enable CUDA support" OFF)
-option(GGML_METAL "Enable Metal support (macOS)" ON) # Updated to use GGML_METAL instead of deprecated LLAMA_METAL
+option(GGML_METAL "Enable Metal support (macOS)" ON)
 option(LLAMA_VULKAN "Enable Vulkan support" OFF)
 option(LLAMA_HIPBLAS "Enable HIP/ROCm support" OFF)
 option(LLAMA_BLAS "Enable BLAS support" OFF)
 option(USE_CURL "Enable HTTP requests for telemetry" ON)
 option(USE_CROW "Enable Crow HTTP library for server" OFF)
 option(BUILD_TESTS "Build test suite" ON)
-option(GGML_CCACHE "Enable ccache for faster compilation" OFF) # Disable ccache warning
-option(GGML_OPENMP "Enable OpenMP support" OFF) # Disable OpenMP warnings
+option(GGML_CCACHE "Enable ccache for faster compilation" OFF)
+option(GGML_OPENMP "Enable OpenMP support" OFF)
 
 # Detect platform
 if(APPLE)
-    set(GGML_METAL ON) # Use GGML_METAL instead of deprecated LLAMA_METAL
+    set(GGML_METAL ON)
     add_compile_definitions(TARGET_OS_MAC=1)
     if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         add_compile_definitions(TARGET_OS_IOS=1)
@@ -59,13 +59,13 @@ endif()
 # Set llama-cpp options before adding subdirectory
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES ON CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_TOOLS ON CACHE BOOL "" FORCE)      # Required so tools/server (llama-server) is built
+set(LLAMA_BUILD_TOOLS ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER ON CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)     # Enable common utils for chat templates
+set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(GGML_METAL ${GGML_METAL} CACHE BOOL "" FORCE) # Pass GGML_METAL to llama-cpp
-set(GGML_CCACHE ${GGML_CCACHE} CACHE BOOL "" FORCE) # Pass GGML_CCACHE to llama-cpp
-set(GGML_OPENMP ${GGML_OPENMP} CACHE BOOL "" FORCE) # Pass GGML_OPENMP to llama-cpp
+set(GGML_METAL ${GGML_METAL} CACHE BOOL "" FORCE)
+set(GGML_CCACHE ${GGML_CCACHE} CACHE BOOL "" FORCE)
+set(GGML_OPENMP ${GGML_OPENMP} CACHE BOOL "" FORCE)
 
 # Ensure llama.cpp uses the same C++ standard library (macOS)
 if(APPLE)
@@ -147,14 +147,16 @@ target_include_directories(delta PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp
     ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/common
     ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
+    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/vendor
     ${CMAKE_SOURCE_DIR}/engine/agent
 )
 
 # Link libraries (with llama-cpp integration)
+# NOTE: "common" was renamed to "llama-common" in recent llama.cpp
 target_link_libraries(delta PRIVATE
     llama
     ggml
-    common
+    llama-common
     cpp-httplib
     sqlite3
     ${CMAKE_THREAD_LIBS_INIT}
@@ -180,12 +182,10 @@ endif()
 
 # Ensure C++ standard library is linked (macOS)
 if(APPLE)
-    # Link C++ standard library explicitly to fix undefined symbols
     target_link_libraries(delta PRIVATE c++)
 endif()
 
 # Delta Server Wrapper (customized llama-server)
-# Need to include models.cpp for ModelManager
 add_executable(delta-server
     engine/delta_server_wrapper.cpp
     engine/model_api_server.cpp
@@ -196,8 +196,7 @@ add_executable(delta-server
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
     engine/agent/agent_loop.cpp
-    engine/agent/tool_notes.cpp  
-    engine/tools/file_ops.cpp
+    engine/agent/tool_notes.cpp
 )
 target_compile_definitions(delta-server PRIVATE
     DELTA_VERSION="${PROJECT_VERSION}"
@@ -216,6 +215,7 @@ target_include_directories(delta-server PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp
     ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/common
     ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
+    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/vendor
     ${CMAKE_SOURCE_DIR}/engine/agent
 )
 
@@ -224,10 +224,9 @@ if(NOT APPLE AND NOT MSVC)
     target_link_libraries(delta-server PRIVATE stdc++fs)
 endif()
 
-# Link httplib and json for model API server
-# Link to the same libraries that llama-server uses
+# NOTE: "common" was renamed to "llama-common" in recent llama.cpp
 target_link_libraries(delta-server PRIVATE
-    common
+    llama-common
     cpp-httplib
     sqlite3
     ${CMAKE_THREAD_LIBS_INIT}
@@ -250,7 +249,6 @@ endif()
 
 # Remove duplicate library warnings and ensure C++ stdlib linking (macOS)
 if(APPLE)
-    # Explicitly link libc++ and libc++abi
     set_target_properties(delta PROPERTIES
         LINK_FLAGS "-Wl,-no_warn_duplicate_libraries -lc++ -lc++abi"
     )
@@ -258,15 +256,13 @@ endif()
 
 # Platform-specific libraries
 if(WIN32)
-    # Windows: Link shell32 for ShellExecute (browser opening)
     target_link_libraries(delta PRIVATE shell32)
-    target_link_libraries(delta PRIVATE rpcrt4) # For UUID
+    target_link_libraries(delta PRIVATE rpcrt4)
 elseif(UNIX AND NOT APPLE)
     if(UUID_LIBRARY)
         target_link_libraries(delta PRIVATE ${UUID_LIBRARY})
     endif()
 endif()
-
 
 # Compiler flags
 if(MSVC)
@@ -275,14 +271,9 @@ else()
     target_compile_options(delta PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# Server functionality is provided by llama-server from llama-cpp
-# No custom server implementation needed
-
 # Tests
 if(BUILD_TESTS)
-    # Check if Catch2 is available
     find_package(Catch2 3 QUIET)
-    
     if(Catch2_FOUND)
         add_subdirectory(tests)
         message(STATUS "Tests enabled")
@@ -292,13 +283,10 @@ if(BUILD_TESTS)
 endif()
 
 # Build Web UI from web/app/ directory
-# This builds the custom Delta web UI (SvelteKit) and outputs to public/
-# Option: -DFORCE_BUILD_WEBUI=ON to always rebuild (use after editing web/app/ so install uses your changes)
 option(FORCE_BUILD_WEBUI "Always run pnpm run build for web UI (ignores timestamp)" OFF)
 message(STATUS "")
 message(STATUS "Building Web UI from web/app/...")
 
-# Check if pnpm is available (fall back to npm)
 find_program(PNPM_EXECUTABLE pnpm)
 find_program(NPM_EXECUTABLE npm)
 if(PNPM_EXECUTABLE)
@@ -372,7 +360,7 @@ install(TARGETS delta delta-server
     RUNTIME DESTINATION bin
 )
 
-# Install llama.cpp HTTP server binary so delta-server (or CLI) can serve the web UI
+# Install llama.cpp HTTP server binary
 if(TARGET server)
   install(TARGETS server RUNTIME DESTINATION bin)
   message(STATUS "  Will install llama.cpp 'server' to bin")
@@ -382,8 +370,6 @@ elseif(TARGET llama-server)
 else()
   message(STATUS "  Note: llama.cpp server target not found; ensure LLAMA_BUILD_SERVER=ON and engine/vendor/llama.cpp is present")
 endif()
-
-# Server functionality is provided by llama-server from llama-cpp
 
 # Install models directory structure
 install(DIRECTORY DESTINATION share/delta-cli/models)
@@ -444,4 +430,3 @@ message(STATUS "  Build tests: ${BUILD_TESTS}")
 message(STATUS "  CCache: ${GGML_CCACHE}")
 message(STATUS "  OpenMP: ${GGML_OPENMP}")
 message(STATUS "")
-

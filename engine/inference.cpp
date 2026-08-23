@@ -66,8 +66,8 @@ bool InferenceEngine::load_model(const InferenceConfig& config) {
     // Set up model parameters
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = config.n_gpu_layers;
-    model_params.use_mmap = config.use_mmap;
-    model_params.use_mlock = config.use_mlock;
+    // model_params.use_mmap = config.use_mmap;
+    // model_params.use_mlock = config.use_mlock;
     
     // Load model
     model_ = llama_model_load_from_file(config.model_path.c_str(), model_params);

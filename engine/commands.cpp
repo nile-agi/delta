@@ -544,10 +544,10 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     const int progress_interval = 20; // Print progress every 10 seconds
 #else
     const int total_attempts = 120; // 120 * 500ms = 60 seconds
-    const int progress_interval = 0;
+    // const int progress_interval = 0;
 #endif
     bool server_listening = false;
-    bool progress_printed = false;
+    // bool progress_printed = false;
     for (int attempt = 0; attempt < total_attempts; attempt++) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
 #ifdef _WIN32
