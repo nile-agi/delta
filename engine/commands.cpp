@@ -547,7 +547,9 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     // const int progress_interval = 0;
 #endif
     bool server_listening = false;
-    // bool progress_printed = false;
+#ifdef _WIN32
+    bool progress_printed = false;
+#endif
     for (int attempt = 0; attempt < total_attempts; attempt++) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
 #ifdef _WIN32
