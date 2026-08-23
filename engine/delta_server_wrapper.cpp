@@ -418,7 +418,7 @@ class DeltaServerWrapper {
         cmd += " --metrics";     // Enable Prometheus metrics endpoint
         cmd += " --slots";       // Enable slot monitoring (UI can show server load)
         cmd += " --props";       // Allow UI to change sampling params via POST /props
-        cmd += " --cache-prompt on"; // Cache prompt KV for faster subsequent requests
+        cmd += " --cache-prompt"; // Cache prompt KV for faster subsequent requests
         
         if (ctx_size > 16384) {
             cmd += " --flash-attn off";
@@ -454,7 +454,7 @@ class DeltaServerWrapper {
         if (enable_reranking_)
             cmd += " --reranking";
         if (!draft_model_.empty())
-            cmd += " --md \"" + draft_model_ + "\"";
+            cmd += " --model-draft \"" + draft_model_ + "\"";
         if (!grammar_file_.empty())
             cmd += " --grammar-file \"" + grammar_file_ + "\"";
         return cmd;
@@ -702,6 +702,19 @@ class DeltaServerWrapper {
                             prompt_tokens = 0;
                             gen_ms = 0;
                             gen_tokens = 0;
+                        } else {
+                            // Forward non-timing logs (e.g., startup errors, system info) from llama-server
+                            // so they aren't silently swallowed when the server fails to start.
+                            std::string s(line);
+                            if (s.find("error") != std::string::npos || 
+                                s.find("Error") != std::string::npos || 
+                                s.find("unknown") != std::string::npos ||
+                                s.find("fail") != std::string::npos ||
+                                s.find("Fail") != std::string::npos ||
+                                s.find("warning") != std::string::npos ||
+                                s.find("Warning") != std::string::npos) {
+                                std::cerr << "[llama-server] " << line << std::flush;
+                            }
                         }
                     }
                     std::fclose(f);

@@ -1,7 +1,7 @@
 #include "tool_notes.h"
 #include "tool_registry.h"
 #include "agent_database.h"
-#include <nlohmann/json.hpp>
+#include "../vendor/json.hpp"
 
 namespace delta {
 namespace agent {
