@@ -412,7 +412,14 @@ class DeltaServerWrapper {
         if (ctx_size > 0) {
             cmd += " -c " + std::to_string(ctx_size);
         }
-        cmd += " --jinja";
+
+        // Enable modern server features for the Delta UI
+        cmd += " --jinja";       // Use Jinja2 templates for chat formatting
+        cmd += " --metrics";     // Enable Prometheus metrics endpoint
+        cmd += " --slots";       // Enable slot monitoring (UI can show server load)
+        cmd += " --props";       // Allow UI to change sampling params via POST /props
+        cmd += " --cache-prompt on"; // Cache prompt KV for faster subsequent requests
+        
         if (ctx_size > 16384) {
             cmd += " --flash-attn off";
             if (ctx_size > 32768) {

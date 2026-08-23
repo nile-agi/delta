@@ -761,18 +761,18 @@ void ModelManager::init_model_registry() {
     };
 
     // ===== ORIGINAL QWEN SERIES (32K) =====
-    model_registry_["qwen2:0.5b"] = {
-        "qwen2:0.5b",
-        "qwen-0.5b",
-        "Qwen/Qwen2-0.5B-Instruct-GGUF",
-        "qwen2-0_5b-instruct-q4_k_m.gguf",
-        "Q4_K_M",
-        352LL * 1024 * 1024, // ~352 MB
-        "Original compact Qwen model",
-        "Qwen 2 0.5B",
-        0,    // use model default (-c from model)
-        false // supports_tools
-    };
+    // model_registry_["qwen2:0.5b"] = {
+    //     "qwen2:0.5b",
+    //     "qwen-0.5b",
+    //     "Qwen/Qwen2-0.5B-Instruct-GGUF",
+    //     "qwen2-0_5b-instruct-q4_k_m.gguf",
+    //     "Q4_K_M",
+    //     352LL * 1024 * 1024, // ~352 MB
+    //     "Original compact Qwen model",
+    //     "Qwen 2 0.5B",
+    //     0,    // use model default (-c from model)
+    //     false // supports_tools
+    // };
 
     model_registry_["qwen:1.8b"] = {
         "qwen:1.8b",
@@ -787,31 +787,31 @@ void ModelManager::init_model_registry() {
         false // supports_tools
     };
 
-    model_registry_["qwen3:4b"] = {
-        "qwen3:4b",
-        "qwen3-4b",
-        "Qwen/Qwen3-4B-GGUF",
-        "Qwen3-4B-Q4_K_M.gguf",
-        "Q4_K_M",
-        2458LL * 1024 * 1024, // ~2.4 GB
-        "Mid-size original Qwen",
-        "Qwen 3 4B",
-        0,   // use model default (-c from model)
-        true // supports_tools
-    };
+    // model_registry_["qwen3:4b"] = {
+    //     "qwen3:4b",
+    //     "qwen3-4b",
+    //     "Qwen/Qwen3-4B-GGUF",
+    //     "Qwen3-4B-Q4_K_M.gguf",
+    //     "Q4_K_M",
+    //     2458LL * 1024 * 1024, // ~2.4 GB
+    //     "Mid-size original Qwen",
+    //     "Qwen 3 4B",
+    //     0,   // use model default (-c from model)
+    //     true // supports_tools
+    // };
 
-    model_registry_["qwen2:7b"] = {
-        "qwen2:7b",
-        "qwen2-7b",
-        "NikolayKozloff/Qwen2-7B-Instruct-Q4_K_M-GGUF",
-        "qwen2-7b-instruct-q4_k_m.gguf",
-        "Q4_K_M",
-        4368LL * 1024 * 1024, // ~4.3 GB
-        "Full-size original Qwen model",
-        "Qwen 2 7B",
-        0,   // use model default (-c from model)
-        true // supports_tools
-    };
+    // model_registry_["qwen2:7b"] = {
+    //     "qwen2:7b",
+    //     "qwen2-7b",
+    //     "NikolayKozloff/Qwen2-7B-Instruct-Q4_K_M-GGUF",
+    //     "qwen2-7b-instruct-q4_k_m.gguf",
+    //     "Q4_K_M",
+    //     4368LL * 1024 * 1024, // ~4.3 GB
+    //     "Full-size original Qwen model",
+    //     "Qwen 2 7B",
+    //     0,   // use model default (-c from model)
+    //     true // supports_tools
+    // };
 
     // ===== QWEN 2 SERIES (32K) =====
     model_registry_["qwen2:0.5b"] = {
@@ -906,18 +906,18 @@ void ModelManager::init_model_registry() {
         true // supports_tools
     };
 
-    model_registry_["qwen2.5vl:7b"] = {
-        "qwen2.5vl:7b",
-        "qwen2.5vl-7b",
-        "rexionmars/Qwen2.5-VL-7B-Instruct-Q4_K_M-GGUF",
-        "qwen2.5-vl-7b-instruct-q4_k_m.gguf",
-        "Q4_K_M",
-        4608LL * 1024 * 1024, // ~4.5 GB
-        "Advanced vision-language model",
-        "Qwen 2.5 VL 7B",
-        0,   // use model default (-c from model)
-        true // supports_tools
-    };
+    // model_registry_["qwen2.5vl:7b"] = {
+    //     "qwen2.5vl:7b",
+    //     "qwen2.5vl-7b",
+    //     "rexionmars/Qwen2.5-VL-7B-Instruct-Q4_K_M-GGUF",
+    //     "qwen2.5-vl-7b-instruct-q4_k_m.gguf",
+    //     "Q4_K_M",
+    //     4608LL * 1024 * 1024, // ~4.5 GB
+    //     "Advanced vision-language model",
+    //     "Qwen 2.5 VL 7B",
+    //     0,   // use model default (-c from model)
+    //     true // supports_tools
+    // };
 
     // ===== QWEN 2 MATH (Math-specialized) (32K) =====
     model_registry_["qwen2-math:1.5b"] = {
@@ -2318,7 +2318,8 @@ void ModelManager::init_model_registry() {
         512LL * 1024 * 1024,      // ~512 MB (estimated)
         "Small Granite 4 model (HF format)",
         "Granite 4 Small-H",
-        131072                      // 128K native context
+        131072,                      // 128K native context
+        true
     };
 
 }

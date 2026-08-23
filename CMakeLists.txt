@@ -62,6 +62,7 @@ set(LLAMA_BUILD_EXAMPLES ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_UI ON CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(GGML_METAL ${GGML_METAL} CACHE BOOL "" FORCE)
 set(GGML_CCACHE ${GGML_CCACHE} CACHE BOOL "" FORCE)
@@ -142,22 +143,21 @@ target_compile_definitions(delta PRIVATE
 
 # Include directories (with llama-cpp integration)
 target_include_directories(delta PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine
-    ${CMAKE_SOURCE_DIR}/engine/vendor
-    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp
-    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/common
-    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
-    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/vendor
-    ${CMAKE_SOURCE_DIR}/engine/agent
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/common
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/vendor
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/agent
 )
 
 # Link libraries (with llama-cpp integration)
-# NOTE: "common" was renamed to "llama-common" in recent llama.cpp
 target_link_libraries(delta PRIVATE
     llama
     ggml
     llama-common
-    cpp-httplib
+    cpp-httplib       # Correct target name for httplib
     sqlite3
     ${CMAKE_THREAD_LIBS_INIT}
 )
@@ -210,13 +210,13 @@ endif()
 
 # Include directories for delta-server
 target_include_directories(delta-server PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine
-    ${CMAKE_SOURCE_DIR}/engine/vendor
-    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp
-    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/common
-    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
-    ${CMAKE_SOURCE_DIR}/engine/vendor/llama.cpp/vendor
-    ${CMAKE_SOURCE_DIR}/engine/agent
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/common
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/vendor
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/agent
 )
 
 # Link libraries for delta-server
@@ -224,10 +224,10 @@ if(NOT APPLE AND NOT MSVC)
     target_link_libraries(delta-server PRIVATE stdc++fs)
 endif()
 
-# NOTE: "common" was renamed to "llama-common" in recent llama.cpp
+# Link the correct vendor targets to automatically inherit their include directories
 target_link_libraries(delta-server PRIVATE
     llama-common
-    cpp-httplib
+    cpp-httplib       # Replaces vendor-cpp-httplib
     sqlite3
     ${CMAKE_THREAD_LIBS_INIT}
 )
