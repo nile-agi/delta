@@ -1,6 +1,6 @@
 /**
  * Inference Module - Modern llama.cpp integration for Delta CLI
- * Based on llama.cpp/tools/run/run.cpp implementation
+ * Based on llama.cpp/examples/simple/simple.cpp implementation
  */
 
 #include "delta_cli.h"
@@ -11,7 +11,7 @@
 #include <list>
 
 // Modern llama.cpp headers
-#include "llama.h"
+#include "vendor/llama.cpp/include/llama.h"
 #include <limits>
 
 namespace delta {
@@ -26,7 +26,7 @@ static void llama_log_callback(enum ggml_log_level level, const char* text, void
     }
 }
 
-// Helper function to convert token to string (from run.cpp)
+// Helper function to convert token to string (from simple.cpp)
 static int convert_token_to_string(const llama_vocab* vocab, const llama_token token_id, std::string& piece) {
     char buf[256];
     int n = llama_token_to_piece(vocab, token_id, buf, sizeof(buf), 0, true);
@@ -37,7 +37,7 @@ static int convert_token_to_string(const llama_vocab* vocab, const llama_token t
     return 0;
 }
 
-// Helper function to print and concatenate response (from run.cpp)
+// Helper function to print and concatenate response (from simple.cpp)
 static void print_word_and_concatenate_to_response(const std::string& piece, std::string& response) {
     printf("%s", piece.c_str());
     fflush(stdout);
@@ -139,7 +139,7 @@ std::vector<int> InferenceEngine::tokenize(const std::string& text, bool add_bos
 
     const llama_vocab* vocab = llama_model_get_vocab(model_);
 
-    // Mirror tools/run/run.cpp logic: add BOS only for the first prompt in the session
+    // Mirror examples/simple/simple.cpp logic: add BOS only for the first prompt in the session
     const bool is_first = llama_memory_seq_pos_max(llama_get_memory(ctx_), 0) == -1;
     const bool add_bos_effective = add_bos && is_first;
 

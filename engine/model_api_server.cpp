@@ -10,19 +10,17 @@
  * - POST /api/models/use - Switch to a model
  */
 
-/**
- * Model Management API Server
- * Provides HTTP endpoints for model management operations
- */
-
 #include "delta_cli.h"
 #include "model_api_server.h"
 #include "agent/agent_database.h"
 #include "agent/tool_registry.h"
 #include "agent/agent_loop.h"
-#include <cpp-httplib/httplib.h>
+
+// Updated includes to point to the local vendor directory structure
+#include "vendor/llama.cpp/vendor/cpp-httplib/httplib.h"
 #include "api/note_routes.h"  
-#include <nlohmann/json.hpp>
+#include "vendor/json.hpp"
+
 #include <iostream>
 #include <thread>
 #include <atomic>
@@ -86,17 +84,9 @@ struct DownloadProgress {
     std::atomic<long long> total_bytes{0};
     std::atomic<bool> completed{false};
     std::atomic<bool> failed{false};
-    // Set when the user cancels, so the download thread's failure path can report a cancel
-    // rather than an error and the UI can skip the red toast.
     std::atomic<bool> cancelled{false};
-    /** Step (in whole percent) last written to the console; see log_progress_line(). */
     std::atomic<int> last_logged_step{-1};
 
-    /**
-     * error_message is the only non-atomic field, and it is written by the download thread
-     * while the HTTP handlers read it. Always go through these accessors so the two never
-     * race. Lock order is g_progress_mutex -> this->mutex; never the reverse.
-     */
     void set_error(const std::string& message) {
         std::lock_guard<std::mutex> lock(mutex);
         error_message = message;
@@ -112,15 +102,10 @@ struct DownloadProgress {
     std::mutex mutex;
 };
 
-// Console output is shared by every download thread. Without serialising it, two concurrent
-// downloads interleave mid-escape-sequence and the terminal fills with garbled progress bars.
 static std::mutex g_console_mutex;
-/** Percent granularity for console logging when several downloads share the terminal. */
 static constexpr int LOG_STEP_PERCENT = 5;
-// Number of downloads currently running, so the single-download case can keep its live bar.
 static std::atomic<int> g_active_downloads{0};
 
-/** Increments g_active_downloads for as long as it is alive. */
 struct ActiveDownloadCount {
     ActiveDownloadCount() { g_active_downloads.fetch_add(1); }
     ~ActiveDownloadCount() { g_active_downloads.fetch_sub(1); }
@@ -133,10 +118,8 @@ static void log_download_line(const std::string& line) {
     std::cout << line << std::endl;
 }
 
-// Global progress map (model_name -> progress)
 static std::map<std::string, std::shared_ptr<DownloadProgress>> g_download_progress;
 static std::mutex g_progress_mutex;
-// Thread-local storage for current download progress
 thread_local std::shared_ptr<DownloadProgress> g_current_progress = nullptr;
 thread_local std::string g_current_model_name;
 
@@ -231,19 +214,14 @@ class ModelAPIServer {
     }
 
     void setup_routes() {
-        // CORS headers
         server_->set_default_headers({{"Access-Control-Allow-Origin", "*"},
                                       {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
                                       {"Access-Control-Allow-Headers", "Content-Type, Authorization"}});
 
-        // Handle OPTIONS (CORS preflight)
         server_->Options(".*", [](const httplib::Request&, httplib::Response&) { return; });
 
-        // GET /props - Same-origin request from web UI; in UI-only mode we serve this so the UI does not show "Server
-        // /props endpoint not available"
         server_->Get("/props", [this](const httplib::Request&, httplib::Response& res) { write_props_fallback(res); });
 
-        // GET /api/props - Proxy to llama-server when running, else fallback (for requests to port 8081)
         server_->Get("/api/props", [this](const httplib::Request&, httplib::Response& res) {
             try {
                 int llama_port = port_ - 1;
@@ -256,12 +234,10 @@ class ModelAPIServer {
                     return;
                 }
             } catch (...) {
-                // Proxy failed (e.g. connection refused), use fallback
             }
             write_props_fallback(res);
         });
 
-        // GET /api/models/available - List all available models
         server_->Get("/api/models/available", [this](const httplib::Request&, httplib::Response& res) {
             try {
                 auto models = model_mgr_.get_friendly_model_list(true);
@@ -288,7 +264,6 @@ class ModelAPIServer {
             }
         });
 
-        // GET /api/models/list - List installed models
         server_->Get("/api/models/list", [this](const httplib::Request&, httplib::Response& res) {
             try {
                 auto models = model_mgr_.get_friendly_model_list(false);
@@ -314,7 +289,6 @@ class ModelAPIServer {
             }
         });
 
-        // GET /api/models/download/progress/:model - Get download progress
         server_->Get(R"(/api/models/download/progress/(.+))", [](const httplib::Request& req, httplib::Response& res) {
             try {
                 std::string model_name = req.matches[1];
@@ -349,7 +323,6 @@ class ModelAPIServer {
             }
         });
 
-        // GET /api/models/downloads - List every download still in flight
         server_->Get("/api/models/downloads", [](const httplib::Request&, httplib::Response& res) {
             try {
                 json downloads = json::array();
@@ -358,7 +331,7 @@ class ModelAPIServer {
                     for (const auto& entry : g_download_progress) {
                         const auto& prog = entry.second;
                         if (prog->completed.load() || prog->failed.load()) {
-                            continue; // finished one way or the other; not in flight
+                            continue;
                         }
                         downloads.push_back({{"model", entry.first},
                                              {"progress", prog->progress.load()},
@@ -378,7 +351,6 @@ class ModelAPIServer {
             }
         });
 
-        // POST /api/models/download - Download a model (async)
         server_->Post("/api/models/download", [this](const httplib::Request& req, httplib::Response& res) {
             try {
                 json body = json::parse(req.body);
@@ -391,7 +363,6 @@ class ModelAPIServer {
                     return;
                 }
 
-                // Check if download is already in progress
                 {
                     std::lock_guard<std::mutex> lock(g_progress_mutex);
                     auto it = g_download_progress.find(model_name);
@@ -404,29 +375,23 @@ class ModelAPIServer {
                     }
                 }
 
-                // Create progress tracker
                 auto progress = std::make_shared<DownloadProgress>();
                 {
                     std::lock_guard<std::mutex> lock(g_progress_mutex);
                     g_download_progress[model_name] = progress;
                 }
 
-                // Start download in background thread
                 std::thread download_thread([this, model_name, progress]() {
-                    // Scoped so the count drops however this thread exits.
                     ActiveDownloadCount active_downloads;
                     (void)active_downloads;
                     try {
 #ifdef _WIN32
-                        // Ensure UTF-8 so progress bar (█ ▓ ▙) and ✓/✗ display correctly in console
                         SetConsoleOutputCP(65001);
                         SetConsoleCP(65001);
 #endif
-                        // Set thread-local variables for callback
                         g_current_progress = progress;
                         g_current_model_name = model_name;
 
-                        // Static progress callback function (ASCII bar on Windows so it never garbles)
                         static auto progress_cb = [](double prog, long long current, long long total) {
                             if (!g_current_progress)
                                 return;
@@ -438,16 +403,13 @@ class ModelAPIServer {
                             const double current_mb = current / (1024.0 * 1024.0);
                             const double total_mb = total / (1024.0 * 1024.0);
 
-                            // A redrawing bar only works when one download owns the line. With
-                            // several in flight, fall back to throttled one-line-per-step
-                            // updates so the threads stop overwriting each other.
                             if (g_active_downloads.load() > 1) {
                                 const int step = (int)(prog / LOG_STEP_PERCENT);
                                 int previous = g_current_progress->last_logged_step.load();
                                 if (step <= previous)
                                     return;
                                 if (!g_current_progress->last_logged_step.compare_exchange_strong(previous, step)) {
-                                    return; // another callback already logged this step
+                                    return;
                                 }
 
                                 std::ostringstream line;
@@ -487,13 +449,10 @@ class ModelAPIServer {
                             std::cout << bar.str() << std::flush;
                         };
 
-                        // Set up progress callback for terminal output
                         model_mgr_.set_progress_callback(progress_cb);
 
-                        // Download model
                         bool success = model_mgr_.pull_model(model_name);
 
-                        // Clear progress callback and thread-local
                         model_mgr_.set_progress_callback(nullptr);
                         g_current_progress = nullptr;
 
@@ -525,7 +484,6 @@ class ModelAPIServer {
                 });
                 download_thread.detach();
 
-                // Return immediately
                 json result = {{"success", true}, {"message", "Download started"}, {"model", model_name}};
                 res.set_content(result.dump(), "application/json");
             } catch (const json::parse_error& e) {
@@ -539,7 +497,6 @@ class ModelAPIServer {
             }
         });
 
-        // POST /api/models/download/cancel - Cancel in-progress download (best-effort)
         server_->Post("/api/models/download/cancel", [this](const httplib::Request& req, httplib::Response& res) {
             try {
                 json body = json::parse(req.body);
@@ -552,13 +509,8 @@ class ModelAPIServer {
                     return;
                 }
 
-                // Signal cancellation for this model only
                 model_mgr_.cancel_download(model_name);
 
-                // Retire the progress entry immediately. libcurl aborts asynchronously, and until
-                // the entry is marked terminal the duplicate guard in POST /api/models/download
-                // treats the model as still downloading — which made a cancelled model
-                // permanently un-downloadable until the server restarted.
                 {
                     std::lock_guard<std::mutex> lock(g_progress_mutex);
                     auto it = g_download_progress.find(model_name);
@@ -582,7 +534,6 @@ class ModelAPIServer {
             }
         });
 
-        // DELETE /api/models/:name - Remove a model
         server_->Delete(R"(/api/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
             try {
                 std::string model_name = req.matches[1];
@@ -594,7 +545,6 @@ class ModelAPIServer {
                     return;
                 }
 
-                // Remove model (without confirmation for API)
                 bool success = model_mgr_.remove_model(model_name);
 
                 if (success) {
@@ -612,7 +562,6 @@ class ModelAPIServer {
             }
         });
 
-        // POST /api/models/use - Switch to a model
         server_->Post("/api/models/use", [this](const httplib::Request& req, httplib::Response& res) {
             try {
                 json body = json::parse(req.body);
@@ -641,13 +590,10 @@ class ModelAPIServer {
                     return;
                 }
 
-                // Optional context size from UI: persist override then get effective ctx for this load
                 if (ctx_override > 0) {
                     model_mgr_.set_max_context_override(model_name, ctx_override);
                 }
-                // Get model's max context (user override, else registry, 0 = model default)
                 int ctx_size = model_mgr_.get_max_context_for_model(model_name);
-                // Use filename stem as alias — this is what the router registers models as
                 std::string model_alias = model_name;
                 {
                     std::filesystem::path mp(model_path);
@@ -657,10 +603,6 @@ class ModelAPIServer {
                     }
                 }
 
-                // Try to actually switch the model if callback is set
-                // CRITICAL: If we're in UI-only mode (port 8080), migration needs to stop this server.
-                // This would deadlock if done synchronously because we're in the server's request handler thread.
-                // Solution: Run the callback in a detached thread so the request can return first.
                 bool model_loaded = false;
                 {
                     std::lock_guard<std::mutex> lock(g_props_fallback_mutex);
@@ -669,28 +611,21 @@ class ModelAPIServer {
                 }
 
                 if (g_model_switch_callback) {
-                    // Check if we're likely in UI-only mode (on port 8080)
-                    // If so, run migration asynchronously to avoid deadlock
                     bool likely_ui_only = (port_ == 8080);
 
                     if (likely_ui_only) {
-                        // Run migration in detached thread to avoid deadlock
-                        // The thread will stop this server after the request handler returns
                         std::thread migration_thread([model_path, model_name, ctx_size, model_alias]() {
                             try {
 #ifdef _WIN32
                                 SetConsoleOutputCP(65001);
                                 SetConsoleCP(65001);
 #endif
-                                // Wait for request handler to return and response to be sent
                                 std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
                                 stop_model_api_server();
 
-                                // Wait a bit for port to be released
                                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-                                // Now call the callback to start llama-server
                                 if (g_model_switch_callback) {
                                     (*g_model_switch_callback)(model_path, model_name, ctx_size, model_alias);
                                 }
@@ -700,10 +635,8 @@ class ModelAPIServer {
                         });
                         migration_thread.detach();
 
-                        // Return immediately - migration happens in background
                         model_loaded = false;
                     } else {
-                        // Normal mode - can call synchronously
                         try {
                             model_loaded = (*g_model_switch_callback)(model_path, model_name, ctx_size, model_alias);
                         } catch (const std::exception& e) {
@@ -741,11 +674,8 @@ class ModelAPIServer {
             }
         });
 
-        // /v1/chat/completions — proxy through agent loop when llama-server is running,
-        // otherwise return 503 (no model loaded).
         server_->Post("/v1/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
             int llama_port = port_ - 1;
-            // Check if llama-server is reachable
             {
                 httplib::Client probe("127.0.0.1", llama_port);
                 probe.set_connection_timeout(1, 0);
@@ -812,8 +742,6 @@ class ModelAPIServer {
                           << ", msgs=" << messages.size() << std::endl;
 
                 if (stream) {
-                    // Run the agent loop inside a chunked provider so tokens reach the client as they
-                    // are generated. Capture only copyable data -- never `this`, `req` or `res`.
                     struct StreamJob {
                         std::string llama_url, llama_model;
                         bool supports_tools = false;
@@ -858,11 +786,9 @@ class ModelAPIServer {
                                 }
 
                                 if (!result.success) {
-                                    // Headers are already sent, so surface the error as content.
                                     std::cerr << "[delta-server] stream error: " << result.error << std::endl;
                                     emit(sse_content_chunk(result.error));
                                 } else if (result.streamed_chars == 0) {
-                                    // Nothing streamed (e.g. a tool-write summary): emit the text now.
                                     std::istringstream iss(result.content);
                                     std::string line;
                                     bool first_line = true;
@@ -930,7 +856,6 @@ class ModelAPIServer {
             res.set_content(out.dump(), "application/json");
         });
 
-        // POST /api/models/unload - Unload model and stop llama-server
         server_->Post("/api/models/unload", [](const httplib::Request&, httplib::Response& res) {
             try {
                 if (g_model_unload_callback) {
@@ -945,7 +870,6 @@ class ModelAPIServer {
             }
         });
 
-        // GET /api/system/ram - Get system RAM in GB
         server_->Get("/api/system/ram", [](const httplib::Request&, httplib::Response& res) {
             try {
                 long long total_ram_bytes = 0;
@@ -970,7 +894,6 @@ class ModelAPIServer {
                 }
 #endif
 
-                // Convert bytes to GB (round up)
                 long long total_ram_gb = (total_ram_bytes + (1024LL * 1024 * 1024 - 1)) / (1024LL * 1024 * 1024);
 
                 json result = {{"total_ram_gb", total_ram_gb}, {"total_ram_bytes", total_ram_bytes}};
@@ -981,16 +904,13 @@ class ModelAPIServer {
                 res.set_content(error.dump(), "application/json");
             }
         });
-        // --- Agent tool endpoints ---
 
-        // GET /api/agent/tools - List available tools
         server_->Get("/api/agent/tools", [](const httplib::Request&, httplib::Response& res) {
             auto& registry = agent::ToolRegistry::instance();
             json result = {{"tools", registry.get_tools_array()}, {"tool_names", registry.get_tool_names()}};
             res.set_content(result.dump(), "application/json");
         });
 
-        // GET /api/agent/events - List calendar events
         server_->Get("/api/agent/events", [](const httplib::Request& req, httplib::Response& res) {
             auto& db = agent::AgentDatabase::instance();
             std::string start = req.has_param("start") ? req.get_param_value("start") : "";
@@ -1013,7 +933,6 @@ class ModelAPIServer {
             res.set_content(result.dump(), "application/json");
         });
 
-        // POST /api/agent/events - Create calendar event
         server_->Post("/api/agent/events", [](const httplib::Request& req, httplib::Response& res) {
             try {
                 auto& db = agent::AgentDatabase::instance();
@@ -1032,7 +951,6 @@ class ModelAPIServer {
             }
         });
 
-        // PUT /api/agent/events/:id - Update calendar event
         server_->Put(R"(/api/agent/events/(.+))", [](const httplib::Request& req, httplib::Response& res) {
             try {
                 auto& db = agent::AgentDatabase::instance();
@@ -1051,7 +969,6 @@ class ModelAPIServer {
             }
         });
 
-        // DELETE /api/agent/events/:id - Delete calendar event
         server_->Delete(R"(/api/agent/events/(.+))", [](const httplib::Request& req, httplib::Response& res) {
             auto& db = agent::AgentDatabase::instance();
             std::string id = req.matches[1];
@@ -1063,7 +980,6 @@ class ModelAPIServer {
             res.set_content(json({{"deleted", true}}).dump(), "application/json");
         });
 
-        // GET /api/agent/reminders/pending - Get upcoming reminders and mark them as fired
         server_->Get("/api/agent/reminders/pending", [](const httplib::Request&, httplib::Response& res) {
             auto& db = agent::AgentDatabase::instance();
             auto reminders = db.get_upcoming_reminders();
@@ -1074,11 +990,6 @@ class ModelAPIServer {
             res.set_content(result.dump(), "application/json");
         });
 
-        // ========================================================================
-        // NOTE ROUTES (inlined — no external header needed)
-        // ========================================================================
-
-        // GET /api/notes - List notes
         server_->Get("/api/notes", [](const httplib::Request& req, httplib::Response& res) {
             auto& db = agent::AgentDatabase::instance();
             std::string search = req.has_param("search") ? req.get_param_value("search") : "";
@@ -1096,7 +1007,6 @@ class ModelAPIServer {
             res.set_content(result.dump(), "application/json");
         });
 
-        // POST /api/notes - Create note
         server_->Post("/api/notes", [](const httplib::Request& req, httplib::Response& res) {
             try {
                 auto& db = agent::AgentDatabase::instance();
@@ -1119,7 +1029,6 @@ class ModelAPIServer {
             }
         });
 
-        // GET /api/notes/:id - Get single note
         server_->Get(R"(/api/notes/(.+))", [](const httplib::Request& req, httplib::Response& res) {
             auto& db = agent::AgentDatabase::instance();
             std::string id = req.matches[1];
@@ -1132,7 +1041,6 @@ class ModelAPIServer {
             res.set_content(note.dump(), "application/json");
         });
 
-        // PUT /api/notes/:id - Update note
         server_->Put(R"(/api/notes/(.+))", [](const httplib::Request& req, httplib::Response& res) {
             try {
                 auto& db = agent::AgentDatabase::instance();
@@ -1150,7 +1058,6 @@ class ModelAPIServer {
             }
         });
 
-        // DELETE /api/notes/:id - Delete note
         server_->Delete(R"(/api/notes/(.+))", [](const httplib::Request& req, httplib::Response& res) {
             auto& db = agent::AgentDatabase::instance();
             std::string id = req.matches[1];
@@ -1162,7 +1069,6 @@ class ModelAPIServer {
             res.set_content(json({{"deleted", true}}).dump(), "application/json");
         });
 
-        // Serve web UI static files when path is set (for first-time users with no model; no llama-server)
         if (!webui_path_.empty() && tools::FileOps::dir_exists(webui_path_)) {
             server_->set_mount_point("/", webui_path_);
         }
@@ -1199,19 +1105,14 @@ class ModelAPIServer {
             server_->stop();
         }
         if (server_thread_.joinable()) {
-            // Check if we're being called from within the server thread itself
-            // If so, detach instead of join to avoid deadlock
             if (server_thread_.get_id() == std::this_thread::get_id()) {
-                // We're in the server thread - can't join ourselves, so detach
                 server_thread_.detach();
             } else {
-                // Use a timeout to avoid deadlock if thread is blocked
                 auto future = std::async(std::launch::async, [this]() {
                     if (server_thread_.joinable()) {
                         server_thread_.join();
                     }
                 });
-                // Wait up to 2 seconds for the thread to finish
                 if (future.wait_for(std::chrono::seconds(2)) == std::future_status::timeout) {
                     server_thread_.detach();
                 }
@@ -1222,7 +1123,6 @@ class ModelAPIServer {
     ~ModelAPIServer() { stop(); }
 };
 
-// Global server instance
 static std::unique_ptr<ModelAPIServer> g_model_api_server;
 
 void set_model_switch_callback(ModelSwitchCallback callback) {
