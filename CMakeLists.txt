@@ -131,7 +131,7 @@ set(DELTA_SOURCES
     engine/update.cpp
     engine/commands.cpp
     engine/history.cpp
-    engine/hardware_monitor.cpp
+    engine/tools/hardware_monitor.cpp
     engine/tools/file_ops.cpp
     engine/tools/dep_protocol.cpp
     engine/tools/shell.cpp
@@ -209,7 +209,7 @@ add_executable(delta-server
     engine/delta_server_wrapper.cpp
     engine/model_api_server.cpp
     engine/models.cpp
-    engine/hardware_monitor.cpp
+    engine/tools/hardware_monitor.cpp
     engine/tools/file_ops.cpp
     engine/ui.cpp
     engine/api/note_routes.cpp
