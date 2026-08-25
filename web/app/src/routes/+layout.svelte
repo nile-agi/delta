@@ -27,6 +27,9 @@
 	import NotesWindow from '$lib/components/app/misc/NotesWindow.svelte';
 	import CalendarWindow from '$lib/components/app/misc/CalendarWindow.svelte';
 	import WindowDock from '$lib/components/app/misc/WindowDock.svelte';
+	import FloatingWindow from '$lib/components/app/misc/FloatingWindow.svelte';
+    import HardwareDashboard from '$lib/components/app/hardware/HardwareDashboard.svelte';
+    import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
 	
 	let { children } = $props();
 
@@ -311,6 +314,16 @@
 	<NotesWindow />
 	<CalendarWindow />
 	<WindowDock />
+
+	<!-- Hardware Telemetry Floating Window -->
+	<FloatingWindow
+		title="Hardware Telemetry"
+		store={hardwareWindow}
+		minWidth={320}
+		minHeight={380}
+	>
+		<HardwareDashboard />
+	</FloatingWindow>
 
 	<Sidebar.Provider bind:open={sidebarOpen}>
 		<div class="flex h-screen w-full" style:height={innerHeight}px>

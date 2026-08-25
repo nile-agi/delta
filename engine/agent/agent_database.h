@@ -40,6 +40,22 @@ class AgentDatabase {
   bool update_note(const std::string& id, const nlohmann::json& data);
   bool delete_note(const std::string& id);
 
+  // Define the RpcNode struct
+  struct RpcNode {
+      std::string id;
+      std::string name;
+      std::string endpoint; // Format: "host:port" (e.g., "127.0.0.1:50052")
+      bool enabled;
+      std::string created_at;
+  };
+
+  // RPC Node Management
+  std::string add_rpc_node(const std::string& name, const std::string& endpoint);
+  std::vector<RpcNode> get_enabled_rpc_nodes();
+  std::vector<RpcNode> list_rpc_nodes();
+  bool update_rpc_node_status(const std::string& id, bool enabled);
+  bool delete_rpc_node(const std::string& id);
+
  private:
   AgentDatabase() = default;
   ~AgentDatabase();

@@ -1,14 +1,16 @@
 <script lang="ts">
-	import { X, Settings, StickyNote, Calendar } from '@lucide/svelte';
+	import { X, Settings, StickyNote, Calendar, Activity } from '@lucide/svelte';
 	import { dockStore } from '$lib/stores/dock.svelte';
 	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
+	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
 
 	const windowMap = {
 		settings: { store: settingsWindow, title: 'Settings', icon: Settings },
 		notes: { store: notesWindow, title: 'Notes', icon: StickyNote },
-		calendar: { store: calendarWindow, title: 'Calendar', icon: Calendar }
+		calendar: { store: calendarWindow, title: 'Calendar', icon: Calendar },
+		'hardware-telemetry': { store: hardwareWindow, title: 'Hardware', icon: Activity }
 	};
 
 	const ACTION_BAR_IDS = new Set(['calendar', 'notes', 'settings']);
@@ -20,6 +22,7 @@
 
 	function handleClose(id: string) {
 		windowMap[id as keyof typeof windowMap]?.store.close();
+		dockStore.unregister(id);
 	}
 </script>
 

@@ -43,6 +43,23 @@ if(DELTA_BUILD_RPC)
     add_compile_definitions(DELTA_RPC_ENABLED)
 endif()
 
+option(DELTA_BUILD_CUDA "Build CUDA sidecar (Dynamic Backend Loading)" OFF)
+option(DELTA_BUILD_VULKAN "Build Vulkan sidecar (Dynamic Backend Loading)" OFF)
+
+if(DELTA_BUILD_CUDA)
+    set(GGML_CUDA ON CACHE BOOL "Enable CUDA" FORCE)
+    set(GGML_BACKEND_DL ON CACHE BOOL "Build backends as shared libraries for DTL" FORCE)
+    add_compile_definitions(DELTA_CUDA_ENABLED)
+    message(STATUS "  DHATS: CUDA sidecar enabled (libggml-cuda will be dynamically loaded)")
+endif()
+
+if(DELTA_BUILD_VULKAN)
+    set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan" FORCE)
+    set(GGML_BACKEND_DL ON CACHE BOOL "Build backends as shared libraries for DTL" FORCE)
+    add_compile_definitions(DELTA_VULKAN_ENABLED)
+    message(STATUS "  DHATS: Vulkan sidecar enabled (libggml-vulkan will be dynamically loaded)")
+endif()
+
 # Detect platform
 if(APPLE)
     set(GGML_METAL ON)

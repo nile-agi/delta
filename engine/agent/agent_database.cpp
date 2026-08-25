@@ -1,10 +1,13 @@
 #include "agent_database.h"
 #include "time_compat.h"
+#include <nlohmann/json.hpp>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
 #include <random>
 #include <sstream>
+#include <vector>
+#include <string>
 
 namespace delta {
 namespace agent {
@@ -154,6 +157,23 @@ bool AgentDatabase::run_migrations() {
     )");
     set_schema_version(4);
     current = 4;
+  }
+
+  // NEW: Migration v5 for RPC Worker Nodes
+  if (current < 5) {
+    std::cerr << "[delta-db] running migration v5: adding worker_nodes table" << std::endl;
+    exec_sql(R"(
+      CREATE TABLE IF NOT EXISTS worker_nodes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        ip TEXT NOT NULL,
+        port INTEGER NOT NULL DEFAULT 50051,
+        enabled INTEGER DEFAULT 1,
+        created_at INTEGER DEFAULT (strftime('%s', 'now'))
+      );
+    )");
+    set_schema_version(5);
+    current = 5;
   }
 
   return true;
@@ -478,6 +498,104 @@ bool AgentDatabase::delete_note(const std::string& id) {
   int rc = sqlite3_step(stmt);
   sqlite3_finalize(stmt);
   return rc == SQLITE_DONE && sqlite3_changes(db_) > 0;
+}
+
+std::string AgentDatabase::add_rpc_node(const std::string& name, const std::string& endpoint) {
+    std::string id = generate_uuid();
+    std::string now = get_current_timestamp();
+    sqlite3_stmt* stmt;
+    const char* sql = R"(
+        INSERT INTO rpc_nodes (id, name, endpoint, enabled, created_at)
+        VALUES (?, ?, ?, 1, ?)
+    )";
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "[delta-db] add_rpc_node prepare failed: " << sqlite3_errmsg(db_) << std::endl;
+        return "";
+    }
+    sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, endpoint.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, now.c_str(), -1, SQLITE_TRANSIENT);
+    
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return (rc == SQLITE_DONE) ? id : "";
+}
+
+std::vector<AgentDatabase::RpcNode> AgentDatabase::get_enabled_rpc_nodes() {
+    std::vector<RpcNode> nodes;
+    sqlite3_stmt* stmt;
+    const char* sql = "SELECT id, name, endpoint, enabled, created_at FROM rpc_nodes WHERE enabled = 1 ORDER BY created_at DESC";
+    
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return nodes;
+    }
+    
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        RpcNode node;
+        const unsigned char* id_txt = sqlite3_column_text(stmt, 0);
+        const unsigned char* name_txt = sqlite3_column_text(stmt, 1);
+        const unsigned char* endpoint_txt = sqlite3_column_text(stmt, 2);
+        const unsigned char* created_txt = sqlite3_column_text(stmt, 4);
+
+        node.id = id_txt ? reinterpret_cast<const char*>(id_txt) : "";
+        node.name = name_txt ? reinterpret_cast<const char*>(name_txt) : "";
+        node.endpoint = endpoint_txt ? reinterpret_cast<const char*>(endpoint_txt) : "";
+        node.enabled = sqlite3_column_int(stmt, 3) != 0;
+        node.created_at = created_txt ? reinterpret_cast<const char*>(created_txt) : "";
+        
+        nodes.push_back(node);
+    }
+    
+    sqlite3_finalize(stmt);
+    return nodes;
+}
+
+std::vector<AgentDatabase::RpcNode> AgentDatabase::list_rpc_nodes() {
+    std::vector<RpcNode> nodes;
+    sqlite3_stmt* stmt;
+    const char* sql = "SELECT id, name, endpoint, enabled, created_at FROM rpc_nodes ORDER BY created_at DESC";
+    
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return nodes;
+    
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        RpcNode node;
+        const unsigned char* id_txt = sqlite3_column_text(stmt, 0);
+        const unsigned char* name_txt = sqlite3_column_text(stmt, 1);
+        const unsigned char* endpoint_txt = sqlite3_column_text(stmt, 2);
+        const unsigned char* created_txt = sqlite3_column_text(stmt, 4);
+
+        node.id = id_txt ? reinterpret_cast<const char*>(id_txt) : "";
+        node.name = name_txt ? reinterpret_cast<const char*>(name_txt) : "";
+        node.endpoint = endpoint_txt ? reinterpret_cast<const char*>(endpoint_txt) : "";
+        node.enabled = sqlite3_column_int(stmt, 3) != 0;
+        node.created_at = created_txt ? reinterpret_cast<const char*>(created_txt) : "";
+        
+        nodes.push_back(node);
+    }
+    sqlite3_finalize(stmt);
+    return nodes;
+}
+
+bool AgentDatabase::update_rpc_node_status(const std::string& id, bool enabled) {
+    sqlite3_stmt* stmt;
+    const char* sql = "UPDATE rpc_nodes SET enabled = ? WHERE id = ?";
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_int(stmt, 1, enabled ? 1 : 0);
+    sqlite3_bind_text(stmt, 2, id.c_str(), -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE;
+}
+
+bool AgentDatabase::delete_rpc_node(const std::string& id) {
+    sqlite3_stmt* stmt;
+    const char* sql = "DELETE FROM rpc_nodes WHERE id = ?";
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE && sqlite3_changes(db_) > 0;
 }
 
 } // namespace agent

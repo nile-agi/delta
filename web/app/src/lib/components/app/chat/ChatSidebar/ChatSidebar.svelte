@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Settings, Calendar, Trash2, StickyNote, ChevronDown, Wrench } from '@lucide/svelte';
+	import { Settings, Calendar, Trash2, StickyNote, ChevronDown, Wrench, Activity } from '@lucide/svelte';
+	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
+    import { dockStore } from '$lib/stores/dock.svelte';
 	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
 	import { config } from '$lib/stores/settings.svelte';
@@ -103,6 +105,11 @@
 		await goto(`#/chat/${id}`);
 	}
 
+	function openHardwareDashboard() {
+        // Register the window in the dock store
+        dockStore.register('hardware-telemetry', 'Hardware Telemetry');
+    }
+
 	let toolsOpen = $state(false);
 </script>
 
@@ -147,6 +154,13 @@
 								>
 									<StickyNote class="h-4 w-4" />
 									<span>Notes</span>
+								</DropdownMenu.Item>
+								<DropdownMenu.Item
+									class="flex items-center gap-2 cursor-pointer"
+									onclick={() => { openHardwareDashboard(); handleMobileSidebarItemClick(); }}
+								>
+									<Activity class="h-4 w-4" />
+									<span>Hardware</span>
 								</DropdownMenu.Item>
 							</DropdownMenu.Group>
 						</DropdownMenu.Content>

@@ -378,6 +378,7 @@ void HardwareMonitor::collect_apple_metrics(std::vector<GPUMetrics>& out) {
 }
 
 void HardwareMonitor::collect_amd_metrics(std::vector<GPUMetrics>& out) {
+    (void)out;
     if (!rocm_available_) return;
     // TODO: Implement ROCm SMI dynamic function calls
     // Similar pattern to NVML above

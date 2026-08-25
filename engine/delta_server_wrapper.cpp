@@ -5,6 +5,7 @@
 
 #include "delta_cli.h"
 #include "model_api_server.h"
+#include "agent/agent_database.h"
 #include <iostream>
 #include <iomanip>
 #include <cstdio>
@@ -457,6 +458,55 @@ class DeltaServerWrapper {
             cmd += " --model-draft \"" + draft_model_ + "\"";
         if (!grammar_file_.empty())
             cmd += " --grammar-file \"" + grammar_file_ + "\"";
+
+        if (!draft_model_.empty())
+            cmd += " --model-draft \"" + draft_model_ + "\"";
+        if (!grammar_file_.empty())
+            cmd += " --grammar-file \"" + grammar_file_ + "\"";
+
+        // ============================================================================
+        // B. Inject RPC Arguments
+        // ============================================================================
+        auto rpc_nodes = agent::AgentDatabase::instance().get_enabled_rpc_nodes();
+        if (!rpc_nodes.empty()) {
+            std::string rpc_arg = " --rpc ";
+            for (size_t i = 0; i < rpc_nodes.size(); ++i) {
+                // if (i < rpc_nodes.size() - 1) rpc_arg += ",";
+                if (i > 0)
+                {
+                    rpc_arg += ","; // llama.cpp accepts comma-separated RPC endpoints
+                }
+                rpc_arg += rpc_nodes[i].endpoint;
+                
+            }
+            cmd += rpc_arg;
+            std::cout << "[DHATS] Injecting " << rpc_nodes.size() << " RPC worker node(s) into llama-server context." << std::endl;
+        }
+
+        // ============================================================================
+        // C. Auto-Offload Calculation (Safe Fallback)
+        // ============================================================================
+        // Note: HardwareMonitor is not present in the current tree. 
+        // Using a safe heuristic based on model file size to prevent OOM crashes.
+        long long model_size_bytes = 0;
+        try {
+            if (!model_path.empty() && std::filesystem::exists(model_path)) {
+                model_size_bytes = std::filesystem::file_size(model_path);
+            }
+        } catch (...) {}
+        
+        int auto_ngl = 999; // Default: offload all layers (llama.cpp standard)
+        if (model_size_bytes > 8LL * 1024 * 1024 * 1024) {
+            auto_ngl = 24; // Conservative fallback for >8GB models
+        } else if (model_size_bytes > 4LL * 1024 * 1024 * 1024) {
+            auto_ngl = 32;
+        }
+        
+        if (auto_ngl > 0 || auto_ngl == -1) {
+            int ngl_arg = (auto_ngl == -1) ? 999 : auto_ngl;
+            cmd += " -ngl " + std::to_string(ngl_arg);
+            std::cout << "[DHATS] Auto-offload calculated: " << ngl_arg << " layers to GPU." << std::endl;
+        }
         return cmd;
     }
 
