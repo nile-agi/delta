@@ -107,6 +107,7 @@
 
 	function openHardwareDashboard() {
         // Register the window in the dock store
+		hardwareWindow.open();
         dockStore.register('hardware-telemetry', 'Hardware Telemetry');
     }
 

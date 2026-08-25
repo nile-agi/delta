@@ -30,30 +30,27 @@ class HardwareStore {
 	private connecting = false;
 
 	constructor() {
-		// NOTE: no $effect here. This class is instantiated at module scope, and
-		// $effect can only run during component initialization — using it here
-		// throws `effect_orphan` at hydration and white-screens the whole app.
+		// NOTE: no $effect here — this class is instantiated at module scope and
+		// $effect may only run during component initialization. Using it here
+		// throws effect_orphan at hydration and white-screens the whole app.
 		if (browser) {
 			void this.connect();
 		}
 	}
 
-	/** Open the SSE telemetry stream. Safe to call multiple times. */
 	async connect() {
 		if (!browser || this.eventSource || this.connecting) return;
 		this.connecting = true;
 		try {
-			// Same-origin probe in browser mode; synchronous under Tauri.
-			await resolveModelApiBaseUrl();
+			await resolveModelApiBaseUrl(); // same-origin probe; sync no-op under Tauri
 		} catch {
 			/* fall back to port+1 URL */
 		}
 		this.connecting = false;
 		if (this.eventSource) return;
 
-		// Re-read on every attempt: under Tauri, __DELTA_MODEL_API_PORT__ is
-		// injected by the Rust side once the Model API is ready, so a retry
-		// after injection picks up the correct port automatically.
+		// Re-read each attempt: under Tauri, __DELTA_MODEL_API_PORT__ is injected
+		// by the Rust side once the Model API is ready, so retries self-heal.
 		const url = `${getModelApiBaseUrl()}/api/v1/hardware/stream`;
 		const es = new EventSource(url);
 		this.eventSource = es;
