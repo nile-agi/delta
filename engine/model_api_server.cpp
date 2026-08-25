@@ -18,7 +18,7 @@
 
 // Updated includes to point to the local vendor directory structure
 #include "vendor/llama.cpp/vendor/cpp-httplib/httplib.h"
-#include "api/note_routes.h"  
+#include "api/note_routes.h"
 #include "vendor/json.hpp"
 
 #include <iostream>
@@ -71,10 +71,17 @@ static ModelSwitchCallback* g_model_switch_callback = nullptr;
 // Callback for unloading model / stopping llama-server
 static ModelUnloadCallback* g_model_unload_callback = nullptr;
 
-// Last known model path/alias (set when /api/models/use is called) for /api/props fallback
+// Model identity reported by the /props fallback. Only published once a load is confirmed:
+// naming a model here before it is resident makes the UI show a model that cannot answer.
 static std::string g_props_fallback_model_path;
 static std::string g_props_fallback_model_alias;
 static std::mutex g_props_fallback_mutex;
+
+static void set_props_fallback_model(const std::string& model_path, const std::string& model_alias) {
+    std::lock_guard<std::mutex> lock(g_props_fallback_mutex);
+    g_props_fallback_model_path = model_path;
+    g_props_fallback_model_alias = model_alias;
+}
 
 // Progress tracking structure
 struct DownloadProgress {
@@ -604,11 +611,9 @@ class ModelAPIServer {
                 }
 
                 bool model_loaded = false;
-                {
-                    std::lock_guard<std::mutex> lock(g_props_fallback_mutex);
-                    g_props_fallback_model_path = model_path;
-                    g_props_fallback_model_alias = model_alias;
-                }
+
+                // The previous model is on its way out either way, so stop advertising it.
+                set_props_fallback_model("", "");
 
                 if (g_model_switch_callback) {
                     bool likely_ui_only = (port_ == 8080);
@@ -627,7 +632,9 @@ class ModelAPIServer {
                                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
                                 if (g_model_switch_callback) {
-                                    (*g_model_switch_callback)(model_path, model_name, ctx_size, model_alias);
+                                    if ((*g_model_switch_callback)(model_path, model_name, ctx_size, model_alias)) {
+                                        set_props_fallback_model(model_path, model_alias);
+                                    }
                                 }
                             } catch (const std::exception& e) {
                                 std::cerr << "[ERROR] Error in migration thread: " << e.what() << std::endl;
@@ -641,6 +648,9 @@ class ModelAPIServer {
                             model_loaded = (*g_model_switch_callback)(model_path, model_name, ctx_size, model_alias);
                         } catch (const std::exception& e) {
                             std::cerr << "[ERROR] Error switching model: " << e.what() << std::endl;
+                        }
+                        if (model_loaded) {
+                            set_props_fallback_model(model_path, model_alias);
                         }
                     }
                 }
@@ -824,7 +834,7 @@ class ModelAPIServer {
                     json message = {{"role", "assistant"}, {"content", result.content}};
                     if (!result.tool_calls.empty())
                         message["tool_calls"] = result.tool_calls;
-                                        json response = {{"id", "chatcmpl-delta"},
+                    json response = {{"id", "chatcmpl-delta"},
                                      {"object", "chat.completion"},
                                      {"choices", {{{"index", 0}, {"message", message}, {"finish_reason", "stop"}}}},
                                      {"usage", {{"prompt_tokens", 0}, {"completion_tokens", 0}, {"total_tokens", 0}}}};
@@ -861,6 +871,7 @@ class ModelAPIServer {
                 if (g_model_unload_callback) {
                     (*g_model_unload_callback)();
                 }
+                set_props_fallback_model("", "");
                 json result = {{"success", true}, {"message", "Model unloaded and server stopped."}};
                 res.set_content(result.dump(), "application/json");
             } catch (const std::exception& e) {
@@ -994,16 +1005,20 @@ class ModelAPIServer {
             auto& db = agent::AgentDatabase::instance();
             std::string search = req.has_param("search") ? req.get_param_value("search") : "";
             std::string folder = req.has_param("folder") ? req.get_param_value("folder") : "";
-            std::string tags   = req.has_param("tags")   ? req.get_param_value("tags")   : "";
+            std::string tags = req.has_param("tags") ? req.get_param_value("tags") : "";
             int limit = 50;
             if (req.has_param("limit")) {
-                try { limit = std::stoi(req.get_param_value("limit")); } catch (...) {}
+                try {
+                    limit = std::stoi(req.get_param_value("limit"));
+                } catch (...) {
+                }
             }
             bool pinned_only = req.has_param("pinned_only") && req.get_param_value("pinned_only") == "true";
 
             auto notes = db.list_notes(folder, search, tags, limit, pinned_only);
             json result = {{"notes", json::array()}, {"count", notes.size()}};
-            for (auto& n : notes) result["notes"].push_back(n);
+            for (auto& n : notes)
+                result["notes"].push_back(n);
             res.set_content(result.dump(), "application/json");
         });
 

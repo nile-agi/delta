@@ -6,6 +6,7 @@
 #include "update.h"
 #include "history.h"
 #include "model_api_server.h"
+#include "server_health.h"
 #include <iostream>
 #include <sstream>
 #include <thread>
@@ -537,92 +538,40 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     int result = 0; // Fork succeeded
 #endif
 
-    // Wait for server to start and verify it's listening (server writes to err_file on failure).
-    // On Windows model load can take 2–5+ minutes; use longer timeout and one final check.
-#ifdef _WIN32
+    // Wait for the model to actually load. llama-server binds the port before it reads any
+    // weights and answers 503 until it is done, so /health is the only honest signal; a bare
+    // TCP connect would also happily succeed against a leftover server on the same port.
+    // Loading a large model off a cold disk can take several minutes.
     const int total_attempts = 600;   // 600 * 500ms = 300 seconds (5 min)
     const int progress_interval = 20; // Print progress every 10 seconds
-#else
-    const int total_attempts = 120; // 120 * 500ms = 60 seconds
-    // const int progress_interval = 0;
-#endif
-    bool server_listening = false;
-#ifdef _WIN32
+    bool model_loaded = false;
     bool progress_printed = false;
-#endif
     for (int attempt = 0; attempt < total_attempts; attempt++) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-#ifdef _WIN32
-        if (attempt > 0 && progress_interval > 0 && attempt % progress_interval == 0) {
+
+#ifndef _WIN32
+        // A dead child will never become healthy; stop waiting and let the log scan below explain.
+        int child_status;
+        if (waitpid(pid, &child_status, WNOHANG) != 0) {
+            break;
+        }
+#endif
+
+        if (delta::probe_server_health(port)) {
+            model_loaded = true;
+            if (progress_printed)
+                std::cout << std::endl;
+            break;
+        }
+
+        if (attempt > 0 && attempt % progress_interval == 0) {
             int elapsed_sec = (attempt * 500) / 1000;
             std::cout << "\r   Waiting for model to load... " << elapsed_sec << "s (port " << port << ")" << std::flush;
             progress_printed = true;
         }
-#endif
-        // Check if port is listening using socket connection
-#ifdef _WIN32
-        WSADATA wsaData;
-        if (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0) {
-            SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-            if (sock != INVALID_SOCKET) {
-                sockaddr_in addr;
-                addr.sin_family = AF_INET;
-                addr.sin_port = htons(port);
-                inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-                if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
-                    server_listening = true;
-                    closesocket(sock);
-                    if (progress_printed)
-                        std::cout << std::endl;
-                } else {
-                    closesocket(sock);
-                }
-            }
-            WSACleanup();
-        }
-#else
-        int sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock >= 0) {
-            struct sockaddr_in addr;
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            inet_aton("127.0.0.1", &addr.sin_addr);
-            if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
-                server_listening = true;
-                close(sock);
-            } else {
-                close(sock);
-            }
-        }
-#endif
-        if (server_listening) {
-            break;
-        }
     }
-#ifdef _WIN32
-    if (!server_listening) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        WSADATA wsaData2;
-        if (WSAStartup(MAKEWORD(2, 2), &wsaData2) == 0) {
-            SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-            if (sock != INVALID_SOCKET) {
-                sockaddr_in addr;
-                addr.sin_family = AF_INET;
-                addr.sin_port = htons(port);
-                inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-                if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
-                    server_listening = true;
-                    closesocket(sock);
-                } else {
-                    closesocket(sock);
-                }
-            }
-            WSACleanup();
-        }
-    }
-    if (progress_printed && !server_listening)
+    if (progress_printed && !model_loaded)
         std::cout << std::endl;
-#endif
 
     // Check error log for any startup errors (Windows and Unix both write to err_file now)
     bool has_startup_error = false;
@@ -674,61 +623,47 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
         return false;
     }
 
-    if (!server_listening) {
-        // As a safety net, if our local TCP probe fails but the server log says
-        // "server is listening on ...", treat that as success instead of error.
-        std::ifstream err_read(err_file);
-        bool log_says_listening = false;
+    if (!model_loaded) {
+        UI::print_error("Server never finished loading the model (port " + std::to_string(port) +
+                        "): it exited or timed out.");
+        UI::print_info("Full log: " + err_file);
+
         std::vector<std::string> lines;
+        std::ifstream err_read(err_file);
         if (err_read.is_open()) {
             std::string line;
             while (std::getline(err_read, line)) {
-                if (line.find("server is listening on") != std::string::npos) {
-                    log_says_listening = true;
-                }
                 lines.push_back(line);
             }
             err_read.close();
         }
-        if (log_says_listening) {
-            UI::print_info("Server log indicates it is listening; continuing even though the local port probe failed.");
-            server_listening = true;
-        } else {
-#ifdef _WIN32
-            UI::print_error("Server did not become ready in time (port " + std::to_string(port) + ").");
-#else
-            UI::print_error("Server process started but port " + std::to_string(port) +
-                            " is not listening after 60 seconds");
-#endif
-            UI::print_info("Full log: " + err_file);
-            std::vector<std::string> filtered;
-            size_t start = (lines.size() > 50) ? (lines.size() - 50) : 0;
-            for (size_t i = start; i < lines.size(); i++) {
-                if (!is_server_log_noise(lines[i]))
-                    filtered.push_back(lines[i]);
-            }
-            if (!filtered.empty()) {
-                UI::print_info("--- Relevant log lines ---");
-                for (size_t i = 0; i < filtered.size() && i < 25; i++) {
-                    std::cerr << "  " << filtered[i] << std::endl;
-                }
-                UI::print_info("--- End ---");
-            }
-#ifdef _WIN32
-            UI::print_info("Install folder should contain: delta.exe, llama-server.exe (or server.exe), libcurl.dll, "
-                           "zlib1.dll, public/");
-            UI::print_info("Run manually: llama-server.exe -m <model-path> --port " + std::to_string(port));
-            UI::print_info("Check port: netstat -an | findstr " + std::to_string(port));
-#else
-            UI::print_info("You can run the server manually to see errors: delta-server -m <model-path> --port " +
-                           std::to_string(port));
-            UI::print_info("Or check if the server is running: ps aux | grep delta-server");
-#endif
-            return false;
+        std::vector<std::string> filtered;
+        size_t start = (lines.size() > 50) ? (lines.size() - 50) : 0;
+        for (size_t i = start; i < lines.size(); i++) {
+            if (!is_server_log_noise(lines[i]))
+                filtered.push_back(lines[i]);
         }
+        if (!filtered.empty()) {
+            UI::print_info("--- Relevant log lines ---");
+            for (size_t i = 0; i < filtered.size() && i < 25; i++) {
+                std::cerr << "  " << filtered[i] << std::endl;
+            }
+            UI::print_info("--- End ---");
+        }
+#ifdef _WIN32
+        UI::print_info("Install folder should contain: delta.exe, llama-server.exe (or server.exe), libcurl.dll, "
+                       "zlib1.dll, public/");
+        UI::print_info("Run manually: llama-server.exe -m <model-path> --port " + std::to_string(port));
+        UI::print_info("Check port: netstat -an | findstr " + std::to_string(port));
+#else
+        UI::print_info("You can run the server manually to see errors: delta-server -m <model-path> --port " +
+                       std::to_string(port));
+        UI::print_info("Or check if the server is running: ps aux | grep delta-server");
+#endif
+        return false;
     }
 
-    // Server is confirmed listening - proceed with setup
+    // Model is confirmed loaded - proceed with setup
     delta::start_model_api_server(8081);
     delta::set_model_switch_callback([](const std::string& model_path, const std::string& model_name, int ctx_size,
                                         const std::string& model_alias) -> bool {
@@ -1064,7 +999,7 @@ bool Commands::restart_llama_server(const std::string& model_path, const std::st
 
     const int total_attempts = 600; // 300 seconds (5 min) on Windows; model load can be slow
     const int progress_interval = 20;
-    bool server_listening = false;
+    bool model_loaded = false;
     DWORD exit_code = 0;
     bool progress_printed = false;
     for (int attempt = 0; attempt < total_attempts; attempt++) {
@@ -1074,54 +1009,21 @@ bool Commands::restart_llama_server(const std::string& model_path, const std::st
         }
         if (attempt > 0 && progress_interval > 0 && attempt % progress_interval == 0) {
             int elapsed_sec = (attempt * 500) / 1000;
-            std::cout << "\r   Waiting for server... " << elapsed_sec << "s (port " << current_port_ << ")"
+            std::cout << "\r   Waiting for model to load... " << elapsed_sec << "s (port " << current_port_ << ")"
                       << std::flush;
             progress_printed = true;
         }
-        WSADATA wsaData;
-        if (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0) {
-            SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-            if (sock != INVALID_SOCKET) {
-                sockaddr_in addr;
-                addr.sin_family = AF_INET;
-                addr.sin_port = htons(current_port_);
-                inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-                if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
-                    server_listening = true;
-                    closesocket(sock);
-                    if (progress_printed)
-                        std::cout << std::endl;
-                    break;
-                }
-                closesocket(sock);
-            }
-            WSACleanup();
+        if (delta::probe_server_health(current_port_)) {
+            model_loaded = true;
+            if (progress_printed)
+                std::cout << std::endl;
+            break;
         }
     }
-    if (!server_listening) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        WSADATA wsaData2;
-        if (WSAStartup(MAKEWORD(2, 2), &wsaData2) == 0) {
-            SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-            if (sock != INVALID_SOCKET) {
-                sockaddr_in addr;
-                addr.sin_family = AF_INET;
-                addr.sin_port = htons(current_port_);
-                inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-                if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
-                    server_listening = true;
-                    closesocket(sock);
-                } else {
-                    closesocket(sock);
-                }
-            }
-            WSACleanup();
-        }
-    }
-    if (progress_printed && !server_listening)
+    if (progress_printed && !model_loaded)
         std::cout << std::endl;
 
-    if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE && server_listening) {
+    if (model_loaded) {
         UI::print_info("   [OK] Model loaded successfully!");
         CloseHandle(pi.hProcess);
         if (is_ui_only_mode) {
@@ -1131,34 +1033,17 @@ bool Commands::restart_llama_server(const std::string& model_path, const std::st
         }
         return true;
     } else {
-        // If the TCP probe failed but the log says "server is listening on ...",
-        // treat that as success rather than a hard error.
-        bool log_says_listening = false;
-        std::ifstream err_read(err_file);
         std::vector<std::string> lines;
+        std::ifstream err_read(err_file);
         if (err_read.is_open()) {
             std::string line;
             while (std::getline(err_read, line)) {
-                if (line.find("server is listening on") != std::string::npos) {
-                    log_says_listening = true;
-                }
                 lines.push_back(line);
             }
             err_read.close();
         }
-        if (log_says_listening) {
-            UI::print_info(
-                "   Server log indicates it is listening; continuing even though the local port probe failed.");
-            CloseHandle(pi.hProcess);
-            if (is_ui_only_mode) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                delta::start_model_api_server(8081);
-                UI::print_info("   [OK] Model API server restarted on port 8081");
-            }
-            return true;
-        }
-        if (exit_code == STILL_ACTIVE) {
-            UI::print_error("   Server did not become ready in time. Full log: " + err_file);
+        if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
+            UI::print_error("   Server did not finish loading the model in time. Full log: " + err_file);
         } else {
             UI::print_error("   Server process exited (code " + std::to_string(exit_code) + "). See log: " + err_file);
         }
@@ -1230,57 +1115,29 @@ bool Commands::restart_llama_server(const std::string& model_path, const std::st
         llama_server_pid_ = -pid; // Store negative for process group
         current_model_path_ = model_path;
 
-        // Wait for server to start and verify it's listening (up to 30 seconds)
-        bool server_listening = false;
-        for (int attempt = 0; attempt < 60; attempt++) { // 60 * 500ms = 30 seconds
+        // Wait for the model to load. The port opens before any weights are read, so only a
+        // 200 from /health means the model is usable.
+        bool model_loaded = false;
+        for (int attempt = 0; attempt < 600; attempt++) { // 600 * 500ms = 300 seconds
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-            // Check if process is still running
             int status;
             if (waitpid(pid, &status, WNOHANG) != 0) {
                 // Process exited
                 break;
             }
 
-            // Check if port is listening
-#ifdef _WIN32
-            WSADATA wsaData;
-            if (WSAStartup(MAKEWORD(2, 2), &wsaData) == 0) {
-                SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-                if (sock != INVALID_SOCKET) {
-                    sockaddr_in addr;
-                    addr.sin_family = AF_INET;
-                    addr.sin_port = htons(current_port_);
-                    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-                    if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == 0) {
-                        server_listening = true;
-                        closesocket(sock);
-                        break;
-                    }
-                    closesocket(sock);
-                }
-                WSACleanup();
+            if (delta::probe_server_health(current_port_)) {
+                model_loaded = true;
+                break;
             }
-#else
-            int sock = socket(AF_INET, SOCK_STREAM, 0);
-            if (sock >= 0) {
-                struct sockaddr_in addr;
-                addr.sin_family = AF_INET;
-                addr.sin_port = htons(current_port_);
-                inet_aton("127.0.0.1", &addr.sin_addr);
-                if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
-                    server_listening = true;
-                    close(sock);
-                    break;
-                }
-                close(sock);
+
+            if (attempt > 0 && attempt % 20 == 0) {
+                UI::print_info("   Loading model... " + std::to_string((attempt * 500) / 1000) + "s");
             }
-#endif
         }
 
-        // Check if process is still running
-        int status;
-        if (waitpid(pid, &status, WNOHANG) == 0 && server_listening) {
+        if (model_loaded) {
             UI::print_info("   [OK] Model loaded successfully!");
             // If we migrated from UI-only mode, restart model API server on 8081
             if (is_ui_only_mode) {
@@ -1290,7 +1147,7 @@ bool Commands::restart_llama_server(const std::string& model_path, const std::st
             }
             return true;
         } else {
-            UI::print_error("   Failed to start delta-server");
+            UI::print_error("   Model did not finish loading (server exited or timed out)");
             llama_server_pid_ = 0;
             // If we were migrating from UI-only mode, restore model API server on 8080
             if (is_ui_only_mode) {

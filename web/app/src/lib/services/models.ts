@@ -1,6 +1,7 @@
 import { config } from '$lib/stores/settings.svelte';
-import type { ApiModelListResponse } from '$lib/types/api';
+import type { ApiModelDataEntry, ApiModelListResponse } from '$lib/types/api';
 import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
+import { getModelLoadState, isRouterModelList } from '$lib/utils/model-load-state';
 import { getServerBaseUrl } from '$lib/utils/server-base-url';
 
 export interface ModelInfo {
@@ -318,14 +319,16 @@ export class ModelsService {
 				await new Promise((r) => setTimeout(r, 2500));
 				try {
 					response = await doRequest();
-				} catch (retryErr) {
+				} catch {
 					throw new Error(
 						"Cannot reach the server while loading the model. Make sure Delta is running (run 'delta' in terminal). If you just selected a model, the server may be restarting — wait a few seconds and try again."
 					);
 				}
 			} else {
 				throw new Error(
-					e instanceof Error ? e.message : 'Connection error while loading the model. Please try again.'
+					e instanceof Error
+						? e.message
+						: 'Connection error while loading the model. Please try again.'
 				);
 			}
 		}
@@ -372,43 +375,39 @@ export class ModelsService {
 		try {
 			const res = await fetch(`${getServerBaseUrl()}/v1/models`);
 			if (!res.ok) return { ready: false, failed: false, needsLoad: false };
-			const data = await res.json();
+			const data = (await res.json()) as ApiModelListResponse;
 			if (!data?.data?.length) return { ready: false, failed: false, needsLoad: false };
 
-			const hasStatusFields = data.data.some(
-				(m: Record<string, unknown>) => m.status && typeof m.status === 'object'
-			);
-			if (!hasStatusFields) {
+			if (!isRouterModelList(data.data)) {
 				return { ready: true, failed: false, needsLoad: false };
 			}
 
 			const normalized = modelName.toLowerCase();
-			const getId = (m: Record<string, unknown>) => ((m.id as string) || '').toLowerCase();
+			const getId = (m: ApiModelDataEntry) => (m.id || '').toLowerCase();
 
-			let model = data.data.find((m: Record<string, unknown>) => getId(m) === normalized);
+			let model = data.data.find((m) => getId(m) === normalized);
 			if (!model) {
-				const stem = normalized.split(/[/\\]/).pop()?.replace(/\.gguf$/i, '') ?? normalized;
-				model = data.data.find((m: Record<string, unknown>) => getId(m) === stem);
+				const stem =
+					normalized
+						.split(/[/\\]/)
+						.pop()
+						?.replace(/\.gguf$/i, '') ?? normalized;
+				model = data.data.find((m) => getId(m) === stem);
 			}
+			if (!model) return { ready: false, failed: false, needsLoad: false };
 
-			if (!model?.status || typeof model.status !== 'object') {
-				return { ready: false, failed: false, needsLoad: false };
-			}
+			const routerModelName = model.id || modelName;
 
-			const routerModelName = (model.id as string) || modelName;
-			const status = model.status as Record<string, unknown>;
-			const value = status.value as string;
-
-			if (value === 'loaded' || value === 'sleeping') {
-				return { ready: true, failed: false, needsLoad: false, routerModelName };
+			switch (getModelLoadState(model)) {
+				case 'loaded':
+					return { ready: true, failed: false, needsLoad: false, routerModelName };
+				case 'failed':
+					return { ready: false, failed: true, needsLoad: false, routerModelName };
+				case 'unloaded':
+					return { ready: false, failed: false, needsLoad: true, routerModelName };
+				default:
+					return { ready: false, failed: false, needsLoad: false, routerModelName };
 			}
-			if (status.failed || (value === 'unloaded' && status.exit_code != null && status.exit_code !== 0)) {
-				return { ready: false, failed: true, needsLoad: false, routerModelName };
-			}
-			if (value === 'unloaded') {
-				return { ready: false, failed: false, needsLoad: true, routerModelName };
-			}
-			return { ready: false, failed: false, needsLoad: false, routerModelName };
 		} catch {
 			return { ready: false, failed: false, needsLoad: false };
 		}

@@ -5,6 +5,7 @@
 
 #include "delta_cli.h"
 #include "model_api_server.h"
+#include "server_health.h"
 #include <iostream>
 #include <iomanip>
 #include <cstdio>
@@ -33,18 +34,12 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/wait.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <fcntl.h>
 #else
 #include <unistd.h>
 #include <libgen.h>
 #include <signal.h>
 #include <sys/wait.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <fcntl.h>
 #endif
 
@@ -82,6 +77,12 @@ typedef DWORD pid_t;
 
 class DeltaServerWrapper {
   private:
+    // Loading a large model off a cold disk can take minutes; give it room before giving up,
+    // but stop short of the point where a caller waiting on the HTTP response would time out.
+    static constexpr int MODEL_LOAD_TIMEOUT_SECONDS = 180;
+    static constexpr int READY_POLL_INTERVAL_MS = 250;
+    static constexpr int PROGRESS_INTERVAL_SECONDS = 10;
+
     std::string llama_server_path_;
     std::string model_path_;
     std::string models_dir_; // Router mode: directory to scan for .gguf (no -m)
@@ -414,12 +415,12 @@ class DeltaServerWrapper {
         }
 
         // Enable modern server features for the Delta UI
-        cmd += " --jinja";       // Use Jinja2 templates for chat formatting
-        cmd += " --metrics";     // Enable Prometheus metrics endpoint
-        cmd += " --slots";       // Enable slot monitoring (UI can show server load)
-        cmd += " --props";       // Allow UI to change sampling params via POST /props
+        cmd += " --jinja";        // Use Jinja2 templates for chat formatting
+        cmd += " --metrics";      // Enable Prometheus metrics endpoint
+        cmd += " --slots";        // Enable slot monitoring (UI can show server load)
+        cmd += " --props";        // Allow UI to change sampling params via POST /props
         cmd += " --cache-prompt"; // Cache prompt KV for faster subsequent requests
-        
+
         if (ctx_size > 16384) {
             cmd += " --flash-attn off";
             if (ctx_size > 32768) {
@@ -493,13 +494,52 @@ class DeltaServerWrapper {
         stop_llama_server_locked();
     }
 
-    bool restart_llama_server(const std::string& new_model_path, const std::string& model_name, int ctx_size,
-                              const std::string& model_alias) {
+    // Poll /health until the model is resident, the process dies, or we run out of patience.
+    // Reports progress so a long load looks like progress rather than a hang.
+#ifdef _WIN32
+    ServerReadyState wait_until_model_loaded(HANDLE process) {
+#else
+    ServerReadyState wait_until_model_loaded(pid_t child_pid) {
+#endif
+        const int max_attempts = (MODEL_LOAD_TIMEOUT_SECONDS * 1000) / READY_POLL_INTERVAL_MS;
+        int next_progress_sec = PROGRESS_INTERVAL_SECONDS;
+
+        for (int attempt = 0; attempt < max_attempts; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(READY_POLL_INTERVAL_MS));
+
+#ifdef _WIN32
+            DWORD exit_code;
+            if (GetExitCodeProcess(process, &exit_code) && exit_code != STILL_ACTIVE) {
+                return ServerReadyState::Exited;
+            }
+#else
+            int status;
+            if (waitpid(child_pid, &status, WNOHANG) != 0) {
+                return ServerReadyState::Exited;
+            }
+#endif
+
+            if (probe_server_health(port_)) {
+                return ServerReadyState::Ready;
+            }
+
+            const int elapsed_sec = ((attempt + 1) * READY_POLL_INTERVAL_MS) / 1000;
+            if (elapsed_sec >= next_progress_sec) {
+                next_progress_sec = elapsed_sec + PROGRESS_INTERVAL_SECONDS;
+                std::cout << "  Loading model... " << elapsed_sec << "s" << std::endl;
+            }
+        }
+
+        return ServerReadyState::StillLoading;
+    }
+
+    ServerReadyState restart_llama_server(const std::string& new_model_path, const std::string& model_name,
+                                          int ctx_size, const std::string& model_alias) {
         std::lock_guard<std::mutex> lock(llama_server_mutex_);
 
         // Skip restart if the same model is already loaded and running
         if (llama_server_running_ && !model_path_.empty() && !new_model_path.empty() && model_path_ == new_model_path) {
-            return true;
+            return probe_server_health(port_) ? ServerReadyState::Ready : ServerReadyState::StillLoading;
         }
 
         // In router mode, no restart needed — router loads models on demand
@@ -520,7 +560,9 @@ class DeltaServerWrapper {
                         std::cout << "Selected model: " << model_name << std::endl;
                     }
                     model_path_ = new_model_path;
-                    return true;
+                    // Router mode loads on demand, so the router being up is all the readiness
+                    // there is to report here; per-model status comes from /v1/models.
+                    return probe_server_health(port_) ? ServerReadyState::Ready : ServerReadyState::StillLoading;
                 }
             } catch (...) {
             }
@@ -585,48 +627,27 @@ class DeltaServerWrapper {
                 AssignProcessToJobObject(job_object_, pi.hProcess);
             }
 
-            WSADATA wsaData;
-            WSAStartup(MAKEWORD(2, 2), &wsaData);
-            bool port_ok = false;
-            for (int attempt = 0; attempt < 120; ++attempt) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(250));
-                DWORD ec;
-                if (GetExitCodeProcess(pi.hProcess, &ec) && ec != STILL_ACTIVE)
-                    break;
-                SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-                if (sock == INVALID_SOCKET)
-                    continue;
-                struct sockaddr_in addr{};
-                addr.sin_family = AF_INET;
-                addr.sin_port = htons(static_cast<u_short>(port_));
-                addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-                if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
-                    closesocket(sock);
-                    port_ok = true;
-                    break;
-                }
-                closesocket(sock);
-            }
-            WSACleanup();
+            ServerReadyState state = wait_until_model_loaded(pi.hProcess);
 
-            if (port_ok) {
+            if (state == ServerReadyState::Ready) {
                 std::cout << "Server ready" << std::endl;
-                return true;
+                return state;
             }
-            DWORD exit_code;
-            if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code == STILL_ACTIVE) {
-                std::cout << "Server ready (process running)" << std::endl;
-                return true;
+            if (state == ServerReadyState::StillLoading) {
+                std::cout << "Model is still loading after " << MODEL_LOAD_TIMEOUT_SECONDS
+                          << "s; it will keep loading in the background." << std::endl;
+                return state;
             }
-            std::cerr << "Failed to start server" << std::endl;
+
+            std::cerr << "Failed to start server: llama-server exited while loading the model" << std::endl;
             CloseHandle(pi.hProcess);
             llama_server_process_ = NULL;
             llama_server_pid_ = 0;
             llama_server_running_ = false;
-            return false;
+            return ServerReadyState::Exited;
         } else {
             std::cerr << "Failed to create process" << std::endl;
-            return false;
+            return ServerReadyState::Exited;
         }
 #else
         int out_pipe[2] = {-1, -1};
@@ -706,12 +727,9 @@ class DeltaServerWrapper {
                             // Forward non-timing logs (e.g., startup errors, system info) from llama-server
                             // so they aren't silently swallowed when the server fails to start.
                             std::string s(line);
-                            if (s.find("error") != std::string::npos || 
-                                s.find("Error") != std::string::npos || 
-                                s.find("unknown") != std::string::npos ||
-                                s.find("fail") != std::string::npos ||
-                                s.find("Fail") != std::string::npos ||
-                                s.find("warning") != std::string::npos ||
+                            if (s.find("error") != std::string::npos || s.find("Error") != std::string::npos ||
+                                s.find("unknown") != std::string::npos || s.find("fail") != std::string::npos ||
+                                s.find("Fail") != std::string::npos || s.find("warning") != std::string::npos ||
                                 s.find("Warning") != std::string::npos) {
                                 std::cerr << "[llama-server] " << line << std::flush;
                             }
@@ -721,43 +739,25 @@ class DeltaServerWrapper {
                 }).detach();
             }
 
-            // Wait for the server to become reachable on its port
-            bool port_ok = false;
-            for (int attempt = 0; attempt < 24; ++attempt) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(250));
-                int sock = socket(AF_INET, SOCK_STREAM, 0);
-                if (sock < 0)
-                    continue;
-                struct sockaddr_in addr{};
-                addr.sin_family = AF_INET;
-                addr.sin_port = htons(port_);
-                addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-                if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
-                    close(sock);
-                    port_ok = true;
-                    break;
-                }
-                close(sock);
-            }
+            ServerReadyState state = wait_until_model_loaded(pid);
 
-            if (port_ok) {
+            if (state == ServerReadyState::Ready) {
                 std::cout << "Server ready" << std::endl;
-                return true;
+                return state;
+            }
+            if (state == ServerReadyState::StillLoading) {
+                std::cout << "Model is still loading after " << MODEL_LOAD_TIMEOUT_SECONDS
+                          << "s; it will keep loading in the background." << std::endl;
+                return state;
             }
 
-            int status;
-            if (waitpid(pid, &status, WNOHANG) == 0) {
-                std::cout << "Server ready (process running)" << std::endl;
-                return true;
-            } else {
-                std::cerr << "Failed to start server" << std::endl;
-                llama_server_running_ = false;
-                llama_server_pid_ = 0;
-                return false;
-            }
+            std::cerr << "Failed to start server: llama-server exited while loading the model" << std::endl;
+            llama_server_running_ = false;
+            llama_server_pid_ = 0;
+            return ServerReadyState::Exited;
         } else {
             std::cerr << "Failed to fork process" << std::endl;
-            return false;
+            return ServerReadyState::Exited;
         }
 #endif
     }
@@ -818,7 +818,7 @@ class DeltaServerWrapper {
 
         delta::set_model_switch_callback([this](const std::string& model_path, const std::string& model_name,
                                                 int ctx_size, const std::string& model_alias) -> bool {
-            return this->restart_llama_server(model_path, model_name, ctx_size, model_alias);
+            return this->restart_llama_server(model_path, model_name, ctx_size, model_alias) == ServerReadyState::Ready;
         });
         delta::set_model_unload_callback([this]() { this->stop_llama_server(); });
 
@@ -826,7 +826,9 @@ class DeltaServerWrapper {
         if (path_to_load.empty() && !models_dir_.empty()) {
             path_to_load = "";
         }
-        if (!restart_llama_server(path_to_load, "", max_context_, "")) {
+        // Only a dead process is fatal here: a model that is merely slow keeps loading in the
+        // background, and the UI polls /health for the real answer.
+        if (restart_llama_server(path_to_load, "", max_context_, "") == ServerReadyState::Exited) {
             if (!path_to_load.empty()) {
                 std::cerr << "Failed to start server" << std::endl;
                 delta::stop_model_api_server();

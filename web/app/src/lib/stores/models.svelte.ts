@@ -4,15 +4,16 @@ import { slotsService } from '$lib/services/slots';
 import { persisted } from '$lib/stores/persisted.svelte';
 import { SELECTED_MODEL_LOCALSTORAGE_KEY } from '$lib/constants/localstorage-keys';
 import type { ModelOption } from '$lib/types/models';
-import { serverStore, serverSupportsTools } from '$lib/stores/server.svelte';
+import { serverSupportsTools } from '$lib/stores/server.svelte';
 import { config } from '$lib/stores/settings.svelte';
+import { findLoadedModelId } from '$lib/utils/model-load-state';
 
 type PersistedModelSelection = {
 	id: string;
 	model: string;
 };
 
-class ModelsStore {
+export class ModelsStore {
 	private _models = $state<ModelOption[]>([]);
 	private _loading = $state(false);
 	private _updating = $state(false);
@@ -140,9 +141,11 @@ class ModelsStore {
 			if (!force) {
 				// Initial load: only set selection when the main API reports a model is loaded (llama-server running).
 				// Otherwise leave selection empty so the user must choose a model.
-				if (mainResponse.status === 'fulfilled' && mainResponse.value?.data?.length > 0) {
-					const firstMainId = mainResponse.value.data[0]?.id;
-					const matched = firstMainId ? findOptionByMainId(firstMainId) : null;
+				// Router mode lists every model in the models dir, so the per-model status decides.
+				const loadedModelId =
+					mainResponse.status === 'fulfilled' ? findLoadedModelId(mainResponse.value?.data) : null;
+				if (loadedModelId) {
+					const matched = findOptionByMainId(loadedModelId);
 					if (matched) {
 						this._selectedModelId = matched.id;
 						this._selectedModelName = matched.model;
@@ -164,7 +167,9 @@ class ModelsStore {
 				const stillPresent = this._models.some((m) => m.id === this._selectedModelId);
 				if (!stillPresent) {
 					const byModel = this._models.find(
-						(m) => m.model === this._selectedModelName || normalizeId(m.model) === normalizeId(this._selectedModelName ?? '')
+						(m) =>
+							m.model === this._selectedModelName ||
+							normalizeId(m.model) === normalizeId(this._selectedModelName ?? '')
 					);
 					if (byModel) {
 						this._selectedModelId = byModel.id;
@@ -221,10 +226,7 @@ class ModelsStore {
 				storedCtx != null && storedCtx > 0 ? storedCtx : undefined
 			);
 			const modelForRequests =
-				useResponse.model_alias ??
-				useResponse.model_name ??
-				useResponse.model_path ??
-				option.model;
+				useResponse.model_alias ?? useResponse.model_name ?? useResponse.model_path ?? option.model;
 
 			this._selectedModelId = option.id;
 			this._selectedModelName = modelForRequests;
@@ -251,7 +253,9 @@ class ModelsStore {
 						if (useResponse.ctx_size != null && useResponse.ctx_size > 0) {
 							slotsService.setLoadedContextTotal(useResponse.ctx_size);
 						}
-					} catch { /* state already updated — fetch failure is non-critical */ }
+					} catch {
+						/* state already updated — fetch failure is non-critical */
+					}
 				};
 
 				const checkReady = async () => {
@@ -289,9 +293,13 @@ class ModelsStore {
 						}
 						if (modelStatus.needsLoad && !loadTriggered) {
 							loadTriggered = true;
-							await ModelsService.triggerModelLoad(modelStatus.routerModelName ?? modelNameForCheck);
+							await ModelsService.triggerModelLoad(
+								modelStatus.routerModelName ?? modelNameForCheck
+							);
 						}
-					} catch { /* ignore */ }
+					} catch {
+						/* ignore */
+					}
 					if (attempts < maxAttempts && this._selectedModelId === expectedModelId) {
 						setTimeout(checkReady, pollInterval);
 					} else if (this._selectedModelId === expectedModelId) {
@@ -309,7 +317,8 @@ class ModelsStore {
 			console.warn('Failed to switch model:', error);
 			const rawMessage = error instanceof Error ? error.message : String(error);
 			this._error =
-				rawMessage === 'Failed to fetch' || (error instanceof TypeError && rawMessage.includes('fetch'))
+				rawMessage === 'Failed to fetch' ||
+				(error instanceof TypeError && rawMessage.includes('fetch'))
 					? "Cannot reach the server while loading the model. Make sure Delta is running (run 'delta' in terminal). If you just selected a model, wait a few seconds and try again."
 					: rawMessage;
 			this._selectedModelId = option.id;
@@ -350,7 +359,8 @@ export const selectedModelId = () => modelsStore.selectedModelId;
 export const selectedModelName = () => modelsStore.selectedModelName;
 export const selectedModelOption = () => modelsStore.selectedModel;
 export const modelLoadedOnServer = () => modelsStore.modelLoadedOnServer;
-export const selectedModelSupportsTools = () => modelsStore.selectedModelSupportsTools || serverSupportsTools();
+export const selectedModelSupportsTools = () =>
+	modelsStore.selectedModelSupportsTools || serverSupportsTools();
 
 // Single source of truth for the toggle: the stored flag is user intent, capability is applied here.
 // Both the wrench UI and the request routing must read this, or they can disagree.
