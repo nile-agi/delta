@@ -17,6 +17,17 @@ export interface HardwareState {
 	isConnected: boolean;
 }
 
+const DEFAULT_MAPI_PORT = 8081; // delta-server sidecar default (model API = server port + 1)
+
+async function probe(base: string): Promise<boolean> {
+	try {
+		const res = await fetch(`${base}/api/v1/hardware/snapshot`, { cache: 'no-store' });
+		return res.ok;
+	} catch {
+		return false;
+	}
+}
+
 class HardwareStore {
 	state = $state<HardwareState>({
 		system_ram_used_gb: 0,
@@ -31,9 +42,10 @@ class HardwareStore {
 
 	constructor() {
 		// NOTE: no $effect here — this class is instantiated at module scope and
-		// $effect may only run during component initialization. Using it here
-		// throws effect_orphan at hydration and white-screens the whole app.
+		// $effect may only run during component initialization (effect_orphan).
 		if (browser) {
+			// Re-resolve once the sidecar announces readiness (port injection).
+			window.addEventListener('delta-server-ready', () => void this.connect(), { once: true });
 			void this.connect();
 		}
 	}
@@ -42,46 +54,50 @@ class HardwareStore {
 		if (!browser || this.eventSource || this.connecting) return;
 		this.connecting = true;
 		try {
-			await resolveModelApiBaseUrl(); // same-origin probe; sync no-op under Tauri
-		} catch {
-			/* fall back to port+1 URL */
+			await resolveModelApiBaseUrl();
+			let base = getModelApiBaseUrl();
+
+			// Dev-mode safety net: under `make dev` the webview runs on Vite (5177)
+			// and the port+1 heuristic yields 5178. If the injected port hasn't
+			// arrived yet, probe the sidecar default before retrying blindly.
+			if ((window as any).__DELTA_MODEL_API_PORT__ == null && !(await probe(base))) {
+				const fallback = `http://127.0.0.1:${DEFAULT_MAPI_PORT}`;
+				if (await probe(fallback)) base = fallback;
+			}
+
+			const es = new EventSource(`${base}/api/v1/hardware/stream`);
+			this.eventSource = es;
+
+			es.onopen = () => {
+				this.state.isConnected = true;
+				console.log('[DTL] Hardware telemetry stream connected');
+			};
+
+			es.onmessage = (event) => {
+				try {
+					const data = JSON.parse(event.data);
+					this.state.system_ram_used_gb = data.system_ram_used_gb || 0;
+					this.state.system_ram_total_gb = data.system_ram_total_gb || 0;
+					this.state.gpus = data.gpus || [];
+				} catch (e) {
+					console.error('[DTL] Telemetry parse error', e);
+				}
+			};
+
+			es.onerror = () => {
+				this.state.isConnected = false;
+				es.close();
+				if (this.eventSource === es) this.eventSource = null;
+				if (this.reconnectTimer == null) {
+					this.reconnectTimer = setTimeout(() => {
+						this.reconnectTimer = null;
+						void this.connect();
+					}, 3000);
+				}
+			};
+		} finally {
+			this.connecting = false;
 		}
-		this.connecting = false;
-		if (this.eventSource) return;
-
-		// Re-read each attempt: under Tauri, __DELTA_MODEL_API_PORT__ is injected
-		// by the Rust side once the Model API is ready, so retries self-heal.
-		const url = `${getModelApiBaseUrl()}/api/v1/hardware/stream`;
-		const es = new EventSource(url);
-		this.eventSource = es;
-
-		es.onopen = () => {
-			this.state.isConnected = true;
-			console.log('[DTL] Hardware telemetry stream connected');
-		};
-
-		es.onmessage = (event) => {
-			try {
-				const data = JSON.parse(event.data);
-				this.state.system_ram_used_gb = data.system_ram_used_gb || 0;
-				this.state.system_ram_total_gb = data.system_ram_total_gb || 0;
-				this.state.gpus = data.gpus || [];
-			} catch (e) {
-				console.error('[DTL] Telemetry parse error', e);
-			}
-		};
-
-		es.onerror = () => {
-			this.state.isConnected = false;
-			es.close();
-			if (this.eventSource === es) this.eventSource = null;
-			if (this.reconnectTimer == null) {
-				this.reconnectTimer = setTimeout(() => {
-					this.reconnectTimer = null;
-					void this.connect();
-				}, 3000);
-			}
-		};
 	}
 
 	disconnect() {

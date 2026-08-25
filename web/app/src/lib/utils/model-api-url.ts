@@ -1,4 +1,6 @@
 import { getServerBaseUrl } from './server-base-url';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 let cachedBaseUrl: string = '';
 let resolved = false;
@@ -11,6 +13,20 @@ function isTauri(): boolean {
 		'__TAURI_INTERNALS__' in window;
 }
 
+async function getTauriPorts(): Promise<{ port: number; modelApiPort: number } | null> {
+	if (!isTauri()) return null;
+	try {
+		// get_server_status returns (port, model_api_port, ready, error)
+		const status = await invoke<[number, number, boolean, boolean]>('get_server_status');
+		if (status && status[2]) { // status[2] is 'ready'
+			return { port: status[0], modelApiPort: status[1] };
+		}
+	} catch (e) {
+		console.warn('[Delta] Failed to invoke get_server_status', e);
+	}
+	return null;
+}
+
 function getModelApiPort(): number {
 	if (typeof window !== 'undefined' && (window as any).__DELTA_MODEL_API_PORT__ != null) {
 		return (window as any).__DELTA_MODEL_API_PORT__;
@@ -20,32 +36,55 @@ function getModelApiPort(): number {
 	return isNaN(serverPort) ? 8081 : serverPort + 1;
 }
 
-function buildModelApiUrl(): string {
+function buildModelApiUrl(port?: number): string {
+    const p = port ?? getModelApiPort();
 	if (typeof window === 'undefined' || isTauri()) {
-		return `http://127.0.0.1:${getModelApiPort()}`;
+		return `http://127.0.0.1:${p}`;
 	}
 	const { protocol, hostname } = window.location;
-	return `${protocol}//${hostname}:${getModelApiPort()}`;
+	return `${protocol}//${hostname}:${p}`;
 }
 
-/**
- * Resolves the model API base URL. Probes same-origin /api/models/available;
- * if 200 we use same-origin (UI-only mode), otherwise port + 1.
- */
 export function resolveModelApiBaseUrl(): Promise<void> {
 	if (typeof window === 'undefined') {
 		cachedBaseUrl = buildModelApiUrl();
-		return Promise.resolve();
-	}
-	if (isTauri()) {
-		cachedBaseUrl = buildModelApiUrl();
-		resolved = true;
 		return Promise.resolve();
 	}
 	if (resolvePromise !== null) {
 		return resolvePromise;
 	}
 	resolvePromise = (async () => {
+        // 1. Tauri: Ask backend for ports, or wait for the ready event
+        if (isTauri()) {
+            const ports = await getTauriPorts();
+            if (ports) {
+                cachedBaseUrl = buildModelApiUrl(ports.modelApiPort);
+                resolved = true;
+                return;
+            }
+            
+            // If not ready yet, wait for the backend event
+            await new Promise<void>((resolve) => {
+                const unlisten = listen<{ port: number; modelApiPort: number }>('delta-server-ready', (event) => {
+                    cachedBaseUrl = buildModelApiUrl(event.payload.modelApiPort);
+                    resolved = true;
+                    unlisten.then(fn => fn());
+                    resolve();
+                });
+                
+                // 15s timeout fallback
+                setTimeout(() => {
+                    if (!resolved) {
+                        cachedBaseUrl = buildModelApiUrl();
+                        resolved = true;
+                    }
+                    resolve();
+                }, 15000);
+            });
+            return;
+        }
+
+        // 2. Browser fallback (probe same-origin)
 		try {
 			const probeBase = getServerBaseUrl();
 			const res = await fetch(`${probeBase}/api/models/available`, { method: 'GET' });
@@ -63,27 +102,17 @@ export function resolveModelApiBaseUrl(): Promise<void> {
 	return resolvePromise;
 }
 
-/**
- * Force model API to use port + 1 (e.g. after llama-server starts on the same port)
- */
 export function forceModelApiSeparatePort(): void {
 	cachedBaseUrl = buildModelApiUrl();
 	resolved = true;
 }
 
-/**
- * Reset cached resolution so resolveModelApiBaseUrl() re-probes on next call.
- */
 export function resetModelApiResolution(): void {
 	resolvePromise = null;
 	resolved = false;
 	cachedBaseUrl = '';
 }
 
-/**
- * Returns the model API base URL ('' for same-origin or 'http://host:PORT+1').
- * Ensure resolveModelApiBaseUrl() has been awaited first.
- */
 export function getModelApiBaseUrl(): string {
 	if (!resolved) return buildModelApiUrl();
 	return cachedBaseUrl === '' ? '' : cachedBaseUrl;
