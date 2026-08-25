@@ -36,12 +36,20 @@ export interface ApiChatMessageData {
 	timestamp?: number;
 }
 
+/** Per-model load state. Only router mode (`--models-dir`) reports this. */
+export interface ApiModelStatus {
+	value?: string;
+	failed?: boolean;
+	exit_code?: number;
+}
+
 export interface ApiModelDataEntry {
 	id: string;
 	object: string;
 	created: number;
 	owned_by: string;
 	meta?: Record<string, unknown> | null;
+	status?: ApiModelStatus;
 }
 
 export interface ApiModelDetails {

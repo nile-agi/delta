@@ -123,6 +123,7 @@ set(DELTA_SOURCES
     engine/update.cpp
     engine/commands.cpp
     engine/history.cpp
+    engine/server_health.cpp
     engine/tools/file_ops.cpp
     engine/tools/dep_protocol.cpp
     engine/tools/shell.cpp
@@ -190,6 +191,7 @@ add_executable(delta-server
     engine/delta_server_wrapper.cpp
     engine/model_api_server.cpp
     engine/models.cpp
+    engine/server_health.cpp
     engine/tools/file_ops.cpp
     engine/ui.cpp
     engine/agent/agent_database.cpp
