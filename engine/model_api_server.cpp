@@ -51,6 +51,34 @@ using json = nlohmann::json;
 // DHATS: Global hardware telemetry monitor
 static delta::HardwareMonitor g_hardware_monitor;
 
+// Build complete hardware telemetry JSON payload
+static json build_hardware_json(const delta::HardwareMetrics& m) {
+    json gpus = json::array();
+    for (const auto& g : m.gpus) {
+        gpus.push_back({{"name", g.name},
+                        {"backend", g.backend},
+                        {"vram_used_gb", g.vram_used_gb},
+                        {"vram_total_gb", g.vram_total_gb},
+                        {"gpu_util_pct", g.gpu_util_pct},
+                        {"temp_c", g.temp_c},
+                        {"power_w", g.power_w}});
+    }
+
+    int rpc_count = 0;
+    try {
+        rpc_count = (int)delta::agent::AgentDatabase::instance().get_enabled_rpc_nodes().size();
+    } catch (...) {}
+
+    return {{"system_ram_used_gb", m.system_ram_used_gb},
+            {"system_ram_total_gb", m.system_ram_total_gb},
+            {"cpu_util_pct", m.cpu_util_pct},
+            {"rpc_node_count", rpc_count},
+            {"gpus", gpus},
+            {"has_gpu", g_hardware_monitor.has_gpu()},
+            {"primary_backend", g_hardware_monitor.get_primary_backend()},
+            {"timestamp_ms", m.timestamp_ms}};
+}
+
 namespace delta {
 
 // OpenAI-compatible SSE frames for /v1/chat/completions streaming.
@@ -1074,82 +1102,34 @@ class ModelAPIServer {
             res.set_content(json({{"deleted", true}}).dump(), "application/json");
         });
 
-        // =====================================================================
-        // DHATS: Hardware Telemetry SSE Stream
-        // =====================================================================
+        // ====================================================================
+        // DHATS: Real-time hardware telemetry (SSE stream + snapshot + auto-ngl)
+        // ====================================================================
+        
+        // SSE stream endpoint - pushes telemetry every 500ms
         server_->Get("/api/v1/hardware/stream", [](const httplib::Request&, httplib::Response& res) {
             res.set_header("Cache-Control", "no-cache");
             res.set_header("Connection", "keep-alive");
             res.set_header("X-Accel-Buffering", "no");
-            // res.set_header("Access-Control-Allow-Origin", "*");
 
             res.set_chunked_content_provider(
                 "text/event-stream",
                 [](size_t, httplib::DataSink& sink) -> bool {
-                    auto metrics = g_hardware_monitor.get_metrics();
-
-                    json gpus_array = json::array();
-                    for (const auto& gpu : metrics.gpus) {
-                        gpus_array.push_back({
-                            {"name", gpu.name},
-                            {"backend", gpu.backend},
-                            {"vram_used_gb", gpu.vram_used_gb},
-                            {"vram_total_gb", gpu.vram_total_gb},
-                            {"gpu_util_pct", gpu.gpu_util_pct},
-                            {"temp_c", gpu.temp_c},
-                            {"power_w", gpu.power_w}
-                        });
-                    }
-
-                    json payload = {
-                        {"system_ram_used_gb", metrics.system_ram_used_gb},
-                        {"system_ram_total_gb", metrics.system_ram_total_gb},
-                        {"gpus", gpus_array},
-                        {"rpc_node_count", metrics.rpc_node_count},
-                        {"timestamp_ms", metrics.timestamp_ms},
-                        {"has_gpu", g_hardware_monitor.has_gpu()},
-                        {"primary_backend", g_hardware_monitor.get_primary_backend()}
-                    };
-
-                    std::string frame = "data: " + payload.dump() + "\n\n";
+                    auto m = g_hardware_monitor.get_metrics();
+                    std::string frame = "data: " + build_hardware_json(m).dump() + "\n\n";
                     sink.write(frame.c_str(), frame.size());
-
-                    // Poll interval: 500ms
                     std::this_thread::sleep_for(std::chrono::milliseconds(500));
                     return true;
-                }
-            );
-        });
-
-        // DHATS: One-shot snapshot (for polling clients that don't use SSE)
-        server_->Get("/api/v1/hardware/snapshot", [](const httplib::Request&, httplib::Response&) {
-            auto metrics = g_hardware_monitor.get_metrics();
-
-            json gpus_array = json::array();
-            for (const auto& gpu : metrics.gpus) {
-                gpus_array.push_back({
-                    {"name", gpu.name},
-                    {"backend", gpu.backend},
-                    {"vram_used_gb", gpu.vram_used_gb},
-                    {"vram_total_gb", gpu.vram_total_gb},
-                    {"gpu_util_pct", gpu.gpu_util_pct},
-                    {"temp_c", gpu.temp_c},
-                    {"power_w", gpu.power_w}
                 });
-            }
-
-            json result = {
-                {"system_ram_used_gb", metrics.system_ram_used_gb},
-                {"system_ram_total_gb", metrics.system_ram_total_gb},
-                {"gpus", gpus_array},
-                {"has_gpu", g_hardware_monitor.has_gpu()},
-                {"primary_backend", g_hardware_monitor.get_primary_backend()}
-            };
-
-            // res.set_content(result.dump(), "application/json");
         });
 
-        // DHATS: Auto-offload calculation endpoint
+        // One-shot snapshot endpoint
+        server_->Get("/api/v1/hardware/snapshot", [](const httplib::Request&, httplib::Response& res) {
+            auto m = g_hardware_monitor.get_metrics();
+            res.set_content(build_hardware_json(m).dump(), "application/json");
+        });
+
+        // Auto-offload calculation endpoint
         server_->Post("/api/v1/hardware/auto-ngl", [](const httplib::Request& req, httplib::Response& res) {
             try {
                 json body = json::parse(req.body);
@@ -1171,69 +1151,6 @@ class ModelAPIServer {
                 res.status = 400;
                 res.set_content(error.dump(), "application/json");
             }
-        });
-
-                // ====================================================================
-        // DHATS: Real-time hardware telemetry (SSE stream + one-shot snapshot)
-        // ====================================================================
-        server_->Get("/api/v1/hardware/stream", [](const httplib::Request&, httplib::Response& res) {
-            res.set_header("Cache-Control", "no-cache");
-            res.set_header("Connection", "keep-alive");
-            res.set_header("X-Accel-Buffering", "no");
-            res.set_header("Access-Control-Allow-Origin", "*");
-
-            res.set_chunked_content_provider(
-                "text/event-stream",
-                [](size_t, httplib::DataSink& sink) -> bool {
-                    auto m = g_hardware_monitor.get_metrics();
-
-                    json gpus = json::array();
-                    for (const auto& g : m.gpus) {
-                        gpus.push_back({{"name", g.name},
-                                        {"backend", g.backend},
-                                        {"vram_used_gb", g.vram_used_gb},
-                                        {"vram_total_gb", g.vram_total_gb},
-                                        {"gpu_util_pct", g.gpu_util_pct},
-                                        {"temp_c", g.temp_c},
-                                        {"power_w", g.power_w}});
-                    }
-
-                    json payload = {{"system_ram_used_gb", m.system_ram_used_gb},
-                                    {"system_ram_total_gb", m.system_ram_total_gb},
-                                    {"cpu_util_pct", m.cpu_util_pct},
-                                    {"gpus", gpus},
-                                    {"rpc_node_count", m.rpc_node_count},
-                                    {"timestamp_ms", m.timestamp_ms},
-                                    {"has_gpu", g_hardware_monitor.has_gpu()},
-                                    {"primary_backend", g_hardware_monitor.get_primary_backend()}};
-
-                    std::string frame = "data: " + payload.dump() + "\n\n";
-                    sink.write(frame.c_str(), frame.size());
-                    std::this_thread::sleep_for(std::chrono::milliseconds(500)); // 2 Hz telemetry
-                    return true; // keep the stream open
-                });
-        });
-
-        server_->Get("/api/v1/hardware/snapshot", [](const httplib::Request&, httplib::Response& res) {
-            auto m = g_hardware_monitor.get_metrics();
-            json gpus = json::array();
-            for (const auto& g : m.gpus) {
-                gpus.push_back({{"name", g.name},
-                                {"backend", g.backend},
-                                {"vram_used_gb", g.vram_used_gb},
-                                {"vram_total_gb", g.vram_total_gb},
-                                {"gpu_util_pct", g.gpu_util_pct},
-                                {"temp_c", g.temp_c},
-                                {"power_w", g.power_w}});
-            }
-            json payload = {{"system_ram_used_gb", m.system_ram_used_gb},
-                            {"system_ram_total_gb", m.system_ram_total_gb},
-                            {"cpu_util_pct", m.cpu_util_pct},
-                            {"gpus", gpus},
-                            {"has_gpu", g_hardware_monitor.has_gpu()},
-                            {"primary_backend", g_hardware_monitor.get_primary_backend()}};
-            res.set_header("Access-Control-Allow-Origin", "*");
-            res.set_content(payload.dump(), "application/json");
         });
 
         if (!webui_path_.empty() && tools::FileOps::dir_exists(webui_path_)) {
@@ -1321,34 +1238,5 @@ void stop_model_api_server() {
         g_model_api_server.reset();
     }
 }
-
-// delta::HardwareMonitor g_hw_monitor;
-
-// void setup_hardware_routes(httplib::Server& svr) {
-//     svr.Get("/api/v1/hardware/stream", [](const httplib::Request& req, httplib::Response& res) {
-//         res.set_header("Content-Type", "text/event-stream");
-//         res.set_header("Cache-Control", "no-cache");
-//         res.set_header("Connection", "keep-alive");
-        
-//         res.set_chunked_content_provider(
-//             "text/event-stream",
-//             [](size_t offset, httplib::DataSink& sink) {
-//                 // 1. Gather metrics (NVML for NVIDIA, Metal for Mac, ROCm for AMD)
-//                 nlohmann::json telemetry = {
-//                     {"system_ram_used_gb", get_system_ram_used()},
-//                     {"gpus", get_gpu_metrics_array()}
-//                 };
-                
-//                 // 2. Format as SSE
-//                 std::string data = "data: " + telemetry.dump() + "\n\n";
-//                 sink.write(data.c_str(), data.size());
-                
-//                 // 3. Throttle stream to 1Hz
-//                 std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-//                 return true; // Keep connection alive
-//             }
-//         );
-//     });
-// }
 
 } // namespace delta

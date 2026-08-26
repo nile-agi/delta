@@ -516,6 +516,8 @@
 // } // namespace delta
 
 
+
+
 #include "hardware_monitor.h"
 #include <iostream>
 #include <cstring>
@@ -542,6 +544,7 @@
   #include <mach/mach.h>
   #include <mach/mach_host.h>
   #include <IOKit/IOKitLib.h>
+  #include <CoreFoundation/CoreFoundation.h>
 #endif
 
 namespace delta {
@@ -594,6 +597,37 @@ static rsmi_dev_memory_usage_get_t g_rsmi_mem_used = nullptr;
 static rsmi_dev_busy_percent_get_t g_rsmi_busy = nullptr;
 static rsmi_dev_temp_metric_get_t g_rsmi_temp = nullptr;
 static rsmi_dev_power_ave_get_t g_rsmi_power = nullptr;
+
+// ============================================================
+// Apple GPU Utilization Helper (Best-effort via IOKit)
+// ============================================================
+
+#ifdef __APPLE__
+static int apple_gpu_utilization_pct() {
+    io_iterator_t iter;
+    if (IOServiceGetMatchingServices(kIOMainPortDefault,
+                                     IOServiceMatching("IOAccelerator"), &iter) != KERN_SUCCESS)
+        return 0;
+    int util = 0;
+    io_object_t obj;
+    while ((obj = IOIteratorNext(iter)) != 0) {
+        CFDictionaryRef stats = (CFDictionaryRef)IORegistryEntryCreateCFProperty(
+            obj, CFSTR("PerformanceStatistics"), kCFAllocatorDefault, kNilOptions);
+        if (stats) {
+            CFNumberRef num = (CFNumberRef)CFDictionaryGetValue(stats, CFSTR("Device Utilization %"));
+            if (num) {
+                int v = 0;
+                CFNumberGetValue(num, kCFNumberIntType, &v);
+                if (v > util) util = v;
+            }
+            CFRelease(stats);
+        }
+        IOObjectRelease(obj);
+    }
+    IOObjectRelease(iter);
+    return util;
+}
+#endif
 
 // ============================================================
 // Constructor / Destructor
@@ -881,10 +915,18 @@ void HardwareMonitor::collect_apple_metrics(std::vector<GPUMetrics>& out) {
             unsigned long long used = (vmstat.active_count + vmstat.wire_count + vmstat.compressor_page_count) * page_size;
             gpu.vram_used_gb = (float)(used / (1024.0 * 1024.0 * 1024.0));
         }
+        
+        // Best-effort GPU utilization via IOKit
+        gpu.gpu_util_pct = apple_gpu_utilization_pct();
     } else {
-        gpu.name = "Intel Mac GPU"; // Fallback for Intel Macs
+        gpu.name = "Intel Mac GPU";
+        gpu.gpu_util_pct = 0;
     }
-    gpu.gpu_util_pct = 0; gpu.temp_c = 0.0f; gpu.power_w = 0.0f;
+    
+    // Temperature and power require private APIs on Apple Silicon
+    gpu.temp_c = 0.0f;
+    gpu.power_w = 0.0f;
+    
     out.push_back(gpu);
 #endif
 }
