@@ -16,6 +16,10 @@
 #include <atomic>
 #include <cstdint>
 
+#ifdef _WIN32
+#include <window.h>
+#endif
+
 namespace delta {
 
 // ============================================================
@@ -35,6 +39,7 @@ struct GPUMetrics {
 struct HardwareMetrics {
     float system_ram_used_gb  = 0.0f;
     float system_ram_total_gb = 0.0f;
+    float cpu_util_pct       = 0.0f;   // NEW: Cross-platform CPU utilization
     std::vector<GPUMetrics> gpus;
     int   rpc_node_count = 0;
     int64_t timestamp_ms = 0;
@@ -83,6 +88,8 @@ private:
     // Metric collectors
     float  collect_system_ram_used_gb();
     float  collect_system_ram_total_gb();
+    float collect_cpu_util_pct();
+
     void   collect_nvidia_metrics(std::vector<GPUMetrics>& out);
     void   collect_apple_metrics(std::vector<GPUMetrics>& out);
     void   collect_amd_metrics(std::vector<GPUMetrics>& out);
@@ -97,6 +104,17 @@ private:
 
     // Apple Metal (compile-time, always available on macOS)
     bool  metal_available_ = false;
+
+    // CPU delta tracking state
+#ifdef _WIN32
+    FILETIME prev_idle_time_, prev_kernel_time_, prev_user_time_;
+#elif defined(__APPLE__)
+    uint64_t prev_cpu_used_ = 0;
+    uint64_t prev_cpu_total_ = 0;
+#else
+    unsigned long long prev_cpu_used_ = 0;
+    unsigned long long prev_bpu_total_ = 0;
+#endif
 
     mutable std::mutex mtx_;
 };
