@@ -1,7 +1,7 @@
 {
 	"identifier": "default",
 	"description": "Default capabilities for the Delta app",
-	"windows": ["main", "hardware-telemetry"],
+	"windows": ["main", "hardware-telemetry", "calendar", "notes"],
 	"remote": {
 		"urls": ["http://localhost:*", "http://127.0.0.1:*"]
 	},

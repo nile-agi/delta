@@ -22,12 +22,24 @@
 	import ChatSidebarActions from './ChatSidebarActions.svelte';
 	import { browser } from '$app/environment';
 	import { openHardwareWindow } from '$lib/services/hardware-window';
+	import { openCalendarWindow } from '$lib/services/calendar-window';
+	import { openNotesWindow } from '$lib/services/notes-window';
 
 	function openHardware() {
 		const isTauri = browser && '__TAURI_INTERNALS__' in window;
 		if (isTauri) void openHardwareWindow();  // native OS window — draggable anywhere
 		else hardwareWindow.open();              // browser fallback: floating panel
 		handleMobileSidebarItemClick?.();        // safe call if defined
+	}
+
+	function openCalendar() {
+		void openCalendarWindow();
+		handleMobileSidebarItemClick();
+	}
+
+	function openNotes() {
+		void openNotesWindow();
+		handleMobileSidebarItemClick();
 	}
 
 	const sidebar = Sidebar.useSidebar();
@@ -157,17 +169,12 @@
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content side="right" align="start" class="w-48">
 							<DropdownMenu.Group>
-								<DropdownMenu.Item
-									class="flex items-center gap-2 cursor-pointer"
-									onclick={() => { calendarWindow.open(); handleMobileSidebarItemClick(); }}
-								>
+								<DropdownMenu.Item class="flex items-center gap-2 cursor-pointer" onclick={openCalendar}>
 									<Calendar class="h-4 w-4" />
 									<span>Calendar</span>
 								</DropdownMenu.Item>
-								<DropdownMenu.Item
-									class="flex items-center gap-2 cursor-pointer"
-									onclick={() => { notesWindow.open(); handleMobileSidebarItemClick(); }}
-								>
+
+								<DropdownMenu.Item class="flex items-center gap-2 cursor-pointer" onclick={openNotes}>
 									<StickyNote class="h-4 w-4" />
 									<span>Notes</span>
 								</DropdownMenu.Item>

@@ -30,30 +30,43 @@
 	import FloatingWindow from '$lib/components/app/misc/FloatingWindow.svelte';
 	import HardwareDashboard from '$lib/components/app/hardware/HardwareDashboard.svelte';
 	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
+	import Calendar from '$lib/components/app/misc/Calendar.svelte';
+	import Notes from '$lib/components/app/misc/Notes.svelte';
 
 	let { children } = $props();
 
 	// Synchronous detection — no flash, no wasted effects in the telemetry webview.
 	// When ?window=hardware is in the URL, this webview IS the standalone OS telemetry window.
+		// Detect standalone windows
 	let isHardwareWindow = $state(
 		browser &&
 			(new URLSearchParams(window.location.search).get('window') === 'hardware' ||
 				window.location.hash.includes('window=hardware'))
 	);
 
-	// Fallback: check Tauri window label (authoritative signal that survives URL normalization)
-	// Wrapped in $effect so it runs after mount and can reactively update isHardwareWindow.
-	$effect(() => {
-		if (browser && !isHardwareWindow && '__TAURI_INTERNALS__' in window) {
-			import('@tauri-apps/api/window')
-				.then(({ getCurrentWindow }) => {
-					if (getCurrentWindow().label === 'hardware-telemetry') {
-						isHardwareWindow = true;
-					}
-				})
-				.catch(() => {});
-		}
-	});
+	let isCalendarWindow = $state(
+		browser &&
+			(new URLSearchParams(window.location.search).get('window') === 'calendar' ||
+				window.location.hash.includes('window=calendar'))
+	);
+
+	let isNotesWindow = $state(
+		browser &&
+			(new URLSearchParams(window.location.search).get('window') === 'notes' ||
+				window.location.hash.includes('window=notes'))
+	);
+
+	// Tauri window label detection (authoritative signal)
+	if (browser && '__TAURI_INTERNALS__' in window) {
+		import('@tauri-apps/api/window')
+			.then(({ getCurrentWindow }) => {
+				const label = getCurrentWindow().label;
+				if (label === 'hardware-telemetry') isHardwareWindow = true;
+				if (label === 'calendar') isCalendarWindow = true;
+				if (label === 'notes') isNotesWindow = true;
+			})
+			.catch(() => {});
+	}
 
 	const IS_TAURI_ENV = browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 	let serverReady = $state(!IS_TAURI_ENV);
@@ -75,7 +88,7 @@
 
 	// Server-ready polling — skip entirely in the telemetry webview
 	$effect(() => {
-		if (isHardwareWindow) return;
+		if (isHardwareWindow || isCalendarWindow || isNotesWindow ) return;
 		if (!IS_TAURI_ENV) return;
 		if ((window as any).__DELTA_PORT__ != null && !(window as any).__DELTA_SERVER_ERROR__) {
 			serverReady = true;
@@ -329,6 +342,10 @@
 	<!-- This webview IS the standalone OS telemetry window -->
 	<div class="h-screen w-screen overflow-auto bg-background">
 		<HardwareDashboard fullscreen />
+	</div>
+{:else if isNotesWindow}
+	<div class="h-screen w-screen overflow-auto bg-background">
+		<Notes fullscreen />
 	</div>
 {:else}
 	<!-- Main app: all the normal UI + DOM fallback for Hardware -->
