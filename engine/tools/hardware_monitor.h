@@ -40,6 +40,8 @@ struct HardwareMetrics {
     float system_ram_used_gb  = 0.0f;
     float system_ram_total_gb = 0.0f;
     float cpu_util_pct       = 0.0f;   // NEW: Cross-platform CPU utilization
+    float cpu_temp_c          = 0.0f;   // NEW
+    float system_power_w      = 0.0f;   // NEW
     std::vector<GPUMetrics> gpus;
     int   rpc_node_count = 0;
     int64_t timestamp_ms = 0;
@@ -89,6 +91,8 @@ private:
     float  collect_system_ram_used_gb();
     float  collect_system_ram_total_gb();
     float collect_cpu_util_pct();
+    float  collect_cpu_temp_c();       // NEW
+    float  collect_system_power_w();   // NEW
 
     void   collect_nvidia_metrics(std::vector<GPUMetrics>& out);
     void   collect_apple_metrics(std::vector<GPUMetrics>& out);

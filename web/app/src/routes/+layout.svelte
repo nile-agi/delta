@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { ChatSidebar, ChatSettingsDialog, ConversationTitleUpdateDialog } from '$lib/components/app';
@@ -28,10 +29,19 @@
 	import CalendarWindow from '$lib/components/app/misc/CalendarWindow.svelte';
 	import WindowDock from '$lib/components/app/misc/WindowDock.svelte';
 	import FloatingWindow from '$lib/components/app/misc/FloatingWindow.svelte';
-    import HardwareDashboard from '$lib/components/app/hardware/HardwareDashboard.svelte';
-    import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
+	import HardwareDashboard from '$lib/components/app/hardware/HardwareDashboard.svelte';
+	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
 	
 	let { children } = $props();
+
+	// Detect if this is a standalone hardware telemetry window
+	let isHardwareWindow = $state(false);
+	
+	onMount(() => {
+		if (browser) {
+			isHardwareWindow = new URLSearchParams(window.location.search).get('window') === 'hardware';
+		}
+	});
 
 	const IS_TAURI_ENV =
 		browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -283,11 +293,15 @@
 </script>
 
 <ModeWatcher />
-
 <Toaster richColors />
 <NotificationCenter />
 
-{#if serverError}
+{#if isHardwareWindow}
+	<!-- Standalone Hardware Telemetry Window -->
+	<div class="h-screen w-screen p-4 overflow-auto bg-background">
+		<HardwareDashboard fullscreen />
+	</div>
+{:else if serverError}
 	<div class="splash-screen">
 		<ServerErrorSplash
 			error={serverErrorMessage}

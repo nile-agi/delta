@@ -502,20 +502,27 @@ bool AgentDatabase::delete_note(const std::string& id) {
 
 std::string AgentDatabase::add_rpc_node(const std::string& name, const std::string& endpoint) {
     std::string id = generate_uuid();
-    std::string now = get_current_timestamp();
     sqlite3_stmt* stmt;
+    // Parse endpoint "host:port"
+    size_t colon = endpoint.rfind(':');
+    std::string ip = endpoint;
+    int port = 50051;
+    if (colon != std::string::npos) {
+        ip = endpoint.substr(0, colon);
+        try { port = std::stoi(endpoint.substr(colon + 1)); } catch (...) {}
+    }
+    
     const char* sql = R"(
-        INSERT INTO rpc_nodes (id, name, endpoint, enabled, created_at)
-        VALUES (?, ?, ?, 1, ?)
+        INSERT INTO worker_nodes (name, ip, port, enabled, created_at)
+        VALUES (?, ?, ?, 1, strftime('%s', 'now'))
     )";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         std::cerr << "[delta-db] add_rpc_node prepare failed: " << sqlite3_errmsg(db_) << std::endl;
         return "";
     }
-    sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 3, endpoint.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 4, now.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, ip.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 3, port);
     
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -525,7 +532,7 @@ std::string AgentDatabase::add_rpc_node(const std::string& name, const std::stri
 std::vector<AgentDatabase::RpcNode> AgentDatabase::get_enabled_rpc_nodes() {
     std::vector<RpcNode> nodes;
     sqlite3_stmt* stmt;
-    const char* sql = "SELECT id, name, endpoint, enabled, created_at FROM rpc_nodes WHERE enabled = 1 ORDER BY created_at DESC";
+    const char* sql = "SELECT id, name, ip, port, enabled, created_at FROM worker_nodes WHERE enabled = 1 ORDER BY created_at DESC";
     
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         return nodes;
@@ -535,13 +542,15 @@ std::vector<AgentDatabase::RpcNode> AgentDatabase::get_enabled_rpc_nodes() {
         RpcNode node;
         const unsigned char* id_txt = sqlite3_column_text(stmt, 0);
         const unsigned char* name_txt = sqlite3_column_text(stmt, 1);
-        const unsigned char* endpoint_txt = sqlite3_column_text(stmt, 2);
-        const unsigned char* created_txt = sqlite3_column_text(stmt, 4);
+        const unsigned char* ip_txt = sqlite3_column_text(stmt, 2);
+        const unsigned char* created_txt = sqlite3_column_text(stmt, 5);
 
-        node.id = id_txt ? reinterpret_cast<const char*>(id_txt) : "";
+        node.id = id_txt ? std::to_string(sqlite3_column_int(stmt, 0)) : "";
         node.name = name_txt ? reinterpret_cast<const char*>(name_txt) : "";
-        node.endpoint = endpoint_txt ? reinterpret_cast<const char*>(endpoint_txt) : "";
-        node.enabled = sqlite3_column_int(stmt, 3) != 0;
+        std::string ip = ip_txt ? reinterpret_cast<const char*>(ip_txt) : "";
+        int port = sqlite3_column_int(stmt, 3);
+        node.endpoint = ip + ":" + std::to_string(port);
+        node.enabled = sqlite3_column_int(stmt, 4) != 0;
         node.created_at = created_txt ? reinterpret_cast<const char*>(created_txt) : "";
         
         nodes.push_back(node);
@@ -554,21 +563,22 @@ std::vector<AgentDatabase::RpcNode> AgentDatabase::get_enabled_rpc_nodes() {
 std::vector<AgentDatabase::RpcNode> AgentDatabase::list_rpc_nodes() {
     std::vector<RpcNode> nodes;
     sqlite3_stmt* stmt;
-    const char* sql = "SELECT id, name, endpoint, enabled, created_at FROM rpc_nodes ORDER BY created_at DESC";
+    const char* sql = "SELECT id, name, ip, port, enabled, created_at FROM worker_nodes ORDER BY created_at DESC";
     
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return nodes;
     
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         RpcNode node;
-        const unsigned char* id_txt = sqlite3_column_text(stmt, 0);
         const unsigned char* name_txt = sqlite3_column_text(stmt, 1);
-        const unsigned char* endpoint_txt = sqlite3_column_text(stmt, 2);
-        const unsigned char* created_txt = sqlite3_column_text(stmt, 4);
+        const unsigned char* ip_txt = sqlite3_column_text(stmt, 2);
+        const unsigned char* created_txt = sqlite3_column_text(stmt, 5);
 
-        node.id = id_txt ? reinterpret_cast<const char*>(id_txt) : "";
+        node.id = std::to_string(sqlite3_column_int(stmt, 0));
         node.name = name_txt ? reinterpret_cast<const char*>(name_txt) : "";
-        node.endpoint = endpoint_txt ? reinterpret_cast<const char*>(endpoint_txt) : "";
-        node.enabled = sqlite3_column_int(stmt, 3) != 0;
+        std::string ip = ip_txt ? reinterpret_cast<const char*>(ip_txt) : "";
+        int port = sqlite3_column_int(stmt, 3);
+        node.endpoint = ip + ":" + std::to_string(port);
+        node.enabled = sqlite3_column_int(stmt, 4) != 0;
         node.created_at = created_txt ? reinterpret_cast<const char*>(created_txt) : "";
         
         nodes.push_back(node);
@@ -579,7 +589,7 @@ std::vector<AgentDatabase::RpcNode> AgentDatabase::list_rpc_nodes() {
 
 bool AgentDatabase::update_rpc_node_status(const std::string& id, bool enabled) {
     sqlite3_stmt* stmt;
-    const char* sql = "UPDATE rpc_nodes SET enabled = ? WHERE id = ?";
+    const char* sql = "UPDATE worker_nodes SET enabled = ? WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
     sqlite3_bind_int(stmt, 1, enabled ? 1 : 0);
     sqlite3_bind_text(stmt, 2, id.c_str(), -1, SQLITE_TRANSIENT);
@@ -590,7 +600,7 @@ bool AgentDatabase::update_rpc_node_status(const std::string& id, bool enabled) 
 
 bool AgentDatabase::delete_rpc_node(const std::string& id) {
     sqlite3_stmt* stmt;
-    const char* sql = "DELETE FROM rpc_nodes WHERE id = ?";
+    const char* sql = "DELETE FROM worker_nodes WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
     int rc = sqlite3_step(stmt);

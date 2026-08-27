@@ -46,10 +46,52 @@
 #include <sys/sysinfo.h>
 #endif
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <sys/socket.h>
+#include <netdb.h>
+#include <unistd.h>
+#endif
+
 using json = nlohmann::json;
 
 // DHATS: Global hardware telemetry monitor
 static delta::HardwareMonitor g_hardware_monitor;
+
+static bool tcp_connect_ok(const std::string& host, int port, int timeout_ms = 800) {
+#ifdef _WIN32
+    WSADATA wsaData;
+    WSAStartup(MAKEWORD(2, 2), &wsaData);
+#endif
+    struct addrinfo hints = {}, *res = nullptr;
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0) return false;
+    bool ok = false;
+    for (auto* p = res; p && !ok; p = p->ai_next) {
+#ifdef _WIN32
+        SOCKET fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (fd == INVALID_SOCKET) continue;
+        DWORD tv = timeout_ms;
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
+        ok = (connect(fd, p->ai_addr, (int)p->ai_addrlen) == 0);
+        closesocket(fd);
+#else
+        int fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (fd < 0) continue;
+        struct timeval tv; tv.tv_sec = 0; tv.tv_usec = timeout_ms * 1000;
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+        ok = (connect(fd, p->ai_addr, p->ai_addrlen) == 0);
+        close(fd);
+#endif
+    }
+    freeaddrinfo(res);
+    return ok;
+}
 
 // Build complete hardware telemetry JSON payload
 static json build_hardware_json(const delta::HardwareMetrics& m) {
@@ -72,6 +114,8 @@ static json build_hardware_json(const delta::HardwareMetrics& m) {
     return {{"system_ram_used_gb", m.system_ram_used_gb},
             {"system_ram_total_gb", m.system_ram_total_gb},
             {"cpu_util_pct", m.cpu_util_pct},
+            {"cpu_temp_c", m.cpu_temp_c},              // NEW
+            {"system_power_w", m.system_power_w},      // NEW
             {"rpc_node_count", rpc_count},
             {"gpus", gpus},
             {"has_gpu", g_hardware_monitor.has_gpu()},
@@ -1151,6 +1195,62 @@ class ModelAPIServer {
                 res.status = 400;
                 res.set_content(error.dump(), "application/json");
             }
+        });
+
+
+                // ====================================================================
+        // RPC Node Management
+        // ====================================================================
+        server_->Get("/api/v1/rpc/nodes", [](const httplib::Request&, httplib::Response& res) {
+            auto nodes = delta::agent::AgentDatabase::instance().list_rpc_nodes();
+            json arr = json::array();
+            for (auto& n : nodes) {
+                arr.push_back({{"id", n.id}, {"name", n.name}, {"endpoint", n.endpoint}, {"enabled", n.enabled}});
+            }
+            res.set_content(json({{"nodes", arr}, {"count", arr.size()}}).dump(), "application/json");
+        });
+        
+        server_->Post("/api/v1/rpc/nodes", [](const httplib::Request& req, httplib::Response& res) {
+            json body = json::parse(req.body);
+            std::string name = body.value("name", "worker");
+            std::string endpoint = body.value("endpoint", "");
+            if (endpoint.empty()) {
+                res.status = 400;
+                res.set_content(json({{"error", "endpoint required"}}).dump(), "application/json");
+                return;
+            }
+            std::string id = delta::agent::AgentDatabase::instance().add_rpc_node(name, endpoint);
+            res.set_content(json({{"id", id}}).dump(), "application/json");
+        });
+        
+        server_->Delete(R"(/api/v1/rpc/nodes/(.+))", [](const httplib::Request& req, httplib::Response& res) {
+            bool ok = delta::agent::AgentDatabase::instance().delete_rpc_node(req.matches[1]);
+            res.set_content(json({{"deleted", ok}}).dump(), "application/json");
+        });
+        
+        server_->Post(R"(/api/v1/rpc/nodes/(.+)/toggle)", [](const httplib::Request& req, httplib::Response& res) {
+            json body = json::parse(req.body);
+            bool ok = delta::agent::AgentDatabase::instance().update_rpc_node_status(req.matches[1], body.value("enabled", true));
+            res.set_content(json({{"updated", ok}}).dump(), "application/json");
+        });
+
+        server_->Get(R"(/api/v1/rpc/nodes/(.+)/check)", [](const httplib::Request& req, httplib::Response& res) {
+            auto nodes = delta::agent::AgentDatabase::instance().list_rpc_nodes();
+            bool online = false;
+            std::string node_id = req.matches[1];
+            for (const auto& n : nodes) {
+                if (n.id == node_id) {
+                    // Parse "host:port"
+                    size_t colon = n.endpoint.rfind(':');
+                    if (colon != std::string::npos) {
+                        std::string host = n.endpoint.substr(0, colon);
+                        int port = std::stoi(n.endpoint.substr(colon + 1));
+                        online = tcp_connect_ok(host, port);
+                    }
+                    break;
+                }
+            }
+            res.set_content(json({{"online", online}}).dump(), "application/json");
         });
 
         if (!webui_path_.empty() && tools::FileOps::dir_exists(webui_path_)) {

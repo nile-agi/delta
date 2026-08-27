@@ -55,6 +55,7 @@ class AgentDatabase {
   std::vector<RpcNode> list_rpc_nodes();
   bool update_rpc_node_status(const std::string& id, bool enabled);
   bool delete_rpc_node(const std::string& id);
+  bool set_rpc_node_enabled(const std::string& id, bool enabled);
 
  private:
   AgentDatabase() = default;
