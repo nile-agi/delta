@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { hardwareStore } from '$lib/stores/hardware.svelte';
-	import { Activity, Cpu, MemoryStick, Server, Thermometer, Zap, Plus, X } from '@lucide/svelte';
+	import { Activity, Cpu, MemoryStick, Server, Thermometer, Zap, Plus, X, Pin } from '@lucide/svelte';
 
 	let { fullscreen = false } = $props();
 
@@ -16,6 +16,18 @@
 	let nodeName = $state('');
 	let nodeEndpoint = $state('');
 
+	let pinned = $state(false);
+
+	async function togglePin() {
+		try {
+			const { getCurrentWindow } = await import('@tauri-apps/api/window');
+			pinned = !pinned;
+			await getCurrentWindow().setAlwaysOnTop(pinned);
+		} catch {
+			/* not a Tauri window */
+		}
+	}
+
 	function addNode() {
 		if (!nodeEndpoint.trim()) return;
 		hardwareStore.addRpcNode(nodeName.trim() || 'worker', nodeEndpoint.trim());
@@ -25,16 +37,29 @@
 </script>
 
 <div class="flex h-full w-full flex-col gap-3 overflow-y-auto p-4 text-sm">
-	<!-- Header -->
+	<!-- Header with Pin button -->
 	<div class="flex items-center justify-between">
 		<h2 class="flex items-center gap-2 font-mono text-base font-semibold">
 			<Activity class="h-4 w-4 text-primary" />
 			DHATS Telemetry
 		</h2>
-		<span class="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-			<span class="h-2 w-2 rounded-full {s.isConnected ? 'animate-pulse bg-green-500' : 'bg-red-500'}"></span>
-			{s.isConnected ? 'Live' : 'Reconnecting…'}
-		</span>
+		<div class="flex items-center gap-2">
+			<!-- Pin button: only visible in fullscreen (Tauri window) mode -->
+			{#if fullscreen}
+				<button
+					onclick={togglePin}
+					title={pinned ? 'Unpin (allow behind other windows)' : 'Keep on top'}
+					class="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+				>
+					<Pin class="h-3.5 w-3.5 {pinned ? 'fill-primary text-primary' : ''}" />
+				</button>
+			{/if}
+			<!-- Live status badge -->
+			<span class="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+				<span class="h-2 w-2 rounded-full {s.isConnected ? 'animate-pulse bg-green-500' : 'bg-red-500'}"></span>
+				{s.isConnected ? 'Live' : 'Reconnecting…'}
+			</span>
+		</div>
 	</div>
 
 	<!-- CPU + RAM (2 columns only when there's room) -->

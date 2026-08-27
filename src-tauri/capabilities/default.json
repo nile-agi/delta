@@ -1,25 +1,31 @@
 {
-  "identifier": "default",
-  "description": "Default capabilities for the Delta app",
-  "windows": ["main"],
-  "remote": {
-    "urls": ["http://localhost:*", "http://127.0.0.1:*"]
-  },
-  "permissions": [
-    "core:default",
-    "shell:allow-open",
-    "shell:allow-spawn",
-    "shell:allow-stdin-write",
-    "shell:allow-kill",
-    "shell:default",
-    "process:default",
-    "allow-stream-chat",
-    "allow-abort-stream",
-    "allow-get-server-port",
-    "allow-get-server-status",
-    "notification:default",
-    "notification:allow-notify",
-    "notification:allow-request-permission",
-    "notification:allow-is-permission-granted"
-  ]
+	"identifier": "default",
+	"description": "Default capabilities for the Delta app",
+	"windows": ["main", "hardware-telemetry"],
+	"remote": {
+		"urls": ["http://localhost:*", "http://127.0.0.1:*"]
+	},
+	"permissions": [
+		"core:default",
+		"core:webview:allow-create-webview-window",
+		"core:window:allow-create",
+		"core:window:allow-set-focus",
+		"core:window:allow-center",
+		"core:window:allow-close",
+		"core:window:allow-set-always-on-top",
+		"shell:allow-open",
+		"shell:allow-spawn",
+		"shell:allow-stdin-write",
+		"shell:allow-kill",
+		"shell:default",
+		"process:default",
+		"allow-stream-chat",
+		"allow-abort-stream",
+		"allow-get-server-port",
+		"allow-get-server-status",
+		"notification:default",
+		"notification:allow-notify",
+		"notification:allow-request-permission",
+		"notification:allow-is-permission-granted"
+	]
 }

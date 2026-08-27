@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { onMount } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { ChatSidebar, ChatSettingsDialog, ConversationTitleUpdateDialog } from '$lib/components/app';
@@ -21,7 +21,6 @@
 	import NotificationCenter from '$lib/components/app/notifications/NotificationCenter.svelte';
 	import OnboardingDialog from '$lib/components/app/onboarding/OnboardingDialog.svelte';
 	import { goto } from '$app/navigation';
-	import { onDestroy } from 'svelte';
 	import { startReminderPolling, stopReminderPolling } from '$lib/services/reminders';
 	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
@@ -31,17 +30,13 @@
 	import FloatingWindow from '$lib/components/app/misc/FloatingWindow.svelte';
 	import HardwareDashboard from '$lib/components/app/hardware/HardwareDashboard.svelte';
 	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
-	
+
 	let { children } = $props();
 
-	// Detect if this is a standalone hardware telemetry window
-	let isHardwareWindow = $state(false);
-	
-	onMount(() => {
-		if (browser) {
-			isHardwareWindow = new URLSearchParams(window.location.search).get('window') === 'hardware';
-		}
-	});
+	// Synchronous detection — no flash, no wasted effects in the telemetry webview.
+	// When ?window=hardware is in the URL, this webview IS the standalone OS telemetry window.
+	const isHardwareWindow =
+		browser && new URLSearchParams(window.location.search).get('window') === 'hardware';
 
 	const IS_TAURI_ENV =
 		browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -62,7 +57,9 @@
 		});
 	}
 
+	// Server-ready polling — skip entirely in the telemetry webview
 	$effect(() => {
+		if (isHardwareWindow) return;
 		if (!IS_TAURI_ENV) return;
 		if ((window as any).__DELTA_PORT__ != null && !(window as any).__DELTA_SERVER_ERROR__) {
 			serverReady = true;
@@ -124,7 +121,9 @@
 
 	let modelApiReady = $state(!browser || typeof window === 'undefined');
 
+	// Model API readiness — skip in telemetry webview
 	$effect(() => {
+		if (isHardwareWindow) return;
 		if (!serverReady) return;
 		if (!browser || typeof window === 'undefined') {
 			modelApiReady = true;
@@ -141,7 +140,9 @@
 		});
 	});
 
+	// Remove the splash once ready — skip in telemetry webview
 	$effect(() => {
+		if (isHardwareWindow) return;
 		if ((serverReady && modelApiReady) || serverError) {
 			const el = document.getElementById('app-loading');
 			if (el) {
@@ -208,7 +209,9 @@
 		}
 	}
 
+	// Sidebar auto-open logic — skip in telemetry webview
 	$effect(() => {
+		if (isHardwareWindow) return;
 		const alwaysShow = currentConfig.alwaysShowSidebar === true;
 		const autoShowOnNewChat = currentConfig.autoShowSidebarOnNewChat !== false;
 		if (alwaysShow) {
@@ -225,17 +228,20 @@
 	});
 
 	$effect(() => {
+		if (isHardwareWindow) return;
 		if (settingsWindow.state.docked === 'left' && sidebarOpen) {
 			sidebarOpen = false;
 		}
 	});
 
 	$effect(() => {
+		if (isHardwareWindow) return;
 		if (!serverReady) return;
 		serverStore.fetchServerProps();
 	});
 
 	$effect(() => {
+		if (isHardwareWindow) return;
 		if (serverReady && modelApiReady && !serverError) {
 			startReminderPolling();
 		}
@@ -246,6 +252,7 @@
 	});
 
 	$effect(() => {
+		if (isHardwareWindow) return;
 		const serverProps = serverStore.serverProps;
 		if (serverProps?.default_generation_settings?.params) {
 			settingsStore.syncWithServerDefaults();
@@ -253,6 +260,7 @@
 	});
 
 	$effect(() => {
+		if (isHardwareWindow) return;
 		if (!serverReady) return;
 		const apiKey = config().apiKey;
 
@@ -281,6 +289,7 @@
 	});
 
 	$effect(() => {
+		if (isHardwareWindow) return;
 		setTitleUpdateConfirmationCallback(async (currentTitle: string, newTitle: string) => {
 			return new Promise<boolean>((resolve) => {
 				titleUpdateCurrentTitle = currentTitle;
@@ -294,72 +303,77 @@
 
 <ModeWatcher />
 <Toaster richColors />
-<NotificationCenter />
+
+<!-- Always at top level — guarded effects make it harmless in the telemetry window -->
+<svelte:window onkeydown={handleKeydown} bind:innerHeight />
 
 {#if isHardwareWindow}
-	<!-- Standalone Hardware Telemetry Window -->
-	<div class="h-screen w-screen p-4 overflow-auto bg-background">
+	<!-- This webview IS the standalone OS telemetry window -->
+	<div class="h-screen w-screen overflow-auto bg-background">
 		<HardwareDashboard fullscreen />
 	</div>
-{:else if serverError}
-	<div class="splash-screen">
-		<ServerErrorSplash
-			error={serverErrorMessage}
-			onRetry={handleRetryConnection}
-			showRetry={true}
-			showTroubleshooting={true}
-			class="h-full"
-		/>
-	</div>
-{:else if serverReady && modelApiReady}
-	{#if settingsStore.isInitialized && !config().onboardingCompleted}
-		<OnboardingDialog />
-	{/if}
+{:else}
+	<!-- Main app: all the normal UI + DOM fallback for Hardware -->
+	<NotificationCenter />
 
-	<ConversationTitleUpdateDialog
-		bind:open={titleUpdateDialogOpen}
-		currentTitle={titleUpdateCurrentTitle}
-		newTitle={titleUpdateNewTitle}
-		onConfirm={handleTitleUpdateConfirm}
-		onCancel={handleTitleUpdateCancel}
-	/>
-
-	<ChatSettingsDialog />
-	<NotesWindow />
-	<CalendarWindow />
-	<WindowDock />
-
-	<!-- Hardware Telemetry Floating Window -->
-	<FloatingWindow
-		title="Hardware Telemetry"
-		store={hardwareWindow}
-		minWidth={320}
-		minHeight={380}
-	>
-		<HardwareDashboard />
-	</FloatingWindow>
-
-	<Sidebar.Provider bind:open={sidebarOpen}>
-		<div class="flex h-screen w-full" style:height={innerHeight}px>
-			<Sidebar.Root class="h-full">
-				<ChatSidebar bind:this={chatSidebar} />
-			</Sidebar.Root>
-
-			<Sidebar.Trigger
-				class="transition-left absolute z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
-					? 'md:left-[var(--sidebar-width)]'
-					: 'left-0'} {settingsWindow.state.docked === 'left' ? '!z-[100000] md:left-[var(--sidebar-width)]' : ''}"
-				style="translate: 1rem 1rem;"
+	{#if serverError}
+		<div class="splash-screen">
+			<ServerErrorSplash
+				error={serverErrorMessage}
+				onRetry={handleRetryConnection}
+				showRetry={true}
+				showTroubleshooting={true}
+				class="h-full"
 			/>
-
-			<Sidebar.Inset class="flex flex-1 flex-col overflow-hidden">
-				{@render children?.()}
-			</Sidebar.Inset>
 		</div>
-	</Sidebar.Provider>
-{/if}
+	{:else if serverReady && modelApiReady}
+		{#if settingsStore.isInitialized && !config().onboardingCompleted}
+			<OnboardingDialog />
+		{/if}
 
-<svelte:window onkeydown={handleKeydown} bind:innerHeight />
+		<ConversationTitleUpdateDialog
+			bind:open={titleUpdateDialogOpen}
+			currentTitle={titleUpdateCurrentTitle}
+			newTitle={titleUpdateNewTitle}
+			onConfirm={handleTitleUpdateConfirm}
+			onCancel={handleTitleUpdateCancel}
+		/>
+
+		<ChatSettingsDialog />
+		<NotesWindow />
+		<CalendarWindow />
+		<WindowDock />
+
+		<!-- In-app fallback: only used in plain browsers or when OS window creation fails -->
+		<FloatingWindow
+			title="Hardware Telemetry"
+			store={hardwareWindow}
+			minWidth={380}
+			minHeight={520}
+		>
+			<HardwareDashboard />
+		</FloatingWindow>
+
+		<Sidebar.Provider bind:open={sidebarOpen}>
+			<div class="flex h-screen w-full" style:height={innerHeight}px>
+				<Sidebar.Root class="h-full">
+					<ChatSidebar bind:this={chatSidebar} />
+				</Sidebar.Root>
+
+				<Sidebar.Trigger
+					class="transition-left absolute z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
+						? 'md:left-[var(--sidebar-width)]'
+						: 'left-0'} {settingsWindow.state.docked === 'left' ? '!z-[100000] md:left-[var(--sidebar-width)]' : ''}"
+					style="translate: 1rem 1rem;"
+				/>
+
+				<Sidebar.Inset class="flex flex-1 flex-col overflow-hidden">
+					{@render children?.()}
+				</Sidebar.Inset>
+			</div>
+		</Sidebar.Provider>
+	{/if}
+{/if}
 
 <style>
 	.splash-screen {

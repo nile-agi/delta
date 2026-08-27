@@ -1,48 +1,56 @@
 import { browser } from '$app/environment';
 
-// Local structural type so we don't depend on the (sometimes broken) static typings
-interface WebviewWindowCtor {
-	new (
-		label: string,
-		options?: Record<string, unknown>
-	): { setFocus(): Promise<void> };
-	getByLabel(label: string): Promise<{ setFocus(): Promise<void> } | null>;
-}
-
-async function getWebviewWindowCtor(): Promise<WebviewWindowCtor> {
-	// Dynamic import: SSR-safe and bypasses the d.ts export bug
-	const mod = (await import('@tauri-apps/api/webview')) as unknown as {
-		WebviewWindow: WebviewWindowCtor;
-	};
-	return mod.WebviewWindow;
-}
-
 export async function openHardwareWindow() {
 	if (!browser) return;
 	const label = 'hardware-telemetry';
 
-	// Plain browser (no Tauri): open a tab instead
+	// Lazy imports avoid SSR/circular issues
+	const { hardwareWindow } = await import('$lib/stores/hardware-window.svelte');
+	const { dockStore } = await import('$lib/stores/dock.svelte');
+
+	const fallback = () => {
+		hardwareWindow.open();
+		dockStore.register(label, 'Hardware Telemetry');
+	};
+
 	if (!('__TAURI_INTERNALS__' in window)) {
-		window.open('/?window=hardware', '_blank');
+		fallback(); // plain browser
 		return;
 	}
 
-	const WebviewWindow = await getWebviewWindowCtor();
+	// Catch the async permission rejection from the WebviewWindow constructor
+	const onReject = (e: PromiseRejectionEvent) => {
+		console.error('[hardware] OS window rejected:', e.reason);
+		e.preventDefault();
+		fallback();
+	};
+	window.addEventListener('unhandledrejection', onReject, { once: true });
+	setTimeout(() => window.removeEventListener('unhandledrejection', onReject), 3000);
 
-	const existing = await WebviewWindow.getByLabel(label);
-	if (existing) {
-		await existing.setFocus();
-		return;
+	try {
+		// ✅ Correct module: WebviewWindow is exported from 'webviewWindow',
+		// NOT from 'webview' (which only exports the Webview class).
+		const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+
+		const existing = await WebviewWindow.getByLabel(label);
+		if (existing) {
+			await existing.setFocus();
+			return;
+		}
+
+		new WebviewWindow(label, {
+			url: '/?window=hardware',
+			title: 'Hardware Telemetry',
+			width: 460,
+			height: 780,
+			minWidth: 380,
+			minHeight: 520,
+			center: true,
+			resizable: true
+		});
+	} catch (e) {
+		console.error('[hardware] OS window failed:', e);
+		window.removeEventListener('unhandledrejection', onReject);
+		fallback();
 	}
-
-	new WebviewWindow(label, {
-		url: '/?window=hardware',
-		title: 'Hardware Telemetry',
-		width: 460,
-		height: 780,
-		minWidth: 380,
-		minHeight: 520,
-		center: true,
-		resizable: true
-	});
 }
