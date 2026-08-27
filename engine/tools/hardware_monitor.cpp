@@ -149,6 +149,28 @@ static float smc_cpu_temp_c() {
     return best;   // hottest real sensor; 0 only if the OS exposes nothing
 }
 
+// Real, always-available sensor on MacBooks (battery-board temperature).
+// Apple exposes no public SoC temp on Apple Silicon; this is the honest
+// fallback so the gauge never shows N/A on laptops.
+static float battery_temp_c() {
+    io_service_t bat = IOServiceGetMatchingService(kIOMainPortDefault,
+                                                   IOServiceMatching("AppleSmartBattery"));
+    if (!bat) return 0.0f;
+    float t = 0.0f;
+    CFNumberRef num = (CFNumberRef)IORegistryEntryCreateCFProperty(
+        bat, CFSTR("Temperature"), kCFAllocatorDefault, kNilOptions);
+    if (num) {
+        int v = 0;
+        if (CFNumberGetValue(num, kCFNumberIntType, &v)) {
+            float bt = (float)v / 100.0f;               // centi-°C
+            if (bt > 1.0f && bt < 110.0f) t = bt;
+        }
+        CFRelease(num);
+    }
+    IOObjectRelease(bat);
+    return t;
+}
+
 // Apple Silicon fallback: read HID temperature services (real sensor events)
 static float hid_max_temp_c() {
     void* iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY);
@@ -172,7 +194,8 @@ static float hid_max_temp_c() {
                     void* svc = (void*)CFArrayGetValueAtIndex(services, i);
                     void* ev = copyE(svc, 15 /*kIOHIDEventTypeTemperature*/, 0, 0);
                     if (ev) {
-                        double t = getF(ev, (15 << 16) | 0x1);   // temperature field
+                        double t = getF(ev, (15 << 16) | 0x1);
+                        if (t > 110.0 && t < 11000.0) t /= 100.0;   // ← centi-°C fix, HERE
                         if (t > 0.0 && t < 110.0 && t > best) best = (float)t;
                         CFRelease(ev);
                     }
@@ -435,9 +458,11 @@ float HardwareMonitor::collect_cpu_temp_c() {
 #if defined(_WIN32)
     return wmi_cpu_temp_c();
 #elif defined(__APPLE__)
-    float t = smc_cpu_temp_c();      // Intel keys or M-series SMC sensors
-    if (t <= 0.0f) t = hid_max_temp_c();  // HID temperature services (Apple Silicon)
-    return t;                        // 0 only if macOS truly hides every sensor
+    float t = smc_cpu_temp_c();                    // 1) true CPU die temp on Intel,
+                                                   //    any exposed SMC sensor on M-series
+    if (t <= 0.0f) t = hid_max_temp_c();           // 2) HID temperature services
+    if (t <= 0.0f) t = battery_temp_c();           // 3) battery-board sensor (MacBooks)
+    return t;                                      // 0 only on battery-less Macs
 #else
     float best = 0.0f;
     for (int z = 0; z < 20; z++) {
@@ -680,22 +705,25 @@ float HardwareMonitor::gpu_available_gb() const {
         return avail;
     }
 #ifdef __APPLE__
-    if (metal_available_) {                                        // Apple: live unified headroom
+    if (metal_available_) {
         int64_t memsize = 0; size_t len = sizeof(memsize);
         int mib[2] = {CTL_HW, HW_MEMSIZE};
         if (sysctl(mib, 2, &memsize, &len, NULL, 0) != 0) return 0.0f;
         float total = (float)(memsize / (1024.0 * 1024.0 * 1024.0));
+
         mach_msg_type_number_t cnt = HOST_VM_INFO64_COUNT;
         vm_statistics64_data_t vm;
-        float used = 0.0f;
-        if (host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vm, &cnt) == KERN_SUCCESS) {
-            vm_size_t ps; host_page_size(mach_host_self(), &ps);
-            used = (float)((vm.active_count + vm.wire_count + vm.compressor_page_count) * ps
-                           / (1024.0 * 1024.0 * 1024.0));
-        }
-        float cap = total * 0.7f;   // Metal working-set cap ≈ 70% of unified memory
-        float free_vram = cap - used;          // shrinks in real time as ANY app uses memory
-        return free_vram > 0.0f ? free_vram : 0.0f;
+        if (host_statistics64(mach_host_self(), HOST_VM_INFO64,
+                              (host_info64_t)&vm, &cnt) != KERN_SUCCESS) return 0.0f;
+        vm_size_t ps; host_page_size(mach_host_self(), &ps);
+
+        // Reclaimable memory = what the GPU can actually claim right now
+        float reclaimable = (float)((vm.free_count + vm.inactive_count +
+                                      vm.purgeable_count) * (uint64_t)ps
+                                    / (1024.0 * 1024.0 * 1024.0));
+        float cap = total * 0.7f;                 // Metal recommended working-set cap
+        float avail = std::min(reclaimable, cap) - 0.5f;   // small driver headroom
+        return avail > 0.0f ? avail : 0.0f;
     }
 #endif
     return 0.0f;
