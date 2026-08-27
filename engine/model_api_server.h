@@ -26,7 +26,16 @@ namespace delta {
     
     // Set callback to be called when model unload / stop server is requested
     void set_model_unload_callback(ModelUnloadCallback callback);
+
+    // DHATS Brain: self-heal status reporting
+    struct HealStatus {
+        int recoveries = 0;       // Number of times llama-server was auto-restarted
+        int active_ngl = -1;      // Currently active GPU layer count (-1 = all)
+        std::string reason;       // Reason for last heal (empty if never healed)
+    };
+
+    void report_heal(int recoveries, int active_ngl, const std::string& reason);
+    HealStatus get_heal_status();
 }
 
 #endif // DELTA_MODEL_API_SERVER_H
-

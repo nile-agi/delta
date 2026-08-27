@@ -60,6 +60,22 @@ using json = nlohmann::json;
 // DHATS: Global hardware telemetry monitor
 static delta::HardwareMonitor g_hardware_monitor;
 
+// DHATS Brain: self-heal status (thread-safe)
+static std::mutex g_heal_mutex;
+static delta::HealStatus g_heal_status;
+
+void delta::report_heal(int recoveries, int active_ngl, const std::string& reason) {
+    std::lock_guard<std::mutex> lock(g_heal_mutex);
+    g_heal_status.recoveries = recoveries;
+    g_heal_status.active_ngl = active_ngl;
+    g_heal_status.reason = reason;
+}
+
+delta::HealStatus delta::get_heal_status() {
+    std::lock_guard<std::mutex> lock(g_heal_mutex);
+    return g_heal_status;
+}
+
 static bool tcp_connect_ok(const std::string& host, int port, int timeout_ms = 800) {
 #ifdef _WIN32
     WSADATA wsaData;
@@ -111,15 +127,22 @@ static json build_hardware_json(const delta::HardwareMetrics& m) {
         rpc_count = (int)delta::agent::AgentDatabase::instance().get_enabled_rpc_nodes().size();
     } catch (...) {}
 
+    // DHATS Brain: self-heal status
+    auto heal = delta::get_heal_status();
+
     return {{"system_ram_used_gb", m.system_ram_used_gb},
             {"system_ram_total_gb", m.system_ram_total_gb},
             {"cpu_util_pct", m.cpu_util_pct},
-            {"cpu_temp_c", m.cpu_temp_c},              // NEW
-            {"system_power_w", m.system_power_w},      // NEW
+            {"cpu_temp_c", m.cpu_temp_c},
+            {"system_power_w", m.system_power_w},
+            {"gpu_budget_gb", g_hardware_monitor.gpu_budget_gb()},
             {"rpc_node_count", rpc_count},
             {"gpus", gpus},
             {"has_gpu", g_hardware_monitor.has_gpu()},
             {"primary_backend", g_hardware_monitor.get_primary_backend()},
+            {"heal_recoveries", heal.recoveries},
+            {"active_ngl", heal.active_ngl},
+            {"heal_reason", heal.reason},
             {"timestamp_ms", m.timestamp_ms}};
 }
 
@@ -901,7 +924,7 @@ class ModelAPIServer {
                     json message = {{"role", "assistant"}, {"content", result.content}};
                     if (!result.tool_calls.empty())
                         message["tool_calls"] = result.tool_calls;
-                                        json response = {{"id", "chatcmpl-delta"},
+                    json response = {{"id", "chatcmpl-delta"},
                                      {"object", "chat.completion"},
                                      {"choices", {{{"index", 0}, {"message", message}, {"finish_reason", "stop"}}}},
                                      {"usage", {{"prompt_tokens", 0}, {"completion_tokens", 0}, {"total_tokens", 0}}}};
@@ -1197,8 +1220,7 @@ class ModelAPIServer {
             }
         });
 
-
-                // ====================================================================
+        // ====================================================================
         // RPC Node Management
         // ====================================================================
         server_->Get("/api/v1/rpc/nodes", [](const httplib::Request&, httplib::Response& res) {
@@ -1240,7 +1262,6 @@ class ModelAPIServer {
             std::string node_id = req.matches[1];
             for (const auto& n : nodes) {
                 if (n.id == node_id) {
-                    // Parse "host:port"
                     size_t colon = n.endpoint.rfind(':');
                     if (colon != std::string::npos) {
                         std::string host = n.endpoint.substr(0, colon);

@@ -240,6 +240,10 @@ target_compile_definitions(delta-server PRIVATE
     DELTA_VERSION="${PROJECT_VERSION}"
 )
 
+if(APPLE)
+    target_link_libraries(delta-server PRIVATE "-framework Metal" "-framework IOKit" "-framework CoreFoundation")
+endif()
+
 # windows.h (pulled in by curl/winsock) defines min/max macros that break std::min/std::max.
 if(WIN32)
     target_compile_definitions(delta PRIVATE NOMINMAX)

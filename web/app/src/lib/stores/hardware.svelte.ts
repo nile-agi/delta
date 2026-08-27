@@ -24,6 +24,10 @@ export interface HardwareState {
 	cpu_util_pct: number;
 	cpu_temp_c: number;
 	system_power_w: number;
+	gpu_budget_gb: number;       // DHATS: Real GPU memory budget (Metal recommendedMaxWorkingSetSize)
+	heal_recoveries: number;     // DHATS: Number of auto-recoveries from OOM
+	active_ngl: number;          // DHATS: Currently active GPU layer count
+	heal_reason: string;         // DHATS: Reason for last heal
 	gpus: GPUMetrics[];
 	rpc_nodes: RpcNode[];
 	rpc_node_count: number;
@@ -48,6 +52,10 @@ class HardwareStore {
 		cpu_util_pct: 0,
 		cpu_temp_c: 0,
 		system_power_w: 0,
+		gpu_budget_gb: 0,
+		heal_recoveries: 0,
+		active_ngl: -1,
+		heal_reason: '',
 		gpus: [],
 		rpc_nodes: [],
 		rpc_node_count: 0,
@@ -58,13 +66,6 @@ class HardwareStore {
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private connecting = false;
 
-	// constructor() {
-	// 	if (browser) {
-	// 		window.addEventListener('delta-server-ready', () => void this.connect(), { once: true });
-	// 		void this.connect();
-	// 		void this.refreshRpcNodes();
-	// 	}
-	// }
 	constructor() {
 		if (browser) {
 			window.addEventListener('delta-server-ready', () => void this.connect(), { once: true });
@@ -118,6 +119,13 @@ class HardwareStore {
 					this.state.cpu_util_pct = d.cpu_util_pct || 0;
 					this.state.cpu_temp_c = d.cpu_temp_c || 0;
 					this.state.system_power_w = d.system_power_w || 0;
+					
+					// DHATS Brain: parse heal status and GPU budget
+					this.state.gpu_budget_gb = d.gpu_budget_gb || 0;
+					this.state.heal_recoveries = d.heal_recoveries || 0;
+					this.state.active_ngl = d.active_ngl ?? -1;
+					this.state.heal_reason = d.heal_reason || '';
+					
 					this.state.rpc_node_count = d.rpc_node_count || 0;
 					this.state.gpus = d.gpus || [];
 				} catch (e) {

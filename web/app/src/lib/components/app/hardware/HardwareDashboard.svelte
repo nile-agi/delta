@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { hardwareStore } from '$lib/stores/hardware.svelte';
-	import { Activity, Cpu, MemoryStick, Server, Thermometer, Zap, Plus, X, Pin } from '@lucide/svelte';
+	import { Activity, Cpu, MemoryStick, Server, Thermometer, Zap, Plus, X, Pin, Shield } from '@lucide/svelte';
 
 	let { fullscreen = false } = $props();
 
@@ -62,6 +62,21 @@
 		</div>
 	</div>
 
+	<!-- DHATS Brain: Self-heal status banner -->
+	{#if s.heal_recoveries > 0}
+		<div class="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-500">
+			<div class="flex items-center gap-2">
+				<Shield class="h-4 w-4 shrink-0" />
+				<div class="min-w-0">
+					<div class="font-semibold">Delta auto-recovered {s.heal_recoveries}×</div>
+					<div class="text-[10px] opacity-90">
+						{s.heal_reason || 'GPU out-of-memory'} — GPU layers now {s.active_ngl >= 0 ? s.active_ngl : 'all'}
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 	<!-- CPU + RAM (2 columns only when there's room) -->
 	<div class="grid gap-3 {fullscreen ? 'sm:grid-cols-2' : 'grid-cols-1'}">
 		<div class="rounded-lg border border-border/40 bg-muted/30 p-3">
@@ -118,6 +133,19 @@
 	{:else}
 		<div class="rounded-lg border border-dashed border-border/60 p-4 text-center text-xs text-muted-foreground">
 			No dedicated GPU detected — running on CPU.
+		</div>
+	{/if}
+
+	<!-- DHATS Brain: GPU Memory Budget -->
+	{#if s.gpu_budget_gb > 0}
+		<div class="flex items-center justify-between rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+			<span class="flex items-center gap-1.5"><Shield class="h-3.5 w-3.5" /> GPU memory budget</span>
+			<span class="font-mono text-foreground">
+				{s.gpu_budget_gb.toFixed(1)} GB
+				{#if s.active_ngl >= 0}
+					<span class="ml-1 text-[10px] opacity-70">({s.active_ngl} layers)</span>
+				{/if}
+			</span>
 		</div>
 	{/if}
 

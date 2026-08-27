@@ -25,6 +25,8 @@
   #include <mach/mach_host.h>
   #include <IOKit/IOKitLib.h>
   #include <CoreFoundation/CoreFoundation.h>
+  #include <objc/message.h>
+  #include <objc/runtime.h>
 #endif
 
 namespace delta {
@@ -294,8 +296,6 @@ float HardwareMonitor::collect_cpu_temp_c() {
     }
     return 0.0f;
 #elif defined(__APPLE__)
-    // IOServiceMatching returns a CFMutableDictionaryRef (search criteria).
-    // IOServiceGetMatchingService consumes it and returns the io_service_t.
     io_service_t bat = IOServiceGetMatchingService(kIOMainPortDefault,
                                                    IOServiceMatching("AppleSmartBattery"));
     if (!bat) return 0.0f;
@@ -305,7 +305,7 @@ float HardwareMonitor::collect_cpu_temp_c() {
     if (num) {
         int v = 0;
         CFNumberGetValue(num, kCFNumberIntType, &v);
-        t = (float)(v / 100.0);   // battery temp in centi-°C
+        t = (float)(v / 100.0);
         CFRelease(num);
     }
     IOObjectRelease(bat);
@@ -340,8 +340,8 @@ float HardwareMonitor::collect_system_power_w() {
     if (v) { CFNumberGetValue(v, kCFNumberIntType, &volt); CFRelease(v); }
     if (ext) { external = CFBooleanGetValue(ext); CFRelease(ext); }
     IOObjectRelease(bat);
-    if (external) return 0.0f;   // on AC power
-    return (float)(std::abs(amp) * volt / 1e6);   // mA × mV / 1e6 = watts
+    if (external) return 0.0f;
+    return (float)(std::abs(amp) * volt / 1e6);
 #else
     return 0.0f;
 #endif
@@ -458,14 +458,12 @@ void HardwareMonitor::collect_apple_metrics(std::vector<GPUMetrics>& out) {
             gpu.vram_used_gb = (float)(used / (1024.0 * 1024.0 * 1024.0));
         }
         
-        // Best-effort GPU utilization via IOKit
         gpu.gpu_util_pct = apple_gpu_utilization_pct();
     } else {
         gpu.name = "Intel Mac GPU";
         gpu.gpu_util_pct = 0;
     }
     
-    // Temperature and power require private APIs on Apple Silicon
     gpu.temp_c = 0.0f;
     gpu.power_w = 0.0f;
     
@@ -502,6 +500,114 @@ void HardwareMonitor::collect_amd_metrics(std::vector<GPUMetrics>& out) {
 }
 
 // ============================================================
+// DHATS Brain: GPU Memory Budget & Offload Planner
+// ============================================================
+
+float HardwareMonitor::gpu_budget_gb() const {
+#ifdef __APPLE__
+    // Metal's recommendedMaxWorkingSetSize is the real GPU budget on Apple Silicon
+    // (typically ~5.4 GB on an 8 GB M1, not the full 8 GB)
+    typedef void* (*mtl_create_device_t)(void);
+    typedef unsigned long long (*send_ulonglong_t)(void*, SEL);
+    
+    void* mtl_lib = dlopen("/System/Library/Frameworks/Metal.framework/Metal", RTLD_LAZY);
+    if (mtl_lib) {
+        auto create_fn = (mtl_create_device_t)dlsym(mtl_lib, "MTLCreateSystemDefaultDevice");
+        if (create_fn) {
+            void* dev = create_fn();
+            if (dev) {
+                auto msg_fn = (send_ulonglong_t)&objc_msgSend;
+                unsigned long long ws = msg_fn(dev, sel_registerName("recommendedMaxWorkingSetSize"));
+                if (ws > 0) {
+                    dlclose(mtl_lib);
+                    return (float)(ws / (1024.0 * 1024.0 * 1024.0));
+                }
+            }
+        }
+        dlclose(mtl_lib);
+    }
+    
+    // Fallback: 70% of system RAM (conservative estimate)
+    int64_t memsize = 0; size_t len = sizeof(memsize);
+    int mib[2] = {CTL_HW, HW_MEMSIZE};
+    if (sysctl(mib, 2, &memsize, &len, NULL, 0) == 0)
+        return 0.7f * (float)(memsize / (1024.0 * 1024.0 * 1024.0));
+    return 0.0f;
+#else
+    // Discrete GPUs: sum VRAM from NVML or ROCm
+    float total = 0.0f;
+    if (nvml_available_ && g_nvmlDeviceGetCount) {
+        unsigned int c = 0;
+        if (g_nvmlDeviceGetCount(&c) == NVML_SUCCESS) {
+            for (unsigned int i = 0; i < c; i++) {
+                void* d = nullptr;
+                if (g_nvmlDeviceGetHandle(i, &d) == NVML_SUCCESS) {
+                    nvmlMemory_t m;
+                    if (g_nvmlDeviceGetMemoryInfo(d, &m) == NVML_SUCCESS)
+                        total += (float)(m.total / (1024.0 * 1024.0 * 1024.0));
+                }
+            }
+        }
+    } else if (rocm_available_ && g_rsmi_num_devices) {
+        uint32_t c = 0;
+        if (g_rsmi_num_devices(&c) == 0) {
+            for (uint32_t i = 0; i < c; i++) {
+                uint64_t t = 0;
+                if (g_rsmi_mem_total && g_rsmi_mem_total(i, 0, &t) == 0)
+                    total += (float)(t / (1024.0 * 1024.0 * 1024.0));
+            }
+        }
+    }
+    return total;
+#endif
+}
+
+OffloadPlan HardwareMonitor::plan_offload(long long model_size_bytes, int n_layers, int ctx_size) const {
+    OffloadPlan p;
+    if (n_layers <= 0) n_layers = 32;
+    if (!has_gpu()) { p.cpu_only = true; return p; }
+
+    // Get current system memory usage
+    float used = 0.0f;
+#ifdef __APPLE__
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+    vm_statistics64_data_t vmstat;
+    if (host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vmstat, &count) == KERN_SUCCESS) {
+        vm_size_t ps; host_page_size(mach_host_self(), &ps);
+        used = (float)((vmstat.active_count + vmstat.wire_count) * ps / (1024.0 * 1024.0 * 1024.0));
+    }
+#endif
+
+    const float headroom = 1.0f; // Safety margin for OS / UI / Metal driver
+    p.budget_gb = gpu_budget_gb();
+    p.available_gb = p.budget_gb - used - headroom;
+
+    float model_gb = (float)(model_size_bytes / (1024.0 * 1024.0 * 1024.0));
+    
+    // Realistic KV-cache estimate: ~4 bytes per token per layer (fp16, 1024 KV-dim)
+    float kv_gb = (4.0f * (float)ctx_size * 1024.0f * (float)n_layers) / (1024.0f * 1024.0f * 1024.0f);
+
+    // Adaptive batch sizing: larger batches need more Metal scratch memory
+    struct BS { int ubatch, batch; float scratch; };
+    const BS opt[3] = {{512, 1024, 0.3f}, {1024, 2048, 0.6f}, {2048, 4096, 1.2f}};
+    const BS* bs = &opt[0];
+    
+    if (p.available_gb - kv_gb - opt[2].scratch >= model_gb + 0.5f) bs = &opt[2];
+    else if (p.available_gb - kv_gb - opt[1].scratch >= model_gb + 0.25f) bs = &opt[1];
+    
+    p.ubatch = bs->ubatch;
+    p.batch = bs->batch;
+
+    float weights_room = p.available_gb - kv_gb - bs->scratch;
+    if (weights_room <= 0.0f) { p.cpu_only = true; p.ngl = 0; return p; }
+    if (weights_room >= model_gb) { p.all_layers = true; p.ngl = 999; return p; }
+
+    float per_layer = model_gb / (float)n_layers;
+    p.ngl = std::max(0, std::min(n_layers, (int)(weights_room / per_layer)));
+    return p;
+}
+
+// ============================================================
 // Public API — SINGLE definition, calls all collectors
 // ============================================================
 
@@ -512,8 +618,8 @@ HardwareMetrics HardwareMonitor::get_metrics() {
     m.system_ram_total_gb = collect_system_ram_total_gb();
     m.system_ram_used_gb  = collect_system_ram_used_gb();
     m.cpu_util_pct        = collect_cpu_util_pct();
-    m.cpu_temp_c          = collect_cpu_temp_c();       // NEW
-    m.system_power_w      = collect_system_power_w();   // NEW
+    m.cpu_temp_c          = collect_cpu_temp_c();
+    m.system_power_w      = collect_system_power_w();
 
     collect_nvidia_metrics(m.gpus);
     collect_apple_metrics(m.gpus);
@@ -523,50 +629,9 @@ HardwareMetrics HardwareMonitor::get_metrics() {
 
 int HardwareMonitor::calculate_auto_ngl(long long model_size_bytes, int n_layers, int ctx_size) {
     std::lock_guard<std::mutex> lock(mtx_);
-    if (!nvml_available_ && !metal_available_ && !rocm_available_) return 0;
-
-    float total_vram_gb = 0.0f, used_vram_gb = 0.0f;
-    if (nvml_available_) {
-        unsigned int count = 0;
-        if (g_nvmlDeviceGetCount && g_nvmlDeviceGetCount(&count) == NVML_SUCCESS) {
-            for (unsigned int i = 0; i < count; i++) {
-                void* dev = nullptr;
-                if (g_nvmlDeviceGetHandle(i, &dev) != NVML_SUCCESS) continue;
-                nvmlMemory_t mem;
-                if (g_nvmlDeviceGetMemoryInfo(dev, &mem) == NVML_SUCCESS) {
-                    total_vram_gb += (float)(mem.total / (1024.0 * 1024.0 * 1024.0));
-                    used_vram_gb  += (float)(mem.used  / (1024.0 * 1024.0 * 1024.0));
-                }
-            }
-        }
-    } else if (metal_available_) {
-#ifdef __APPLE__
-        int64_t memsize = 0; size_t len = sizeof(memsize);
-        int mib[2] = {CTL_HW, HW_MEMSIZE};
-        if (sysctl(mib, 2, &memsize, &len, NULL, 0) == 0) total_vram_gb = (float)(memsize / (1024.0 * 1024.0 * 1024.0));
-        mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
-        vm_statistics64_data_t vmstat;
-        if (host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vmstat, &count) == KERN_SUCCESS) {
-            vm_size_t page_size; host_page_size(mach_host_self(), &page_size);
-            used_vram_gb = (float)((vmstat.active_count + vmstat.wire_count) * page_size / (1024.0 * 1024.0 * 1024.0));
-        }
-#endif
-    }
-
-    if (total_vram_gb <= 0.0f) return 0;
-    float available_gb = total_vram_gb - used_vram_gb - 1.5f;
-    if (available_gb <= 0.0f) return 0;
-
-    float model_size_gb = (float)(model_size_bytes / (1024.0 * 1024.0 * 1024.0));
-    float kv_cache_gb = (float)(ctx_size * 0.5 * n_layers) / (1024.0 * 1024.0);
-    float total_needed_gb = model_size_gb + kv_cache_gb;
-
-    if (available_gb >= total_needed_gb) return -1;
-
-    float per_layer_gb = model_size_gb / (float)std::max(n_layers, 1);
-    if (per_layer_gb <= 0.0f) return 0;
-    int layers_that_fit = (int)((available_gb - kv_cache_gb) / per_layer_gb);
-    return std::max(0, std::min(layers_that_fit, n_layers));
+    OffloadPlan p = plan_offload(model_size_bytes, n_layers, ctx_size);
+    if (p.cpu_only) return 0;
+    return p.all_layers ? -1 : p.ngl;
 }
 
 bool HardwareMonitor::has_gpu() const { return nvml_available_ || metal_available_ || rocm_available_; }
