@@ -58,9 +58,30 @@ class HardwareStore {
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private connecting = false;
 
+	// constructor() {
+	// 	if (browser) {
+	// 		window.addEventListener('delta-server-ready', () => void this.connect(), { once: true });
+	// 		void this.connect();
+	// 		void this.refreshRpcNodes();
+	// 	}
+	// }
 	constructor() {
 		if (browser) {
 			window.addEventListener('delta-server-ready', () => void this.connect(), { once: true });
+
+			// Tauri event reaches ALL webviews (main + OS telemetry window),
+			// so the telemetry window gets the real port without probing.
+			if ('__TAURI_INTERNALS__' in window) {
+				import('@tauri-apps/api/event')
+					.then(({ listen }) =>
+						listen<{ port: number; modelApiPort: number }>('delta-server-ready', (e) => {
+							(window as any).__DELTA_MODEL_API_PORT__ = e.payload.modelApiPort;
+							void this.connect();
+						})
+					)
+					.catch(() => {});
+			}
+
 			void this.connect();
 			void this.refreshRpcNodes();
 		}

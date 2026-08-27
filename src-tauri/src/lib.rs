@@ -388,9 +388,38 @@ pub fn run() {
 
             Ok(())
         })
+        // .on_window_event(|window, event| {
+        //     if let tauri::WindowEvent::CloseRequested { .. } = event {
+        //         let app = window.app_handle();
+        //         let state = app.state::<Mutex<ServerState>>();
+        //         let child = {
+        //             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+        //             s.child.take()
+        //         };
+        //         if let Some(child) = child {
+        //             log::info!("Shutting down delta-server...");
+        //             let _ = child.kill();
+        //         }
+        //         kill_stale_server_processes();
+        //     }
+        // })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
+                // Auxiliary windows (e.g. the "hardware-telemetry" OS window) must NOT
+                // tear down the sidecar. Only the main window owns the server lifecycle.
+                if window.label() != "main" {
+                    return;
+                }
+
+                // Main window is closing: shut down auxiliary windows first so they
+                // don't outlive the server with a dead SSE stream.
                 let app = window.app_handle();
+                for (label, w) in app.webview_windows() {
+                    if label != "main" {
+                        let _ = w.close();
+                    }
+                }
+
                 let state = app.state::<Mutex<ServerState>>();
                 let child = {
                     let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
