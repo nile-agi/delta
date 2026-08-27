@@ -22,10 +22,11 @@ export interface HardwareState {
 	system_ram_used_gb: number;
 	system_ram_total_gb: number;
 	cpu_util_pct: number;
-	cpu_temp_c: number;        // NEW
-	system_power_w: number;    // NEW
+	cpu_temp_c: number;
+	system_power_w: number;
 	gpus: GPUMetrics[];
-	rpc_nodes: RpcNode[];      // NEW
+	rpc_nodes: RpcNode[];
+	rpc_node_count: number;
 	isConnected: boolean;
 }
 
@@ -35,7 +36,9 @@ async function probe(base: string): Promise<boolean> {
 	try {
 		const res = await fetch(`${base}/api/v1/hardware/snapshot`, { cache: 'no-store' });
 		return res.ok;
-	} catch { return false; }
+	} catch {
+		return false;
+	}
 }
 
 class HardwareStore {
@@ -47,6 +50,7 @@ class HardwareStore {
 		system_power_w: 0,
 		gpus: [],
 		rpc_nodes: [],
+		rpc_node_count: 0,
 		isConnected: false
 	});
 
@@ -62,46 +66,16 @@ class HardwareStore {
 		}
 	}
 
-	async refreshRpcNodes() {
-		try {
-			const base = getModelApiBaseUrl();
-			const res = await fetch(`${base}/api/v1/rpc/nodes`, { cache: 'no-store' });
-			if (res.ok) this.state.rpc_nodes = (await res.json()).nodes || [];
-		} catch { /* ignore */ }
-	}
-
-	async addRpcNode(name: string, endpoint: string) {
-		const base = getModelApiBaseUrl();
-		await fetch(`${base}/api/v1/rpc/nodes`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ name, endpoint })
-		});
-		await this.refreshRpcNodes();
-	}
-
-	async deleteRpcNode(id: string) {
-		const base = getModelApiBaseUrl();
-		await fetch(`${base}/api/v1/rpc/nodes/${id}`, { method: 'DELETE' });
-		await this.refreshRpcNodes();
-	}
-
-	async toggleRpcNode(id: string, enabled: boolean) {
-		const base = getModelApiBaseUrl();
-		await fetch(`${base}/api/v1/rpc/nodes/${id}/toggle`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ enabled })
-		});
-		await this.refreshRpcNodes();
-	}
-
 	async connect() {
 		if (!browser || this.eventSource || this.connecting) return;
 		this.connecting = true;
 		try {
 			await resolveModelApiBaseUrl();
 			let base = getModelApiBaseUrl();
+
+			// The OS telemetry window never receives __DELTA_MODEL_API_PORT__
+			// (Rust injects it into the main webview only), so probe the
+			// sidecar default port as a safety net.
 			if ((window as any).__DELTA_MODEL_API_PORT__ == null && !(await probe(base))) {
 				const fallback = `http://127.0.0.1:${DEFAULT_MAPI_PORT}`;
 				if (await probe(fallback)) base = fallback;
@@ -117,14 +91,17 @@ class HardwareStore {
 
 			es.onmessage = (event) => {
 				try {
-					const data = JSON.parse(event.data);
-					this.state.system_ram_used_gb = data.system_ram_used_gb || 0;
-					this.state.system_ram_total_gb = data.system_ram_total_gb || 0;
-					this.state.cpu_util_pct = data.cpu_util_pct || 0;
-					this.state.cpu_temp_c = data.cpu_temp_c || 0;
-					this.state.system_power_w = data.system_power_w || 0;
-					this.state.gpus = data.gpus || [];
-				} catch (e) { console.error('[DTL] Telemetry parse error', e); }
+					const d = JSON.parse(event.data);
+					this.state.system_ram_used_gb = d.system_ram_used_gb || 0;
+					this.state.system_ram_total_gb = d.system_ram_total_gb || 0;
+					this.state.cpu_util_pct = d.cpu_util_pct || 0;
+					this.state.cpu_temp_c = d.cpu_temp_c || 0;
+					this.state.system_power_w = d.system_power_w || 0;
+					this.state.rpc_node_count = d.rpc_node_count || 0;
+					this.state.gpus = d.gpus || [];
+				} catch (e) {
+					console.error('[DTL] Telemetry parse error', e);
+				}
 			};
 
 			es.onerror = () => {
@@ -138,13 +115,62 @@ class HardwareStore {
 					}, 3000);
 				}
 			};
-		} finally { this.connecting = false; }
+		} finally {
+			this.connecting = false;
+		}
 	}
 
 	disconnect() {
-		if (this.reconnectTimer != null) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
-		if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
+		if (this.reconnectTimer != null) {
+			clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
+		}
+		if (this.eventSource) {
+			this.eventSource.close();
+			this.eventSource = null;
+		}
 		this.state.isConnected = false;
+	}
+
+	// ---- RPC worker management ----
+	private base(): string {
+		return getModelApiBaseUrl();
+	}
+
+	async refreshRpcNodes() {
+		try {
+			const res = await fetch(`${this.base()}/api/v1/rpc/nodes`, { cache: 'no-store' });
+			if (res.ok) {
+				const data = await res.json();
+				this.state.rpc_nodes = data.nodes || [];
+				this.state.rpc_node_count = this.state.rpc_nodes.filter((n: RpcNode) => n.enabled).length;
+			}
+		} catch {
+			/* ignore */
+		}
+	}
+
+	async addRpcNode(name: string, endpoint: string) {
+		await fetch(`${this.base()}/api/v1/rpc/nodes`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ name, endpoint })
+		});
+		await this.refreshRpcNodes();
+	}
+
+	async deleteRpcNode(id: string) {
+		await fetch(`${this.base()}/api/v1/rpc/nodes/${id}`, { method: 'DELETE' });
+		await this.refreshRpcNodes();
+	}
+
+	async toggleRpcNode(id: string, enabled: boolean) {
+		await fetch(`${this.base()}/api/v1/rpc/nodes/${id}/toggle`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ enabled })
+		});
+		await this.refreshRpcNodes();
 	}
 }
 

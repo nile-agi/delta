@@ -35,11 +35,27 @@
 
 	// Synchronous detection — no flash, no wasted effects in the telemetry webview.
 	// When ?window=hardware is in the URL, this webview IS the standalone OS telemetry window.
-	const isHardwareWindow =
-		browser && new URLSearchParams(window.location.search).get('window') === 'hardware';
+	let isHardwareWindow = $state(
+		browser &&
+			(new URLSearchParams(window.location.search).get('window') === 'hardware' ||
+				window.location.hash.includes('window=hardware'))
+	);
 
-	const IS_TAURI_ENV =
-		browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+	// Fallback: check Tauri window label (authoritative signal that survives URL normalization)
+	// Wrapped in $effect so it runs after mount and can reactively update isHardwareWindow.
+	$effect(() => {
+		if (browser && !isHardwareWindow && '__TAURI_INTERNALS__' in window) {
+			import('@tauri-apps/api/window')
+				.then(({ getCurrentWindow }) => {
+					if (getCurrentWindow().label === 'hardware-telemetry') {
+						isHardwareWindow = true;
+					}
+				})
+				.catch(() => {});
+		}
+	});
+
+	const IS_TAURI_ENV = browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 	let serverReady = $state(!IS_TAURI_ENV);
 	let serverError = $state(false);
 	let serverErrorMessage = $state('');
@@ -87,7 +103,9 @@
 		const poll = setInterval(async () => {
 			try {
 				const { invoke } = await import('@tauri-apps/api/core');
-				const [port, mapiPort, ready, error] = await invoke<[number, number, boolean, boolean]>('get_server_status');
+				const [port, mapiPort, ready, error] = await invoke<[number, number, boolean, boolean]>(
+					'get_server_status'
+				);
 				pollFailures = 0;
 				if (ready) {
 					(window as any).__DELTA_PORT__ = port;
@@ -98,7 +116,8 @@
 					clearInterval(poll);
 				} else if (error) {
 					serverError = true;
-					serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
+					serverErrorMessage =
+						'Server failed to start. Check that no other instance is running and restart the app.';
 					clearInterval(poll);
 				}
 			} catch (e) {
@@ -160,9 +179,8 @@
 	let currentConfig = $derived(config());
 	let sidebarOpen = $state(false);
 	let innerHeight = $state<number | undefined>();
-	let chatSidebar:
-		| { activateSearchMode?: () => void; editActiveConversation?: () => void }
-		| undefined = $state();
+	let chatSidebar: { activateSearchMode?: () => void; editActiveConversation?: () => void } | undefined =
+		$state();
 
 	let titleUpdateDialogOpen = $state(false);
 	let titleUpdateCurrentTitle = $state('');
@@ -345,12 +363,7 @@
 		<WindowDock />
 
 		<!-- In-app fallback: only used in plain browsers or when OS window creation fails -->
-		<FloatingWindow
-			title="Hardware Telemetry"
-			store={hardwareWindow}
-			minWidth={380}
-			minHeight={520}
-		>
+		<FloatingWindow title="Hardware Telemetry" store={hardwareWindow} minWidth={380} minHeight={520}>
 			<HardwareDashboard />
 		</FloatingWindow>
 
