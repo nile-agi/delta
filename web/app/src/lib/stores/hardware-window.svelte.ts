@@ -17,8 +17,8 @@ class HardwareWindowStore {
         minimized: false,
         x: 120,
         y: 100,
-        width: 360,
-        height: 420
+        width: 420,
+        height: 680
     });
 
     constructor() {
@@ -34,8 +34,8 @@ class HardwareWindowStore {
                 // Only restore position/size, never auto-open
                 this.state.x = saved.x ?? 120;
                 this.state.y = saved.y ?? 100;
-                this.state.width = saved.width ?? 360;
-                this.state.height = saved.height ?? 420;
+                this.state.width = saved.width ?? 420;
+                this.state.height = saved.height ?? 680;
             }
         } catch { /* ignore */ }
     }

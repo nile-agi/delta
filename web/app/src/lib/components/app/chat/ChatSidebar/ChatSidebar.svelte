@@ -20,6 +20,15 @@
 		updateConversationName
 	} from '$lib/stores/chat.svelte';
 	import ChatSidebarActions from './ChatSidebarActions.svelte';
+	import { browser } from '$app/environment';
+	import { openHardwareWindow } from '$lib/services/hardware-window';
+	
+	function openHardware() {
+		const isTauri = browser && '__TAURI_INTERNALS__' in window;
+		if (isTauri) void openHardwareWindow();  // native OS window — draggable anywhere
+		else hardwareWindow.open();              // browser fallback: floating panel
+		handleMobileSidebarItemClick?.();        // safe call if defined
+	}
 
 	const sidebar = Sidebar.useSidebar();
 
