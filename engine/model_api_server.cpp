@@ -127,15 +127,17 @@ static json build_hardware_json(const delta::HardwareMetrics& m) {
         rpc_count = (int)delta::agent::AgentDatabase::instance().get_enabled_rpc_nodes().size();
     } catch (...) {}
 
-    // DHATS Brain: self-heal status
+    // DHATS Brain: multi-tier offload status
     auto heal = delta::get_heal_status();
-
+    
     return {{"system_ram_used_gb", m.system_ram_used_gb},
             {"system_ram_total_gb", m.system_ram_total_gb},
             {"cpu_util_pct", m.cpu_util_pct},
             {"cpu_temp_c", m.cpu_temp_c},
             {"system_power_w", m.system_power_w},
             {"gpu_budget_gb", g_hardware_monitor.gpu_budget_gb()},
+            {"gpu_available_gb", g_hardware_monitor.gpu_available_gb()},
+            {"ram_available_gb", m.system_ram_total_gb - m.system_ram_used_gb - 2.0f},
             {"rpc_node_count", rpc_count},
             {"gpus", gpus},
             {"has_gpu", g_hardware_monitor.has_gpu()},
@@ -1182,10 +1184,16 @@ class ModelAPIServer {
             res.set_chunked_content_provider(
                 "text/event-stream",
                 [](size_t, httplib::DataSink& sink) -> bool {
+                    static const int hz = [] {
+                        const char* e = std::getenv("DELTA_TELEMETRY_HZ");
+                        int v = e ? std::atoi(e) : 0;
+                        return (v >= 1 && v <= 20) ? v : 4;   // default 4 Hz (was 2 Hz)
+                    }();
+
                     auto m = g_hardware_monitor.get_metrics();
                     std::string frame = "data: " + build_hardware_json(m).dump() + "\n\n";
                     sink.write(frame.c_str(), frame.size());
-                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1000 / hz));
                     return true;
                 });
         });

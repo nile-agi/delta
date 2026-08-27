@@ -62,6 +62,36 @@
 		</div>
 	</div>
 
+    <!-- DHATS Brain: Resource availability -->
+	<div class="rounded-lg border border-border/40 bg-muted/30 p-3">
+		<div class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+			Available Resources
+		</div>
+		<div class="grid grid-cols-2 gap-2 text-xs">
+			<div class="flex items-center justify-between">
+				<span class="flex items-center gap-1 text-muted-foreground">
+					<Zap class="h-3 w-3" /> GPU VRAM
+				</span>
+				<span class="font-mono font-semibold text-green-600">
+					{s.gpu_available_gb.toFixed(1)} GB
+				</span>
+			</div>
+			<div class="flex items-center justify-between">
+				<span class="flex items-center gap-1 text-muted-foreground">
+					<MemoryStick class="h-3 w-3" /> RAM
+				</span>
+				<span class="font-mono font-semibold text-blue-600">
+					{s.ram_available_gb.toFixed(1)} GB
+				</span>
+			</div>
+		</div>
+		{#if s.heal_recoveries > 0}
+			<div class="mt-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-600">
+				🛡️ {s.heal_reason || 'Auto-recovered from memory issues'}
+			</div>
+		{/if}
+	</div>
+
 	<!-- DHATS Brain: Self-heal status banner -->
 	{#if s.heal_recoveries > 0}
 		<div class="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-500">
@@ -87,7 +117,7 @@
 				</span>
 			</div>
 			<div class="h-2 w-full overflow-hidden rounded-full bg-muted">
-				<div class="h-full rounded-full bg-blue-500 transition-all duration-300" style="width:{cpuPct}%"></div>
+				<div class="h-full rounded-full bg-blue-500 transition-all duration-200 ease-linear" style="width:{cpuPct}%"></div>
 			</div>
 		</div>
 
@@ -99,7 +129,7 @@
 				</span>
 			</div>
 			<div class="h-2 w-full overflow-hidden rounded-full bg-muted">
-				<div class="h-full rounded-full bg-purple-500 transition-all duration-300" style="width:{ramPct}%"></div>
+				<div class="h-full rounded-full bg-purple-500 transition-all duration-200 ease-linear" style="width:{ramPct}%"></div>
 			</div>
 		</div>
 	</div>
@@ -112,7 +142,7 @@
 				<span class="font-mono text-foreground">{gpu.vram_used_gb.toFixed(1)} / {gpu.vram_total_gb.toFixed(1)} GB</span>
 			</div>
 			<div class="mb-3 h-2 w-full overflow-hidden rounded-full bg-muted">
-				<div class="h-full rounded-full bg-green-500 transition-all duration-300" style="width:{vramPct}%"></div>
+				<div class="h-full rounded-full bg-green-500 transition-all duration-200 ease-linear" style="width:{vramPct}%"></div>
 			</div>
 			<div class="grid grid-cols-3 gap-2 text-center text-xs">
 				<div class="rounded-md bg-background/60 py-1.5">
@@ -137,14 +167,12 @@
 	{/if}
 
 	<!-- DHATS Brain: GPU Memory Budget -->
-	{#if s.gpu_budget_gb > 0}
+	{#if s.gpu_budget_gb > 0 || s.gpus.length}
 		<div class="flex items-center justify-between rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-			<span class="flex items-center gap-1.5"><Shield class="h-3.5 w-3.5" /> GPU memory budget</span>
+			<span class="flex items-center gap-1.5"><Shield class="h-3.5 w-3.5" /> Available VRAM (live)</span>
 			<span class="font-mono text-foreground">
 				{s.gpu_budget_gb.toFixed(1)} GB
-				{#if s.active_ngl >= 0}
-					<span class="ml-1 text-[10px] opacity-70">({s.active_ngl} layers)</span>
-				{/if}
+				{#if s.active_ngl >= 0}<span class="ml-1 text-[10px] opacity-70">({s.active_ngl} layers)</span>{/if}
 			</span>
 		</div>
 	{/if}

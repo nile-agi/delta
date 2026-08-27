@@ -386,8 +386,7 @@ class DeltaServerWrapper {
         return "";
     }
 
-    std::string build_llama_server_command(const std::string& model_path, int ctx_size,
-                                           const std::string& model_alias) {
+    std::string build_llama_server_command(const std::string& model_path, int ctx_size, const std::string& model_alias) {
         std::string cmd;
 #ifdef _WIN32
         cmd = "\"" + llama_server_path_ + "\"";
@@ -454,7 +453,7 @@ class DeltaServerWrapper {
         }
 
         // ============================================================================
-        // DHATS Brain: Plan offload + batches from the live memory budget
+        // DHATS Brain: Intelligent multi-tier distribution
         // ============================================================================
         long long model_size_bytes = 0;
         int n_layers = 32;
@@ -465,27 +464,42 @@ class DeltaServerWrapper {
         } catch (...) {}
 
         if (model_size_bytes > 0) {
-            auto plan = hw_monitor_.plan_offload(model_size_bytes, n_layers, ctx_size);
-
-            int ngl = plan.all_layers ? 999 : plan.ngl;
+            auto plan = hw_monitor_.plan_tiered_offload(model_size_bytes, n_layers, ctx_size);
+            
+            int ngl = plan.ngl;
             if (ngl_override_ >= 0) {
                 ngl = std::min(ngl, ngl_override_);
             }
             last_ngl_ = ngl;
 
-            if (plan.cpu_only || ngl <= 0) {
+            if (plan.cpu_only && ngl == 0) {
                 cmd += " -ngl 0";
-                std::cout << "[DHATS] Plan: CPU-only (GPU memory budget exhausted)." << std::endl;
+                std::cout << "[DHATS] CPU-only mode (no GPU available or insufficient VRAM)." << std::endl;
+            } else if (plan.all_layers) {
+                cmd += " -ngl 999";
+                cmd += " --batch-size " + std::to_string(plan.batch);
+                cmd += " --ubatch-size " + std::to_string(plan.ubatch);
+                std::cout << "[DHATS] All layers on GPU (" << plan.gpu_layers << " layers, " 
+                          << std::fixed << std::setprecision(1) << plan.gpu_mem_needed << "GB)" << std::endl;
             } else {
                 cmd += " -ngl " + std::to_string(ngl);
                 cmd += " --batch-size " + std::to_string(plan.batch);
                 cmd += " --ubatch-size " + std::to_string(plan.ubatch);
-                std::cout << "[DHATS] Plan: -ngl " << ngl << ", batch " << plan.batch
-                          << "/" << plan.ubatch << " (budget " << std::fixed << std::setprecision(1)
-                          << plan.budget_gb << "GB, available " << plan.available_gb << "GB)" << std::endl;
+                std::cout << "[DHATS] Split offload: " << plan.gpu_layers << " layers on GPU ("
+                          << std::fixed << std::setprecision(1) << plan.gpu_mem_needed << "GB), "
+                          << plan.cpu_layers << " layers on CPU (" << plan.cpu_mem_needed << "GB)" << std::endl;
             }
 
-            delta::report_heal(heal_count_, ngl, last_heal_reason_);
+            // Log efficiency warning
+            if (!plan.efficient && !plan.efficiency_warning.empty()) {
+                std::cerr << "[DHATS] ⚠ " << plan.efficiency_warning << std::endl;
+                if (!plan.recommendation.empty()) {
+                    std::cerr << "[DHATS] Recommendation: " << plan.recommendation << std::endl;
+                }
+                delta::report_heal(heal_count_, ngl, plan.efficiency_warning);
+            } else {
+                delta::report_heal(heal_count_, ngl, "");
+            }
         }
 
         return cmd;

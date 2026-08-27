@@ -11,6 +11,10 @@
   #define DELTA_DLOPEN(lib)     LoadLibraryA(lib)
   #define DELTA_DLSYM(h, sym)   GetProcAddress((HMODULE)h, sym)
   #define DELTA_DLCLOSE(h)      FreeLibrary((HMODULE)h)
+  #include <wbemidl.h>
+  #include <comdef.h>
+  #pragma comment(lib, "wbemuuid.lib")
+  #pragma comment(lib, "oleaut32.lib")
 #else
   #include <dlfcn.h>
   #define DELTA_DLOPEN(lib)     dlopen(lib, RTLD_LAZY)
@@ -80,10 +84,108 @@ static rsmi_dev_temp_metric_get_t g_rsmi_temp = nullptr;
 static rsmi_dev_power_ave_get_t g_rsmi_power = nullptr;
 
 // ============================================================
-// Apple GPU Utilization Helper (Best-effort via IOKit)
+// Apple GPU Utilization & SMC Helpers
 // ============================================================
 
 #ifdef __APPLE__
+#define SMC_KERNEL_INDEX 2
+#pragma pack(push, 1)
+struct SMCVersion  { UInt8 major, minor, build, reserved; UInt16 release; };
+struct SMCPLimit   { UInt16 version, length; UInt32 cpu, gpu, mem; };
+struct SMCVector   { UInt8 v0, v1, v2; };
+struct SMCKeyVal   { UInt32 dataType; UInt8 dataAttributes; UInt8 dataSize; UInt8 data[32]; };
+struct SMCParam    { UInt32 key; SMCVersion vers; SMCPLimit pLimit; SMCVector v8r; SMCKeyVal keyData; };
+#pragma pack(pop)
+
+// Parse any SMC temperature encoding (sp78/sp87/fpe2/ui8/ui16/si16)
+static float parse_smc_temp(const SMCKeyVal& kv) {
+    if (kv.dataSize < 1) return 0.0f;
+    const uint8_t* d = kv.data;
+    char cc[5] = {(char)((kv.dataType >> 24) & 0xFF), (char)((kv.dataType >> 16) & 0xFF),
+                  (char)((kv.dataType >> 8) & 0xFF), (char)(kv.dataType & 0xFF), 0};
+    if (strncmp(cc, "fpe2", 4) == 0 && kv.dataSize >= 2) return (float)(((d[0] << 8) | d[1]) / 4.0f);
+    if (strncmp(cc, "ui8", 3) == 0)  return (float)d[0];
+    if (strncmp(cc, "ui16", 4) == 0 && kv.dataSize >= 2) return (float)((d[0] << 8) | d[1]);
+    if (strncmp(cc, "si16", 4) == 0 && kv.dataSize >= 2) return (float)(int16_t)((d[0] << 8) | d[1]);
+    if (kv.dataSize >= 2) return (float)(int8_t)d[0] + (float)d[1] / 256.0f; // sp78/sp87
+    return 0.0f;
+}
+
+static float smc_cpu_temp_c() {
+    io_service_t svc = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"));
+    if (!svc) return 0.0f;
+    io_connect_t conn = 0;
+    if (IOServiceOpen(svc, mach_task_self(), 0, &conn) != KERN_SUCCESS) { IOObjectRelease(svc); return 0.0f; }
+
+    // Intel CPU keys first, then Apple Silicon SoC/PMIC/proximity sensors
+    static const char* keys[] = {
+        "TC0D","TC0P","TC1D","TC1P","TC0E","TC0F",                 // Intel
+        "Tp0P","Tp1P","Tp2P","Tp3P","Tp4P","Tp5P",                 // M-series PMIC/SoC
+        "Tb0P","Tb1P","Tb2P","Te0P","Te1P","Te2P","Te3P",          // battery/efficiency
+        "Tm0P","Tm1P","Tm2P","Ta0P","Ta1P","Th0P","Th1P","Th2P",   // memory/ane/heat-pipe
+        nullptr };
+
+    static std::vector<const char*> good;   // cache keys that returned sane values
+    float best = 0.0f;
+
+    auto try_key = [&](const char* k) {
+        SMCParam in{}, out{};
+        size_t outSize = sizeof(out);
+        in.key = ((UInt32)k[0] << 24) | ((UInt32)k[1] << 16) | ((UInt32)k[2] << 8) | (UInt32)k[3];
+        if (IOConnectCallStructMethod(conn, SMC_KERNEL_INDEX, &in, sizeof(in), &out, &outSize) == KERN_SUCCESS) {
+            float t = parse_smc_temp(out.keyData);
+            if (t > 1.0f && t < 110.0f) {
+                if (std::find(good.begin(), good.end(), k) == good.end()) good.push_back(k);
+                if (t > best) best = t;
+            }
+        }
+    };
+
+    if (!good.empty()) { for (auto k : good) try_key(k); }        // fast path after first hit
+    else               { for (int i = 0; keys[i]; i++) try_key(keys[i]); }
+
+    IOServiceClose(conn);
+    IOObjectRelease(svc);
+    return best;   // hottest real sensor; 0 only if the OS exposes nothing
+}
+
+// Apple Silicon fallback: read HID temperature services (real sensor events)
+static float hid_max_temp_c() {
+    void* iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY);
+    if (!iokit) return 0.0f;
+    typedef void* (*create_t)(CFAllocatorRef, int, CFDictionaryRef);
+    typedef CFArrayRef (*copy_services_t)(void*);
+    typedef void* (*copy_event_t)(void*, int, int32_t, uint64_t);
+    typedef double (*get_float_t)(void*, int);
+    create_t      create = (create_t)dlsym(iokit, "IOHIDEventSystemClientCreateWithType");
+    copy_services_t copyS = (copy_services_t)dlsym(iokit, "IOHIDEventSystemClientCopyServices");
+    copy_event_t  copyE = (copy_event_t)dlsym(iokit, "IOHIDEventServiceClientCopyEvent");
+    get_float_t   getF  = (get_float_t)dlsym(iokit, "IOHIDEventGetFloatValue");
+    float best = 0.0f;
+    if (create && copyS && copyE && getF) {
+        void* client = create(kCFAllocatorDefault, 0, NULL);
+        if (client) {
+            CFArrayRef services = copyS(client);
+            if (services) {
+                CFIndex n = CFArrayGetCount(services);
+                for (CFIndex i = 0; i < n; i++) {
+                    void* svc = (void*)CFArrayGetValueAtIndex(services, i);
+                    void* ev = copyE(svc, 15 /*kIOHIDEventTypeTemperature*/, 0, 0);
+                    if (ev) {
+                        double t = getF(ev, (15 << 16) | 0x1);   // temperature field
+                        if (t > 0.0 && t < 110.0 && t > best) best = (float)t;
+                        CFRelease(ev);
+                    }
+                }
+                CFRelease(services);
+            }
+            CFRelease(client);
+        }
+    }
+    dlclose(iokit);
+    return best;
+}
+
 static int apple_gpu_utilization_pct() {
     io_iterator_t iter;
     if (IOServiceGetMatchingServices(kIOMainPortDefault,
@@ -107,6 +209,49 @@ static int apple_gpu_utilization_pct() {
     }
     IOObjectRelease(iter);
     return util;
+}
+#endif
+
+// ============================================================
+// Windows CPU Temp via WMI
+// ============================================================
+
+#ifdef _WIN32
+static float wmi_cpu_temp_c() {
+    float temp = 0.0f;
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    bool own = SUCCEEDED(hr);
+    IWbemLocator* loc = nullptr;
+    if (SUCCEEDED(CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER,
+                                   IID_IWbemLocator, (void**)&loc))) {
+        IWbemServices* svc = nullptr;
+        if (SUCCEEDED(loc->ConnectServer(_bstr_t(L"root\\WMI"), nullptr, nullptr, 0,
+                                         0, 0, 0, &svc))) {
+            CoSetProxyBlanket(svc, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, nullptr,
+                              RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE);
+            IEnumWbemClassObject* en = nullptr;
+            if (SUCCEEDED(svc->ExecQuery(_bstr_t(L"WQL"),
+                    _bstr_t(L"SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature"),
+                    WBEM_FLAG_FORWARD_ONLY, nullptr, &en))) {
+                IWbemClassObject* obj = nullptr;
+                ULONG n = 0;
+                long long sum = 0; int cnt = 0;
+                while (en->Next(WBEM_INFINITE, 1, &obj, &n) == S_OK && obj) {
+                    VARIANT v; VariantInit(&v);
+                    if (SUCCEEDED(obj->Get(L"CurrentTemperature", 0, &v, 0, 0))) {
+                        sum += v.llVal; cnt++; VariantClear(&v);   // tenths of Kelvin
+                    }
+                    obj->Release();
+                }
+                if (cnt) temp = (float)((sum / (double)cnt) / 10.0 - 273.15);
+                en->Release();
+            }
+            svc->Release();
+        }
+        loc->Release();
+    }
+    if (own) CoUninitialize();
+    return temp;
 }
 #endif
 
@@ -287,63 +432,62 @@ float HardwareMonitor::collect_cpu_util_pct() {
 }
 
 float HardwareMonitor::collect_cpu_temp_c() {
-#if defined(__linux__)
-    for (int z = 0; z < 20; z++) {
-        std::ifstream f("/sys/class/thermal/thermal_zone" + std::to_string(z) + "/temp");
-        if (!f) continue;
-        long long t = 0; f >> t;
-        if (t > 0) return (float)(t / 1000.0);
-    }
-    return 0.0f;
+#if defined(_WIN32)
+    return wmi_cpu_temp_c();
 #elif defined(__APPLE__)
-    io_service_t bat = IOServiceGetMatchingService(kIOMainPortDefault,
-                                                   IOServiceMatching("AppleSmartBattery"));
-    if (!bat) return 0.0f;
-    float t = 0.0f;
-    CFNumberRef num = (CFNumberRef)IORegistryEntryCreateCFProperty(
-        bat, CFSTR("Temperature"), kCFAllocatorDefault, kNilOptions);
-    if (num) {
-        int v = 0;
-        CFNumberGetValue(num, kCFNumberIntType, &v);
-        t = (float)(v / 100.0);
-        CFRelease(num);
-    }
-    IOObjectRelease(bat);
-    return t;
+    float t = smc_cpu_temp_c();      // Intel keys or M-series SMC sensors
+    if (t <= 0.0f) t = hid_max_temp_c();  // HID temperature services (Apple Silicon)
+    return t;                        // 0 only if macOS truly hides every sensor
 #else
-    return 0.0f;
+    float best = 0.0f;
+    for (int z = 0; z < 20; z++) {
+        std::ifstream t("/sys/class/thermal/thermal_zone" + std::to_string(z) + "/temp");
+        if (!t) continue;
+        long long v = 0; t >> v;
+        if (v > 0) { float c = v / 1000.0f; if (c > best) best = c; }
+    }
+    return best;
 #endif
 }
 
 float HardwareMonitor::collect_system_power_w() {
 #if defined(__linux__)
-    static long long prev_energy = 0;
-    static auto prev_time = std::chrono::steady_clock::now();
+    static long long prev_e = 0; static auto prev_t = std::chrono::steady_clock::now();
     std::ifstream f("/sys/class/powercap/intel-rapl:0/energy_uj");
     if (!f) return 0.0f;
     long long e = 0; f >> e;
     auto now = std::chrono::steady_clock::now();
-    double secs = std::chrono::duration<double>(now - prev_time).count();
-    float watts = 0.0f;
-    if (prev_energy && secs > 0) watts = (float)((e - prev_energy) / 1e6 / secs);
-    prev_energy = e; prev_time = now;
-    return watts;
+    double s = std::chrono::duration<double>(now - prev_t).count();
+    float w = (prev_e && s > 0) ? (float)((e - prev_e) / 1e6 / s) : 0.0f;
+    prev_e = e; prev_t = now;
+    return w;
 #elif defined(__APPLE__)
-    io_service_t bat = IOServiceGetMatchingService(kIOMainPortDefault,
-                                                   IOServiceMatching("AppleSmartBattery"));
-    if (!bat) return 0.0f;
-    int amp = 0, volt = 0, external = 1;
-    CFNumberRef a = (CFNumberRef)IORegistryEntryCreateCFProperty(bat, CFSTR("Amperage"), kCFAllocatorDefault, kNilOptions);
-    CFNumberRef v = (CFNumberRef)IORegistryEntryCreateCFProperty(bat, CFSTR("Voltage"), kCFAllocatorDefault, kNilOptions);
-    CFBooleanRef ext = (CFBooleanRef)IORegistryEntryCreateCFProperty(bat, CFSTR("ExternalConnected"), kCFAllocatorDefault, kNilOptions);
-    if (a) { CFNumberGetValue(a, kCFNumberIntType, &amp); CFRelease(a); }
-    if (v) { CFNumberGetValue(v, kCFNumberIntType, &volt); CFRelease(v); }
-    if (ext) { external = CFBooleanGetValue(ext); CFRelease(ext); }
-    IOObjectRelease(bat);
-    if (external) return 0.0f;
-    return (float)(std::abs(amp) * volt / 1e6);
+    // Battery discharge watts (real). On AC, Apple exposes no public system-power
+    // sensor, so fall through to GPU power below.
+    io_service_t bat = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"));
+    if (bat) {
+        int amp = 0, volt = 0, ext = 1;
+        CFNumberRef a = (CFNumberRef)IORegistryEntryCreateCFProperty(bat, CFSTR("Amperage"), kCFAllocatorDefault, kNilOptions);
+        CFNumberRef v = (CFNumberRef)IORegistryEntryCreateCFProperty(bat, CFSTR("Voltage"), kCFAllocatorDefault, kNilOptions);
+        CFBooleanRef e = (CFBooleanRef)IORegistryEntryCreateCFProperty(bat, CFSTR("ExternalConnected"), kCFAllocatorDefault, kNilOptions);
+        if (a) { CFNumberGetValue(a, kCFNumberIntType, &amp); CFRelease(a); }
+        if (v) { CFNumberGetValue(v, kCFNumberIntType, &volt); CFRelease(v); }
+        if (e) { ext = CFBooleanGetValue(e); CFRelease(e); }
+        IOObjectRelease(bat);
+        if (!ext && amp && volt) return (float)(std::abs(amp) * volt / 1e6);
+    }
+    // Discrete-GPU Macs: sum real GPU power (NVML) as the measurable draw
+    {
+        float p = 0.0f; std::vector<GPUMetrics> g; collect_nvidia_metrics(g);
+        for (auto& x : g) p += x.power_w;
+        return p;
+    }
 #else
-    return 0.0f;
+    // Windows: use real GPU power (NVML/ROCm) which dominates the draw on GPU machines.
+    float p = 0.0f; std::vector<GPUMetrics> g;
+    collect_nvidia_metrics(g); collect_amd_metrics(g);
+    for (auto& x : g) p += x.power_w;
+    return p;
 #endif
 }
 
@@ -461,7 +605,13 @@ void HardwareMonitor::collect_apple_metrics(std::vector<GPUMetrics>& out) {
         gpu.gpu_util_pct = apple_gpu_utilization_pct();
     } else {
         gpu.name = "Intel Mac GPU";
-        gpu.gpu_util_pct = 0;
+        io_service_t acc = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOAccelerator"));
+        if (acc) {
+            CFNumberRef tot = (CFNumberRef)IORegistryEntryCreateCFProperty(acc, CFSTR("VRAM,totalMB"), kCFAllocatorDefault, kNilOptions);
+            if (tot) { int mb = 0; CFNumberGetValue(tot, kCFNumberIntType, &mb); gpu.vram_total_gb = mb / 1024.0f; CFRelease(tot); }
+            gpu.gpu_util_pct = apple_gpu_utilization_pct();
+            IOObjectRelease(acc);
+        }
     }
     
     gpu.temp_c = 0.0f;
@@ -500,87 +650,68 @@ void HardwareMonitor::collect_amd_metrics(std::vector<GPUMetrics>& out) {
 }
 
 // ============================================================
-// DHATS Brain: GPU Memory Budget & Offload Planner
+// DHATS Brain: Live Available VRAM & Offload Planner
 // ============================================================
 
-float HardwareMonitor::gpu_budget_gb() const {
-#ifdef __APPLE__
-    // Metal's recommendedMaxWorkingSetSize is the real GPU budget on Apple Silicon
-    // (typically ~5.4 GB on an 8 GB M1, not the full 8 GB)
-    typedef void* (*mtl_create_device_t)(void);
-    typedef unsigned long long (*send_ulonglong_t)(void*, SEL);
-    
-    void* mtl_lib = dlopen("/System/Library/Frameworks/Metal.framework/Metal", RTLD_LAZY);
-    if (mtl_lib) {
-        auto create_fn = (mtl_create_device_t)dlsym(mtl_lib, "MTLCreateSystemDefaultDevice");
-        if (create_fn) {
-            void* dev = create_fn();
-            if (dev) {
-                auto msg_fn = (send_ulonglong_t)&objc_msgSend;
-                unsigned long long ws = msg_fn(dev, sel_registerName("recommendedMaxWorkingSetSize"));
-                if (ws > 0) {
-                    dlclose(mtl_lib);
-                    return (float)(ws / (1024.0 * 1024.0 * 1024.0));
-                }
-            }
-        }
-        dlclose(mtl_lib);
-    }
-    
-    // Fallback: 70% of system RAM (conservative estimate)
-    int64_t memsize = 0; size_t len = sizeof(memsize);
-    int mib[2] = {CTL_HW, HW_MEMSIZE};
-    if (sysctl(mib, 2, &memsize, &len, NULL, 0) == 0)
-        return 0.7f * (float)(memsize / (1024.0 * 1024.0 * 1024.0));
-    return 0.0f;
-#else
-    // Discrete GPUs: sum VRAM from NVML or ROCm
-    float total = 0.0f;
-    if (nvml_available_ && g_nvmlDeviceGetCount) {
+float HardwareMonitor::gpu_available_gb() const {
+    float avail = 0.0f;
+    if (nvml_available_ && g_nvmlDeviceGetCount) {                 // NVIDIA: real free VRAM
         unsigned int c = 0;
-        if (g_nvmlDeviceGetCount(&c) == NVML_SUCCESS) {
+        if (g_nvmlDeviceGetCount(&c) == NVML_SUCCESS)
             for (unsigned int i = 0; i < c; i++) {
                 void* d = nullptr;
                 if (g_nvmlDeviceGetHandle(i, &d) == NVML_SUCCESS) {
                     nvmlMemory_t m;
                     if (g_nvmlDeviceGetMemoryInfo(d, &m) == NVML_SUCCESS)
-                        total += (float)(m.total / (1024.0 * 1024.0 * 1024.0));
+                        avail += (float)((m.total - m.used) / (1024.0 * 1024.0 * 1024.0));
                 }
             }
-        }
-    } else if (rocm_available_ && g_rsmi_num_devices) {
-        uint32_t c = 0;
-        if (g_rsmi_num_devices(&c) == 0) {
-            for (uint32_t i = 0; i < c; i++) {
-                uint64_t t = 0;
-                if (g_rsmi_mem_total && g_rsmi_mem_total(i, 0, &t) == 0)
-                    total += (float)(t / (1024.0 * 1024.0 * 1024.0));
-            }
-        }
+        return avail;
     }
-    return total;
+    if (rocm_available_ && g_rsmi_num_devices) {                   // AMD: real free VRAM
+        uint32_t c = 0;
+        if (g_rsmi_num_devices(&c) == 0)
+            for (uint32_t i = 0; i < c; i++) {
+                uint64_t t = 0, u = 0;
+                if (g_rsmi_mem_total && g_rsmi_mem_total(i, 0, &t) == 0 &&
+                    g_rsmi_mem_used  && g_rsmi_mem_used (i, 0, &u) == 0)
+                    avail += (float)((t - u) / (1024.0 * 1024.0 * 1024.0));
+            }
+        return avail;
+    }
+#ifdef __APPLE__
+    if (metal_available_) {                                        // Apple: live unified headroom
+        int64_t memsize = 0; size_t len = sizeof(memsize);
+        int mib[2] = {CTL_HW, HW_MEMSIZE};
+        if (sysctl(mib, 2, &memsize, &len, NULL, 0) != 0) return 0.0f;
+        float total = (float)(memsize / (1024.0 * 1024.0 * 1024.0));
+        mach_msg_type_number_t cnt = HOST_VM_INFO64_COUNT;
+        vm_statistics64_data_t vm;
+        float used = 0.0f;
+        if (host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vm, &cnt) == KERN_SUCCESS) {
+            vm_size_t ps; host_page_size(mach_host_self(), &ps);
+            used = (float)((vm.active_count + vm.wire_count + vm.compressor_page_count) * ps
+                           / (1024.0 * 1024.0 * 1024.0));
+        }
+        float cap = total * 0.7f;   // Metal working-set cap ≈ 70% of unified memory
+        float free_vram = cap - used;          // shrinks in real time as ANY app uses memory
+        return free_vram > 0.0f ? free_vram : 0.0f;
+    }
 #endif
+    return 0.0f;
 }
+
+float HardwareMonitor::gpu_budget_gb() const { return gpu_available_gb(); } // budget == live free VRAM
 
 OffloadPlan HardwareMonitor::plan_offload(long long model_size_bytes, int n_layers, int ctx_size) const {
     OffloadPlan p;
     if (n_layers <= 0) n_layers = 32;
     if (!has_gpu()) { p.cpu_only = true; return p; }
 
-    // Get current system memory usage
-    float used = 0.0f;
-#ifdef __APPLE__
-    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
-    vm_statistics64_data_t vmstat;
-    if (host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vmstat, &count) == KERN_SUCCESS) {
-        vm_size_t ps; host_page_size(mach_host_self(), &ps);
-        used = (float)((vmstat.active_count + vmstat.wire_count) * ps / (1024.0 * 1024.0 * 1024.0));
-    }
-#endif
-
     const float headroom = 1.0f; // Safety margin for OS / UI / Metal driver
-    p.budget_gb = gpu_budget_gb();
-    p.available_gb = p.budget_gb - used - headroom;
+    float free_vram = gpu_available_gb();        // already accounts for other apps/tasks
+    p.budget_gb    = free_vram;
+    p.available_gb = free_vram - headroom;
 
     float model_gb = (float)(model_size_bytes / (1024.0 * 1024.0 * 1024.0));
     
@@ -641,6 +772,147 @@ std::string HardwareMonitor::get_primary_backend() const {
     if (metal_available_) return "Metal (Apple)";
     if (rocm_available_) return "ROCm (AMD)";
     return "CPU";
+}
+
+OffloadPlan HardwareMonitor::plan_tiered_offload(long long model_size_bytes, int n_layers, int ctx_size) const {
+    OffloadPlan p;
+    if (n_layers <= 0) n_layers = 32;
+    
+    float model_gb = (float)(model_size_bytes / (1024.0 * 1024.0 * 1024.0));
+    float kv_gb = (4.0f * (float)ctx_size * 1024.0f * (float)n_layers) / (1024.0 * 1024.0 * 1024.0f);
+    
+    // Get available resources
+    float gpu_free = gpu_available_gb();
+    float ram_total = const_cast<HardwareMonitor*>(this)->collect_system_ram_total_gb();
+    float ram_used = const_cast<HardwareMonitor*>(this)->collect_system_ram_used_gb();
+    float ram_free = ram_total - ram_used - 2.0f; // 2GB headroom for OS
+    
+    // Adaptive batch sizing
+    struct BS { int ubatch, batch; float scratch; };
+    const BS opt[3] = {{512, 1024, 0.3f}, {1024, 2048, 0.6f}, {2048, 4096, 1.2f}};
+    
+    // Tier 1: Can everything fit in GPU?
+    for (int i = 2; i >= 0; i--) {
+        float gpu_needed = model_gb + kv_gb + opt[i].scratch;
+        if (gpu_needed <= gpu_free) {
+            p.gpu_layers = n_layers;
+            p.cpu_layers = 0;
+            p.gpu_mem_needed = gpu_needed;
+            p.cpu_mem_needed = 0;
+            p.ngl = 999;
+            p.all_layers = true;
+            p.batch = opt[i].batch;
+            p.ubatch = opt[i].ubatch;
+            p.budget_gb = gpu_free;
+            p.available_gb = gpu_free - gpu_needed;
+            p.efficient = true;
+            return p;
+        }
+    }
+    
+    // Tier 2: Split between GPU and CPU/RAM
+    if (gpu_free > 0 && has_gpu()) {
+        // Calculate optimal split: put as many layers on GPU as possible
+        float per_layer = model_gb / (float)n_layers;
+        float gpu_for_layers = gpu_free - kv_gb - 0.3f; // Reserve for KV + scratch
+        int layers_on_gpu = std::max(0, std::min(n_layers, (int)(gpu_for_layers / per_layer)));
+        int layers_on_cpu = n_layers - layers_on_gpu;
+        
+        float gpu_mem = (per_layer * layers_on_gpu) + kv_gb + 0.3f;
+        float cpu_mem = per_layer * layers_on_cpu;
+        
+        // Check if CPU has enough RAM
+        if (cpu_mem <= ram_free) {
+            p.gpu_layers = layers_on_gpu;
+            p.cpu_layers = layers_on_cpu;
+            p.gpu_mem_needed = gpu_mem;
+            p.cpu_mem_needed = cpu_mem;
+            p.ngl = layers_on_gpu;
+            p.all_layers = false;
+            p.batch = 512; // Smaller batch for split offload
+            p.ubatch = 512;
+            p.budget_gb = gpu_free;
+            p.available_gb = gpu_free - gpu_mem;
+            
+            // Efficiency warning: split offload is slower
+            if (layers_on_cpu > n_layers / 2) {
+                p.efficient = false;
+                p.efficiency_warning = "Most layers on CPU — generation will be slow. " +
+                    std::to_string(layers_on_gpu) + " of " + std::to_string(n_layers) + 
+                    " layers on GPU.";
+                p.recommendation = "Use a smaller model or quantization (Q4/Q5) for better speed.";
+            } else {
+                p.efficient = true;
+                p.efficiency_warning = "";
+                p.recommendation = "";
+            }
+            return p;
+        }
+    }
+    
+    // Tier 3: CPU-only fallback
+    if (model_gb + kv_gb <= ram_free) {
+        p.gpu_layers = 0;
+        p.cpu_layers = n_layers;
+        p.gpu_mem_needed = 0;
+        p.cpu_mem_needed = model_gb + kv_gb;
+        p.ngl = 0;
+        p.all_layers = false;
+        p.cpu_only = true;
+        p.batch = 512;
+        p.ubatch = 512;
+        p.efficient = false;
+        p.efficiency_warning = "Running entirely on CPU — will be very slow.";
+        p.recommendation = "Use a smaller quantized model (Q4_K_M or Q5_K_M) for acceptable CPU speed.";
+        return p;
+    }
+    
+    // Cannot fit anywhere
+    p.gpu_layers = 0;
+    p.cpu_layers = 0;
+    p.ngl = 0;
+    p.cpu_only = true;
+    p.efficient = false;
+    p.efficiency_warning = "Model too large for available memory. Needs " + 
+        std::to_string((int)model_gb) + "GB but only " + 
+        std::to_string((int)gpu_free) + "GB GPU + " + 
+        std::to_string((int)ram_free) + "GB RAM available.";
+    p.recommendation = "Use a smaller model or lower quantization. Try models under " + 
+        std::to_string((int)(gpu_free + ram_free - 2.0f)) + "GB.";
+    return p;
+}
+
+bool HardwareMonitor::can_run_efficiently(long long model_size_bytes, int n_layers, int ctx_size) const {
+    OffloadPlan p = plan_tiered_offload(model_size_bytes, n_layers, ctx_size);
+    return p.efficient && (p.gpu_layers > 0 || !p.cpu_only);
+}
+
+std::vector<std::string> HardwareMonitor::get_recommended_model_sizes() const {
+    std::vector<std::string> recs;
+    float gpu_free = gpu_available_gb();
+    float ram_total = const_cast<HardwareMonitor*>(this)->collect_system_ram_total_gb();
+    float ram_used = const_cast<HardwareMonitor*>(this)->collect_system_ram_used_gb();
+    float ram_free = ram_total - ram_used - 2.0f;
+    
+    float total_budget = gpu_free + ram_free;
+    
+    if (gpu_free > 0) {
+        if (gpu_free >= 8.0f) recs.push_back("7B models (Q4_K_M, Q5_K_M)");
+        if (gpu_free >= 16.0f) recs.push_back("13B models (Q4_K_M)");
+        if (gpu_free >= 24.0f) recs.push_back("30B models (Q4_K_M)");
+        if (gpu_free >= 40.0f) recs.push_back("65B models (Q4_K_M)");
+    }
+    
+    if (recs.empty() && total_budget > 0) {
+        if (total_budget >= 8.0f) recs.push_back("3B models (Q4_K_M) for CPU");
+        if (total_budget >= 12.0f) recs.push_back("7B models (Q4_K_M) for CPU");
+    }
+    
+    if (recs.empty()) {
+        recs.push_back("Use quantized models under " + std::to_string((int)total_budget) + "GB");
+    }
+    
+    return recs;
 }
 
 } // namespace delta

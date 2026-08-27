@@ -55,6 +55,15 @@ struct OffloadPlan {
     float budget_gb = 0.0f;    // GPU-visible memory budget
     float available_gb = 0.0f; // budget - in-use - headroom
     bool cpu_only = false;
+    
+    // NEW: Multi-tier distribution
+    int gpu_layers = 0;        // Layers on GPU
+    int cpu_layers = 0;        // Layers on CPU/RAM
+    float gpu_mem_needed = 0.0f;  // GB needed on GPU
+    float cpu_mem_needed = 0.0f;  // GB needed on CPU/RAM
+    bool efficient = true;     // Can run efficiently
+    std::string efficiency_warning;  // Why it won't be efficient
+    std::string recommendation;      // Suggested alternative
 };
 
 // ============================================================
@@ -86,6 +95,7 @@ public:
      * total VRAM on discrete GPUs). Returns 0 if no GPU detected.
      */
     float gpu_budget_gb() const;
+    float gpu_available_gb() const;
 
     /**
      * DHATS Brain: Plan optimal offload configuration based on model size,
@@ -103,6 +113,22 @@ public:
      * Returns the detected backend name for logging.
      */
     std::string get_primary_backend() const;
+
+    /**
+     * Intelligent multi-tier offload: distribute model across GPU VRAM + CPU/RAM.
+     * Returns optimal split and warns if model won't run efficiently.
+     */
+    OffloadPlan plan_tiered_offload(long long model_size_bytes, int n_layers, int ctx_size) const;
+    
+    /**
+     * Check if a model can run efficiently on this hardware.
+     */
+    bool can_run_efficiently(long long model_size_bytes, int n_layers, int ctx_size) const;
+    
+    /**
+     * Get list of recommended models for this hardware.
+     */
+    std::vector<std::string> get_recommended_model_sizes() const;
 
 private:
     // Platform-specific probes (Dynamic Telemetry Loading)
