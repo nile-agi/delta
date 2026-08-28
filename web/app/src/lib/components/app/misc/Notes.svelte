@@ -1,30 +1,31 @@
 <script lang="ts">
-import { onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { notesStore, type Note } from '$lib/stores/notes.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import Input from '$lib/components/ui/input/input.svelte';
 	import Textarea from '$lib/components/ui/textarea/textarea.svelte';
-	let { fullscreen = false } = $props();
-	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
 	import {
-		Plus, Trash2, FileText, Bold, Italic, Underline, Highlighter,
-		Type, Heading1, Heading2, Heading3, Text, Code, List,
+		Plus, Trash2, FileText, Bold, Italic, Underline, Strikethrough,
+		Highlighter, Type, Heading1, Heading2, Heading3, Text, Code, List,
 		ListOrdered, ListChecks, Quote, Table, Image as ImageIcon, Paperclip,
-		Pencil, Share2, MoreHorizontal, Pin, Palette, Smile,
-		Download, Printer, X, Minus, ChevronDown, Sparkles,
-		ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Trash, GripVertical
+		Pencil, Share2, MoreHorizontal, Pin, Palette, Smile, Download,
+		Printer, X, Minus, ChevronDown, Sparkles, Search, FolderOpen, Tag,
+		GripVertical, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Trash,
+		Check, Link, Undo2, Redo2, Eye, EyeOff
 	} from '@lucide/svelte';
-	import FloatingWindow from './FloatingWindow.svelte';
 
+	let { fullscreen = false } = $props();
+
+	// State
 	let search = $state('');
+	let selectedFolder = $state<string | null>(null);
 	let editorRef = $state<HTMLDivElement | null>(null);
-	let showStyleMenu = $state(false);
-	let showMoreMenu = $state(false);
-	let showTableDialog = $state(false);
-	let showSketchModal = $state(false);
+	let showToolbar = $state(true);
 	let showColorPicker = $state(false);
 	let showEmojiPicker = $state(false);
+	let showTableDialog = $state(false);
+	let showSketchModal = $state(false);
 	let showExportToast = $state(false);
 	let exportToastMsg = $state('');
 	let tableRows = $state(3);
@@ -42,6 +43,7 @@ import { onDestroy } from 'svelte';
 	let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 	let exportToastTimeout: ReturnType<typeof setTimeout> | null = null;
 
+	// Dialog positions
 	let tableDlgX = $state(0);
 	let tableDlgY = $state(0);
 	let tableDlgDragging = $state(false);
@@ -53,25 +55,30 @@ import { onDestroy } from 'svelte';
 	let sketchDlgDragOffX = $state(0);
 	let sketchDlgDragOffY = $state(0);
 
-	const emojis = ['📝', '💡', '🔥', '⭐', '❤️', '⚡', '📌', '✅', '🔔', '🎨', '💼', '📚', '🎯', '🚀', '💻', '🏠', '❓', '💰'];
+	// Constants
+	const emojis = ['📝', '💡', '🔥', '⭐', '❤️', '⚡', '📌', '✅', '🔔', '🎨', '💼', '📚', '🎯', '🚀', '💻', '🏠'];
 
 	const noteColors = [
-		{ name: 'Default', value: null, border: '' },
-		{ name: 'Red', value: 'red', border: 'border-l-red-400' },
-		{ name: 'Orange', value: 'orange', border: 'border-l-orange-400' },
-		{ name: 'Yellow', value: 'yellow', border: 'border-l-yellow-400' },
-		{ name: 'Green', value: 'green', border: 'border-l-green-400' },
-		{ name: 'Blue', value: 'blue', border: 'border-l-blue-400' },
-		{ name: 'Purple', value: 'purple', border: 'border-l-purple-400' },
-		{ name: 'Pink', value: 'pink', border: 'border-l-pink-400' },
+		{ name: 'Default', value: null, bg: 'bg-transparent', border: 'border-transparent' },
+		{ name: 'Red', value: 'red', bg: 'bg-red-50 dark:bg-red-950/20', border: 'border-red-400' },
+		{ name: 'Orange', value: 'orange', bg: 'bg-orange-50 dark:bg-orange-950/20', border: 'border-orange-400' },
+		{ name: 'Yellow', value: 'yellow', bg: 'bg-yellow-50 dark:bg-yellow-950/20', border: 'border-yellow-400' },
+		{ name: 'Green', value: 'green', bg: 'bg-green-50 dark:bg-green-950/20', border: 'border-green-400' },
+		{ name: 'Blue', value: 'blue', bg: 'bg-blue-50 dark:bg-blue-950/20', border: 'border-blue-400' },
+		{ name: 'Purple', value: 'purple', bg: 'bg-purple-50 dark:bg-purple-950/20', border: 'border-purple-400' },
+		{ name: 'Pink', value: 'pink', bg: 'bg-pink-50 dark:bg-pink-950/20', border: 'border-pink-400' },
 	];
 
+	// Derived state
 	let filteredNotes = $derived(
 		notesStore.notes
-			.filter(n =>
-				n.title.toLowerCase().includes(search.toLowerCase()) ||
-				(n.content || '').toLowerCase().includes(search.toLowerCase())
-			)
+			.filter(n => {
+				const matchesSearch =
+					n.title.toLowerCase().includes(search.toLowerCase()) ||
+					(n.content || '').toLowerCase().includes(search.toLowerCase());
+				const matchesFolder = !selectedFolder || (n as any).folder === selectedFolder;
+				return matchesSearch && matchesFolder;
+			})
 			.sort((a, b) => {
 				if (a.pinned && !b.pinned) return -1;
 				if (!a.pinned && b.pinned) return 1;
@@ -80,7 +87,9 @@ import { onDestroy } from 'svelte';
 	);
 
 	let activeNote = $derived(notesStore.activeNote);
+	let folders = $derived([...new Set(notesStore.notes.map(n => (n as any).folder).filter(Boolean))] as string[]);
 
+	// Dialog helpers
 	function centerDialog() {
 		tableDlgX = Math.max(20, window.innerWidth / 2 - 160);
 		tableDlgY = Math.max(20, window.innerHeight / 2 - 120);
@@ -128,6 +137,7 @@ import { onDestroy } from 'svelte';
 		if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
 	}
 
+	// Editor functions
 	function updateCounts() {
 		if (!editorRef) return;
 		const text = editorRef.innerText || '';
@@ -140,7 +150,7 @@ import { onDestroy } from 'svelte';
 		isUpdatingFromEditor = true;
 		const html = editorRef.innerHTML;
 		notesStore.updateNote(activeNote.id, { content: html });
-		lastSaved = new Date().toLocaleTimeString();
+		lastSaved = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 		updateCounts();
 		setTimeout(() => { isUpdatingFromEditor = false; }, 0);
 	}
@@ -148,7 +158,7 @@ import { onDestroy } from 'svelte';
 	function updateContentFromEditor() {
 		if (!editorRef || !activeNote) return;
 		if (saveTimeout) clearTimeout(saveTimeout);
-		saveTimeout = setTimeout(() => doSave(), 250);
+		saveTimeout = setTimeout(() => doSave(), 500);
 	}
 
 	function setupEditor(node: HTMLDivElement) {
@@ -174,7 +184,7 @@ import { onDestroy } from 'svelte';
 				}
 				updateCounts();
 			}
-			lastSaved = new Date(activeNote.updatedAt).toLocaleTimeString();
+			lastSaved = new Date(activeNote.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 		}
 	});
 
@@ -186,6 +196,7 @@ import { onDestroy } from 'svelte';
 		if (exportToastTimeout) clearTimeout(exportToastTimeout);
 	});
 
+	// Formatting commands
 	function exec(cmd: string, val?: string) {
 		document.execCommand(cmd, false, val);
 		updateContentFromEditor();
@@ -195,6 +206,7 @@ import { onDestroy } from 'svelte';
 	function formatBold() { exec('bold'); }
 	function formatItalic() { exec('italic'); }
 	function formatUnderline() { exec('underline'); }
+	function formatStrikethrough() { exec('strikeThrough'); }
 
 	function formatHighlight() {
 		const selection = window.getSelection();
@@ -218,32 +230,13 @@ import { onDestroy } from 'svelte';
 	function formatBlock(tag: string) { exec('formatBlock', tag); }
 	function formatBlockQuote() { exec('formatBlock', 'blockquote'); }
 
-	function formatList(type: 'bullet' | 'dashed' | 'number') {
+	function formatList(type: 'bullet' | 'number') {
 		if (type === 'number') {
 			exec('insertOrderedList');
 		} else {
 			exec('insertUnorderedList');
-			setTimeout(() => {
-				const sel = window.getSelection();
-				if (!sel) return;
-				let node: Node | null = sel.anchorNode;
-				let ul: HTMLUListElement | null = null;
-				while (node) {
-					if (node.nodeName === 'UL') { ul = node as HTMLUListElement; break; }
-					node = node.parentNode;
-				}
-				if (ul) {
-					if (type === 'dashed') {
-						ul.style.listStyleType = 'none';
-						ul.dataset.type = 'dashed';
-					} else {
-						ul.style.listStyleType = 'disc';
-						delete ul.dataset.type;
-					}
-				}
-				updateContentFromEditor();
-			}, 10);
 		}
+		updateContentFromEditor();
 	}
 
 	function isInChecklist(): boolean {
@@ -346,7 +339,7 @@ import { onDestroy } from 'svelte';
 			const tr = document.createElement('tr');
 			for (let c = 0; c < cols; c++) {
 				const td = document.createElement('td');
-				td.style.border = '1px solid #e5e7eb';
+				td.style.border = '1px solid hsl(var(--border))';
 				td.style.padding = '0.5rem';
 				td.style.minWidth = '50px';
 				td.innerHTML = '&nbsp;';
@@ -388,7 +381,7 @@ import { onDestroy } from 'svelte';
 		currentTable.querySelectorAll('tr').forEach(tr => {
 			const cells = tr.querySelectorAll('td');
 			const newTd = document.createElement('td');
-			newTd.style.border = '1px solid #e5e7eb';
+			newTd.style.border = '1px solid hsl(var(--border))';
 			newTd.style.padding = '0.5rem';
 			newTd.innerHTML = '&nbsp;';
 			if (cells[idx]) before ? cells[idx].before(newTd) : cells[idx].after(newTd);
@@ -441,6 +434,7 @@ import { onDestroy } from 'svelte';
 		sel.addRange(range);
 	}
 
+	// File handling
 	function handleFileSelect(e: Event) {
 		const target = e.target as HTMLInputElement;
 		if (!target.files || !editorRef) return;
@@ -451,26 +445,11 @@ import { onDestroy } from 'svelte';
 				reader.onload = ev => {
 					const text = ev.target?.result as string;
 					const wrapper = document.createElement('div');
-					wrapper.style.margin = '0.5rem 0';
-					wrapper.style.padding = '0.75rem';
-					wrapper.style.background = 'hsl(var(--muted))';
-					wrapper.style.borderRadius = '0.375rem';
-					wrapper.style.fontFamily = 'ui-monospace, monospace';
-					wrapper.style.fontSize = '0.8rem';
-					wrapper.style.whiteSpace = 'pre-wrap';
-					wrapper.style.wordBreak = 'break-word';
-					wrapper.style.maxHeight = '300px';
-					wrapper.style.overflow = 'auto';
+					wrapper.className = 'file-attachment';
 					const header = document.createElement('div');
-					header.style.fontWeight = '600';
-					header.style.marginBottom = '0.5rem';
-					header.style.fontSize = '0.75rem';
-					header.style.color = 'hsl(var(--muted-foreground))';
+					header.className = 'file-header';
 					header.textContent = `📄 ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
 					const pre = document.createElement('pre');
-					pre.style.margin = '0';
-					pre.style.background = 'transparent';
-					pre.style.padding = '0';
 					pre.textContent = text;
 					wrapper.appendChild(header);
 					wrapper.appendChild(pre);
@@ -481,50 +460,11 @@ import { onDestroy } from 'svelte';
 			} else if (file.type.startsWith('image/')) {
 				const reader = new FileReader();
 				reader.onload = ev => {
-					const result = ev.target?.result as string;
 					const img = document.createElement('img');
-					img.src = result;
-					img.style.maxWidth = '100%';
-					img.style.borderRadius = '0.5rem';
-					img.style.margin = '0.5rem 0';
+					img.src = ev.target?.result as string;
+					img.className = 'embedded-image';
 					img.alt = file.name;
 					insertNodeAtCursor(img);
-					updateContentFromEditor();
-				};
-				reader.readAsDataURL(file);
-			} else if (file.type.startsWith('video/')) {
-				const reader = new FileReader();
-				reader.onload = ev => {
-					const result = ev.target?.result as string;
-					const video = document.createElement('video');
-					video.src = result;
-					video.controls = true;
-					video.style.maxWidth = '100%';
-					video.style.borderRadius = '0.5rem';
-					video.style.margin = '0.5rem 0';
-					insertNodeAtCursor(video);
-					updateContentFromEditor();
-				};
-				reader.readAsDataURL(file);
-			} else {
-				const reader = new FileReader();
-				reader.onload = ev => {
-					const result = ev.target?.result as string;
-					const a = document.createElement('a');
-					a.href = result;
-					a.download = file.name;
-					a.textContent = `📎 ${file.name}`;
-					a.style.display = 'inline-flex';
-					a.style.alignItems = 'center';
-					a.style.gap = '0.5rem';
-					a.style.padding = '0.5rem 1rem';
-					a.style.background = 'hsl(var(--muted))';
-					a.style.borderRadius = '0.375rem';
-					a.style.margin = '0.25rem 0';
-					a.style.textDecoration = 'none';
-					a.style.color = 'inherit';
-					a.style.fontSize = '0.875rem';
-					insertNodeAtCursor(a);
 					updateContentFromEditor();
 				};
 				reader.readAsDataURL(file);
@@ -538,6 +478,7 @@ import { onDestroy } from 'svelte';
 		else mediaInput?.click();
 	}
 
+	// Sketch
 	function initSketch(node: HTMLCanvasElement) {
 		const ctx = node.getContext('2d');
 		if (!ctx) return;
@@ -577,9 +518,7 @@ import { onDestroy } from 'svelte';
 		if (!sketchCanvas || !editorRef) return;
 		const img = document.createElement('img');
 		img.src = sketchCanvas.toDataURL('image/png');
-		img.style.maxWidth = '100%';
-		img.style.borderRadius = '0.5rem';
-		img.style.margin = '0.5rem 0';
+		img.className = 'embedded-image';
 		img.alt = 'Sketch';
 		insertNodeAtCursor(img);
 		updateContentFromEditor();
@@ -591,54 +530,13 @@ import { onDestroy } from 'svelte';
 		sketchContext.clearRect(0, 0, sketchCanvas.width, sketchCanvas.height);
 	}
 
-	function shareNote() {
-		if (!activeNote) return;
-		const text = `${activeNote.title}
-
-${editorRef?.innerText || ''}`;
-		if (navigator.share) {
-			navigator.share({ title: activeNote.title, text }).catch(() => {});
-		} else {
-			navigator.clipboard.writeText(text).then(() => showToast('Note copied to clipboard!'));
-		}
-	}
-
-	function showToast(msg: string) {
-		exportToastMsg = msg;
-		showExportToast = true;
-		if (exportToastTimeout) clearTimeout(exportToastTimeout);
-		exportToastTimeout = setTimeout(() => showExportToast = false, 3000);
-	}
-
-	function exportNote() {
-		if (!activeNote) return;
-		const blob = new Blob([`# ${activeNote.title}
-
-${editorRef?.innerText || ''}`], { type: 'text/plain' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		const filename = `${activeNote.title || 'note'}.txt`;
-		a.download = filename;
-		a.click();
-		URL.revokeObjectURL(url);
-		showToast(`Downloaded: ${filename} → Check your Downloads folder`);
-	}
-
-	function printNote() {
-		if (!editorRef || !activeNote) return;
-		const w = window.open('', '_blank');
-		if (!w) return;
-		w.document.write(`<html><head><title>${activeNote.title}</title><style>body{font-family:system-ui;max-width:800px;margin:2rem auto;padding:1rem;line-height:1.6}</style></head><body><h1>${activeNote.title || 'Untitled'}</h1>${editorRef.innerHTML}</body></html>`);
-		w.document.close();
-		w.print();
-	}
-
+	// Actions
 	function handleCreate() {
 		notesStore.createNote();
 		setTimeout(() => {
 			const el = document.querySelector('.note-title-input') as HTMLInputElement | null;
 			el?.focus();
+			el?.select();
 		}, 50);
 	}
 
@@ -666,16 +564,19 @@ ${editorRef?.innerText || ''}`], { type: 'text/plain' });
 		showEmojiPicker = false;
 	}
 
-	function getNoteColorBorder(note: Note): string {
-		return noteColors.find(c => c.value === note.color)?.border || '';
+	function getNoteColorClasses(note: Note): { bg: string; border: string } {
+		const color = noteColors.find(c => c.value === note.color);
+		return color ? { bg: color.bg, border: color.border } : { bg: 'bg-transparent', border: 'border-transparent' };
 	}
 
 	function handleEditorKeyDown(e: KeyboardEvent) {
+		// Cmd/Ctrl+S to save
 		if ((e.ctrlKey || e.metaKey) && e.key === 's') {
 			e.preventDefault();
 			if (saveTimeout) clearTimeout(saveTimeout);
 			doSave();
 		}
+		// Enter in checklist
 		if (e.key === 'Enter' && !e.shiftKey) {
 			const sel = window.getSelection();
 			const li = getCurrentChecklistItem();
@@ -719,64 +620,111 @@ ${editorRef?.innerText || ''}`], { type: 'text/plain' });
 		setTimeout(checkTableSelection, 0);
 	}
 
-	function handleClickOutside(e: MouseEvent) {
-		const t = e.target as HTMLElement;
-		if (!t.closest('.style-menu-container')) showStyleMenu = false;
-		if (!t.closest('.more-menu-container')) showMoreMenu = false;
-		if (!t.closest('.emoji-picker-container')) showEmojiPicker = false;
-		if (!t.closest('.color-picker-container')) showColorPicker = false;
+	function exportNote() {
+		if (!activeNote) return;
+		const blob = new Blob([`# ${activeNote.title}\n\n${editorRef?.innerText || ''}`], { type: 'text/plain' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `${activeNote.title || 'note'}.txt`;
+		a.click();
+		URL.revokeObjectURL(url);
+		showToast(`Downloaded: ${a.download}`);
 	}
 
-	$effect(() => {
-		document.addEventListener('click', handleClickOutside);
-		return () => document.removeEventListener('click', handleClickOutside);
-	});
+	function showToast(msg: string) {
+		exportToastMsg = msg;
+		showExportToast = true;
+		if (exportToastTimeout) clearTimeout(exportToastTimeout);
+		exportToastTimeout = setTimeout(() => showExportToast = false, 3000);
+	}
 </script>
 
-<!-- ===== MAIN FLOATING WINDOW ===== -->
-<FloatingWindow title="Notes" store={notesWindow}>
-	<div class="flex h-full w-full overflow-hidden">
-		<!-- Sidebar -->
-		<div class="flex w-72 flex-col border-r bg-background">
-			<div class="flex items-center justify-between border-b p-4">
-				<h2 class="text-lg font-semibold flex items-center gap-2">
-					<Sparkles class="h-5 w-5 text-yellow-500" />
-					Notes
-				</h2>
-				<Button size="icon" variant="ghost" onclick={handleCreate} title="New note">
-					<Plus class="h-4 w-4" />
-				</Button>
+<!-- Main layout -->
+<div class="flex h-full w-full overflow-hidden bg-background">
+	<!-- Sidebar: Folders -->
+	<div class="flex w-56 flex-col border-r bg-muted/20">
+		<div class="flex items-center justify-between border-b p-3">
+			<h2 class="flex items-center gap-2 text-sm font-semibold">
+				<FolderOpen class="h-4 w-4 text-primary" />
+				Folders
+			</h2>
+		</div>
+		<ScrollArea class="flex-1">
+			<div class="flex flex-col gap-1 p-2">
+				<button
+					class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-left transition-colors {!selectedFolder ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}"
+					onclick={() => selectedFolder = null}
+				>
+					<FileText class="h-4 w-4" />
+					<span class="flex-1">All Notes</span>
+					<span class="text-xs text-muted-foreground">{notesStore.notes.length}</span>
+				</button>
+				{#each folders as folder}
+					<button
+						class="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-left transition-colors {selectedFolder === folder ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}"
+						onclick={() => selectedFolder = folder}
+					>
+						<FolderOpen class="h-4 w-4 text-muted-foreground" />
+						<span class="flex-1 truncate">{folder}</span>
+						<span class="text-xs text-muted-foreground">
+							{notesStore.notes.filter(n => (n as any).folder === folder).length}
+						</span>
+					</button>
+				{/each}
 			</div>
-			<div class="p-3">
-				<Input placeholder="Search notes..." bind:value={search} class="h-8" />
+		</ScrollArea>
+	</div>
+
+	<!-- Notes List -->
+	<div class="flex w-80 flex-col border-r bg-background">
+		<div class="flex items-center justify-between border-b p-3">
+			<h2 class="text-sm font-semibold">Notes</h2>
+			<Button size="icon" variant="ghost" onclick={handleCreate} title="New note">
+				<Plus class="h-4 w-4" />
+			</Button>
+		</div>
+		<div class="p-3">
+			<div class="relative">
+				<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+				<Input
+					placeholder="Search notes..."
+					bind:value={search}
+					class="pl-9 h-8"
+				/>
 			</div>
-			<ScrollArea class="flex-1">
-				<div class="flex flex-col gap-1 p-2">
-					{#each filteredNotes as note (note.id)}
-						<div
-							role="button"
-							tabindex="0"
-							class="group relative flex items-start gap-2 rounded-md px-3 py-2 text-left text-sm transition-all cursor-pointer border-l-4 border-transparent
-								{notesStore.activeNoteId === note.id ? 'bg-accent text-accent-foreground ring-1 ring-accent' : 'hover:bg-muted'}
-								{getNoteColorBorder(note)}"
-							onclick={() => selectNote(note.id)}
-							onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectNote(note.id); } }}
-						>
+		</div>
+		<ScrollArea class="flex-1">
+			<div class="flex flex-col gap-1 p-2">
+				{#each filteredNotes as note (note.id)}
+					{@const colors = getNoteColorClasses(note)}
+					<div
+						role="button"
+						tabindex="0"
+						class="group relative rounded-md px-3 py-3 text-left text-sm transition-all cursor-pointer border-l-4 {colors.border}
+							{notesStore.activeNoteId === note.id ? 'bg-accent text-accent-foreground ring-1 ring-accent' : 'hover:bg-muted'}"
+						onclick={() => selectNote(note.id)}
+						onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectNote(note.id); } }}
+					>
+						<div class="flex items-start gap-2">
 							<div class="shrink-0 mt-0.5">
 								{#if note.emoji}
 									<span class="text-base">{note.emoji}</span>
 								{:else}
-									<FileText class="h-4 w-4 opacity-50" />
+									<FileText class="h-4 w-4 text-muted-foreground" />
 								{/if}
 							</div>
-							<div class="flex-1 overflow-hidden min-w-0">
-								<div class="truncate font-medium flex items-center gap-1">
+							<div class="flex-1 min-w-0">
+								<div class="font-medium truncate flex items-center gap-1">
 									{#if note.pinned}
 										<Pin class="h-3 w-3 fill-current text-yellow-500 shrink-0" />
 									{/if}
 									{note.title || 'Untitled'}
 								</div>
-								<div class="truncate text-xs text-muted-foreground">
+								<div class="text-xs text-muted-foreground truncate mt-0.5">
+									{note.content?.replace(/<[^>]*>/g, '').slice(0, 60) || 'No content'}
+								</div>
+								<div class="text-xs text-muted-foreground mt-1">
 									{new Date(note.updatedAt).toLocaleDateString()} • {new Date(note.updatedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
 								</div>
 							</div>
@@ -788,312 +736,287 @@ ${editorRef?.innerText || ''}`], { type: 'text/plain' });
 								<Trash2 class="h-3 w-3 text-destructive" />
 							</button>
 						</div>
-					{:else}
-						<div class="px-3 py-8 text-center text-sm text-muted-foreground">
-							<div class="mb-2 text-4xl">📝</div>
-							<p>No notes yet. Click + to create one.</p>
-						</div>
-					{/each}
-				</div>
-			</ScrollArea>
-		</div>
-
-		<!-- Editor -->
-		<div class="flex flex-1 flex-col min-w-0 bg-background relative">
-			{#if activeNote}
-				<!-- Title Bar -->
-				<div class="border-b px-6 py-3 flex items-center gap-3 relative">
-					<Input
-						value={activeNote.title}
-						oninput={updateTitle}
-						class="note-title-input border-0 bg-transparent text-xl font-semibold shadow-none focus-visible:ring-0 px-0 flex-1"
-						placeholder="Note title..."
-					/>
-					<div class="flex items-center gap-1">
-						<Button size="icon" variant="ghost" onclick={() => showEmojiPicker = !showEmojiPicker} title="Emoji">
-							<Smile class="h-4 w-4" />
-						</Button>
-						{#if showEmojiPicker}
-							<div class="emoji-picker-container absolute right-4 top-14 z-50 bg-popover border rounded-lg shadow-lg p-2 grid grid-cols-6 gap-1 w-48">
-								{#each emojis as emoji}
-									<button class="hover:bg-accent rounded p-1 text-lg transition-colors" onclick={() => setNoteEmoji(emoji)}>{emoji}</button>
-								{/each}
-							</div>
-						{/if}
-						<Button size="icon" variant="ghost" onclick={() => showColorPicker = !showColorPicker} title="Color">
-							<Palette class="h-4 w-4" />
-						</Button>
-						{#if showColorPicker}
-							<div class="color-picker-container absolute right-4 top-14 z-50 bg-popover border rounded-lg shadow-lg p-2 flex flex-col gap-1 w-32">
-								{#each noteColors as color}
-									<button class="flex items-center gap-2 px-2 py-1 rounded hover:bg-accent text-xs transition-colors" onclick={() => setNoteColor(color.value)}>
-										<div class="w-4 h-4 rounded-full border {color.value ? 'bg-' + color.value + '-400' : 'bg-background border-dashed'}"></div>
-										{color.name}
-									</button>
-								{/each}
-							</div>
-						{/if}
-						<Button size="icon" variant="ghost" onclick={() => notesStore.togglePin(activeNote.id)} title={activeNote.pinned ? 'Unpin' : 'Pin'}>
-							<Pin class="h-4 w-4 {activeNote.pinned ? 'fill-current text-yellow-500' : ''}" />
+					</div>
+				{:else}
+					<div class="px-3 py-8 text-center text-sm text-muted-foreground">
+						<div class="mb-2 text-4xl">📝</div>
+						<p>No notes yet</p>
+						<Button variant="ghost" size="sm" class="mt-2" onclick={handleCreate}>
+							<Plus class="h-3 w-3 mr-1" /> Create one
 						</Button>
 					</div>
-				</div>
+				{/each}
+			</div>
+		</ScrollArea>
+	</div>
 
-				<!-- Beautiful Toolbar -->
-				<div class="border-b px-4 py-2 flex items-center gap-1 flex-wrap bg-muted/20">
-					<!-- Style Dropdown -->
-					<div class="style-menu-container relative">
-						<button
-							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-l-md border border-r-0 border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
-							onclick={() => showStyleMenu = !showStyleMenu}
-						>
-							<Type class="h-3.5 w-3.5" />
-							<span>Style</span>
-							<ChevronDown class="h-3 w-3 opacity-60" />
-						</button>
-						{#if showStyleMenu}
-							<div class="absolute left-0 top-full mt-1 z-50 w-56 bg-popover border rounded-lg shadow-xl p-1 overflow-hidden">
-								<div class="grid grid-cols-2 gap-1 p-1 border-b">
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBold(); showStyleMenu = false; }}>
-										<Bold class="h-3 w-3" /> Bold
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatItalic(); showStyleMenu = false; }}>
-										<Italic class="h-3 w-3" /> Italic
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatUnderline(); showStyleMenu = false; }}>
-										<Underline class="h-3 w-3" /> Underline
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatHighlight(); showStyleMenu = false; }}>
-										<Highlighter class="h-3 w-3" /> Highlight
-									</button>
-								</div>
-								<div class="flex flex-col p-1">
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('h1'); showStyleMenu = false; }}>
-										<Heading1 class="h-3 w-3" /> Title (H1)
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('h2'); showStyleMenu = false; }}>
-										<Heading2 class="h-3 w-3" /> Heading (H2)
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('h3'); showStyleMenu = false; }}>
-										<Heading3 class="h-3 w-3" /> Subheading (H3)
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('p'); showStyleMenu = false; }}>
-										<Text class="h-3 w-3" /> Body (p)
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlock('pre'); showStyleMenu = false; }}>
-										<Code class="h-3 w-3" /> Monostyled (pre)
-									</button>
-								</div>
-								<div class="border-t p-1 flex flex-col">
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatList('bullet'); showStyleMenu = false; }}>
-										<List class="h-3 w-3" /> Bulleted List
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatList('dashed'); showStyleMenu = false; }}>
-										<Minus class="h-3 w-3" /> Dashed List
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatList('number'); showStyleMenu = false; }}>
-										<ListOrdered class="h-3 w-3" /> Number List
-									</button>
-									<button class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent text-xs transition-colors" onclick={() => { formatBlockQuote(); showStyleMenu = false; }}>
-										<Quote class="h-3 w-3" /> Block Quote
-									</button>
-								</div>
-							</div>
-						{/if}
-					</div>
-
-					<!-- Block Quote -->
-					<button
-						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
-						onclick={formatBlockQuote}
-						title="Block Quote"
-					>
-						<Quote class="h-3.5 w-3.5" />
-						<span class="hidden sm:inline">Block Quote</span>
-					</button>
-
-					<!-- Add Table -->
-					<button
-						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
-						onclick={() => { centerDialog(); showTableDialog = true; }}
-						title="Add Table"
-					>
-						<Table class="h-3.5 w-3.5" />
-						<span class="hidden sm:inline">Add Table</span>
-					</button>
-
-					<!-- Check List -->
-					<button
-						class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors {isInChecklist() ? 'bg-accent text-accent-foreground' : ''}"
-						onclick={toggleCheckList}
-						title="Toggle Check List"
-					>
-						<ListChecks class="h-3.5 w-3.5" />
-						<span class="hidden sm:inline">Check List</span>
-					</button>
-
-					<!-- More >> -->
-					<div class="more-menu-container relative">
-						<button
-							class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-r-md border border-l-0 border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
-							onclick={() => showMoreMenu = !showMoreMenu}
-							title="More options"
-						>
-							<MoreHorizontal class="h-3.5 w-3.5" />
-							<span>&gt;&gt;</span>
-						</button>
-						{#if showMoreMenu}
-							<div class="absolute right-0 top-full mt-1 z-50 w-56 bg-popover border rounded-lg shadow-xl p-1.5 overflow-hidden">
-								<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { triggerFileUpload('image'); showMoreMenu = false; }}>
-									<ImageIcon class="h-4 w-4 text-muted-foreground" /> Choose photo or video
-								</button>
-								<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { triggerFileUpload('file'); showMoreMenu = false; }}>
-									<Paperclip class="h-4 w-4 text-muted-foreground" /> Attach file
-								</button>
-								<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { showSketchModal = true; showMoreMenu = false; }}>
-									<Pencil class="h-4 w-4 text-muted-foreground" /> Add sketch
-								</button>
-								<div class="border-t my-1"></div>
-								<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { shareNote(); showMoreMenu = false; }}>
-									<Share2 class="h-4 w-4 text-muted-foreground" /> Share
-								</button>
-								<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { exportNote(); showMoreMenu = false; }}>
-									<Download class="h-4 w-4 text-muted-foreground" /> Export
-								</button>
-								<button class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent text-sm transition-colors" onclick={() => { printNote(); showMoreMenu = false; }}>
-									<Printer class="h-4 w-4 text-muted-foreground" /> Print
-								</button>
-							</div>
-						{/if}
-					</div>
-				</div>
-
-				<!-- Editor Content -->
-				<div class="flex-1 relative overflow-hidden">
-					<div
-						bind:this={editorRef}
-						use:setupEditor
-						contenteditable="true"
-						class="h-full w-full overflow-y-auto p-6 outline-none text-base leading-relaxed"
-						style="min-height: 200px;"
-						onkeydown={handleEditorKeyDown}
-						onmouseup={() => checkTableSelection()}
-						onblur={() => { currentTable = null; if (saveTimeout) { clearTimeout(saveTimeout); doSave(); } }}
-					></div>
-
-					{#if currentTable}
-						<div class="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-popover border rounded-md shadow-xl p-1 z-40">
-							<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableRow(true)}><ArrowUp class="h-3 w-3" /> Row</Button>
-							<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableRow(false)}><ArrowDown class="h-3 w-3" /> Row</Button>
-							<div class="w-px h-4 bg-border mx-0.5"></div>
-							<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableCol(true)}><ArrowLeft class="h-3 w-3" /> Col</Button>
-							<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableCol(false)}><ArrowRight class="h-3 w-3" /> Col</Button>
-							<div class="w-px h-4 bg-border mx-0.5"></div>
-							<Button size="sm" variant="ghost" class="h-7 text-xs text-destructive px-2" onclick={deleteTableRow}>Del Row</Button>
-							<Button size="sm" variant="ghost" class="h-7 text-xs text-destructive px-2" onclick={deleteTableCol}>Del Col</Button>
-							<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs text-destructive px-2" onclick={deleteTable}><Trash class="h-3 w-3" /> Table</Button>
+	<!-- Editor -->
+	<div class="flex flex-1 flex-col min-w-0 bg-background">
+		{#if activeNote}
+			<!-- Title Bar -->
+			<div class="border-b px-6 py-3 flex items-center gap-3">
+				<Input
+					value={activeNote.title}
+					oninput={updateTitle}
+					class="note-title-input border-0 bg-transparent text-2xl font-bold shadow-none focus-visible:ring-0 px-0 flex-1"
+					placeholder="Untitled Note"
+				/>
+				<div class="flex items-center gap-1">
+					<Button size="icon" variant="ghost" onclick={() => showEmojiPicker = !showEmojiPicker} title="Add emoji">
+						<Smile class="h-4 w-4" />
+					</Button>
+					{#if showEmojiPicker}
+						<div class="absolute right-4 top-14 z-50 bg-popover border rounded-lg shadow-lg p-2 grid grid-cols-8 gap-1 w-56">
+							{#each emojis as emoji}
+								<button class="hover:bg-accent rounded p-1 text-lg transition-colors" onclick={() => setNoteEmoji(emoji)}>{emoji}</button>
+							{/each}
 						</div>
 					{/if}
+					<Button size="icon" variant="ghost" onclick={() => showColorPicker = !showColorPicker} title="Color">
+						<Palette class="h-4 w-4" />
+					</Button>
+					{#if showColorPicker}
+						<div class="absolute right-4 top-14 z-50 bg-popover border rounded-lg shadow-lg p-2 grid grid-cols-4 gap-1 w-48">
+							{#each noteColors as color}
+								<button 
+									class="hover:bg-accent rounded p-2 transition-colors" 
+									onclick={() => setNoteColor(color.value)}
+									aria-label={color.name}
+								>
+									<div class="w-6 h-6 rounded-full border-2 {color.bg} {color.border}"></div>
+								</button>
+							{/each}
+						</div>
+					{/if}
+					<Button size="icon" variant="ghost" onclick={() => notesStore.togglePin(activeNote.id)} title={activeNote.pinned ? 'Unpin' : 'Pin'}>
+						<Pin class="h-4 w-4 {activeNote.pinned ? 'fill-current text-yellow-500' : ''}" />
+					</Button>
+					<Button size="icon" variant="ghost" onclick={exportNote} title="Export">
+						<Download class="h-4 w-4" />
+					</Button>
 				</div>
+			</div>
 
-				<!-- Status Bar -->
-				<div class="border-t px-4 py-1.5 flex items-center justify-between text-xs text-muted-foreground bg-muted/20">
-					<div class="flex items-center gap-3">
-						<span>{wordCount} words</span>
-						<span>{charCount} chars</span>
-						{#if wordCount > 0}
-							<span>~{Math.ceil(wordCount / 200)} min read</span>
-						{/if}
-					</div>
-					<div class="flex items-center gap-2">
-						{#if lastSaved}<span>Saved at {lastSaved}</span>{/if}
-					</div>
-				</div>
-			{:else}
-				<div class="flex flex-1 items-center justify-center text-muted-foreground">
-					<div class="text-center">
-						<FileText class="mx-auto mb-3 h-10 w-10 opacity-20" />
-						<p>Select a note or create a new one</p>
-						<Button class="mt-4" onclick={handleCreate}>
-							<Plus class="mr-2 h-4 w-4" /> New Note
-						</Button>
-					</div>
+			<!-- Toolbar -->
+			{#if showToolbar}
+				<div class="border-b px-4 py-2 flex items-center gap-1 flex-wrap bg-muted/10">
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={formatBold} title="Bold (⌘B)">
+						<Bold class="h-4 w-4" />
+					</button>
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={formatItalic} title="Italic (⌘I)">
+						<Italic class="h-4 w-4" />
+					</button>
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={formatUnderline} title="Underline (⌘U)">
+						<Underline class="h-4 w-4" />
+					</button>
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={formatStrikethrough} title="Strikethrough">
+						<Strikethrough class="h-4 w-4" />
+					</button>
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={formatHighlight} title="Highlight">
+						<Highlighter class="h-4 w-4" />
+					</button>
+
+					<div class="w-px h-5 bg-border mx-1"></div>
+
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={() => formatBlock('h1')} title="Heading 1">
+						<Heading1 class="h-4 w-4" />
+					</button>
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={() => formatBlock('h2')} title="Heading 2">
+						<Heading2 class="h-4 w-4" />
+					</button>
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={() => formatBlock('h3')} title="Heading 3">
+						<Heading3 class="h-4 w-4" />
+					</button>
+
+					<div class="w-px h-5 bg-border mx-1"></div>
+
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={() => formatList('bullet')} title="Bullet list">
+						<List class="h-4 w-4" />
+					</button>
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={() => formatList('number')} title="Numbered list">
+						<ListOrdered class="h-4 w-4" />
+					</button>
+					<button class="p-1.5 rounded hover:bg-accent transition-colors {isInChecklist() ? 'bg-accent text-accent-foreground' : ''}" onclick={toggleCheckList} title="Checklist">
+						<ListChecks class="h-4 w-4" />
+					</button>
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={formatBlockQuote} title="Quote">
+						<Quote class="h-4 w-4" />
+					</button>
+
+					<div class="w-px h-5 bg-border mx-1"></div>
+
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={() => { centerDialog(); showTableDialog = true; }} title="Insert table">
+						<Table class="h-4 w-4" />
+					</button>
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={() => triggerFileUpload('image')} title="Insert image">
+						<ImageIcon class="h-4 w-4" />
+					</button>
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={() => triggerFileUpload('file')} title="Attach file">
+						<Paperclip class="h-4 w-4" />
+					</button>
+					<button class="p-1.5 rounded hover:bg-accent transition-colors" onclick={() => showSketchModal = true} title="Add sketch">
+						<Pencil class="h-4 w-4" />
+					</button>
 				</div>
 			{/if}
-		</div>
-	</div>
-</FloatingWindow>
 
-<!-- ===== HIDDEN FILE INPUTS ===== -->
+			<!-- Editor Content -->
+			<div class="flex-1 relative overflow-hidden">
+				<div
+					bind:this={editorRef}
+					use:setupEditor
+					contenteditable="true"
+					role="textbox"
+					aria-multiline="true"
+					aria-label="Note editor"
+					class="h-full w-full overflow-y-auto p-8 outline-none text-base leading-relaxed prose prose-sm max-w-none dark:prose-invert"
+					style="min-height: 300px;"
+					onkeydown={handleEditorKeyDown}
+					onmouseup={() => checkTableSelection()}
+					onblur={() => { currentTable = null; if (saveTimeout) { clearTimeout(saveTimeout); doSave(); } }}
+				></div>
+
+				{#if currentTable}
+					<div class="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-popover border rounded-md shadow-xl p-1 z-40">
+						<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableRow(true)}>
+							<ArrowUp class="h-3 w-3" /> Row
+						</Button>
+						<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableRow(false)}>
+							<ArrowDown class="h-3 w-3" /> Row
+						</Button>
+						<div class="w-px h-4 bg-border mx-0.5"></div>
+						<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableCol(true)}>
+							<ArrowLeft class="h-3 w-3" /> Col
+						</Button>
+						<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs px-2" onclick={() => addTableCol(false)}>
+							<ArrowRight class="h-3 w-3" /> Col
+						</Button>
+						<div class="w-px h-4 bg-border mx-0.5"></div>
+						<Button size="sm" variant="ghost" class="h-7 text-xs text-destructive px-2" onclick={deleteTableRow}>
+							<Trash class="h-3 w-3 mr-1" /> Row
+						</Button>
+						<Button size="sm" variant="ghost" class="h-7 text-xs text-destructive px-2" onclick={deleteTableCol}>
+							<Trash class="h-3 w-3 mr-1" /> Col
+						</Button>
+						<Button size="sm" variant="ghost" class="h-7 gap-1 text-xs text-destructive px-2" onclick={deleteTable}>
+							<Trash class="h-3 w-3" /> Table
+						</Button>
+					</div>
+				{/if}
+			</div>
+
+			<!-- Status Bar -->
+			<div class="border-t px-4 py-1.5 flex items-center justify-between text-xs text-muted-foreground bg-muted/10">
+				<div class="flex items-center gap-3">
+					<span>{wordCount} words</span>
+					<span>{charCount} chars</span>
+				</div>
+				<div class="flex items-center gap-2">
+					{#if lastSaved}
+						<Check class="h-3 w-3 text-green-500" />
+						<span>Saved {lastSaved}</span>
+					{/if}
+				</div>
+			</div>
+		{:else}
+			<div class="flex flex-1 items-center justify-center text-muted-foreground">
+				<div class="text-center">
+					<FileText class="mx-auto mb-4 h-16 w-16 opacity-20" />
+					<p class="text-lg font-medium mb-2">Select a note or create a new one</p>
+					<p class="text-sm mb-4">Your notes are automatically saved as you type</p>
+					<Button onclick={handleCreate}>
+						<Plus class="mr-2 h-4 w-4" /> New Note
+					</Button>
+				</div>
+			</div>
+		{/if}
+	</div>
+</div>
+
+<!-- Hidden inputs -->
 <input type="file" bind:this={fileInput} class="hidden" onchange={handleFileSelect} accept="*/*" multiple />
 <input type="file" bind:this={mediaInput} class="hidden" onchange={handleFileSelect} accept="image/*,video/*" multiple />
 
-<!-- ===== TABLE DIALOG — OUTSIDE FloatingWindow (not clipped by overflow:hidden) ===== -->
+<!-- Table Dialog -->
 {#if showTableDialog}
-	<div
-		class="fixed inset-0 bg-black/40"
+	<button
+		type="button"
+		aria-label="Close table dialog"
+		class="fixed inset-0 cursor-default bg-black/40"
 		style="z-index: 100000;"
-		onclick={() => showTableDialog = false}
-	></div>
+		onclick={() => (showTableDialog = false)}
+	></button>
 	<div
-		class="fixed bg-background border rounded-lg shadow-2xl p-6 w-80"
+		role="dialog"
+		aria-modal="true"
+		aria-label="Insert table"
+		class="fixed w-80 rounded-lg border bg-background p-6 shadow-2xl"
 		style="left: {tableDlgX}px; top: {tableDlgY}px; z-index: 100001;"
 	>
 		<div
-			class="flex items-center justify-between mb-4 cursor-grab active:cursor-grabbing select-none"
+			class="mb-4 flex cursor-grab select-none items-center justify-between active:cursor-grabbing"
+			role="toolbar"
+			aria-label="Drag to move dialog"
 			onpointerdown={onTableDragStart}
 			onpointermove={onTableDragMove}
 			onpointerup={onTableDragEnd}
 			onpointercancel={onTableDragEnd}
 		>
-			<h3 class="text-lg font-semibold flex items-center gap-2">
+			<h3 class="flex items-center gap-2 text-lg font-semibold">
 				<GripVertical class="h-4 w-4 text-muted-foreground" />
 				Insert Table
 			</h3>
-			<Button size="icon" variant="ghost" onclick={() => showTableDialog = false}>
+			<Button size="icon" variant="ghost" onclick={() => (showTableDialog = false)}>
 				<X class="h-4 w-4" />
 			</Button>
 		</div>
 		<div class="space-y-4">
 			<div>
-				<label class="text-sm text-muted-foreground block mb-1">Rows</label>
-				<Input type="number" bind:value={tableRows} min={1} max={20} />
+				<label for="table-rows-input" class="mb-1 block text-sm text-muted-foreground">Rows</label>
+				<Input id="table-rows-input" type="number" bind:value={tableRows} min={1} max={20} />
 			</div>
 			<div>
-				<label class="text-sm text-muted-foreground block mb-1">Columns</label>
-				<Input type="number" bind:value={tableCols} min={1} max={10} />
+				<label for="table-cols-input" class="mb-1 block text-sm text-muted-foreground">Columns</label>
+				<Input id="table-cols-input" type="number" bind:value={tableCols} min={1} max={10} />
 			</div>
 		</div>
-		<div class="flex justify-end gap-2 mt-6">
-			<Button variant="ghost" onclick={() => showTableDialog = false}>Cancel</Button>
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="ghost" onclick={() => (showTableDialog = false)}>Cancel</Button>
 			<Button onclick={insertTable}>Insert</Button>
 		</div>
 	</div>
 {/if}
 
-<!-- ===== SKETCH MODAL — OUTSIDE FloatingWindow ===== -->
+<!-- Sketch Dialog -->
 {#if showSketchModal}
-	<div
-		class="fixed inset-0 bg-black/40"
+	<button
+		type="button"
+		aria-label="Close sketch dialog"
+		class="fixed inset-0 cursor-default bg-black/40"
 		style="z-index: 100000;"
-		onclick={() => showSketchModal = false}
-	></div>
+		onclick={() => (showSketchModal = false)}
+	></button>
 	<div
-		class="fixed bg-background border rounded-lg shadow-2xl p-4 max-w-[90vw]"
+		role="dialog"
+		aria-modal="true"
+		aria-label="Sketch"
+		class="fixed max-w-[90vw] rounded-lg border bg-background p-4 shadow-2xl"
 		style="left: {sketchDlgX}px; top: {sketchDlgY}px; z-index: 100001; width: 600px;"
 	>
 		<div
-			class="flex items-center justify-between mb-4 cursor-grab active:cursor-grabbing select-none"
+			class="mb-4 flex cursor-grab select-none items-center justify-between active:cursor-grabbing"
+			role="toolbar"
+			aria-label="Drag to move dialog"
 			onpointerdown={onSketchDragStart}
 			onpointermove={onSketchDragMove}
 			onpointerup={onSketchDragEnd}
 			onpointercancel={onSketchDragEnd}
 		>
-			<h3 class="text-lg font-semibold flex items-center gap-2">
+			<h3 class="flex items-center gap-2 text-lg font-semibold">
 				<GripVertical class="h-4 w-4 text-muted-foreground" />
 				Sketch
 			</h3>
-			<Button size="icon" variant="ghost" onclick={() => showSketchModal = false}>
+			<Button size="icon" variant="ghost" onclick={() => (showSketchModal = false)}>
 				<X class="h-4 w-4" />
 			</Button>
 		</div>
@@ -1102,33 +1025,48 @@ ${editorRef?.innerText || ''}`], { type: 'text/plain' });
 			use:initSketch
 			width={560}
 			height={300}
-			class="border rounded bg-white cursor-crosshair w-full touch-none block"
+			class="block w-full touch-none rounded border bg-white cursor-crosshair"
 			onmousedown={startSketch}
 			onmousemove={drawSketch}
 			onmouseup={endSketch}
 			onmouseleave={endSketch}
 			onclick={(e) => e.stopPropagation()}
 		></canvas>
-		<div class="flex justify-end gap-2 mt-4">
+		<div class="mt-4 flex justify-end gap-2">
 			<Button variant="ghost" onclick={clearSketch}>Clear</Button>
-			<Button variant="ghost" onclick={() => showSketchModal = false}>Cancel</Button>
+			<Button variant="ghost" onclick={() => (showSketchModal = false)}>Cancel</Button>
 			<Button onclick={saveSketch}>Save Sketch</Button>
 		</div>
 	</div>
 {/if}
 
-<!-- ===== EXPORT TOAST — OUTSIDE FloatingWindow ===== -->
+<!-- Export Toast -->
 {#if showExportToast}
-	<div
-		class="fixed bottom-6 right-6 bg-popover border rounded-lg shadow-xl px-4 py-3 flex items-center gap-2"
-		style="z-index: 100001;"
-	>
+	<div class="fixed bottom-6 right-6 bg-popover border rounded-lg shadow-xl px-4 py-3 flex items-center gap-2 z-[100001]">
 		<Download class="h-4 w-4 text-green-500" />
 		<span class="text-sm font-medium">{exportToastMsg}</span>
 	</div>
 {/if}
 
 <style>
+	:global(.prose) {
+		line-height: 1.7;
+	}
+	:global(.prose h1) {
+		font-size: 1.875rem;
+		font-weight: 700;
+		margin: 1.5rem 0 1rem;
+	}
+	:global(.prose h2) {
+		font-size: 1.5rem;
+		font-weight: 600;
+		margin: 1.25rem 0 0.75rem;
+	}
+	:global(.prose h3) {
+		font-size: 1.25rem;
+		font-weight: 600;
+		margin: 1rem 0 0.5rem;
+	}
 	:global(.editor-table) {
 		width: 100%;
 		border-collapse: collapse;
@@ -1164,16 +1102,6 @@ ${editorRef?.innerText || ''}`], { type: 'text/plain' });
 		padding: 0 2px;
 		border-radius: 2px;
 	}
-	:global(ul[data-type="dashed"]) {
-		list-style: none;
-		padding-left: 1.5rem;
-	}
-	:global(ul[data-type="dashed"] li::before) {
-		content: "-";
-		display: inline-block;
-		width: 1em;
-		margin-left: -1em;
-	}
 	:global(.checklist) {
 		list-style: none;
 		padding-left: 0;
@@ -1188,5 +1116,28 @@ ${editorRef?.innerText || ''}`], { type: 'text/plain' });
 		margin-top: 0.25rem;
 		cursor: pointer;
 		flex-shrink: 0;
+	}
+	:global(.embedded-image) {
+		max-width: 100%;
+		border-radius: 0.5rem;
+		margin: 0.5rem 0;
+	}
+	:global(.file-attachment) {
+		margin: 0.5rem 0;
+		padding: 0.75rem;
+		background: hsl(var(--muted));
+		border-radius: 0.375rem;
+		font-family: ui-monospace, monospace;
+		font-size: 0.8rem;
+		white-space: pre-wrap;
+		word-break: break-word;
+		max-height: 300px;
+		overflow: auto;
+	}
+	:global(.file-header) {
+		font-weight: 600;
+		margin-bottom: 0.5rem;
+		font-size: 0.75rem;
+		color: hsl(var(--muted-foreground));
 	}
 </style>

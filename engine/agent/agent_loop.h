@@ -28,6 +28,7 @@ class AgentLoop {
 
     AgentResponse process(nlohmann::json messages, TokenCallback on_token = nullptr);
     void set_max_iterations(int max);
+    void set_tool_filters(bool use_calendar, bool use_notes);
 
   private:
     std::string server_url_;
@@ -35,8 +36,10 @@ class AgentLoop {
     int max_iterations_ = 5;
     bool supports_tools_ = true;
     std::string tool_choice_ = "required";
+    bool use_calendar_tools_ = true;
+    bool use_notes_tools_ = true;
 
-    nlohmann::json build_request_body(const nlohmann::json& messages, const nlohmann::json& tools, bool stream);
+    nlohmann::json build_request_body(const nlohmann::json& messages, nlohmann::json tools, bool stream);
     nlohmann::json call_llm(const nlohmann::json& messages, const nlohmann::json& tools);
     // Streams the reply, forwarding content deltas through `forward` (may be null to stream but not
     // forward). Returns the same response shape as call_llm().

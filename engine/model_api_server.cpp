@@ -57,6 +57,43 @@
 
 using json = nlohmann::json;
 
+// Filter tools based on enabled types
+static nlohmann::json filter_tools_by_config(const nlohmann::json& all_tools, 
+                                              bool use_calendar, bool use_notes) {
+    if (use_calendar && use_notes) return all_tools; // All enabled
+    
+    nlohmann::json filtered = nlohmann::json::array();
+    
+    // Calendar tool names
+    std::set<std::string> calendar_tools = {
+        "create_event", "list_events", "delete_event", "update_event", "get_current_time"
+    };
+    
+    // Notes tool names
+    std::set<std::string> notes_tools = {
+        "list_notes", "create_note", "get_note", "update_note", "delete_note"
+    };
+    
+    for (const auto& tool : all_tools) {
+        if (!tool.is_object() || !tool.contains("function")) continue;
+        std::string name = tool["function"].value("name", "");
+        
+        bool is_calendar = calendar_tools.count(name) > 0;
+        bool is_notes = notes_tools.count(name) > 0;
+        
+        // Include if it's not a calendar/notes tool, or if that category is enabled
+        if (!is_calendar && !is_notes) {
+            filtered.push_back(tool);
+        } else if (is_calendar && use_calendar) {
+            filtered.push_back(tool);
+        } else if (is_notes && use_notes) {
+            filtered.push_back(tool);
+        }
+    }
+    
+    return filtered;
+}
+
 // DHATS: Global hardware telemetry monitor
 static delta::HardwareMonitor g_hardware_monitor;
 
@@ -839,6 +876,16 @@ class ModelAPIServer {
                         llama_model_name = (dot != std::string::npos) ? reg.filename.substr(0, dot) : reg.filename;
                     }
                 }
+
+                // ADD THIS: Read tool preferences from request
+                bool use_calendar_tools = body.value("use_calendar_tools", true);
+                bool use_notes_tools = body.value("use_notes_tools", true);
+
+                // If tools are disabled entirely, both categories are disabled
+                if (!model_supports_tools) {
+                    use_calendar_tools = false;
+                    use_notes_tools = false;
+                }
                 std::cerr << "[delta-server] agent loop: model=" << model_name << " -> llama_alias=" << llama_model_name
                           << ", supports_tools=" << (model_supports_tools ? "true" : "false")
                           << ", msgs=" << messages.size() << std::endl;
@@ -847,6 +894,8 @@ class ModelAPIServer {
                     struct StreamJob {
                         std::string llama_url, llama_model;
                         bool supports_tools = false;
+                        bool use_calendar = true;  
+                        bool use_notes = true;     
                         json messages;
                         bool started = false;
                     };
@@ -874,7 +923,9 @@ class ModelAPIServer {
 
                             try {
                                 agent::AgentLoop loop(job->llama_url, job->llama_model, job->supports_tools);
+                                loop.set_tool_filters(job->use_calendar, job->use_notes);  // ADD THIS
                                 auto result = loop.process(job->messages, [&](const std::string& delta) -> bool {
+           
                                     if (delta.empty())
                                         return true;
                                     if (!sink.is_writable())
@@ -914,6 +965,7 @@ class ModelAPIServer {
                         });
                 } else {
                     agent::AgentLoop loop(llama_url, llama_model_name, model_supports_tools);
+                    loop.set_tool_filters(use_calendar_tools, use_notes_tools);  // ADD THIS
                     auto result = loop.process(messages);
 
                     if (!result.success) {

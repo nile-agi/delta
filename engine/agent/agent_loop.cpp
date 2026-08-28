@@ -13,6 +13,43 @@
 namespace delta {
 namespace agent {
 
+// Filter tools based on enabled types
+static nlohmann::json filter_tools_by_config(const nlohmann::json& all_tools, 
+                                              bool use_calendar, bool use_notes) {
+    if (use_calendar && use_notes) return all_tools; // All enabled
+    
+    nlohmann::json filtered = nlohmann::json::array();
+    
+    // Calendar tool names
+    std::set<std::string> calendar_tools = {
+        "create_event", "list_events", "delete_event", "update_event", "get_current_time"
+    };
+    
+    // Notes tool names
+    std::set<std::string> notes_tools = {
+        "list_notes", "create_note", "get_note", "update_note", "delete_note"
+    };
+    
+    for (const auto& tool : all_tools) {
+        if (!tool.is_object() || !tool.contains("function")) continue;
+        std::string name = tool["function"].value("name", "");
+        
+        bool is_calendar = calendar_tools.count(name) > 0;
+        bool is_notes = notes_tools.count(name) > 0;
+        
+        // Include if it's not a calendar/notes tool, or if that category is enabled
+        if (!is_calendar && !is_notes) {
+            filtered.push_back(tool);
+        } else if (is_calendar && use_calendar) {
+            filtered.push_back(tool);
+        } else if (is_notes && use_notes) {
+            filtered.push_back(tool);
+        }
+    }
+    
+    return filtered;
+}
+
 static std::string get_text_content(const nlohmann::json& msg, const std::string& key = "content") {
     if (!msg.contains(key))
         return "";
@@ -84,10 +121,16 @@ static size_t write_callback(void* contents, size_t size, size_t nmemb, std::str
 }
 
 AgentLoop::AgentLoop(const std::string& llama_server_url, const std::string& model_name, bool supports_tools)
-    : server_url_(llama_server_url), model_name_(model_name), supports_tools_(supports_tools) {}
+    : server_url_(llama_server_url), model_name_(model_name), supports_tools_(supports_tools),
+      use_calendar_tools_(true), use_notes_tools_(true) {}
 
 void AgentLoop::set_max_iterations(int max) {
     max_iterations_ = max;
+}
+
+void AgentLoop::set_tool_filters(bool use_calendar, bool use_notes) {
+    use_calendar_tools_ = use_calendar;
+    use_notes_tools_ = use_notes;
 }
 
 std::string AgentLoop::build_system_prompt() {
@@ -175,9 +218,13 @@ std::string AgentLoop::build_system_prompt() {
     return prompt;
 }
 
-nlohmann::json AgentLoop::build_request_body(const nlohmann::json& messages, const nlohmann::json& tools, bool stream) {
+nlohmann::json AgentLoop::build_request_body(const nlohmann::json& messages, nlohmann::json tools, bool stream) {
     // Ensure every message has a string content field for llama-server
     nlohmann::json clean_messages = nlohmann::json::array();
+
+    // Filter tools based on user preferences
+    tools = filter_tools_by_config(tools, use_calendar_tools_, use_notes_tools_);
+    
     for (const auto& msg : messages) {
         if (!msg.is_object())
             continue;

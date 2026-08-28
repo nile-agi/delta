@@ -1,3 +1,4 @@
+<!-- CalendarWindow.svelte -->
 <script lang="ts">
 	import Calendar from './Calendar.svelte';
 	import FloatingWindow from './FloatingWindow.svelte';

@@ -35,40 +35,30 @@
 
 	let { children } = $props();
 
-	// Synchronous detection — no flash, no wasted effects in the telemetry webview.
-	// When ?window=hardware is in the URL, this webview IS the standalone OS telemetry window.
-		// Detect standalone windows
-	let isHardwareWindow = $state(
-		browser &&
-			(new URLSearchParams(window.location.search).get('window') === 'hardware' ||
-				window.location.hash.includes('window=hardware'))
-	);
+	// Synchronous detection of standalone OS windows
+	const kind = browser ? new URLSearchParams(window.location.search).get('window') ?? '' : '';
+	let isHardwareWindow = $state(kind === 'hardware');
+	let isCalendarWindow = $state(kind === 'calendar');
+	let isNotesWindow = $state(kind === 'notes');
 
-	let isCalendarWindow = $state(
-		browser &&
-			(new URLSearchParams(window.location.search).get('window') === 'calendar' ||
-				window.location.hash.includes('window=calendar'))
-	);
+	const IS_TAURI_ENV =
+		browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-	let isNotesWindow = $state(
-		browser &&
-			(new URLSearchParams(window.location.search).get('window') === 'notes' ||
-				window.location.hash.includes('window=notes'))
-	);
-
-	// Tauri window label detection (authoritative signal)
-	if (browser && '__TAURI_INTERNALS__' in window) {
+	// Authoritative Tauri label check (survives URL normalization)
+	if (browser && IS_TAURI_ENV) {
 		import('@tauri-apps/api/window')
 			.then(({ getCurrentWindow }) => {
 				const label = getCurrentWindow().label;
 				if (label === 'hardware-telemetry') isHardwareWindow = true;
-				if (label === 'calendar') isCalendarWindow = true;
-				if (label === 'notes') isNotesWindow = true;
+				else if (label === 'calendar') isCalendarWindow = true;
+				else if (label === 'notes') isNotesWindow = true;
 			})
 			.catch(() => {});
 	}
 
-	const IS_TAURI_ENV = browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+	// Convenience: true for any standalone auxiliary window (skip all main-app work)
+	const isAuxWindow = $derived(isHardwareWindow || isCalendarWindow || isNotesWindow);
+
 	let serverReady = $state(!IS_TAURI_ENV);
 	let serverError = $state(false);
 	let serverErrorMessage = $state('');
@@ -86,9 +76,9 @@
 		});
 	}
 
-	// Server-ready polling — skip entirely in the telemetry webview
+	// Server-ready polling — skip entirely in any auxiliary webview
 	$effect(() => {
-		if (isHardwareWindow || isCalendarWindow || isNotesWindow ) return;
+		if (isAuxWindow) return;
 		if (!IS_TAURI_ENV) return;
 		if ((window as any).__DELTA_PORT__ != null && !(window as any).__DELTA_SERVER_ERROR__) {
 			serverReady = true;
@@ -153,9 +143,9 @@
 
 	let modelApiReady = $state(!browser || typeof window === 'undefined');
 
-	// Model API readiness — skip in telemetry webview
+	// Model API readiness — skip in any auxiliary webview
 	$effect(() => {
-		if (isHardwareWindow) return;
+		if (isAuxWindow) return;
 		if (!serverReady) return;
 		if (!browser || typeof window === 'undefined') {
 			modelApiReady = true;
@@ -172,9 +162,9 @@
 		});
 	});
 
-	// Remove the splash once ready — skip in telemetry webview
+	// Remove the splash once ready — skip in auxiliary webviews
 	$effect(() => {
-		if (isHardwareWindow) return;
+		if (isAuxWindow) return;
 		if ((serverReady && modelApiReady) || serverError) {
 			const el = document.getElementById('app-loading');
 			if (el) {
@@ -240,9 +230,9 @@
 		}
 	}
 
-	// Sidebar auto-open logic — skip in telemetry webview
+	// Sidebar auto-open logic — skip in auxiliary webviews
 	$effect(() => {
-		if (isHardwareWindow) return;
+		if (isAuxWindow) return;
 		const alwaysShow = currentConfig.alwaysShowSidebar === true;
 		const autoShowOnNewChat = currentConfig.autoShowSidebarOnNewChat !== false;
 		if (alwaysShow) {
@@ -259,20 +249,20 @@
 	});
 
 	$effect(() => {
-		if (isHardwareWindow) return;
+		if (isAuxWindow) return;
 		if (settingsWindow.state.docked === 'left' && sidebarOpen) {
 			sidebarOpen = false;
 		}
 	});
 
 	$effect(() => {
-		if (isHardwareWindow) return;
+		if (isAuxWindow) return;
 		if (!serverReady) return;
 		serverStore.fetchServerProps();
 	});
 
 	$effect(() => {
-		if (isHardwareWindow) return;
+		if (isAuxWindow) return;
 		if (serverReady && modelApiReady && !serverError) {
 			startReminderPolling();
 		}
@@ -283,7 +273,7 @@
 	});
 
 	$effect(() => {
-		if (isHardwareWindow) return;
+		if (isAuxWindow) return;
 		const serverProps = serverStore.serverProps;
 		if (serverProps?.default_generation_settings?.params) {
 			settingsStore.syncWithServerDefaults();
@@ -291,7 +281,7 @@
 	});
 
 	$effect(() => {
-		if (isHardwareWindow) return;
+		if (isAuxWindow) return;
 		if (!serverReady) return;
 		const apiKey = config().apiKey;
 
@@ -320,7 +310,7 @@
 	});
 
 	$effect(() => {
-		if (isHardwareWindow) return;
+		if (isAuxWindow) return;
 		setTitleUpdateConfirmationCallback(async (currentTitle: string, newTitle: string) => {
 			return new Promise<boolean>((resolve) => {
 				titleUpdateCurrentTitle = currentTitle;
@@ -335,16 +325,19 @@
 <ModeWatcher />
 <Toaster richColors />
 
-<!-- Always at top level — guarded effects make it harmless in the telemetry window -->
+<!-- Always at top level — guarded effects make it harmless in auxiliary webviews -->
 <svelte:window onkeydown={handleKeydown} bind:innerHeight />
 
 {#if isHardwareWindow}
-	<!-- This webview IS the standalone OS telemetry window -->
 	<div class="h-screen w-screen overflow-auto bg-background">
 		<HardwareDashboard fullscreen />
 	</div>
+{:else if isCalendarWindow}
+	<div class="h-screen w-screen overflow-hidden bg-background">
+		<Calendar fullscreen />
+	</div>
 {:else if isNotesWindow}
-	<div class="h-screen w-screen overflow-auto bg-background">
+	<div class="h-screen w-screen overflow-hidden bg-background">
 		<Notes fullscreen />
 	</div>
 {:else}
