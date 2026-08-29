@@ -61,6 +61,28 @@ Decision Policy::decide(const ToolDefinition& def) const {
     return Decision::Ask;
 }
 
+ApprovalHttpResult answer_approval(const nlohmann::json& request) {
+    auto bad_request = [](const std::string& message) {
+        return ApprovalHttpResult{400, {{"error", {{"message", message}, {"type", "invalid_request_error"}}}}};
+    };
+
+    if (!request.is_object())
+        return bad_request("Request body must be a JSON object");
+
+    const std::string id = request.value("id", "");
+    const std::string decision = request.value("decision", "");
+    static const std::set<std::string> valid = {"allow", "always", "deny", "never"};
+    if (id.empty() || !valid.count(decision))
+        return bad_request("id and decision (allow|always|deny|never) are required");
+
+    if (!ApprovalBroker::instance().resolve(id, decision)) {
+        return ApprovalHttpResult{
+            404,
+            {{"error", {{"message", "That approval request is unknown or already answered"}, {"type", "not_found"}}}}};
+    }
+    return ApprovalHttpResult{200, {{"ok", true}, {"id", id}, {"decision", decision}}};
+}
+
 ApprovalBroker& ApprovalBroker::instance() {
     static ApprovalBroker broker;
     return broker;

@@ -454,6 +454,68 @@ static void test_destructive_tool_requires_approval() {
     check(resolved.is_object() && resolved.value("decision", "") == "allow", "the decision was reported as allow");
 }
 
+static void test_approval_endpoint_resumes_a_parked_run() {
+    test("the approval endpoint's own logic unblocks a parked run and reports 200");
+
+    // Drives answer_approval() -- the exact function POST /v1/agent/approve calls -- against a
+    // real run parked on the broker, so the endpoint's success path is covered end to end and
+    // not just the broker underneath it.
+    ScriptedServer server(
+        {assistant_calling("test_destroy", {{"id", "evt-77"}}), {{"role", "assistant"}, {"content", "Removed it."}}});
+    server.start();
+
+    const int before = g_destructive_spy.calls;
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+
+    std::atomic<int> endpoint_status{0};
+    json endpoint_body;
+    std::mutex body_mutex;
+
+    auto sink = [&](const HarnessEvent& event) {
+        if (event.type == EventType::ApprovalRequired) {
+            std::thread([&, id = event.data.value("id", "")] {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                const auto result = answer_approval({{"id", id}, {"decision", "allow"}});
+                {
+                    std::lock_guard<std::mutex> lock(body_mutex);
+                    endpoint_body = result.body;
+                }
+                endpoint_status = result.status;
+            }).detach();
+        }
+        return true;
+    };
+
+    auto result = harness.run(json::array({user("delete event 77")}), sink);
+    server.stop();
+
+    check_eq(endpoint_status.load(), 200, "the endpoint reported success");
+    {
+        std::lock_guard<std::mutex> lock(body_mutex);
+        check(endpoint_body.value("ok", false), "the response body says ok");
+        check_eq(endpoint_body.value("decision", ""), std::string("allow"), "it echoed the decision back");
+    }
+    check_eq(g_destructive_spy.calls - before, 1, "the parked tool ran once the answer arrived");
+    check(result.success, "the run completed");
+}
+
+static void test_approval_endpoint_rejects_bad_input() {
+    test("the approval endpoint rejects malformed and unknown requests");
+
+    check_eq(answer_approval({{"id", "apr_x"}, {"decision", "maybe"}}).status, 400, "an invalid decision is a 400");
+    check_eq(answer_approval({{"decision", "allow"}}).status, 400, "a missing id is a 400");
+    check_eq(answer_approval(json("not an object")).status, 400, "a non-object body is a 400");
+    check_eq(answer_approval({{"id", "apr_missing"}, {"decision", "allow"}}).status, 404, "an unknown id is a 404");
+
+    // Answering the same request twice must not succeed twice.
+    const std::string id = ApprovalBroker::instance().open("test_destroy", json::object());
+    check_eq(answer_approval({{"id", id}, {"decision", "deny"}}).status, 200, "the first answer is accepted");
+    check_eq(answer_approval({{"id", id}, {"decision", "allow"}}).status, 404,
+             "a second answer for the same request is a 404");
+    ApprovalBroker::instance().cancel(id);
+}
+
 static void test_denied_approval_tells_the_model() {
     test("a denied approval feeds a refusal back instead of running the tool");
 
@@ -820,6 +882,8 @@ int main() {
     test_tool_failure_is_reported_to_model();
     test_chained_tools();
     test_destructive_tool_requires_approval();
+    test_approval_endpoint_resumes_a_parked_run();
+    test_approval_endpoint_rejects_bad_input();
     test_denied_approval_tells_the_model();
     test_approval_timeout_denies();
     test_blocking_mode_refuses_without_asking();

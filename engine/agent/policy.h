@@ -53,6 +53,16 @@ class Policy {
     std::set<std::string> run_denied_;
 };
 
+// The outcome of answering an approval, as an HTTP status plus the body to return.
+struct ApprovalHttpResult {
+    int status;
+    nlohmann::json body;
+};
+
+// Validates an approval answer and applies it. The HTTP route and its tests both call this, so
+// what the tests cover is the same code the server runs.
+ApprovalHttpResult answer_approval(const nlohmann::json& request);
+
 // Parks a run while the UI asks the user about a tool call, and wakes it when the answer arrives
 // over HTTP. One broker serves every in-flight request.
 class ApprovalBroker {

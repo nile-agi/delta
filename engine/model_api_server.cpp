@@ -1030,28 +1030,14 @@ class ModelAPIServer {
         // until this arrives or its timeout passes.
         server_->Post("/v1/agent/approve", [](const httplib::Request& req, httplib::Response& res) {
             try {
-                json body = json::parse(req.body);
-                const std::string id = body.value("id", "");
-                const std::string decision = body.value("decision", "");
-                static const std::set<std::string> valid = {"allow", "always", "deny", "never"};
-                if (id.empty() || !valid.count(decision)) {
-                    json err = {{"error",
-                                 {{"message", "id and decision (allow|always|deny|never) are required"},
-                                  {"type", "invalid_request_error"}}}};
-                    res.status = 400;
-                    res.set_content(err.dump(), "application/json");
-                    return;
-                }
-                const bool resolved = agent::ApprovalBroker::instance().resolve(id, decision);
-                if (!resolved) {
-                    json err = {
-                        {"error",
-                         {{"message", "That approval request is unknown or already answered"}, {"type", "not_found"}}}};
-                    res.status = 404;
-                    res.set_content(err.dump(), "application/json");
-                    return;
-                }
-                res.set_content(json{{"ok", true}, {"id", id}, {"decision", decision}}.dump(), "application/json");
+                const auto result = agent::answer_approval(json::parse(req.body));
+                res.status = result.status;
+                res.set_content(result.body.dump(), "application/json");
+            } catch (const json::parse_error&) {
+                json err = {
+                    {"error", {{"message", "Invalid JSON in request body"}, {"type", "invalid_request_error"}}}};
+                res.status = 400;
+                res.set_content(err.dump(), "application/json");
             } catch (const std::exception& e) {
                 json err = {{"error", {{"message", e.what()}, {"type", "server_error"}}}};
                 res.status = 500;
