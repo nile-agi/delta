@@ -14,16 +14,20 @@
 #include "model_api_server.h"
 #include "agent/agent_database.h"
 #include "agent/tool_registry.h"
-#include "agent/agent_loop.h"
+#include "agent/harness.h"
+#include "agent/memory_store.h"
+#include "agent/policy.h"
 
 #include "tools/hardware_monitor.h"
 
 // Updated includes to point to the local vendor directory structure
 #include "vendor/llama.cpp/vendor/cpp-httplib/httplib.h"
-#include "api/note_routes.h"  
+#include "api/note_routes.h"
 #include "vendor/json.hpp"
 
 #include <iostream>
+#include <set>
+#include <algorithm>
 #include <thread>
 #include <atomic>
 #include <memory>
@@ -58,41 +62,6 @@
 using json = nlohmann::json;
 
 // Filter tools based on enabled types
-static nlohmann::json filter_tools_by_config(const nlohmann::json& all_tools, 
-                                              bool use_calendar, bool use_notes) {
-    if (use_calendar && use_notes) return all_tools; // All enabled
-    
-    nlohmann::json filtered = nlohmann::json::array();
-    
-    // Calendar tool names
-    std::set<std::string> calendar_tools = {
-        "create_event", "list_events", "delete_event", "update_event", "get_current_time"
-    };
-    
-    // Notes tool names
-    std::set<std::string> notes_tools = {
-        "list_notes", "create_note", "get_note", "update_note", "delete_note"
-    };
-    
-    for (const auto& tool : all_tools) {
-        if (!tool.is_object() || !tool.contains("function")) continue;
-        std::string name = tool["function"].value("name", "");
-        
-        bool is_calendar = calendar_tools.count(name) > 0;
-        bool is_notes = notes_tools.count(name) > 0;
-        
-        // Include if it's not a calendar/notes tool, or if that category is enabled
-        if (!is_calendar && !is_notes) {
-            filtered.push_back(tool);
-        } else if (is_calendar && use_calendar) {
-            filtered.push_back(tool);
-        } else if (is_notes && use_notes) {
-            filtered.push_back(tool);
-        }
-    }
-    
-    return filtered;
-}
 
 // DHATS: Global hardware telemetry monitor
 static delta::HardwareMonitor g_hardware_monitor;
@@ -121,12 +90,14 @@ static bool tcp_connect_ok(const std::string& host, int port, int timeout_ms = 8
     struct addrinfo hints = {}, *res = nullptr;
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0) return false;
+    if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0)
+        return false;
     bool ok = false;
     for (auto* p = res; p && !ok; p = p->ai_next) {
 #ifdef _WIN32
         SOCKET fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (fd == INVALID_SOCKET) continue;
+        if (fd == INVALID_SOCKET)
+            continue;
         DWORD tv = timeout_ms;
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
@@ -134,8 +105,11 @@ static bool tcp_connect_ok(const std::string& host, int port, int timeout_ms = 8
         closesocket(fd);
 #else
         int fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (fd < 0) continue;
-        struct timeval tv; tv.tv_sec = 0; tv.tv_usec = timeout_ms * 1000;
+        if (fd < 0)
+            continue;
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = timeout_ms * 1000;
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
         ok = (connect(fd, p->ai_addr, p->ai_addrlen) == 0);
@@ -162,11 +136,12 @@ static json build_hardware_json(const delta::HardwareMetrics& m) {
     int rpc_count = 0;
     try {
         rpc_count = (int)delta::agent::AgentDatabase::instance().get_enabled_rpc_nodes().size();
-    } catch (...) {}
+    } catch (...) {
+    }
 
     // DHATS Brain: multi-tier offload status
     auto heal = delta::get_heal_status();
-    
+
     return {{"system_ram_used_gb", m.system_ram_used_gb},
             {"system_ram_total_gb", m.system_ram_total_gb},
             {"cpu_util_pct", m.cpu_util_pct},
@@ -194,10 +169,33 @@ static json sse_content_chunk(const std::string& text) {
     return json{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
 }
 
-static json sse_tool_calls_chunk(const json& tool_calls) {
-    json delta{{"tool_calls", tool_calls}};
-    json choice{{"index", 0}, {"delta", delta}, {"finish_reason", nullptr}};
-    return json{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
+// Delta's own SSE frames, carried on the same stream as the OpenAI chunks. Clients that do not
+// understand them can ignore any frame whose "object" is not a chat.completion.chunk.
+static json sse_agent_event(const std::string& event, const json& data) {
+    return json{{"object", "delta.agent.event"}, {"event", event}, {"data", data}};
+}
+
+static const char* agent_event_name(delta::agent::EventType type) {
+    using delta::agent::EventType;
+    switch (type) {
+    case EventType::Content:
+        return "content";
+    case EventType::ToolStart:
+        return "tool_start";
+    case EventType::ToolResult:
+        return "tool_result";
+    case EventType::ApprovalRequired:
+        return "approval_required";
+    case EventType::ApprovalResolved:
+        return "approval_resolved";
+    case EventType::Compaction:
+        return "compaction";
+    case EventType::Status:
+        return "status";
+    case EventType::Error:
+        return "error";
+    }
+    return "status";
 }
 
 static json sse_finish_chunk() {
@@ -877,16 +875,30 @@ class ModelAPIServer {
                     }
                 }
 
-                // ADD THIS: Read tool preferences from request
-                bool use_calendar_tools = body.value("use_calendar_tools", true);
-                bool use_notes_tools = body.value("use_notes_tools", true);
+                // Which tool categories this request may use. Absent keys mean "on": a client that
+                // knows nothing about categories gets the full tool set.
+                agent::RunOptions run_options;
+                run_options.tools_enabled = model_supports_tools && body.value("use_tools", true);
+                run_options.max_tokens = body.value("max_tokens", 2048);
+                if (body.contains("max_iterations") && body["max_iterations"].is_number_integer())
+                    run_options.max_iterations = std::max(1, std::min(100, body["max_iterations"].get<int>()));
 
-                // If tools are disabled entirely, both categories are disabled
-                if (!model_supports_tools) {
-                    use_calendar_tools = false;
-                    use_notes_tools = false;
+                {
+                    static const char* kCategories[] = {"calendar", "notes", "memory", "task",
+                                                        "files",    "shell", "web",    nullptr};
+                    for (int i = 0; kCategories[i]; i++) {
+                        const std::string key = std::string("use_") + kCategories[i] + "_tools";
+                        if (body.value(key, true))
+                            run_options.enabled_categories.insert(kCategories[i]);
+                    }
+                    // An explicit "everything on" is represented as an empty set so newly
+                    // registered categories are picked up without a client change.
+                    if (run_options.enabled_categories.size() ==
+                        agent::ToolRegistry::instance().get_categories().size())
+                        run_options.enabled_categories.clear();
                 }
-                std::cerr << "[delta-server] agent loop: model=" << model_name << " -> llama_alias=" << llama_model_name
+
+                std::cerr << "[delta-server] harness: model=" << model_name << " -> llama_alias=" << llama_model_name
                           << ", supports_tools=" << (model_supports_tools ? "true" : "false")
                           << ", msgs=" << messages.size() << std::endl;
 
@@ -894,8 +906,7 @@ class ModelAPIServer {
                     struct StreamJob {
                         std::string llama_url, llama_model;
                         bool supports_tools = false;
-                        bool use_calendar = true;  
-                        bool use_notes = true;     
+                        agent::RunOptions options;
                         json messages;
                         bool started = false;
                     };
@@ -903,6 +914,7 @@ class ModelAPIServer {
                     job->llama_url = llama_url;
                     job->llama_model = llama_model_name;
                     job->supports_tools = model_supports_tools;
+                    job->options = run_options;
                     job->messages = messages;
 
                     res.set_header("Cache-Control", "no-cache");
@@ -922,15 +934,21 @@ class ModelAPIServer {
                             };
 
                             try {
-                                agent::AgentLoop loop(job->llama_url, job->llama_model, job->supports_tools);
-                                loop.set_tool_filters(job->use_calendar, job->use_notes);  // ADD THIS
-                                auto result = loop.process(job->messages, [&](const std::string& delta) -> bool {
-           
-                                    if (delta.empty())
-                                        return true;
+                                agent::Harness harness(job->llama_url, job->llama_model, job->supports_tools);
+                                harness.set_options(job->options);
+
+                                auto result = harness.run(job->messages, [&](const agent::HarnessEvent& event) -> bool {
                                     if (!sink.is_writable())
                                         return false;
-                                    return emit(sse_content_chunk(delta));
+                                    // Assistant text also goes out as a standard OpenAI chunk so
+                                    // existing clients keep rendering the reply unchanged.
+                                    if (event.type == agent::EventType::Content) {
+                                        const std::string text = event.data.value("text", "");
+                                        if (text.empty())
+                                            return true;
+                                        return emit(sse_content_chunk(text));
+                                    }
+                                    return emit(sse_agent_event(agent_event_name(event.type), event.data));
                                 });
 
                                 if (result.client_aborted) {
@@ -941,17 +959,14 @@ class ModelAPIServer {
                                 if (!result.success) {
                                     std::cerr << "[delta-server] stream error: " << result.error << std::endl;
                                     emit(sse_content_chunk(result.error));
-                                } else if (result.streamed_chars == 0) {
-                                    std::istringstream iss(result.content);
-                                    std::string line;
-                                    bool first_line = true;
-                                    while (std::getline(iss, line)) {
-                                        emit(sse_content_chunk(first_line ? line : "\n" + line));
-                                        first_line = false;
-                                    }
+                                } else if (result.streamed_chars == 0 && !result.content.empty()) {
+                                    emit(sse_content_chunk(result.content));
                                 }
-                                if (!result.tool_calls.empty())
-                                    emit(sse_tool_calls_chunk(result.tool_calls));
+                                if (!result.executed_tools.empty())
+                                    emit(sse_agent_event("run_summary", {{"tool_calls", result.tool_calls},
+                                                                         {"iterations", result.iterations},
+                                                                         {"stop_reason", result.stop_reason},
+                                                                         {"tools", result.executed_tools}}));
                             } catch (const std::exception& e) {
                                 std::cerr << "[delta-server] exception in stream provider: " << e.what() << std::endl;
                                 emit(sse_content_chunk(std::string("Error: ") + e.what()));
@@ -964,9 +979,13 @@ class ModelAPIServer {
                             return true;
                         });
                 } else {
-                    agent::AgentLoop loop(llama_url, llama_model_name, model_supports_tools);
-                    loop.set_tool_filters(use_calendar_tools, use_notes_tools);  // ADD THIS
-                    auto result = loop.process(messages);
+                    // A blocking request has no channel to ask the user anything on, so anything
+                    // that would need approval is refused instead of stalling the connection.
+                    run_options.policy.can_ask = false;
+
+                    agent::Harness harness(llama_url, llama_model_name, model_supports_tools);
+                    harness.set_options(run_options);
+                    auto result = harness.run(messages, nullptr);
 
                     if (!result.success) {
                         json err = {{"error", {{"message", result.error}, {"type", "server_error"}}}};
@@ -976,14 +995,16 @@ class ModelAPIServer {
                     }
 
                     json message = {{"role", "assistant"}, {"content", result.content}};
-                    if (!result.tool_calls.empty())
-                        message["tool_calls"] = result.tool_calls;
+                    if (!result.executed_tools.empty())
+                        message["tool_calls"] = result.executed_tools;
                     json response = {{"id", "chatcmpl-delta"},
                                      {"object", "chat.completion"},
                                      {"choices", {{{"index", 0}, {"message", message}, {"finish_reason", "stop"}}}},
                                      {"usage", {{"prompt_tokens", 0}, {"completion_tokens", 0}, {"total_tokens", 0}}}};
-                    if (result.tool_calls_made > 0) {
-                        response["tool_calls_made"] = result.tool_calls_made;
+                    if (result.tool_calls > 0) {
+                        response["tool_calls_made"] = result.tool_calls;
+                        response["iterations"] = result.iterations;
+                        response["stop_reason"] = result.stop_reason;
                     }
                     res.set_content(response.dump(), "application/json");
                 }
@@ -1005,6 +1026,94 @@ class ModelAPIServer {
                 res.set_content(err.dump(), "application/json");
             }
         });
+        // The UI answers a pending approval here. The run is parked on ApprovalBroker::wait()
+        // until this arrives or its timeout passes.
+        server_->Post("/v1/agent/approve", [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                json body = json::parse(req.body);
+                const std::string id = body.value("id", "");
+                const std::string decision = body.value("decision", "");
+                static const std::set<std::string> valid = {"allow", "always", "deny", "never"};
+                if (id.empty() || !valid.count(decision)) {
+                    json err = {{"error",
+                                 {{"message", "id and decision (allow|always|deny|never) are required"},
+                                  {"type", "invalid_request_error"}}}};
+                    res.status = 400;
+                    res.set_content(err.dump(), "application/json");
+                    return;
+                }
+                const bool resolved = agent::ApprovalBroker::instance().resolve(id, decision);
+                if (!resolved) {
+                    json err = {
+                        {"error",
+                         {{"message", "That approval request is unknown or already answered"}, {"type", "not_found"}}}};
+                    res.status = 404;
+                    res.set_content(err.dump(), "application/json");
+                    return;
+                }
+                res.set_content(json{{"ok", true}, {"id", id}, {"decision", decision}}.dump(), "application/json");
+            } catch (const std::exception& e) {
+                json err = {{"error", {{"message", e.what()}, {"type", "server_error"}}}};
+                res.status = 500;
+                res.set_content(err.dump(), "application/json");
+            }
+        });
+
+        // What the agent can do, and which tools the user has already answered for.
+        server_->Get("/v1/agent/tools", [](const httplib::Request&, httplib::Response& res) {
+            auto& registry = agent::ToolRegistry::instance();
+            json tools = json::array();
+            for (const auto& name : registry.get_tool_names()) {
+                const auto* def = registry.get_definition(name);
+                if (!def)
+                    continue;
+                tools.push_back({{"name", def->name},
+                                 {"description", def->description},
+                                 {"category", def->category},
+                                 {"risk", agent::risk_name(def->risk)}});
+            }
+            res.set_content(json{{"tools", tools},
+                                 {"policies", agent::MemoryStore::instance().list_policies()},
+                                 {"memory_count", agent::MemoryStore::instance().count()}}
+                                .dump(),
+                            "application/json");
+        });
+
+        // Forget the remembered approve/deny answers, so destructive tools ask again.
+        server_->Delete("/v1/agent/policies", [](const httplib::Request&, httplib::Response& res) {
+            agent::MemoryStore::instance().clear_policies();
+            res.set_content(json{{"ok", true}}.dump(), "application/json");
+        });
+
+        // Long-term memory, so the user can see and prune what Delta has kept.
+        server_->Get("/v1/agent/memories", [](const httplib::Request& req, httplib::Response& res) {
+            const std::string query = req.has_param("q") ? req.get_param_value("q") : "";
+            int limit = 50;
+            if (req.has_param("limit")) {
+                try {
+                    limit = std::max(1, std::min(200, std::stoi(req.get_param_value("limit"))));
+                } catch (...) {
+                }
+            }
+            auto memories = agent::MemoryStore::instance().search(query, limit);
+            json out = json::array();
+            for (const auto& m : memories)
+                out.push_back(m.to_json());
+            res.set_content(json{{"count", out.size()}, {"memories", out}}.dump(), "application/json");
+        });
+
+        server_->Delete("/v1/agent/memories", [](const httplib::Request& req, httplib::Response& res) {
+            const std::string id = req.has_param("id") ? req.get_param_value("id") : "";
+            if (id.empty()) {
+                res.status = 400;
+                res.set_content(json{{"error", {{"message", "id is required"}}}}.dump(), "application/json");
+                return;
+            }
+            const bool ok = agent::MemoryStore::instance().forget(id);
+            res.status = ok ? 200 : 404;
+            res.set_content(json{{"ok", ok}}.dump(), "application/json");
+        });
+
         server_->Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
             json out = {{"object", "list"}, {"data", json::array()}};
             res.set_content(out.dump(), "application/json");
@@ -1148,16 +1257,20 @@ class ModelAPIServer {
             auto& db = agent::AgentDatabase::instance();
             std::string search = req.has_param("search") ? req.get_param_value("search") : "";
             std::string folder = req.has_param("folder") ? req.get_param_value("folder") : "";
-            std::string tags   = req.has_param("tags")   ? req.get_param_value("tags")   : "";
+            std::string tags = req.has_param("tags") ? req.get_param_value("tags") : "";
             int limit = 50;
             if (req.has_param("limit")) {
-                try { limit = std::stoi(req.get_param_value("limit")); } catch (...) {}
+                try {
+                    limit = std::stoi(req.get_param_value("limit"));
+                } catch (...) {
+                }
             }
             bool pinned_only = req.has_param("pinned_only") && req.get_param_value("pinned_only") == "true";
 
             auto notes = db.list_notes(folder, search, tags, limit, pinned_only);
             json result = {{"notes", json::array()}, {"count", notes.size()}};
-            for (auto& n : notes) result["notes"].push_back(n);
+            for (auto& n : notes)
+                result["notes"].push_back(n);
             res.set_content(result.dump(), "application/json");
         });
 
@@ -1226,28 +1339,26 @@ class ModelAPIServer {
         // ====================================================================
         // DHATS: Real-time hardware telemetry (SSE stream + snapshot + auto-ngl)
         // ====================================================================
-        
+
         // SSE stream endpoint - pushes telemetry every 500ms
         server_->Get("/api/v1/hardware/stream", [](const httplib::Request&, httplib::Response& res) {
             res.set_header("Cache-Control", "no-cache");
             res.set_header("Connection", "keep-alive");
             res.set_header("X-Accel-Buffering", "no");
 
-            res.set_chunked_content_provider(
-                "text/event-stream",
-                [](size_t, httplib::DataSink& sink) -> bool {
-                    static const int hz = [] {
-                        const char* e = std::getenv("DELTA_TELEMETRY_HZ");
-                        int v = e ? std::atoi(e) : 0;
-                        return (v >= 1 && v <= 20) ? v : 4;   // default 4 Hz (was 2 Hz)
-                    }();
+            res.set_chunked_content_provider("text/event-stream", [](size_t, httplib::DataSink& sink) -> bool {
+                static const int hz = [] {
+                    const char* e = std::getenv("DELTA_TELEMETRY_HZ");
+                    int v = e ? std::atoi(e) : 0;
+                    return (v >= 1 && v <= 20) ? v : 4; // default 4 Hz (was 2 Hz)
+                }();
 
-                    auto m = g_hardware_monitor.get_metrics();
-                    std::string frame = "data: " + build_hardware_json(m).dump() + "\n\n";
-                    sink.write(frame.c_str(), frame.size());
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1000 / hz));
-                    return true;
-                });
+                auto m = g_hardware_monitor.get_metrics();
+                std::string frame = "data: " + build_hardware_json(m).dump() + "\n\n";
+                sink.write(frame.c_str(), frame.size());
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000 / hz));
+                return true;
+            });
         });
 
         // One-shot snapshot endpoint
@@ -1266,12 +1377,10 @@ class ModelAPIServer {
 
                 int ngl = g_hardware_monitor.calculate_auto_ngl(model_size, n_layers, ctx_size);
 
-                json result = {
-                    {"recommended_ngl", ngl},
-                    {"has_gpu", g_hardware_monitor.has_gpu()},
-                    {"primary_backend", g_hardware_monitor.get_primary_backend()},
-                    {"model_size_gb", (double)model_size / (1024.0 * 1024.0 * 1024.0)}
-                };
+                json result = {{"recommended_ngl", ngl},
+                               {"has_gpu", g_hardware_monitor.has_gpu()},
+                               {"primary_backend", g_hardware_monitor.get_primary_backend()},
+                               {"model_size_gb", (double)model_size / (1024.0 * 1024.0 * 1024.0)}};
                 res.set_content(result.dump(), "application/json");
             } catch (const std::exception& e) {
                 json error = {{"error", {{"code", 400}, {"message", e.what()}}}};
@@ -1291,7 +1400,7 @@ class ModelAPIServer {
             }
             res.set_content(json({{"nodes", arr}, {"count", arr.size()}}).dump(), "application/json");
         });
-        
+
         server_->Post("/api/v1/rpc/nodes", [](const httplib::Request& req, httplib::Response& res) {
             json body = json::parse(req.body);
             std::string name = body.value("name", "worker");
@@ -1304,15 +1413,16 @@ class ModelAPIServer {
             std::string id = delta::agent::AgentDatabase::instance().add_rpc_node(name, endpoint);
             res.set_content(json({{"id", id}}).dump(), "application/json");
         });
-        
+
         server_->Delete(R"(/api/v1/rpc/nodes/(.+))", [](const httplib::Request& req, httplib::Response& res) {
             bool ok = delta::agent::AgentDatabase::instance().delete_rpc_node(req.matches[1]);
             res.set_content(json({{"deleted", ok}}).dump(), "application/json");
         });
-        
+
         server_->Post(R"(/api/v1/rpc/nodes/(.+)/toggle)", [](const httplib::Request& req, httplib::Response& res) {
             json body = json::parse(req.body);
-            bool ok = delta::agent::AgentDatabase::instance().update_rpc_node_status(req.matches[1], body.value("enabled", true));
+            bool ok = delta::agent::AgentDatabase::instance().update_rpc_node_status(req.matches[1],
+                                                                                     body.value("enabled", true));
             res.set_content(json({{"updated", ok}}).dump(), "application/json");
         });
 
@@ -1354,6 +1464,9 @@ class ModelAPIServer {
         server_ = std::make_unique<httplib::Server>();
         if (!agent::AgentDatabase::instance().init()) {
             std::cerr << "[WARNING] Failed to initialize agent database — tools will not persist data" << std::endl;
+        }
+        if (!agent::MemoryStore::instance().init(agent::AgentDatabase::instance().handle())) {
+            std::cerr << "[WARNING] Failed to initialize agent memory — long-term recall is disabled" << std::endl;
         }
         agent::register_all_tools();
         setup_routes();

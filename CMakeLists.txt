@@ -156,10 +156,19 @@ set(DELTA_SOURCES
     engine/model_api_server.cpp
     engine/api/note_routes.cpp
     engine/agent/agent_database.cpp
+    engine/agent/memory_store.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
     engine/agent/tool_notes.cpp
-    engine/agent/agent_loop.cpp
+    engine/agent/tool_memory.cpp
+    engine/agent/tool_task.cpp
+    engine/agent/tool_files.cpp
+    engine/agent/tool_shell.cpp
+    engine/agent/tool_web.cpp
+    engine/agent/llm_client.cpp
+    engine/agent/context_manager.cpp
+    engine/agent/policy.cpp
+    engine/agent/harness.cpp
 )
 
 # Common include directories
@@ -231,10 +240,19 @@ add_executable(delta-server
     engine/ui.cpp
     engine/api/note_routes.cpp
     engine/agent/agent_database.cpp
+    engine/agent/memory_store.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
-    engine/agent/agent_loop.cpp
     engine/agent/tool_notes.cpp
+    engine/agent/tool_memory.cpp
+    engine/agent/tool_task.cpp
+    engine/agent/tool_files.cpp
+    engine/agent/tool_shell.cpp
+    engine/agent/tool_web.cpp
+    engine/agent/llm_client.cpp
+    engine/agent/context_manager.cpp
+    engine/agent/policy.cpp
+    engine/agent/harness.cpp
 )
 target_compile_definitions(delta-server PRIVATE
     DELTA_VERSION="${PROJECT_VERSION}"
