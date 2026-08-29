@@ -537,17 +537,20 @@ class DeltaServerWrapper {
         stop_llama_server_locked();
     }
 
-    bool restart_llama_server(const std::string& new_model_path, const std::string& model_name, int ctx_size,
-                              const std::string& model_alias) {
+    bool restart_llama_server(const std::string& model_path, const std::string& model_name, int ctx_size, const std::string& model_alias) {
+        
+        // Make a mutable local copy — model_path parameter is const std::string&
+        std::string model_path_to_use = model_path;
+        
         std::lock_guard<std::mutex> lock(llama_server_mutex_);
 
-        if (llama_server_running_ && !model_path_.empty() && !new_model_path.empty() && model_path_ == new_model_path) {
+        if (llama_server_running_ && !model_path_.empty() && !model_path_to_use.empty() && model_path_ == model_path_to_use) {
             return true;
         }
 
-        if (llama_server_running_ && !models_dir_.empty() && !new_model_path.empty()) {
+        if (llama_server_running_ && !models_dir_.empty() && !model_path_to_use.empty()) {
             try {
-                std::filesystem::path model_parent = std::filesystem::path(new_model_path).parent_path();
+                std::filesystem::path model_parent = std::filesystem::path(model_path_to_use).parent_path();
                 std::filesystem::path models_dir_p = std::filesystem::path(models_dir_);
                 bool same_dir = false;
                 try {
@@ -561,7 +564,7 @@ class DeltaServerWrapper {
                     if (!model_name.empty()) {
                         std::cout << "Selected model: " << model_name << std::endl;
                     }
-                    model_path_ = new_model_path;
+                    model_path_ = model_path_to_use;
                     return true;
                 }
             } catch (...) {
@@ -570,9 +573,9 @@ class DeltaServerWrapper {
 
         if (!model_name.empty()) {
             std::cout << "Loading model: " << model_name << std::endl;
-            if (!new_model_path.empty()) {
+            if (!model_path_to_use.empty()) {
                 try {
-                    auto fsize = std::filesystem::file_size(new_model_path);
+                    auto fsize = std::filesystem::file_size(model_path_to_use);
                     double mb = static_cast<double>(fsize) / (1024.0 * 1024.0);
                     if (mb >= 1024.0) {
                         std::cout << "  Size: " << std::fixed << std::setprecision(1) << (mb / 1024.0) << " GB"
@@ -585,6 +588,38 @@ class DeltaServerWrapper {
             }
         }
 
+        // ===== DHATS: HARD BLOCK — never launch a model that cannot run =====
+        if (!model_path_to_use.empty()) {
+            long long size_bytes = 0;
+            try { size_bytes = std::filesystem::file_size(model_path_to_use); } catch (...) {}
+
+            if (size_bytes > 0) {
+                auto compat = hw_monitor_.check_model_compatibility(
+                    size_bytes, estimate_model_layers(size_bytes), ctx_size);
+
+                if (!compat.can_run) {
+                    delta::report_model_block({true, model_name,
+                                            compat.warning,
+                                            compat.recommendation,
+                                            compat.suggested_context});
+                    std::cerr << "[DHATS] ❌ BLOCKED: " << model_name << " — "
+                            << compat.warning << std::endl;
+                    std::cerr << "[DHATS] " << compat.recommendation << std::endl;
+
+                    // Keep the app usable: restart in idle/router mode (no -m)
+                    model_path_to_use = "";
+                    model_path_ = "";
+                } else {
+                    delta::report_model_block({false, "", "", "", 0});
+                    if (!compat.efficient) {
+                        std::cerr << "[DHATS] ⚠ " << compat.warning << std::endl;
+                        std::cerr << "[DHATS] Recommendation: " << compat.recommendation << std::endl;
+                    }
+                }
+            }
+        }
+        // ===== end DHATS block =====
+
 #ifdef _WIN32
         if (llama_server_running_ && llama_server_process_ != NULL) {
 #else
@@ -594,10 +629,10 @@ class DeltaServerWrapper {
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
 
-        model_path_ = new_model_path;
+        model_path_ = model_path_to_use;
         max_context_ = ctx_size;
 
-        std::string cmd = build_llama_server_command(new_model_path, ctx_size, model_alias);
+        std::string cmd = build_llama_server_command(model_path_to_use, ctx_size, model_alias);
 
 #ifdef _WIN32
         STARTUPINFOA si = {0};
@@ -837,7 +872,7 @@ class DeltaServerWrapper {
  ██║  ██║█████╗  ██║     ██║   ███████║    ██║     ██║     ██║
  ██║  ██║██╔══╝  ██║     ██║   ██╔══██║    ██║     ██║     ██║
  ██████╔╝███████╗███████╗██║   ██║  ██║    ╚██████╗███████╗██║
- ╚═════╝ ╚══════╝╚══════╝╚═╝   ╚═╝  ╚═╝     ╚═════╝╚══════╝╚═╝
+ ╚═════╝ ╚══════╝╚══════╝╚═╝   ╚═╝  ╚═╝     ╚═════╝╚═════╝╚═╝
 )" << std::endl;
 #ifndef DELTA_VERSION
 #define DELTA_VERSION "dev"

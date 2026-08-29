@@ -25,6 +25,14 @@ namespace delta {
 // ============================================================
 // Data Structures
 // ============================================================
+// Rough transformer-layer estimate from GGUF size (used for KV-cache math)
+inline int estimate_model_layers(long long size_bytes) {
+    if (size_bytes > 10LL * 1024 * 1024 * 1024) return 80;
+    if (size_bytes > 5LL  * 1024 * 1024 * 1024) return 48;
+    if (size_bytes > 2LL  * 1024 * 1024 * 1024) return 32;
+    if (size_bytes > 1LL  * 1024 * 1024 * 1024) return 28;
+    return 24;
+}
 
 struct GPUMetrics {
     std::string name;           // e.g. "Apple M2 Pro", "NVIDIA RTX 4090"
@@ -66,6 +74,38 @@ struct OffloadPlan {
     std::string recommendation;      // Suggested alternative
 };
 
+struct ResourceHog {
+    std::string name;
+    int pid;
+    float cpu_pct;
+    float ram_gb;
+    std::string type;  // "browser", "game", "editor", "other"
+    std::string suggestion;
+};
+
+struct ModelEfficiency {
+    std::string model_name;
+    std::string display_name;
+    long long size_bytes;
+    bool can_run;
+    bool efficient;
+    float gpu_mem_needed;
+    float ram_needed;
+    std::string warning;
+    std::string recommendation;
+};
+
+struct ModelCompatibility {
+    bool can_run;
+    bool efficient;
+    std::string warning;
+    std::string recommendation;
+    int suggested_context;
+    float gpu_mem_needed;
+    float ram_needed;
+    int max_layers_on_gpu;
+};
+
 // ============================================================
 // HardwareMonitor Class
 // ============================================================
@@ -96,6 +136,12 @@ public:
      */
     float gpu_budget_gb() const;
     float gpu_available_gb() const;
+
+    /**
+     * DHATS Brain: RAM memory budget query.
+     * Returns available RAM in GB (total - used - 2GB reserve for OS).
+     */
+    float ram_available_gb() const;
 
     /**
      * DHATS Brain: Plan optimal offload configuration based on model size,
@@ -130,6 +176,35 @@ public:
      */
     std::vector<std::string> get_recommended_model_sizes() const;
 
+    /**
+     * Analyze all installed models against current hardware state.
+     * Returns which models can run efficiently, which can't, and recommendations.
+     */
+    std::vector<ModelEfficiency> analyze_installed_models() const;
+
+    /**
+     * Get list of resource-heavy processes that could be closed to free resources.
+     */
+    std::vector<ResourceHog> get_resource_hogs() const;
+
+    /**
+     * Get the current top model recommendation based on hardware state.
+     */
+    ModelEfficiency get_top_model_recommendation() const;
+
+    /**
+     * Check if a specific model can run with given context size.
+     * @param model_size_bytes Model file size
+     * @param n_layers Number of transformer layers in the model
+     * @param requested_ctx Requested context window size
+     * @return Compatibility assessment with recommendations
+     */
+    ModelCompatibility check_model_compatibility(
+        long long model_size_bytes, 
+        int n_layers, 
+        int requested_ctx
+    ) const;
+
 private:
     // Platform-specific probes (Dynamic Telemetry Loading)
     void probe_nvidia_nvml();
@@ -142,6 +217,9 @@ private:
     float collect_cpu_util_pct();
     float collect_cpu_temp_c();
     float collect_system_power_w();
+
+    float estimate_model_ram(long long model_size_bytes) const;
+    std::string classify_process(const std::string& name) const;
 
     void collect_nvidia_metrics(std::vector<GPUMetrics>& out);
     void collect_apple_metrics(std::vector<GPUMetrics>& out);

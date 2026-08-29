@@ -36,6 +36,16 @@ namespace delta {
 
     void report_heal(int recoveries, int active_ngl, const std::string& reason);
     HealStatus get_heal_status();
-}
+    struct ModelBlockStatus {
+        bool blocked = false;
+        std::string model_name;
+        std::string reason;
+        std::string recommendation;
+        int suggested_context = 0;
+    };
+
+    void report_model_block(const ModelBlockStatus& status);
+    ModelBlockStatus get_model_block();
+    }
 
 #endif // DELTA_MODEL_API_SERVER_H
