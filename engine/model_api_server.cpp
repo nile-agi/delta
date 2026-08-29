@@ -61,41 +61,41 @@
 
 using json = nlohmann::json;
 
-// Filter tools according to enabled types
-static nlohmann::json filter_tools_by_config(const nlohmann::json& all_tools,
-                                              bool use_calendar, bool use_notes) {
-    if (use_calendar && use_notes) return all_tools; // All enabled
+// // Filter tools according to enabled types
+// static nlohmann::json filter_tools_by_config(const nlohmann::json& all_tools,
+//                                               bool use_calendar, bool use_notes) {
+//     if (use_calendar && use_notes) return all_tools; // All enabled
 
-    nlohmann::json filtered = nlohmann::json::array();
+//     nlohmann::json filtered = nlohmann::json::array();
 
-    // Calendar tool names
-    std::set<std::string> calendar_tools = {
-        "create_event", "list_events", "delete_event", "update_event", "get_current_time"
-    };
+//     // Calendar tool names
+//     std::set<std::string> calendar_tools = {
+//         "create_event", "list_events", "delete_event", "update_event", "get_current_time"
+//     };
 
-    // Notes tool names
-    std::set<std::string> notes_tools = {
-        "list_notes", "create_note", "get_note", "update_note", "delete_note"
-    };
+//     // Notes tool names
+//     std::set<std::string> notes_tools = {
+//         "list_notes", "create_note", "get_note", "update_note", "delete_note"
+//     };
 
-    for (const auto& tool : all_tools) {
-        if (!tool.is_object() || !tool.contains("function")) continue;
-        std::string name = tool["function"].value("name", "");
+//     for (const auto& tool : all_tools) {
+//         if (!tool.is_object() || !tool.contains("function")) continue;
+//         std::string name = tool["function"].value("name", "");
 
-        bool is_calendar = calendar_tools.count(name) > 0;
-        bool is_notes = notes_tools.count(name) > 0;
+//         bool is_calendar = calendar_tools.count(name) > 0;
+//         bool is_notes = notes_tools.count(name) > 0;
 
-        if (!is_calendar && !is_notes) {
-            filtered.push_back(tool);
-        } else if (is_calendar && use_calendar) {
-            filtered.push_back(tool);
-        } else if (is_notes && use_notes) {
-            filtered.push_back(tool);
-        }
-    }
+//         if (!is_calendar && !is_notes) {
+//             filtered.push_back(tool);
+//         } else if (is_calendar && use_calendar) {
+//             filtered.push_back(tool);
+//         } else if (is_notes && use_notes) {
+//             filtered.push_back(tool);
+//         }
+//     }
 
-    return filtered;
-}
+//     return filtered;
+// }
 
 // DHATS: Global hardware telemetry monitor
 static delta::HardwareMonitor g_hardware_monitor;

@@ -4,6 +4,7 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <vector>
 #include "json.hpp"
 
 namespace delta {
@@ -31,6 +32,10 @@ class ToolRegistry {
 
     void register_tool(const ToolDefinition& def, ToolHandler handler);
     nlohmann::json get_tools_array() const;
+
+    // Validation arguments against the tool's JSON schema
+    bool validate_arguments(const std::string& tool_name, const nlohmann::json& arguments, std::string& error_message);
+    
     ToolResult execute(const std::string& name, const nlohmann::json& arguments);
     bool has_tool(const std::string& name) const;
     std::vector<std::string> get_tool_names() const;
