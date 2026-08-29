@@ -354,11 +354,26 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
         if (server_port > 0) {
             const std::string candidate = "http://127.0.0.1:" + std::to_string(server_port);
             agent::LlmClient probe(candidate, current_model);
-            if (probe.probe_context_size() > 0) {
-                harness_url = candidate;
-                if (model_mgr.is_in_registry(current_model))
-                    harness_supports_tools = model_mgr.get_registry_entry(current_model).supports_tools;
+
+            // The server was only just spawned and still has to load the weights, which takes
+            // tens of seconds for a larger model. Poll instead of deciding on the first attempt,
+            // or a slow-loading model quietly falls back to in-process inference with no tools.
+            constexpr int kServerWaitSeconds = 120;
+            bool announced = false;
+            for (int attempt = 0; attempt < kServerWaitSeconds; attempt++) {
+                if (probe.probe_context_size() > 0) {
+                    harness_url = candidate;
+                    break;
+                }
+                if (!announced) {
+                    UI::print_info("Waiting for the local model server to finish loading...");
+                    announced = true;
+                }
+                std::this_thread::sleep_for(std::chrono::seconds(1));
             }
+
+            if (!harness_url.empty() && model_mgr.is_in_registry(current_model))
+                harness_supports_tools = model_mgr.get_registry_entry(current_model).supports_tools;
         }
     }
 
@@ -369,7 +384,11 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             agent::MemoryStore::instance().init(agent::AgentDatabase::instance().handle());
         agent::register_all_tools();
     } else if (!current_model.empty()) {
-        UI::print_info("Agent tools unavailable (no local model server); answering with the in-process model.");
+        // No reachable model server: fall back to in-process inference, loading the weights now
+        // rather than at startup so the harness path never pays for a second copy.
+        UI::print_info("Local model server unavailable; loading the model in-process.");
+        if (!engine.load_model(config))
+            UI::print_error("Failed to load model. Responses are unavailable this session.");
     }
 
     // The transcript the harness sees. It trims this to the model's context window itself.
@@ -440,8 +459,8 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             }
         }
 
-        // Check if model is loaded before processing text input
-        if (!engine.is_loaded()) {
+        // With the harness driving llama-server there is no in-process model to check.
+        if (harness_url.empty() && !engine.is_loaded()) {
             continue;
         }
 
@@ -1199,15 +1218,20 @@ int main(int argc, char** argv) {
     config.model_path = model_path;
 
     InferenceEngine engine;
-    if (!interactive && !prompt.empty()) {
+    const bool entering_interactive = interactive || prompt.empty();
+
+    // Interactive mode drives the model through the llama-server it starts, so it loads the model
+    // in-process only if that server turns out to be unreachable. Loading here as well would keep
+    // a second copy of the weights in memory for the whole session.
+    if (!entering_interactive) {
         UI::print_info("Loading model: " + model_name);
-    }
-    if (!engine.load_model(config)) {
-        UI::print_error("Failed to load model");
-        return 1;
+        if (!engine.load_model(config)) {
+            UI::print_error("Failed to load model");
+            return 1;
+        }
     }
 
-    if (interactive || prompt.empty()) {
+    if (entering_interactive) {
         if (prompt.empty())
             std::cout << std::endl;
         interactive_mode(engine, config, model_mgr, model_name);
