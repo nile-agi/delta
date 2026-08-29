@@ -16,6 +16,21 @@ import type {
 } from '$lib/types/api';
 
 import type {
+	AgentEvent,
+	AgentEventName,
+	AgentToolRisk,
+	AgentApprovalDecision,
+	AgentApprovalRequiredData,
+	AgentToolStartData,
+	AgentToolResultData,
+	AgentCompactionData,
+	AgentStatusData,
+	AgentRunSummaryData,
+	AgentActivity,
+	AgentActivityStep
+} from '$lib/types/agent';
+
+import type {
 	ChatMessageType,
 	ChatRole,
 	ChatUploadedFile,
@@ -80,6 +95,18 @@ declare global {
 		SettingsConfigValue,
 		SettingsFieldConfig,
 		SettingsConfigType,
-		SettingsChatServiceOptions
+		SettingsChatServiceOptions,
+		AgentEvent,
+		AgentEventName,
+		AgentToolRisk,
+		AgentApprovalDecision,
+		AgentApprovalRequiredData,
+		AgentToolStartData,
+		AgentToolResultData,
+		AgentCompactionData,
+		AgentStatusData,
+		AgentRunSummaryData,
+		AgentActivity,
+		AgentActivityStep
 	};
 }

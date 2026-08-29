@@ -1,3 +1,5 @@
+import type { AgentActivity } from './agent';
+
 import type { ChatMessageTimings } from './chat';
 
 export interface DatabaseConversation {
@@ -72,6 +74,8 @@ export interface DatabaseMessage {
 	timings?: ChatMessageTimings;
 	model?: string;
 	tool_calls?: DatabaseMessageToolCall[];
+	/** What the Delta harness did while producing this message: tool steps, notices, compaction. */
+	agent_activity?: AgentActivity;
 }
 
 /**

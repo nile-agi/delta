@@ -13,7 +13,10 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { INPUT_CLASSES } from '$lib/constants/input-classes';
 	import ChatMessageActions from './ChatMessageActions.svelte';
+	import ChatMessageAgentActivity from './ChatMessageAgentActivity.svelte';
+	import ChatMessageApprovalPrompt from './ChatMessageApprovalPrompt.svelte';
 	import ChatMessageStatistics from './ChatMessageStatistics.svelte';
+	import { agentStore } from '$lib/stores/agent.svelte';
 	import Label from '$lib/components/ui/label/label.svelte';
 	import { config } from '$lib/stores/settings.svelte';
 	import { modelOptions, selectModel } from '$lib/stores/models.svelte';
@@ -221,6 +224,11 @@
 	}
 
 	let t = $derived(message.timings);
+
+	// Live during a run, then falls back to whatever was persisted with the message.
+	let agentActivity = $derived(
+		agentStore.activities.get(message.id) ?? message.agent_activity
+	);
 </script>
 
 <div
@@ -235,6 +243,10 @@
 			hasRegularContent={!!displayContent?.trim()}
 		/>
 	{/if}
+
+	<ChatMessageAgentActivity activity={agentActivity} />
+
+	<ChatMessageApprovalPrompt messageId={message.id} />
 
 	{#if message?.role === 'assistant' && isLoading() && !displayContent?.trim()}
 		<div class="mt-6 w-full max-w-[48rem]" in:fade>

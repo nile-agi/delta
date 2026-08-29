@@ -186,6 +186,17 @@ export interface ApiChatCompletionRequest {
 	backend_sampling?: boolean;
 	// Custom parameters (JSON string)
 	custom?: Record<string, unknown>;
+	// Delta harness: which tool categories this run may use, and how many
+	// model -> tools -> model rounds it may take. Each category defaults to enabled.
+	use_tools?: boolean;
+	use_calendar_tools?: boolean;
+	use_notes_tools?: boolean;
+	use_memory_tools?: boolean;
+	use_task_tools?: boolean;
+	use_files_tools?: boolean;
+	use_shell_tools?: boolean;
+	use_web_tools?: boolean;
+	max_iterations?: number;
 }
 
 export interface ApiChatCompletionStreamChunk {

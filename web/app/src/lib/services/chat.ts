@@ -78,8 +78,15 @@ export class ChatService {
 			onModel,
 			onFirstValidChunk,
 			useTools,
-			useCalendarTools,      // ADD THIS
-			useNotesTools,         // ADD THIS
+			useCalendarTools,
+			useNotesTools,
+			useMemoryTools,
+			useTaskTools,
+			useFileTools,
+			useShellTools,
+			useWebTools,
+			max_iterations,
+			onAgentEvent,
 			// Generation parameters
 			temperature,
 			max_tokens,
@@ -149,8 +156,16 @@ export class ChatService {
 		};
 
 		if (useTools) {
+			// Each category defaults to on, so leaving these unset gives the model everything.
+			requestBody.use_tools = true;
 			requestBody.use_calendar_tools = useCalendarTools !== false;
 			requestBody.use_notes_tools = useNotesTools !== false;
+			requestBody.use_memory_tools = useMemoryTools !== false;
+			requestBody.use_task_tools = useTaskTools !== false;
+			requestBody.use_files_tools = useFileTools !== false;
+			requestBody.use_shell_tools = useShellTools !== false;
+			requestBody.use_web_tools = useWebTools !== false;
+			if (max_iterations !== undefined) requestBody.max_iterations = max_iterations;
 		}
 
 		const selectedOption = selectedModelOption();
@@ -221,7 +236,7 @@ export class ChatService {
 				if (IS_TAURI) {
 					try {
 						await this.handleStreamResponseTauri(
-							url, headers, body, onChunk, onComplete, onError,
+							url, headers, body, onAgentEvent, onChunk, onComplete, onError,
 							onReasoningChunk, onModel, onFirstValidChunk,
 							conversationId, abortController.signal
 						);
@@ -232,7 +247,7 @@ export class ChatService {
 					}
 				}
 				await this.handleStreamResponseXHR(
-					url, headers, body, onChunk, onComplete, onError,
+					url, headers, body, onAgentEvent, onChunk, onComplete, onError,
 					onReasoningChunk, onModel, onFirstValidChunk,
 					conversationId, abortController.signal
 				);
@@ -293,6 +308,7 @@ export class ChatService {
 		url: string,
 		headers: Record<string, string>,
 		body: string,
+		onAgentEvent: ((event: AgentEvent) => void) | undefined,
 		onChunk?: (chunk: string) => void,
 		onComplete?: (
 			response: string,
@@ -350,7 +366,9 @@ export class ChatService {
 						}
 
 						try {
-							const parsed: ApiChatCompletionStreamChunk = JSON.parse(data);
+							const raw: unknown = JSON.parse(data);
+							if (this.consumeAgentEvent(raw, onAgentEvent)) continue;
+							const parsed = raw as ApiChatCompletionStreamChunk;
 
 							if (!firstValidChunkEmitted && parsed.object === 'chat.completion.chunk') {
 								firstValidChunkEmitted = true;
@@ -478,6 +496,7 @@ export class ChatService {
 		url: string,
 		headers: Record<string, string>,
 		body: string,
+		onAgentEvent: ((event: AgentEvent) => void) | undefined,
 		onChunk?: (chunk: string) => void,
 		onComplete?: (
 			response: string,
@@ -522,7 +541,9 @@ export class ChatService {
 			if (data === '[DONE]') return;
 
 			try {
-				const parsed: ApiChatCompletionStreamChunk = JSON.parse(data);
+				const raw: unknown = JSON.parse(data);
+				if (this.consumeAgentEvent(raw, onAgentEvent)) return;
+				const parsed = raw as ApiChatCompletionStreamChunk;
 
 				if (!firstValidChunkEmitted && parsed.object === 'chat.completion.chunk') {
 					firstValidChunkEmitted = true;
@@ -973,6 +994,27 @@ export class ChatService {
 			fallback.name = 'HttpError';
 			return fallback;
 		}
+	}
+
+	/**
+	 * Delta's harness frames ride the same SSE stream as the OpenAI chunks but have no `choices`,
+	 * so they must be claimed before the chunk parsing runs -- otherwise reading `choices[0]`
+	 * throws and the event is lost to the catch block.
+	 *
+	 * @returns true when the frame was a harness event and should not be parsed as a chunk.
+	 */
+	private consumeAgentEvent(parsed: unknown, onAgentEvent?: (event: AgentEvent) => void): boolean {
+		if (!parsed || typeof parsed !== 'object') return false;
+		const frame = parsed as { object?: unknown; event?: unknown; data?: unknown };
+		if (frame.object !== 'delta.agent.event') return false;
+		if (typeof frame.event !== 'string') return true;
+
+		onAgentEvent?.({
+			object: 'delta.agent.event',
+			event: frame.event as AgentEventName,
+			data: (frame.data ?? {}) as AgentEvent['data']
+		});
+		return true;
 	}
 
 	private extractModelName(data: unknown): string | undefined {

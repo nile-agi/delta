@@ -4,6 +4,7 @@ import { config } from '$lib/stores/settings.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
 import { normalizeModelName } from '$lib/utils/model-names';
 import { agentToolsActive, selectedModelName, requestModelSelection } from '$lib/stores/models.svelte';
+import { agentStore } from '$lib/stores/agent.svelte';
 import { filterByLeafNodeId, findLeafNode, findDescendantMessages } from '$lib/utils/branching';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
@@ -156,6 +157,11 @@ class ChatStore {
 			} else {
 				// Load all messages for conversations without currNode (backward compatibility)
 				this.activeMessages = await DatabaseStore.getConversationMessages(convId);
+			}
+
+			// Bring back the tool activity recorded with each assistant message.
+			for (const message of this.activeMessages) {
+				agentStore.hydrate(message.id, message.agent_activity);
 			}
 
 			this.conversationLoadedSignal++;
@@ -319,6 +325,15 @@ class ChatStore {
 		// given -- re-reading it here would sample state from after goto()/DB writes.
 		if (useToolsOverride ?? agentToolsActive()) {
 			apiOptions.useTools = true;
+			// Which tool categories the harness may use this run. These were previously defined in
+			// settings but never sent, so every category was silently on.
+			apiOptions.useCalendarTools = currentConfig.useCalendarTools !== false;
+			apiOptions.useNotesTools = currentConfig.useNotesTools !== false;
+			apiOptions.useMemoryTools = currentConfig.useMemoryTools !== false;
+			apiOptions.useTaskTools = currentConfig.useTaskTools !== false;
+			apiOptions.useFileTools = currentConfig.useFileTools !== false;
+			apiOptions.useShellTools = currentConfig.useShellTools !== false;
+			apiOptions.useWebTools = currentConfig.useWebTools === true;
 		}
 
 		return apiOptions;
@@ -433,6 +448,9 @@ class ChatStore {
 		onError?: (error: Error) => void,
 		options?: { initialContent?: string; initialThinking?: string; useTools?: boolean }
 	): Promise<void> {
+		// A regeneration reuses the message id, so drop whatever the previous run recorded.
+		agentStore.begin(assistantMessage.id);
+
 		let streamedContent = options?.initialContent ?? '';
 		let streamedReasoningContent = options?.initialThinking ?? '';
 		const chunkQueue: string[] = [];
@@ -557,6 +575,10 @@ class ChatStore {
 				onFirstValidChunk: () => {
 					refreshServerPropsOnce();
 				},
+
+				onAgentEvent: (event: AgentEvent) => {
+					agentStore.handleEvent(assistantMessage.id, event);
+				},
 				onChunk: (chunk: string) => {
 					chunkQueue.push(chunk);
 					if (!isDrainingChunks) {
@@ -588,6 +610,7 @@ class ChatStore {
 							timings?: ChatMessageTimings;
 							model?: string;
 							tool_calls?: DatabaseMessageToolCall[];
+							agent_activity?: AgentActivity;
 						} = {
 							content: finalContent || streamedContent,
 							thinking: reasoningContent || streamedReasoningContent,
@@ -596,6 +619,13 @@ class ChatStore {
 
 						if (toolCalls?.length) {
 							updateData.tool_calls = toolCalls;
+						}
+
+						// Keep the tool activity with the message so reopening the conversation still
+						// shows what the harness actually did.
+						const agentActivity = agentStore.finish(assistantMessage.id);
+						if (agentActivity?.steps.length || agentActivity?.notices.length) {
+							updateData.agent_activity = agentActivity;
 						}
 
 						if (resolvedModel && !modelPersisted) {
@@ -651,6 +681,8 @@ class ChatStore {
 
 				onError: (error: Error) => {
 					slotsService.stopStreaming();
+					// Nothing will answer a parked approval now that the stream is gone.
+					agentStore.finish(assistantMessage.id);
 
 					if (this.isAbortError(error)) {
 						this.setConversationLoading(assistantMessage.convId, false);

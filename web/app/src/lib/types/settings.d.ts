@@ -1,5 +1,6 @@
 import type { SETTING_CONFIG_DEFAULT } from '$lib/constants/settings-config';
 import type { ChatMessageTimings } from './chat';
+import type { AgentEvent } from './agent';
 
 export type SettingsConfigValue = string | number | boolean;
 
@@ -40,6 +41,19 @@ export interface SettingsChatServiceOptions {
 	custom?: string;
 	// Agent tools
 	useTools?: boolean;
+	/**
+	 * Tool categories the harness may use this run. Omitted categories default to enabled, so a
+	 * caller that sets nothing gets the full tool set.
+	 */
+	useCalendarTools?: boolean;
+	useNotesTools?: boolean;
+	useMemoryTools?: boolean;
+	useTaskTools?: boolean;
+	useFileTools?: boolean;
+	useShellTools?: boolean;
+	useWebTools?: boolean;
+	/** Cap on harness iterations (model call -> tools -> model call) for one turn. */
+	max_iterations?: number;
 	// Timing display
 	timings_per_token?: boolean;
 	// Callbacks
@@ -54,6 +68,8 @@ export interface SettingsChatServiceOptions {
 		toolCalls?: DatabaseMessageToolCall[]
 	) => void;
 	onError?: (error: Error) => void;
+	/** Tool activity, context compaction, and approval requests from the harness. */
+	onAgentEvent?: (event: AgentEvent) => void;
 }
 
 export type SettingsConfigType = typeof SETTING_CONFIG_DEFAULT & {
