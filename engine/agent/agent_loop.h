@@ -8,7 +8,6 @@
 namespace delta {
 namespace agent {
 
-// Receives each content delta as it streams; return false to abort (client disconnected).
 using TokenCallback = std::function<bool(const std::string& delta)>;
 
 struct AgentResponse {
@@ -16,9 +15,10 @@ struct AgentResponse {
     std::string content;
     int tool_calls_made;
     std::string error;
-    nlohmann::json tool_calls = nlohmann::json::array(); // [{name, arguments}]
-    size_t streamed_chars = 0;                           // bytes already handed to the TokenCallback
+    nlohmann::json tool_calls = nlohmann::json::array();
+    size_t streamed_chars = 0;
     bool client_aborted = false;
+    std::string reasoning_content; // ENHANCEMENT C: Stores reasoning/thinking content
 };
 
 class AgentLoop {
@@ -29,6 +29,7 @@ class AgentLoop {
     AgentResponse process(nlohmann::json messages, TokenCallback on_token = nullptr);
     void set_max_iterations(int max);
     void set_tool_filters(bool use_calendar, bool use_notes);
+    void set_response_format(const nlohmann::json& fmt); // ENHANCEMENT A: For JSON Grammar Constraints
 
   private:
     std::string server_url_;
@@ -38,11 +39,10 @@ class AgentLoop {
     std::string tool_choice_ = "required";
     bool use_calendar_tools_ = true;
     bool use_notes_tools_ = true;
+    nlohmann::json response_format_; // ENHANCEMENT A
 
     nlohmann::json build_request_body(const nlohmann::json& messages, nlohmann::json tools, bool stream);
     nlohmann::json call_llm(const nlohmann::json& messages, const nlohmann::json& tools);
-    // Streams the reply, forwarding content deltas through `forward` (may be null to stream but not
-    // forward). Returns the same response shape as call_llm().
     nlohmann::json call_llm_stream(const nlohmann::json& messages, const nlohmann::json& tools,
                                    const TokenCallback& forward, size_t& out_forwarded, bool& out_client_aborted);
     std::string build_system_prompt();

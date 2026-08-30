@@ -438,6 +438,56 @@ class DeltaServerWrapper {
         if (!grammar_file_.empty())
             cmd += " --grammar-file \"" + grammar_file_ + "\"";
 
+        if (enable_embedding_) cmd += " --embedding";
+        if (enable_reranking_) cmd += " --reranking";
+        
+        // ============================================================================
+        // ENHANCEMENT D: Model Context Protocol (MCP) Integration
+        // llama-server natively supports MCP via the --tools directory argument.
+        // ============================================================================
+        std::string config_dir = get_executable_dir();
+        std::string mcp_dir = config_dir + "/mcp_servers";
+        if (!std::filesystem::exists(mcp_dir)) {
+            mcp_dir = config_dir + "/tools";
+        }
+        if (std::filesystem::exists(mcp_dir) && std::filesystem::is_directory(mcp_dir)) {
+            cmd += " --tools \"" + mcp_dir + "\"";
+            std::cout << "[MCP] Injecting external tools from directory: " << mcp_dir << std::endl;
+        }
+
+        // ============================================================================
+        // ENHANCEMENT B: Speculative Decoding for Tool Loops
+        // If no draft model is explicitly provided, auto-detect a small GGUF in the models directory.
+        // ============================================================================
+        if (draft_model_.empty()) {
+            std::string models_dir_path = models_dir_.empty() ? (get_executable_dir() + "/models") : models_dir_;
+            if (std::filesystem::exists(models_dir_path) && std::filesystem::is_directory(models_dir_path)) {
+                for (const auto& entry : std::filesystem::directory_iterator(models_dir_path)) {
+                    std::string fname = entry.path().filename().string();
+                    std::string lower_fname = fname;
+                    for (auto& c : lower_fname) c = std::tolower(static_cast<unsigned char>(c));
+                    
+                    bool is_small = (lower_fname.find("0.5b") != std::string::npos || 
+                                     lower_fname.find("1.5b") != std::string::npos ||
+                                     lower_fname.find("tinyllama") != std::string::npos || 
+                                     lower_fname.find("smollm") != std::string::npos ||
+                                     lower_fname.find("draft") != std::string::npos);
+                                     
+                    if (is_small && lower_fname.find(".gguf") != std::string::npos) {
+                        draft_model_ = entry.path().string();
+                        std::cout << "[Speculative] Auto-detected draft model: " << draft_model_ << std::endl;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!draft_model_.empty()) {
+            cmd += " --model-draft \"" + draft_model_ + "\"";
+            cmd += " --draft-max 16"; // Standard draft token limit for speculative decoding
+        }
+        
+        if (!grammar_file_.empty()) cmd += " --grammar-file \"" + grammar_file_ + "\"";
+
         // ============================================================================
         // DHATS: Inject RPC Arguments
         // ============================================================================

@@ -906,7 +906,7 @@ class ModelAPIServer {
             }
         });
 
-        server_->Post("/v1/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
+        server_->Post("/v1/chat/completions", [&](const httplib::Request& req, httplib::Response& res) {
             int llama_port = port_ - 1;
             {
                 httplib::Client probe("127.0.0.1", llama_port);
@@ -958,6 +958,12 @@ class ModelAPIServer {
                 bool stream = body.value("stream", false);
                 std::string model_name = body.value("model", std::string("default"));
 
+                // ENHANCEMENT A: Extract response_format for JSON Grammar Constraints
+                nlohmann::json response_format;
+                if (body.contains("response_format")) {
+                    response_format = body["response_format"];
+                }
+
                 std::string llama_url = "http://127.0.0.1:" + std::to_string(llama_port);
                 bool model_supports_tools = false;
                 auto reg = model_mgr_.get_registry_entry(model_name);
@@ -986,21 +992,23 @@ class ModelAPIServer {
                           << ", msgs=" << messages.size() << std::endl;
 
                 if (stream) {
-                    struct StreamJob {
-                        std::string llama_url, llama_model;
-                        bool supports_tools = false;
-                        bool use_calendar = true;
-                        bool use_notes = true;
-                        json messages;
-                        bool started = false;
-                    };
-                    auto job = std::make_shared<StreamJob>();
-                    job->llama_url = llama_url;
-                    job->llama_model = llama_model_name;
-                    job->supports_tools = model_supports_tools;
-                    job->use_calendar = use_calendar_tools;
-                    job->use_notes = use_notes_tools;
-                    job->messages = messages;
+                struct StreamJob {
+                    std::string llama_url, llama_model;
+                    bool supports_tools = false;
+                    bool use_calendar = true;
+                    bool use_notes = true;
+                    nlohmann::json response_format; // NEW
+                    json messages;
+                    bool started = false;
+                };
+                auto job = std::make_shared<StreamJob>();
+                job->llama_url = llama_url;
+                job->llama_model = llama_model_name;
+                job->supports_tools = model_supports_tools;
+                job->use_calendar = use_calendar_tools;
+                job->use_notes = use_notes_tools;
+                job->response_format = response_format; // NEW
+                job->messages = messages;
 
                     res.set_header("Cache-Control", "no-cache");
                     res.set_header("Connection", "keep-alive");
@@ -1021,6 +1029,8 @@ class ModelAPIServer {
                             try {
                                 agent::AgentLoop loop(job->llama_url, job->llama_model, job->supports_tools);
                                 loop.set_tool_filters(job->use_calendar, job->use_notes);
+                                if (!job->response_format.empty()) loop.set_response_format(job->response_format); // NEW
+            
                                 auto result = loop.process(job->messages, [&](const std::string& delta) -> bool {
 
                                     if (delta.empty())
@@ -1063,6 +1073,8 @@ class ModelAPIServer {
                 } else {
                     agent::AgentLoop loop(llama_url, llama_model_name, model_supports_tools);
                     loop.set_tool_filters(use_calendar_tools, use_notes_tools);
+                    if (!response_format.empty()) loop.set_response_format(response_format); // NEW
+                    
                     auto result = loop.process(messages);
 
                     if (!result.success) {

@@ -15,54 +15,31 @@ namespace delta {
 namespace agent {
 
 // Filter tools based on enabled types
-static nlohmann::json filter_tools_by_config(const nlohmann::json& all_tools, 
-                                              bool use_calendar, bool use_notes) {
-    if (use_calendar && use_notes) return all_tools; // All enabled
-    
+static nlohmann::json filter_tools_by_config(const nlohmann::json& all_tools, bool use_calendar, bool use_notes) {
+    if (use_calendar && use_notes) return all_tools;
     nlohmann::json filtered = nlohmann::json::array();
-    
-    // Calendar tool names
-    std::set<std::string> calendar_tools = {
-        "create_event", "list_events", "delete_event", "update_event", "get_current_time"
-    };
-    
-    // Notes tool names
-    std::set<std::string> notes_tools = {
-        "list_notes", "create_note", "get_note", "update_note", "delete_note"
-    };
-    
+    std::set<std::string> calendar_tools = {"create_event", "list_events", "delete_event", "update_event", "get_current_time"};
+    std::set<std::string> notes_tools = {"list_notes", "create_note", "get_note", "update_note", "delete_note"};
     for (const auto& tool : all_tools) {
         if (!tool.is_object() || !tool.contains("function")) continue;
         std::string name = tool["function"].value("name", "");
-        
         bool is_calendar = calendar_tools.count(name) > 0;
         bool is_notes = notes_tools.count(name) > 0;
-        
-        // Include if it's not a calendar/notes tool, or if that category is enabled
-        if (!is_calendar && !is_notes) {
-            filtered.push_back(tool);
-        } else if (is_calendar && use_calendar) {
-            filtered.push_back(tool);
-        } else if (is_notes && use_notes) {
-            filtered.push_back(tool);
-        }
+        if (!is_calendar && !is_notes) filtered.push_back(tool);
+        else if (is_calendar && use_calendar) filtered.push_back(tool);
+        else if (is_notes && use_notes) filtered.push_back(tool);
     }
-    
     return filtered;
 }
 
 static std::string get_text_content(const nlohmann::json& msg, const std::string& key = "content") {
-    if (!msg.contains(key))
-        return "";
+    if (!msg.contains(key)) return "";
     auto& val = msg[key];
-    if (val.is_string())
-        return val.get<std::string>();
+    if (val.is_string()) return val.get<std::string>();
     if (val.is_array()) {
         for (auto& part : val) {
-            if (part.is_object() && part.value("type", "") == "text")
-                return part.value("text", "");
-            if (part.is_string())
-                return part.get<std::string>();
+            if (part.is_object() && part.value("type", "") == "text") return part.value("text", "");
+            if (part.is_string()) return part.get<std::string>();
         }
     }
     return "";
@@ -73,16 +50,14 @@ static std::string last_user_text(const nlohmann::json& messages) {
     for (int i = static_cast<int>(messages.size()) - 1; i >= 0; i--) {
         if (messages[i].value("role", "") == "user") {
             std::string candidate = get_text_content(messages[i]);
-            if (candidate.find("Do it now.") == std::string::npos)
-                return candidate;
+            if (candidate.find("Do it now.") == std::string::npos) return candidate;
         }
     }
     return "";
 }
 
 static std::string to_lower(std::string s) {
-    for (auto& c : s)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return s;
 }
 
@@ -90,14 +65,8 @@ static std::string to_lower(std::string s) {
 // trigger the tool_choice="required" retry. Also gates streaming, since that text gets discarded.
 static bool user_wants_action(const nlohmann::json& messages) {
     const std::string last_user = to_lower(last_user_text(messages));
-
-    static const char* action_words[] = {"push",    "move",    "reschedule", "change", "update",   "delete", "cancel",
-                                         "mark",    "done",    "complete",   "remove", "postpone", "ahead",  "later",
-                                         "earlier", "forward", "back",       "start",  "begin",    nullptr};
-    for (int k = 0; action_words[k]; k++) {
-        if (last_user.find(action_words[k]) != std::string::npos)
-            return true;
-    }
+    static const char* action_words[] = {"push", "move", "reschedule", "change", "update", "delete", "cancel", "mark", "done", "complete", "remove", "postpone", "ahead", "later", "earlier", "forward", "back", "start", "begin", nullptr};
+    for (int k = 0; action_words[k]; k++) if (last_user.find(action_words[k]) != std::string::npos) return true;
     return false;
 }
 
@@ -105,34 +74,22 @@ static bool user_wants_action(const nlohmann::json& messages) {
 // need their own check or a prose reply ("what date is Friday?") is returned as-is.
 static bool user_wants_create(const nlohmann::json& messages) {
     const std::string last_user = to_lower(last_user_text(messages));
-
-    static const char* create_words[] = {"create", "add",   "schedule", "book",  "remind",
-                                         "set up", "setup", "new ",     "plan ", nullptr};
-    for (int k = 0; create_words[k]; k++) {
-        if (last_user.find(create_words[k]) != std::string::npos)
-            return true;
-    }
+    static const char* create_words[] = {"create", "add", "schedule", "book", "remind", "set up", "setup", "new ", "plan ", nullptr};
+    for (int k = 0; create_words[k]; k++) if (last_user.find(create_words[k]) != std::string::npos) return true;
     return false;
 }
 
 static size_t write_callback(void* contents, size_t size, size_t nmemb, std::string* out) {
-    size_t total = size * nmemb;
-    out->append(static_cast<char*>(contents), total);
-    return total;
+    size_t total = size * nmemb; out->append(static_cast<char*>(contents), total); return total;
 }
 
 AgentLoop::AgentLoop(const std::string& llama_server_url, const std::string& model_name, bool supports_tools)
     : server_url_(llama_server_url), model_name_(model_name), supports_tools_(supports_tools),
       use_calendar_tools_(true), use_notes_tools_(true) {}
 
-void AgentLoop::set_max_iterations(int max) {
-    max_iterations_ = max;
-}
-
-void AgentLoop::set_tool_filters(bool use_calendar, bool use_notes) {
-    use_calendar_tools_ = use_calendar;
-    use_notes_tools_ = use_notes;
-}
+void AgentLoop::set_max_iterations(int max) { max_iterations_ = max; }
+void AgentLoop::set_tool_filters(bool use_calendar, bool use_notes) { use_calendar_tools_ = use_calendar; use_notes_tools_ = use_notes; }
+void AgentLoop::set_response_format(const nlohmann::json& fmt) { response_format_ = fmt; } // ENHANCEMENT A
 
 std::string AgentLoop::build_system_prompt() {
     time_t now = time(nullptr);
@@ -217,21 +174,16 @@ nlohmann::json AgentLoop::build_request_body(const nlohmann::json& messages, nlo
         if (!msg.is_object()) continue;
         nlohmann::json clean_msg;
         clean_msg["role"] = msg.value("role", "user");
-        
-        if (msg.contains("content") && msg["content"].is_string()) {
-            clean_msg["content"] = msg["content"].get<std::string>();
-        } else if (msg.contains("content") && msg["content"].is_array()) {
+        if (msg.contains("content") && msg["content"].is_string()) clean_msg["content"] = msg["content"].get<std::string>();
+        else if (msg.contains("content") && msg["content"].is_array()) {
             std::string text;
             for (const auto& part : msg["content"]) {
                 if (part.is_object() && part.value("type", "") == "text" && part.contains("text")) {
-                    if (!text.empty()) text += "\n";
-                    text += part["text"].get<std::string>();
+                    if (!text.empty()) text += "\n"; text += part["text"].get<std::string>();
                 }
             }
             clean_msg["content"] = text;
-        } else {
-            clean_msg["content"] = msg.contains("content") && !msg["content"].is_null() ? msg["content"].dump() : std::string("");
-        }
+        } else clean_msg["content"] = msg.contains("content") && !msg["content"].is_null() ? msg["content"].dump() : std::string("");
         
         if (msg.contains("tool_call_id")) clean_msg["tool_call_id"] = msg["tool_call_id"];
         if (msg.contains("tool_calls")) clean_msg["tool_calls"] = msg["tool_calls"];
@@ -239,15 +191,30 @@ nlohmann::json AgentLoop::build_request_body(const nlohmann::json& messages, nlo
         clean_messages.push_back(clean_msg);
     }
 
-    nlohmann::json request_body = {
-        {"messages", clean_messages}, {"stream", stream}, {"model", model_name_}, {"max_tokens", 1024}};
+    nlohmann::json request_body = {{"messages", clean_messages}, {"stream", stream}, {"model", model_name_}, {"max_tokens", 1024}};
+    
     if (!tools.empty()) {
         request_body["tools"] = tools;
         request_body["tool_choice"] = tool_choice_;
-        request_body["chat_template_kwargs"] = {{"enable_thinking", false}};
-        // IMPROVEMENT 1: Explicitly allow parallel tool calls in llama-server
+        
+        // ENHANCEMENT C: Enable thinking for complex prompts
+        bool is_complex = false;
+        for (const auto& msg : messages) {
+            if (msg.value("role", "") == "user") {
+                std::string text = get_text_content(msg);
+                if (text.length() > 150 || text.find("plan") != std::string::npos || text.find("step") != std::string::npos ||
+                    text.find("complex") != std::string::npos || text.find("analyze") != std::string::npos) {
+                    is_complex = true; break;
+                }
+            }
+        }
+        request_body["chat_template_kwargs"] = {{"enable_thinking", is_complex}};
         request_body["parallel_tool_calls"] = true; 
     }
+
+    // ENHANCEMENT A: Native JSON Grammar Constraints
+    if (!response_format_.empty()) request_body["response_format"] = response_format_;
+    
     return request_body;
 }
 
@@ -305,6 +272,7 @@ struct SseContext {
     std::string buffer;
     std::string raw;
     std::string content;
+    std::string reasoning; // ENHANCEMENT C
     nlohmann::json tool_calls = nlohmann::json::array();
     std::string finish_reason = "stop";
     std::string pending;
@@ -317,31 +285,21 @@ struct SseContext {
 
 void merge_tool_call_delta(nlohmann::json& acc, const nlohmann::json& fragment) {
     size_t idx = fragment.value("index", 0);
-    while (acc.size() <= idx) {
-        acc.push_back({{"id", ""}, {"type", "function"}, {"function", {{"name", ""}, {"arguments", ""}}}});
-    }
+    while (acc.size() <= idx) acc.push_back({{"id", ""}, {"type", "function"}, {"function", {{"name", ""}, {"arguments", ""}}}});
     auto& slot = acc[idx];
-    if (fragment.contains("id") && fragment["id"].is_string() && !fragment["id"].get<std::string>().empty())
-        slot["id"] = fragment["id"];
-    if (!fragment.contains("function") || !fragment["function"].is_object())
-        return;
+    if (fragment.contains("id") && fragment["id"].is_string() && !fragment["id"].get<std::string>().empty()) slot["id"] = fragment["id"];
+    if (!fragment.contains("function") || !fragment["function"].is_object()) return;
     const auto& fn = fragment["function"];
-    if (fn.contains("name") && fn["name"].is_string())
-        slot["function"]["name"] = slot["function"]["name"].get<std::string>() + fn["name"].get<std::string>();
-    if (fn.contains("arguments") && fn["arguments"].is_string())
-        slot["function"]["arguments"] = slot["function"]["arguments"].get<std::string>() + fn["arguments"].get<std::string>();
+    if (fn.contains("name") && fn["name"].is_string()) slot["function"]["name"] = slot["function"]["name"].get<std::string>() + fn["name"].get<std::string>();
+    if (fn.contains("arguments") && fn["arguments"].is_string()) slot["function"]["arguments"] = slot["function"]["arguments"].get<std::string>() + fn["arguments"].get<std::string>();
 }
 
 bool flush_pending(SseContext* ctx, bool force) {
     if (!ctx->forward) return true;
     while (ctx->pending.size() > (force ? 0 : kStreamHoldbackBytes)) {
         size_t take = force ? ctx->pending.size() : ctx->pending.size() - kStreamHoldbackBytes;
-        std::string chunk = ctx->pending.substr(0, take);
-        ctx->pending.erase(0, take);
-        if (!(*ctx->forward)(chunk)) {
-            ctx->aborted = true;
-            return false;
-        }
+        std::string chunk = ctx->pending.substr(0, take); ctx->pending.erase(0, take);
+        if (!(*ctx->forward)(chunk)) { ctx->aborted = true; return false; }
         ctx->forwarded += chunk.size();
     }
     return true;
@@ -354,63 +312,53 @@ void handle_sse_line(SseContext* ctx, const std::string& line) {
     if (payload == "[DONE]") return;
 
     nlohmann::json chunk;
-    try {
-        chunk = nlohmann::json::parse(payload);
-    } catch (...) {
-        return;
-    }
-    if (!chunk.is_object() || !chunk.contains("choices") || !chunk["choices"].is_array() || chunk["choices"].empty())
-        return;
+    try { chunk = nlohmann::json::parse(payload); } catch (...) { return; }
+    if (!chunk.is_object() || !chunk.contains("choices") || !chunk["choices"].is_array() || chunk["choices"].empty()) return;
 
     const auto& choice = chunk["choices"][0];
-    if (choice.contains("finish_reason") && choice["finish_reason"].is_string())
-        ctx->finish_reason = choice["finish_reason"].get<std::string>();
-    if (!choice.contains("delta") || !choice["delta"].is_object())
-        return;
+    if (choice.contains("finish_reason") && choice["finish_reason"].is_string()) ctx->finish_reason = choice["finish_reason"].get<std::string>();
+    if (!choice.contains("delta") || !choice["delta"].is_object()) return;
 
     const auto& delta = choice["delta"];
-    if (delta.contains("tool_calls") && delta["tool_calls"].is_array() && !delta["tool_calls"].empty()) {
-        ctx->saw_tool_calls = true;
-        ctx->pending.clear();
-        for (const auto& fragment : delta["tool_calls"]) {
-            if (fragment.is_object())
-                merge_tool_call_delta(ctx->tool_calls, fragment);
+    
+    // ENHANCEMENT C: Parse reasoning_content for complex tool chains
+    if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
+        const std::string thought = delta["reasoning_content"].get<std::string>();
+        if (!thought.empty()) {
+            ctx->reasoning += thought;
+            if (ctx->forward) {
+                nlohmann::json event_data = {{"type", "reasoning"}, {"content", thought}};
+                std::string sse_event = "event: reasoning\ndata: " + event_data.dump() + "\n\n";
+                (*ctx->forward)(sse_event);
+            }
         }
+    }
+
+    if (delta.contains("tool_calls") && delta["tool_calls"].is_array() && !delta["tool_calls"].empty()) {
+        ctx->saw_tool_calls = true; ctx->pending.clear();
+        for (const auto& fragment : delta["tool_calls"]) if (fragment.is_object()) merge_tool_call_delta(ctx->tool_calls, fragment);
     }
     if (delta.contains("content") && delta["content"].is_string()) {
         const std::string text = delta["content"].get<std::string>();
         if (text.empty()) return;
         ctx->content += text;
-        if (!ctx->saw_tool_calls && ctx->forward) {
-            ctx->pending += text;
-            flush_pending(ctx, false);
-        }
+        if (!ctx->saw_tool_calls && ctx->forward) { ctx->pending += text; flush_pending(ctx, false); }
     }
 }
 
 size_t sse_write_callback(void* contents, size_t size, size_t nmemb, void* userdata) {
-    size_t total = size * nmemb;
-    auto* ctx = static_cast<SseContext*>(userdata);
-    if (ctx->aborted) return 0;
-
+    size_t total = size * nmemb; auto* ctx = static_cast<SseContext*>(userdata); if (ctx->aborted) return 0;
     const char* data = static_cast<char*>(contents);
-    if (ctx->raw.size() < 4096)
-        ctx->raw.append(data, std::min(total, 4096 - ctx->raw.size()));
-
-    ctx->buffer.append(data, total);
-    size_t start = 0;
+    if (ctx->raw.size() < 4096) ctx->raw.append(data, std::min(total, 4096 - ctx->raw.size()));
+    ctx->buffer.append(data, total); size_t start = 0;
     for (size_t i = 0; i < ctx->buffer.size(); i++) {
         if (ctx->buffer[i] != '\n') continue;
         std::string line = ctx->buffer.substr(start, i - start);
         if (!line.empty() && line.back() == '\r') line.pop_back();
-        handle_sse_line(ctx, line);
-        if (ctx->aborted) return 0;
-        start = i + 1;
+        handle_sse_line(ctx, line); if (ctx->aborted) return 0; start = i + 1;
     }
-    ctx->buffer.erase(0, start);
-    return total;
+    ctx->buffer.erase(0, start); return total;
 }
-
 } // namespace
 
 nlohmann::json AgentLoop::call_llm_stream(const nlohmann::json& messages, const nlohmann::json& tools,
@@ -481,10 +429,8 @@ nlohmann::json AgentLoop::call_llm_stream(const nlohmann::json& messages, const 
     }
 
     nlohmann::json message = {{"role", "assistant"}, {"content", ctx.content}};
-    if (!ctx.tool_calls.empty()) {
-        message["tool_calls"] = ctx.tool_calls;
-        std::cerr << "[delta-agent] stream reassembled " << ctx.tool_calls.size() << " tool_calls: " << ctx.tool_calls.dump() << std::endl;
-    }
+    if (!ctx.tool_calls.empty()) message["tool_calls"] = ctx.tool_calls;
+    if (!ctx.reasoning.empty()) message["reasoning_content"] = ctx.reasoning; // ENHANCEMENT C
     return {{"choices", {{{"index", 0}, {"message", message}, {"finish_reason", ctx.finish_reason}}}}};
 }
 
@@ -543,7 +489,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
     try {
         agent_prompt = build_system_prompt();
     } catch (const std::exception& e) {
-        return {false, "", 0, std::string("Failed to build system prompt: ") + e.what(), nlohmann::json::array(), 0, false};
+        return {false, "", 0, std::string("Failed to build system prompt: ") + e.what(), nlohmann::json::array(), 0, false, ""};
     }
     bool found_system = false;
     for (auto& msg : messages) {
@@ -571,8 +517,8 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
     size_t forwarded_total = 0;
     
     // Fixed lambda syntax for C++ compilation
-    auto finish = [&](bool ok, const std::string& content, const std::string& error) {
-        return AgentResponse{ok, content, total_tool_calls, error, executed_tool_calls, forwarded_total, false};
+    auto finish = [&](bool ok, const std::string& content, const std::string& error, const std::string& reasoning = "") {
+        return AgentResponse{ok, content, total_tool_calls, error, executed_tool_calls, forwarded_total, false, reasoning};
     };
     
     std::cerr << "[delta-agent] v2 process: " << messages.size()
@@ -651,10 +597,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
         auto& message = choice["message"];
 
         bool has_tool_calls = message.contains("tool_calls") && message["tool_calls"].is_array() && !message["tool_calls"].empty();
-        std::cerr << "[delta-agent] response: finish_reason=" << finish_reason
-                  << ", has_tool_calls=" << (has_tool_calls ? "yes" : "no")
-                  << ", content_len=" << get_text_content(message).size() << std::endl;
-
+        
         if (has_tool_calls) {
             messages.push_back(message);
 
@@ -855,6 +798,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
         }
 
         std::string content = get_text_content(message);
+        std::string reasoning = message.value("reasoning_content", ""); // ENHANCEMENT C
 
         // Action retry logic (unchanged from original)
         if (!action_retry_fired) {
@@ -1008,9 +952,8 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
             }
         }
 
-        return finish(true, content, "");
+        return finish(true, content, "", reasoning);
     }
-
     return finish(false, "", "Max tool call iterations reached");
 }
 
