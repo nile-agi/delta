@@ -74,8 +74,115 @@ static bool user_wants_action(const nlohmann::json& messages) {
 // need their own check or a prose reply ("what date is Friday?") is returned as-is.
 static bool user_wants_create(const nlohmann::json& messages) {
     const std::string last_user = to_lower(last_user_text(messages));
-    static const char* create_words[] = {"create", "add", "schedule", "book", "remind", "set up", "setup", "new ", "plan ", nullptr};
-    for (int k = 0; create_words[k]; k++) if (last_user.find(create_words[k]) != std::string::npos) return true;
+
+    static const char* create_words[] = {"create", "add",   "schedule", "book",  "remind",
+                                         "set up", "setup", "new ",     "plan ", "set a",
+                                         "set an", "set my", "make a",  "arrange", "organize",
+                                         "log",    "jot",   "note down", "write down", nullptr};
+    for (int k = 0; create_words[k]; k++) {
+        if (last_user.find(create_words[k]) != std::string::npos)
+            return true;
+    }
+    return false;
+}
+
+// Map hallucinated/alias tool names (small models invent names) to real registered tools.
+static std::string normalize_tool_name(const std::string& raw) {
+    std::string n = to_lower(raw);
+    if (n == "create_meeting" || n == "create_event" || n == "add_event" || n == "schedule_event" ||
+        n == "create_appointment" || n == "set_meeting" || n == "create_reminder") return "create_event";
+    if (n == "create_task" || n == "add_task" || n == "create_todo") return "create_event";
+    if (n == "list_events" || n == "get_events" || n == "show_events" || n == "list_tasks") return "list_events";
+    if (n == "update_event" || n == "move_event" || n == "reschedule_event" || n == "update_task") return "update_event";
+    if (n == "delete_event" || n == "remove_event" || n == "delete_task") return "delete_event";
+    if (n == "create_note" || n == "add_note" || n == "write_note") return "create_note";
+    if (n == "list_notes" || n == "get_notes" || n == "show_notes") return "list_notes";
+    if (n == "get_note" || n == "read_note") return "get_note";
+    if (n == "update_note" || n == "edit_note") return "update_note";
+    if (n == "delete_note" || n == "remove_note") return "delete_note";
+    if (n == "get_current_time" || n == "current_time") return "get_current_time";
+    return "";
+}
+
+// Parse Python-style kwargs (date="2026-08-30", attendees=["oderoi"]) or JSON into a json object.
+static nlohmann::json parse_kwargs(const std::string& s) {
+    nlohmann::json out = nlohmann::json::object();
+    size_t i = 0;
+    auto skip_ws = [&]() { while (i < s.size() && std::isspace((unsigned char)s[i])) i++; };
+    while (i < s.size()) {
+        skip_ws();
+        size_t ks = i;
+        while (i < s.size() && (std::isalnum((unsigned char)s[i]) || s[i] == '_')) i++;
+        if (i == ks) break;
+        std::string key = s.substr(ks, i - ks);
+        skip_ws();
+        if (i >= s.size() || s[i] != '=') break;
+        i++; skip_ws();
+        if (i < s.size() && (s[i] == '"' || s[i] == '\'')) {
+            char q = s[i++]; std::string val;
+            while (i < s.size() && s[i] != q) {
+                if (s[i] == '\\' && i + 1 < s.size()) { val += s[i + 1]; i += 2; }
+                else val += s[i++];
+            }
+            if (i < s.size()) i++;
+            out[key] = val;
+        } else if (i < s.size() && (s[i] == '[' || s[i] == '{')) {
+            char open = s[i]; char close = (open == '[') ? ']' : '}';
+            int depth = 0; size_t vs = i;
+            while (i < s.size()) {
+                if (s[i] == open) depth++;
+                else if (s[i] == close) { depth--; if (depth == 0) { i++; break; } }
+                else if (s[i] == '"') { i++; while (i < s.size() && s[i] != '"') i++; }
+                i++;
+            }
+            std::string rawv = s.substr(vs, i - vs);
+            try { out[key] = nlohmann::json::parse(rawv); } catch (...) { out[key] = rawv; }
+        } else {
+            size_t vs = i; int depth = 0;
+            while (i < s.size() && !(s[i] == ',' && depth == 0)) {
+                if (s[i] == '[' || s[i] == '{') depth++;
+                if (s[i] == ']' || s[i] == '}') depth--;
+                i++;
+            }
+            std::string rawv = s.substr(vs, i - vs);
+            while (!rawv.empty() && std::isspace((unsigned char)rawv.back())) rawv.pop_back();
+            if (rawv == "true") out[key] = true;
+            else if (rawv == "false") out[key] = false;
+            else { try { out[key] = std::stod(rawv); } catch (...) { out[key] = rawv; } }
+        }
+        skip_ws();
+        if (i < s.size() && s[i] == ',') i++;
+    }
+    return out;
+}
+
+// Find "name(...)" in model text where name maps to a real tool; extract its arguments.
+static bool extract_text_tool_call(const std::string& content, std::string& tool_name, nlohmann::json& args) {
+    static const char* candidates[] = {
+        "create_meeting", "create_event", "add_event", "schedule_event", "create_appointment",
+        "create_task", "add_task", "create_todo", "create_reminder",
+        "list_events", "get_events", "show_events", "list_tasks",
+        "update_event", "move_event", "reschedule_event", "delete_event", "remove_event",
+        "create_note", "add_note", "write_note", "list_notes", "get_note", "read_note",
+        "update_note", "edit_note", "delete_note", "remove_note", "get_current_time", nullptr };
+    std::string lower = to_lower(content);
+    for (int c = 0; candidates[c]; c++) {
+        std::string pat = std::string(candidates[c]) + "(";
+        size_t pos = lower.find(pat);
+        if (pos == std::string::npos) continue;
+        size_t args_start = pos + pat.size();
+        int depth = 1; size_t i = args_start;
+        while (i < content.size() && depth > 0) {
+            char ch = content[i];
+            if (ch == '(') depth++;
+            else if (ch == ')') depth--;
+            else if (ch == '"') { i++; while (i < content.size() && content[i] != '"') i++; }
+            i++;
+        }
+        tool_name = normalize_tool_name(candidates[c]);
+        args = parse_kwargs(content.substr(args_start, (i - 1) - args_start));
+        return true;
+    }
     return false;
 }
 
@@ -125,7 +232,10 @@ std::string AgentLoop::build_system_prompt() {
         "4. STATUS: done/complete = \"completed\", cancel = \"cancelled\", start/begin = \"in_progress\".\n"
         "5. Brief and friendly responses. Never show IDs or mention tool names.\n"
         "6. REMINDERS: Events remind 15 min before. Tasks default no reminder.\n"
-        "7. PRIORITY: set priority for tasks (low/medium/high/urgent). Default medium.";
+        "7. PRIORITY: set priority for tasks (low/medium/high/urgent). Default medium.\n"
+        "8. TOOLS: ONLY use the exact tools provided (create_event, list_events, update_event, delete_event, "
+        "get_current_time, create_note, list_notes, get_note, update_note, delete_note). "
+        "NEVER write tool calls as plain text.";
 
     // Inject context summary of upcoming events and pending tasks
     auto& db = AgentDatabase::instance();
@@ -796,6 +906,82 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
 
         std::string content = get_text_content(message);
         std::string reasoning = message.value("reasoning_content", ""); // ENHANCEMENT C
+
+                // FALLBACK: recover hallucinated text-format tool calls from small models
+        if (!has_tool_calls && !content.empty()) {
+            std::string parsed_name;
+            nlohmann::json parsed_args;
+            if (extract_text_tool_call(content, parsed_name, parsed_args) && registry.has_tool(parsed_name)) {
+                std::cerr << "[delta-agent] recovered text tool call: " << parsed_name
+                          << "(" << parsed_args.dump() << ")" << std::endl;
+
+                // Normalize alias arguments into the real create_event schema
+                if (parsed_name == "create_event") {
+                    if (parsed_args.value("title", "").empty()) {
+                        std::string t = parsed_args.value("description", "");
+                        if (t.empty()) t = parsed_args.value("name", "");
+                        if (t.empty()) t = "Meeting";
+                        parsed_args["title"] = t;
+                    }
+                    if (parsed_args.value("start_time", "").empty()) {
+                        std::string st = parsed_args.value("date", "");
+                        std::string tm = parsed_args.value("time", "");
+                        if (!st.empty() && !tm.empty()) st += " " + tm;
+                        else if (st.empty()) st = tm;
+                        if (st.empty()) st = "today";
+                        parsed_args["start_time"] = st;
+                    }
+                    if (!parsed_args.contains("type")) parsed_args["type"] = "event";
+                }
+
+                std::string validation_error;
+                if (registry.validate_arguments(parsed_name, parsed_args, validation_error)) {
+                    messages.push_back(message);
+                    std::string tool_call_id = "call_text_" + std::to_string(total_tool_calls);
+
+                    auto result = registry.execute(parsed_name, parsed_args);
+                    total_tool_calls++;
+                    executed_tool_calls.push_back({{"name", parsed_name}, {"arguments", parsed_args.dump()}});
+
+                    std::string tcontent = result.success ? result.content
+                                                          : nlohmann::json({{"error", result.error_message}}).dump();
+                    messages.push_back({{"role", "tool"}, {"tool_call_id", tool_call_id}, {"content", tcontent}});
+
+                    bool is_write = parsed_name.find("create") != std::string::npos ||
+                                    parsed_name.find("delete") != std::string::npos ||
+                                    parsed_name.find("update") != std::string::npos;
+
+                    if (!result.success && is_write) {
+                        std::cerr << "[delta-agent] TOOL EXECUTION ERROR: " << parsed_name
+                                  << " failed. Details: " << result.error_message << std::endl;
+                        return finish(false, "Sorry, I could not do that: " + result.error_message, "");
+                    }
+                    if (result.success && is_write) {
+                        std::string summary = "Done!";
+                        try {
+                            auto j = nlohmann::json::parse(tcontent);
+                            if (parsed_name == "create_event") {
+                                std::string label = (j.value("type", "event") == "task") ? "task" : "event";
+                                summary = "Created " + label + " \"" + j.value("title", "") + "\"";
+                                if (!j.value("start_time", "").empty()) summary += " on " + j.value("start_time", "");
+                                summary += ".";
+                            } else if (parsed_name == "create_note") {
+                                summary = "Created note \"" + j.value("title", "") + "\".";
+                            } else if (parsed_name.find("update") == 0) {
+                                summary = "Updated \"" + j.value("title", "") + "\".";
+                            } else if (parsed_name.find("delete") == 0) {
+                                summary = "Done! The item has been deleted.";
+                            }
+                        } catch (...) {}
+                        std::cerr << "[delta-agent] write tool done: " << summary << std::endl;
+                        return finish(true, summary, "");
+                    }
+                    continue; // read tool: loop so the model answers with the data
+                } else {
+                    std::cerr << "[delta-agent] recovered call failed validation: " << validation_error << std::endl;
+                }
+            }
+        }
 
         // Action retry logic (unchanged from original)
         if (!action_retry_fired) {
