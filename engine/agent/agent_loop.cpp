@@ -324,13 +324,10 @@ void handle_sse_line(SseContext* ctx, const std::string& line) {
     // ENHANCEMENT C: Parse reasoning_content for complex tool chains
     if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
         const std::string thought = delta["reasoning_content"].get<std::string>();
-        if (!thought.empty()) {
-            ctx->reasoning += thought;
-            if (ctx->forward) {
-                nlohmann::json event_data = {{"type", "reasoning"}, {"content", thought}};
-                std::string sse_event = "event: reasoning\ndata: " + event_data.dump() + "\n\n";
-                (*ctx->forward)(sse_event);
-            }
+        if (!thought.empty() && ctx->forward) {
+            nlohmann::json event_data = {{"type", "reasoning"}, {"content", thought}};
+            std::string sse_event = "event: reasoning\ndata: " + event_data.dump() + "\n\n";
+            (*ctx->forward)(sse_event);
         }
     }
 

@@ -1071,10 +1071,15 @@ class ModelAPIServer {
                             return true;
                         });
                 } else {
+                    // Inside the non-streaming block:
                     agent::AgentLoop loop(llama_url, llama_model_name, model_supports_tools);
                     loop.set_tool_filters(use_calendar_tools, use_notes_tools);
-                    if (!response_format.empty()) loop.set_response_format(response_format); // NEW
-                    
+
+                    // ADD THIS: Pass response_format to enable Native JSON Grammar
+                    if (body.contains("response_format")) {
+                        loop.set_response_format(body["response_format"]);
+                    }
+
                     auto result = loop.process(messages);
 
                     if (!result.success) {
