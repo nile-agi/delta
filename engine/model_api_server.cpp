@@ -1047,7 +1047,8 @@ class ModelAPIServer {
 
                                 if (!result.success) {
                                     std::cerr << "[delta-server] stream error: " << result.error << std::endl;
-                                    emit(sse_content_chunk(result.error));
+                                    emit(sse_content_chunk(std::string(
+                                        "Sorry, I hit a snagly processing that. Please try rephrasing or try again.")));
                                 } else if (result.streamed_chars == 0) {
                                     std::istringstream iss(result.content);
                                     std::string line;
