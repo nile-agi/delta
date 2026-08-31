@@ -344,10 +344,8 @@ export class ChatService {
 
 					if (line.startsWith('data: ')) {
 						const data = line.slice(6);
-						if (data === '[DONE]') {
-							streamFinished = true;
-							continue;
-						}
+						if (data === '[DONE]') { streamFinished = true; continue; }
+						if (!data.includes('"choices"')) continue; // ignore named agent events (tool_update/reasoning)
 
 						try {
 							const parsed: ApiChatCompletionStreamChunk = JSON.parse(data);

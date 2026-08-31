@@ -2168,6 +2168,47 @@ void ModelManager::init_model_registry() {
         true // supports_tools
     };
 
+    // ===== GRANITE 4.2 SERIES (IBM Granite models) =====
+
+    model_registry_["granite-4.2-30b"] = {
+        "granite-4.2-30b",
+        "granite-4.2-30b",
+        "ibm-granite/granite-4.2-30b-GGUF",
+        "granite-4.2-30b-Q4_K_M.gguf",
+        "Q4_K_M",
+        17700LL * 1024 * 1024, // ~17.7 GB
+        "Flagship Reasoning model. Derivers strong performance across Reasoning intensive tasks. Support flexible thinking and balance depth vs latency.",
+        "Granite 4.2 30B",
+        8192,
+        true // supports_tools
+    };
+
+    model_registry_["granite-4.2-8b"] = {
+        "granite-4.2-8b",
+        "granite-4.2-8b",
+        "ibm-granite/granite-4.2-8b-GGUF",
+        "granite-4.2-8b-Q4_K_M.gguf",
+        "Q4_K_M",
+        5350LL * 1024 * 1024, // ~5.35 GB
+        "Mid size Reasoning model.Delivers strong performance on reasoning-intensive task, support flexible thinking. Allow user to balance depth vs latency.",
+        "Granite 4.2 8B",
+        8192,
+        true // supports_tools
+    };
+
+    model_registry_["granite-4.2-3b"] = {
+        "granite-4.2-3b",
+        "granite-4.2-3b",
+        "ibm-granite/granite-4.2-3b-GGUF",
+        "granite-4.2-3b-Q4_K_M.gguf",
+        "Q4_K_M",
+        2240LL * 1024 * 1024, // ~2.24 GB
+        "Compact Reasoning model. Derivers strong performance on reasoning taks and support flexible thinking modes.",
+        "Granite 4.2 3B",
+        8192,
+        true // supports_tools
+    };
+
     // ===== GRANITE4 SERIES (IBM Granite models) (128K) =====
     model_registry_["granite4:350m"] = {
         "granite4:350m",

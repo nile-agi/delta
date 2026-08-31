@@ -1029,14 +1029,18 @@ class ModelAPIServer {
                             try {
                                 agent::AgentLoop loop(job->llama_url, job->llama_model, job->supports_tools);
                                 loop.set_tool_filters(job->use_calendar, job->use_notes);
-                                if (!job->response_format.empty()) loop.set_response_format(job->response_format); // NEW
-            
-                                auto result = loop.process(job->messages, [&](const std::string& delta) -> bool {
+                                if (!job->response_format.empty()) loop.set_response_format(job->response_format);
 
-                                    if (delta.empty())
-                                        return true;
-                                    if (!sink.is_writable())
-                                        return false;
+                                // NEW: agent lifecycle events go out as NAMED SSE events (never as chat content)
+                                loop.set_event_callback([&sink](const std::string& type, const nlohmann::json& data) {
+                                    const std::string frame = "event: " + type + "\ndata: " + data.dump() + "\n\n";
+                                    sink.write(frame.data(), frame.size());
+                                });
+
+                                auto result = loop.process(job->messages, [&](const std::string& delta) -> bool {
+                                    if (delta.empty()) return true;
+                                    if (delta.rfind("event: ", 0) == 0) return true; // safety: never render raw SSE frames
+                                    if (!sink.is_writable()) return false;
                                     return emit(sse_content_chunk(delta));
                                 });
 

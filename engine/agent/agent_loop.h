@@ -8,8 +8,12 @@
 namespace delta {
 namespace agent {
 
+// Receives each content delta as it streams; return false to abort (client disconnected).
 using TokenCallback = std::function<bool(const std::string& delta)>;
 
+// NEW: Dedicated channel for agent lifecycle events (tool_update, reasoning).
+// These are sent as NAMED SSE events and never rendered as chat text.
+using EventCallback = std::function<void(const std::string& event_type, const nlohmann::json& data)>;
 struct AgentResponse {
     bool success;
     std::string content;
@@ -30,6 +34,7 @@ class AgentLoop {
     void set_max_iterations(int max);
     void set_tool_filters(bool use_calendar, bool use_notes);
     void set_response_format(const nlohmann::json& fmt); // ENHANCEMENT A: For JSON Grammar Constraints
+    void set_event_callback(EventCallback cb); // NEW
 
   private:
     std::string server_url_;
@@ -40,6 +45,7 @@ class AgentLoop {
     bool use_calendar_tools_ = true;
     bool use_notes_tools_ = true;
     nlohmann::json response_format_; // ENHANCEMENT A
+    EventCallback event_cb_; // NEW
 
     nlohmann::json build_request_body(const nlohmann::json& messages, nlohmann::json tools, bool stream);
     nlohmann::json call_llm(const nlohmann::json& messages, const nlohmann::json& tools);

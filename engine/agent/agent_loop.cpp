@@ -9,12 +9,11 @@
 #include <iostream>
 #include <set>
 #include <vector>
-#include <future> // IMPROVEMENT 1: For concurrent tool execution
+#include <future>
 
 namespace delta {
 namespace agent {
 
-// Filter tools based on enabled types
 static nlohmann::json filter_tools_by_config(const nlohmann::json& all_tools, bool use_calendar, bool use_notes) {
     if (use_calendar && use_notes) return all_tools;
     nlohmann::json filtered = nlohmann::json::array();
@@ -45,18 +44,55 @@ static std::string get_text_content(const nlohmann::json& msg, const std::string
     return "";
 }
 
-// Gemma and similar models have strict templates that reject tool-role messages.
-// Convert tool results to user messages with a prefix.
+// static void sanitize_tool_messages_for_strict_templates(nlohmann::json& messages) {
+//     for (auto& msg : messages) {
+//         if (!msg.is_object()) continue;
+//         if (msg.value("role", "") == "tool") {
+//             msg["role"] = "user";
+//             std::string content = msg.value("content", "");
+//             msg["content"] = "[Tool executed successfully. Result: " + content + "]\n\nNow respond to the user based on this tool result.";
+//         }
+//         // Remove tool_calls field from assistant messages to avoid confusing strict templates
+//         if (msg.value("role", "") == "assistant" && msg.contains("tool_calls")) {
+//             msg.erase("tool_calls");
+//         }
+//     }
+//     nlohmann::json cleaned = nlohmann::json::array();
+//     for (auto& msg : messages) {
+//         if (!cleaned.empty() && cleaned.back().value("role", "") == msg.value("role", "") && msg.value("role", "") != "system") {
+//             cleaned.back()["content"] = cleaned.back()["content"].get<std::string>() + "\n" + msg["content"].get<std::string>();
+//         } else {
+//             cleaned.push_back(msg);
+//         }
+//     }
+//     messages = cleaned;
+// }
+
+
 static void sanitize_tool_messages_for_strict_templates(nlohmann::json& messages) {
     for (auto& msg : messages) {
         if (!msg.is_object()) continue;
+        
         if (msg.value("role", "") == "tool") {
             msg["role"] = "user";
             std::string content = msg.value("content", "");
             msg["content"] = "[Tool executed successfully. Result: " + content + "]\n\nNow respond to the user based on this tool result.";
+            msg.erase("tool_call_id");
+            msg.erase("name");
+        }
+        
+        if (msg.value("role", "") == "assistant" && msg.contains("tool_calls")) {
+            msg.erase("tool_calls");
+        }
+        
+        // Safety: ensure user/system never have tool fields
+        if (msg.value("role", "") == "user" || msg.value("role", "") == "system") {
+            msg.erase("tool_call_id");
+            msg.erase("name");
+            msg.erase("tool_calls");
         }
     }
-    // Remove consecutive same-role messages by merging
+    
     nlohmann::json cleaned = nlohmann::json::array();
     for (auto& msg : messages) {
         if (!cleaned.empty() && cleaned.back().value("role", "") == msg.value("role", "") && msg.value("role", "") != "system") {
@@ -68,8 +104,7 @@ static void sanitize_tool_messages_for_strict_templates(nlohmann::json& messages
     messages = cleaned;
 }
 
-// Strip fenced code blocks containing hallucinated tool calls so users
-// never see raw TOOL_CALL / TOOL_CODE artifacts.
+
 static std::string strip_tool_code_blocks(const std::string& text) {
     static const char* markers[] = {"TOOL_CALL", "TOOL_CODE", "create_event(", "update_event(", "delete_event(",
                                     "list_events(", "create_note(", "list_notes(", "get_note(", "update_note(",
@@ -97,10 +132,6 @@ static std::string strip_tool_code_blocks(const std::string& text) {
     return out;
 }
 
-// Strict chat templates (Gemma / Llama-3 family) raise
-// "Conversation roles must alternate user/assistant/..." when the history
-// contains tool-role messages or consecutive same-role turns. Rewrite the
-// history into a strictly alternating user/assistant sequence.
 static void sanitize_strict_roles(nlohmann::json& messages) {
     nlohmann::json out = nlohmann::json::array();
     for (auto& msg : messages) {
@@ -110,6 +141,11 @@ static void sanitize_strict_roles(nlohmann::json& messages) {
 
         if (role == "tool") { role = "user"; content = "[Tool result] " + content; }
         if (role != "system" && role != "user" && role != "assistant") continue;
+        
+        // Remove tool_calls field to avoid confusing strict templates
+        if (role == "assistant" && msg.contains("tool_calls")) {
+            msg.erase("tool_calls");
+        }
 
         if (!out.empty() && out.back().value("role", "") == role && role != "system") {
             out.back()["content"] = out.back()["content"].get<std::string>() + "\n" + content;
@@ -117,7 +153,6 @@ static void sanitize_strict_roles(nlohmann::json& messages) {
             out.push_back({{"role", role}, {"content", content}});
         }
     }
-    // Templates require the first non-system turn to be a user message.
     for (size_t i = 0; i < out.size(); i++) {
         if (out[i].value("role", "") == "system") continue;
         if (out[i].value("role", "") != "user")
@@ -127,7 +162,6 @@ static void sanitize_strict_roles(nlohmann::json& messages) {
     messages = out;
 }
 
-// Text of the last real user message (skipping our own "Do it now." retry nudge).
 static std::string last_user_text(const nlohmann::json& messages) {
     for (int i = static_cast<int>(messages.size()) - 1; i >= 0; i--) {
         if (messages[i].value("role", "") == "user") {
@@ -143,8 +177,6 @@ static std::string to_lower(std::string s) {
     return s;
 }
 
-// True when the last user message asks for an action, so the model answering with plain text should
-// trigger the tool_choice="required" retry. Also gates streaming, since that text gets discarded.
 static bool user_wants_action(const nlohmann::json& messages) {
     const std::string last_user = to_lower(last_user_text(messages));
     static const char* action_words[] = {"push", "move", "reschedule", "change", "update", "delete", "cancel", "mark", "done", "complete", "remove", "postpone", "ahead", "later", "earlier", "forward", "back", "start", "begin", nullptr};
@@ -152,23 +184,18 @@ static bool user_wants_action(const nlohmann::json& messages) {
     return false;
 }
 
-// Same idea for new items. The action-retry above only matches *existing* items, so create requests
-// need their own check or a prose reply ("what date is Friday?") is returned as-is.
 static bool user_wants_create(const nlohmann::json& messages) {
     const std::string last_user = to_lower(last_user_text(messages));
-
-    static const char* create_words[] = {"create", "add",   "schedule", "book",  "remind",
-                                         "set up", "setup", "new ",     "plan ", "set a",
-                                         "set an", "set my", "make a",  "arrange", "organize",
-                                         "log",    "jot",   "note down", "write down", nullptr};
+    static const char* create_words[] = {"create", "add", "schedule", "book", "remind",
+                                         "set up", "setup", "new ", "plan ", "set a",
+                                         "set an", "set my", "make a", "arrange", "organize",
+                                         "log", "jot", "note down", "write down", nullptr};
     for (int k = 0; create_words[k]; k++) {
-        if (last_user.find(create_words[k]) != std::string::npos)
-            return true;
+        if (last_user.find(create_words[k]) != std::string::npos) return true;
     }
     return false;
 }
 
-// Map hallucinated/alias tool names (small models invent names) to real registered tools.
 static std::string normalize_tool_name(const std::string& raw) {
     std::string n = to_lower(raw);
     if (n == "create_meeting" || n == "create_event" || n == "add_event" || n == "schedule_event" ||
@@ -186,7 +213,6 @@ static std::string normalize_tool_name(const std::string& raw) {
     return "";
 }
 
-// Parse Python-style kwargs (date="2026-08-30", attendees=["oderoi"]) or JSON into a json object.
 static nlohmann::json parse_kwargs(const std::string& s) {
     nlohmann::json out = nlohmann::json::object();
     size_t i = 0;
@@ -238,7 +264,6 @@ static nlohmann::json parse_kwargs(const std::string& s) {
     return out;
 }
 
-// Find "name(...)" in model text where name maps to a real tool; extract its arguments.
 static bool extract_text_tool_call(const std::string& content, std::string& tool_name, nlohmann::json& args) {
     static const char* candidates[] = {
         "create_meeting", "create_event", "add_event", "schedule_event", "create_appointment",
@@ -278,7 +303,8 @@ AgentLoop::AgentLoop(const std::string& llama_server_url, const std::string& mod
 
 void AgentLoop::set_max_iterations(int max) { max_iterations_ = max; }
 void AgentLoop::set_tool_filters(bool use_calendar, bool use_notes) { use_calendar_tools_ = use_calendar; use_notes_tools_ = use_notes; }
-void AgentLoop::set_response_format(const nlohmann::json& fmt) { response_format_ = fmt; } // ENHANCEMENT A
+void AgentLoop::set_response_format(const nlohmann::json& fmt) { response_format_ = fmt; }
+void AgentLoop::set_event_callback(EventCallback cb) { event_cb_ = std::move(cb); } // PATCH A
 
 std::string AgentLoop::build_system_prompt() {
     time_t now = time(nullptr);
@@ -319,7 +345,6 @@ std::string AgentLoop::build_system_prompt() {
         "get_current_time, create_note, list_notes, get_note, update_note, delete_note). "
         "NEVER write tool calls as plain text.";
 
-    // Inject context summary of upcoming events and pending tasks
     auto& db = AgentDatabase::instance();
 
     char week_buf[16];
@@ -377,9 +402,19 @@ nlohmann::json AgentLoop::build_request_body(const nlohmann::json& messages, nlo
             clean_msg["content"] = text;
         } else clean_msg["content"] = msg.contains("content") && !msg["content"].is_null() ? msg["content"].dump() : std::string("");
         
-        if (msg.contains("tool_call_id")) clean_msg["tool_call_id"] = msg["tool_call_id"];
-        if (msg.contains("tool_calls")) clean_msg["tool_calls"] = msg["tool_calls"];
-        if (msg.contains("name")) clean_msg["name"] = msg["name"];
+        // if (msg.contains("tool_call_id")) clean_msg["tool_call_id"] = msg["tool_call_id"];
+        // if (msg.contains("tool_calls")) clean_msg["tool_calls"] = msg["tool_calls"];
+        // if (msg.contains("name")) clean_msg["name"] = msg["name"];
+        // clean_messages.push_back(clean_msg);
+
+        // Only attach tool-specific fields if the role actually requires them
+        if (clean_msg["role"] == "tool") {
+            if (msg.contains("tool_call_id")) clean_msg["tool_call_id"] = msg["tool_call_id"];
+            if (msg.contains("name")) clean_msg["name"] = msg["name"];
+        }
+        if (clean_msg["role"] == "assistant" && msg.contains("tool_calls")) {
+            clean_msg["tool_calls"] = msg["tool_calls"];
+        }
         clean_messages.push_back(clean_msg);
     }
 
@@ -389,7 +424,6 @@ nlohmann::json AgentLoop::build_request_body(const nlohmann::json& messages, nlo
         request_body["tools"] = tools;
         request_body["tool_choice"] = tool_choice_;
         
-        // ENHANCEMENT C: Enable thinking for complex prompts
         bool is_complex = false;
         for (const auto& msg : messages) {
             if (msg.value("role", "") == "user") {
@@ -404,7 +438,6 @@ nlohmann::json AgentLoop::build_request_body(const nlohmann::json& messages, nlo
         request_body["parallel_tool_calls"] = true; 
     }
 
-    // ENHANCEMENT A: Native JSON Grammar Constraints
     if (!response_format_.empty()) request_body["response_format"] = response_format_;
     
     return request_body;
@@ -456,8 +489,6 @@ nlohmann::json AgentLoop::call_llm(const nlohmann::json& messages, const nlohman
     }
 }
 
-// Hold back the last N bytes so a hallucinated TOOL_CODE block can be
-// discarded before it ever reaches the frontend.
 static constexpr size_t kStreamHoldbackBytes = 128;
 
 namespace {
@@ -466,7 +497,7 @@ struct SseContext {
     std::string buffer;
     std::string raw;
     std::string content;
-    std::string reasoning; // ENHANCEMENT C
+    std::string reasoning;
     nlohmann::json tool_calls = nlohmann::json::array();
     std::string finish_reason = "stop";
     std::string pending;
@@ -475,6 +506,7 @@ struct SseContext {
     bool aborted = false;
     size_t forwarded = 0;
     const delta::agent::TokenCallback* forward = nullptr;
+    const delta::agent::EventCallback* events = nullptr; // PATCH B
     bool suppress_forward = false;
 };
 
@@ -516,13 +548,11 @@ void handle_sse_line(SseContext* ctx, const std::string& line) {
 
     const auto& delta = choice["delta"];
     
-    // ENHANCEMENT C: Parse reasoning_content for complex tool chains
     if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
         const std::string thought = delta["reasoning_content"].get<std::string>();
-        if (!thought.empty() && ctx->forward) {
-            nlohmann::json event_data = {{"type", "reasoning"}, {"content", thought}};
-            std::string sse_event = "event: reasoning\ndata: " + event_data.dump() + "\n\n";
-            (*ctx->forward)(sse_event);
+        ctx->reasoning += thought;
+        if (!thought.empty() && ctx->events) {
+            (*ctx->events)("reasoning", {{"content", thought}}); // PATCH B
         }
     }
 
@@ -531,7 +561,7 @@ void handle_sse_line(SseContext* ctx, const std::string& line) {
         for (const auto& fragment : delta["tool_calls"]) if (fragment.is_object()) merge_tool_call_delta(ctx->tool_calls, fragment);
     }
     
-        if (delta.contains("content") && delta["content"].is_string()) {
+    if (delta.contains("content") && delta["content"].is_string()) {
         const std::string text = delta["content"].get<std::string>();
         if (text.empty()) return;
         ctx->content += text;
@@ -542,7 +572,7 @@ void handle_sse_line(SseContext* ctx, const std::string& line) {
             for (int m = 0; markers[m]; m++) {
                 if (ctx->content.find(markers[m]) != std::string::npos) {
                     ctx->suppress_forward = true;
-                    ctx->pending.clear(); // discard held-back code bytes
+                    ctx->pending.clear();
                     break;
                 }
             }
@@ -581,6 +611,7 @@ nlohmann::json AgentLoop::call_llm_stream(const nlohmann::json& messages, const 
 
     SseContext ctx;
     if (forward) ctx.forward = &forward;
+    if (event_cb_) ctx.events = &event_cb_; // PATCH B
 
     std::string url = server_url_ + "/v1/chat/completions";
     std::string body = request_body.dump();
@@ -611,7 +642,7 @@ nlohmann::json AgentLoop::call_llm_stream(const nlohmann::json& messages, const 
         return {{"error", "client disconnected"}};
     }
 
-    if (!ctx.saw_tool_calls) flush_pending(&ctx, true);
+    if (!ctx.saw_tool_calls && !ctx.suppress_forward) flush_pending(&ctx, true);
     out_forwarded = ctx.forwarded;
     if (ctx.aborted) {
         out_client_aborted = true;
@@ -636,11 +667,9 @@ nlohmann::json AgentLoop::call_llm_stream(const nlohmann::json& messages, const 
         }
     }
 
-    if (!ctx.saw_tool_calls && !ctx.suppress_forward) flush_pending(&ctx, true);
-
     nlohmann::json message = {{"role", "assistant"}, {"content", ctx.content}};
     if (!ctx.tool_calls.empty()) message["tool_calls"] = ctx.tool_calls;
-    if (!ctx.reasoning.empty()) message["reasoning_content"] = ctx.reasoning; // ENHANCEMENT C
+    if (!ctx.reasoning.empty()) message["reasoning_content"] = ctx.reasoning;
     return {{"choices", {{{"index", 0}, {"message", message}, {"finish_reason", ctx.finish_reason}}}}};
 }
 
@@ -648,7 +677,11 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
     auto& registry = ToolRegistry::instance();
     nlohmann::json tools = registry.get_tools_array();
 
-    // Clean messages
+    // PATCH B: Dedicated event callback
+    auto emit_event = [&](const std::string& type, const nlohmann::json& data) {
+        if (event_cb_) event_cb_(type, data);
+    };
+
     {
         nlohmann::json clean = nlohmann::json::array();
         for (auto& msg : messages) {
@@ -678,7 +711,6 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
         messages = clean;
     }
 
-    // Trim conversation history
     if (messages.size() > 8) {
         nlohmann::json trimmed = nlohmann::json::array();
         size_t start = 0;
@@ -694,7 +726,6 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
         messages = trimmed;
     }
 
-    // Ensure agent tool instructions are in the system prompt
     std::string agent_prompt;
     try {
         agent_prompt = build_system_prompt();
@@ -726,7 +757,6 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
     nlohmann::json executed_tool_calls = nlohmann::json::array();
     size_t forwarded_total = 0;
     
-    // Fixed lambda syntax for C++ compilation
     auto finish = [&](bool ok, const std::string& content, const std::string& error, const std::string& reasoning = "") {
         return AgentResponse{ok, content, total_tool_calls, error, executed_tool_calls, forwarded_total, false, reasoning};
     };
@@ -734,8 +764,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
     std::cerr << "[delta-agent] v2 process: " << messages.size()
               << " msgs, tools_supported=" << (tools_supported ? "true" : "false") << ", tools_count=" << tools.size() << std::endl;
 
-    // Sanitize history for strict templates (Gemma, etc.)
-    sanitize_tool_messages_for_strict_templates(messages);
+    // sanitize_tool_messages_for_strict_templates(messages);
 
     for (int iteration = 0; iteration < max_iterations_; iteration++) {
         write_summaries.clear();
@@ -758,13 +787,11 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
         }
         if (tool_choice_ == "required") tool_choice_ = "auto";
 
-        // If llama-server returns any error and tools were sent, retry without tools
         if (response.is_object() && response.contains("error")) {
             auto& err = response["error"];
-            std::string err_str = err.is_string()   ? err.get<std::string>()
-                                  : err.is_object() ? err.value("message", err.dump()) : err.dump();
+            std::string err_str = err.is_string() ? err.get<std::string>()
+                                : err.is_object() ? err.value("message", err.dump()) : err.dump();
 
-            // (1) Strict templates reject tool-role history: sanitize and retry WITH tools.
             const bool role_error = err_str.find("roles must alternate") != std::string::npos ||
                                     err_str.find("generate parser") != std::string::npos ||
                                     err_str.find("Jinja") != std::string::npos;
@@ -785,7 +812,6 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
                 }
             }
 
-            // (2) Fallback: retry without tools.
             if (response.is_object() && response.contains("error") && tools_supported) {
                 std::cerr << "[delta-agent] Error with tools enabled: " << err_str << std::endl;
                 std::cerr << "[delta-agent] Retrying without tools..." << std::endl;
@@ -850,7 +876,6 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
 
             std::vector<PendingToolCall> pending_calls;
 
-            // Phase 1: Parse, Validate, and Deduplicate
             for (auto& tool_call : message["tool_calls"]) {
                 if (!tool_call.is_object() || !tool_call.contains("function") || !tool_call["function"].is_object()) continue;
 
@@ -866,7 +891,6 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
                     arguments = nlohmann::json::parse(args_str);
                 } catch (const nlohmann::json::parse_error& e) {
                     parse_error = true;
-                    // IMPROVEMENT 4: Distinguish model formatting errors
                     std::cerr << "[delta-agent] MODEL FORMATTING ERROR: Failed to parse tool arguments for " 
                               << tool_name << ". Raw args: " << args_str << ". Error: " << e.what() << std::endl;
                 }
@@ -877,7 +901,6 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
                     continue;
                 }
 
-                // IMPROVEMENT 2: Stricter JSON Schema Validation
                 std::string validation_error;
                 if (!registry.validate_arguments(tool_name, arguments, validation_error)) {
                     std::cerr << "[delta-agent] MODEL FORMATTING ERROR: Schema validation failed for " 
@@ -887,7 +910,6 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
                     continue;
                 }
 
-                // Deduplication logic
                 std::string dedup_key;
                 if (tool_name == "create_event") {
                     std::string t = arguments.value("title", "");
@@ -918,23 +940,15 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
                 pending_calls.push_back({tool_name, tool_call_id, args_str, arguments, dedup_key});
             }
 
-            // Phase 2: IMPROVEMENT 1 & 3: Concurrent Execution with Streaming State
             std::vector<std::future<std::pair<std::string, ToolResult>>> futures;
             for (const auto& pt : pending_calls) {
-                // IMPROVEMENT 3: Stream "start" event to frontend via existing TokenCallback
-                if (on_token) {
-                    nlohmann::json event_data = {{"tool_name", pt.tool_name}, {"status", "start"}};
-                    std::string sse_event = "event: tool_update\ndata: " + event_data.dump() + "\n\n";
-                    on_token(sse_event);
-                }
+                emit_event("tool_update", {{"tool_name", pt.tool_name}, {"status", "start"}}); // PATCH B
                 
-                // Dispatch concurrently
                 futures.push_back(std::async(std::launch::async, [&registry, pt]() {
                     return std::make_pair(pt.tool_name, registry.execute(pt.tool_name, pt.arguments));
                 }));
             }
 
-            // Phase 3: Collect Results and Build Summaries
             for (size_t i = 0; i < futures.size(); ++i) {
                 auto [tool_name, result] = futures[i].get();
                 const auto& pt = pending_calls[i];
@@ -950,7 +964,6 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
                                      tool_name.find("update") != std::string::npos;
 
                 if (!result.success) {
-                    // IMPROVEMENT 4: Explicit execution error logging
                     std::cerr << "[delta-agent] TOOL EXECUTION ERROR: " << tool_name << " failed. Details: " 
                               << result.error_message << std::endl;
                     if (is_write_tool) {
@@ -958,18 +971,10 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
                     }
                 }
 
-                // IMPROVEMENT 3: Stream "done" event to frontend
-                if (on_token) {
-                    nlohmann::json event_data = {
-                        {"tool_name", tool_name}, 
-                        {"status", result.success ? "done" : "failed"},
-                        {"success", result.success}
-                    };
-                    std::string sse_event = "event: tool_update\ndata: " + event_data.dump() + "\n\n";
-                    on_token(sse_event);
-                }
+                emit_event("tool_update", {{"tool_name", tool_name}, 
+                                           {"status", result.success ? "done" : "failed"},
+                                           {"success", result.success}}); // PATCH B
 
-                // Build friendly summary for write tools
                 if (result.success && is_write_tool) {
                     std::string summary;
                     try {
@@ -1014,6 +1019,12 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
                                     summary += ".";
                                 }
                             }
+                        } else if (tool_name == "create_note") { // PATCH C
+                            summary = "Saved note \"" + j.value("title", "") + "\".";
+                        } else if (tool_name == "update_note") { // PATCH C
+                            summary = "Updated note \"" + j.value("title", "") + "\".";
+                        } else if (tool_name == "delete_note") { // PATCH C
+                            summary = "Done! The note has been deleted.";
                         } else {
                             summary = content;
                         }
@@ -1037,9 +1048,8 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
         }
 
         std::string content = get_text_content(message);
-        std::string reasoning = message.value("reasoning_content", ""); // ENHANCEMENT C
+        std::string reasoning = message.value("reasoning_content", "");
 
-                // FALLBACK: recover hallucinated text-format tool calls from small models
         if (!has_tool_calls && !content.empty()) {
             std::string parsed_name;
             nlohmann::json parsed_args;
@@ -1047,7 +1057,6 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
                 std::cerr << "[delta-agent] recovered text tool call: " << parsed_name
                           << "(" << parsed_args.dump() << ")" << std::endl;
 
-                // Normalize alias arguments into the real create_event schema
                 if (parsed_name == "create_event") {
                     if (parsed_args.value("title", "").empty()) {
                         std::string t = parsed_args.value("description", "");
@@ -1079,8 +1088,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
                                                           : nlohmann::json({{"error", result.error_message}}).dump();
                     messages.push_back({{"role", "tool"}, {"tool_call_id", tool_call_id}, {"content", tcontent}});
                 
-                    // Immediately sanitize for strict templates
-                    sanitize_tool_messages_for_strict_templates(messages);
+                    // sanitize_tool_messages_for_strict_templates(messages);
 
                     bool is_write = parsed_name.find("create") != std::string::npos ||
                                     parsed_name.find("delete") != std::string::npos ||
@@ -1100,8 +1108,12 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
                                 summary = "Created " + label + " \"" + j.value("title", "") + "\"";
                                 if (!j.value("start_time", "").empty()) summary += " on " + j.value("start_time", "");
                                 summary += ".";
-                            } else if (parsed_name == "create_note") {
-                                summary = "Created note \"" + j.value("title", "") + "\".";
+                            } else if (parsed_name == "create_note") { // PATCH C
+                                summary = "Saved note \"" + j.value("title", "") + "\".";
+                            } else if (parsed_name == "update_note") { // PATCH C
+                                summary = "Updated note \"" + j.value("title", "") + "\".";
+                            } else if (parsed_name == "delete_note") { // PATCH C
+                                summary = "Done! The note has been deleted.";
                             } else if (parsed_name.find("update") == 0) {
                                 summary = "Updated \"" + j.value("title", "") + "\".";
                             } else if (parsed_name.find("delete") == 0) {
@@ -1111,14 +1123,13 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
                         std::cerr << "[delta-agent] write tool done: " << summary << std::endl;
                         return finish(true, summary, "");
                     }
-                    continue; // read tool: loop so the model answers with the data
+                    continue;
                 } else {
                     std::cerr << "[delta-agent] recovered call failed validation: " << validation_error << std::endl;
                 }
             }
         }
 
-        // Action retry logic (unchanged from original)
         if (!action_retry_fired) {
             const std::string last_user = last_user_text(messages);
             const std::string user_lower = to_lower(last_user);
@@ -1270,8 +1281,7 @@ AgentResponse AgentLoop::process(nlohmann::json messages, TokenCallback on_token
             }
         }
 
-        // return finish(true, content, "", reasoning);
-        return finish(true, strip_tool_code_blocks(content), "");
+        return finish(true, strip_tool_code_blocks(content), "", reasoning);
     }
     return finish(false, "", "Max tool call iterations reached");
 }

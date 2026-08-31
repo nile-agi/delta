@@ -34,13 +34,38 @@ option(BUILD_TESTS "Build test suite" ON)
 option(GGML_CCACHE "Enable ccache for faster compilation" OFF)
 option(GGML_OPENMP "Enable OpenMP support" OFF)
 
-# Add DHATS Options
-option(DELTA_BUILD_RPC "Enable Distributed RPC Support" ON)
+# # Add DHATS Options
+# option(DELTA_BUILD_RPC "Enable Distributed RPC Support" ON)
 
-# Ensure llama.cpp builds with RPC if enabled
+# # Ensure llama.cpp builds with RPC if enabled
+# if(DELTA_BUILD_RPC)
+#     set(GGML_RPC ON CACHE BOOL "Enable ggml RPC" FORCE)
+#     add_compile_definitions(DELTA_RPC_ENABLED)
+# endif()
+
+# Add DHATS Options
+# Default RPC to OFF. RDMA (libibverbs) is required for ggml-rpc but is not natively 
+# available on macOS or Windows, and requires rdma-core on Linux.
+option(DELTA_BUILD_RPC "Enable Distributed RPC Support (Requires libibverbs on Linux)" OFF)
+
 if(DELTA_BUILD_RPC)
-    set(GGML_RPC ON CACHE BOOL "Enable ggml RPC" FORCE)
-    add_compile_definitions(DELTA_RPC_ENABLED)
+    if(APPLE OR WIN32)
+        message(WARNING "DHATS RPC is not supported on macOS or Windows (libibverbs unavailable). Disabling GGML_RPC.")
+        set(GGML_RPC OFF CACHE BOOL "Disable ggml RPC on macOS/Windows" FORCE)
+    else()
+        # Linux: Check for libibverbs to prevent _ibv_* linker errors
+        find_library(IBVERBS_LIBRARY ibverbs)
+        if(IBVERBS_LIBRARY)
+            message(STATUS "  DHATS: libibverbs found. Enabling ggml RPC.")
+            set(GGML_RPC ON CACHE BOOL "Enable ggml RPC" FORCE)
+            add_compile_definitions(DELTA_RPC_ENABLED)
+        else()
+            message(WARNING "  DHATS: libibverbs not found. Disabling ggml RPC to prevent linker errors.")
+            set(GGML_RPC OFF CACHE BOOL "Disable ggml RPC due to missing libibverbs" FORCE)
+        endif()
+    endif()
+else()
+    set(GGML_RPC OFF CACHE BOOL "Disable ggml RPC" FORCE)
 endif()
 
 option(DELTA_BUILD_CUDA "Build CUDA sidecar (Dynamic Backend Loading)" OFF)

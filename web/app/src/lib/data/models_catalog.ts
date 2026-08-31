@@ -885,7 +885,7 @@ export const modelsCatalog: ModelFamily[] = [
 				download_url: 'ibm-granite/granite-vision-4.1-4b-GGUF',
 				file_size_gb: 2.1,
 				context_size: 8192,
-				required_ram_gb: calculateRequiredRAM(2.8),
+				required_ram_gb: calculateRequiredRAM(2.1),
 				quantization: 'Q4_K_M'
 			},
 			{
@@ -904,6 +904,42 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 2.1,
 				context_size: 8192,
 				required_ram_gb: calculateRequiredRAM(2.1),
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
+	{
+		id: 'granite-4.2',
+		name: 'Granite 4.2',
+		description:
+			"IBM Granite 4.2 series: Introduce native reasoning capabilities, allowing models to perform step-by-step chain of thought reasoning, improve complex math, multi-step logic and agentic tool-calling task",
+		icon: 'ibm logo.png',
+		models: [
+			{
+				name: 'granite-4.2-30b',
+				display_name: 'Granite 4.2 30B',
+				download_url: 'ibm-granite/granite-4.2-30b-GGUF',
+				file_size_gb: 17.7,
+				context_size: 8192,
+				required_ram_gb: calculateRequiredRAM(17.7),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'granite-4.2-8b',
+				display_name: 'Granite 4.2 8B',
+				download_url: 'ibm-granite/granite-4.2-8b-GGUF',
+				file_size_gb: 5.35,
+				context_size: 8192,
+				required_ram_gb: calculateRequiredRAM(5.35),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'granite-4.2-3b',
+				display_name: 'Granite 4.2 3B',
+				download_url: 'ibm-granite/granite-4.2-3b-GGUF',
+				file_size_gb: 2.24,
+				context_size: 8192,
+				required_ram_gb: calculateRequiredRAM(2.24),
 				quantization: 'Q4_K_M'
 			}
 		]
