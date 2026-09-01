@@ -69,40 +69,40 @@ static std::string get_text_content(const nlohmann::json& msg, const std::string
 // }
 
 
-static void sanitize_tool_messages_for_strict_templates(nlohmann::json& messages) {
-    for (auto& msg : messages) {
-        if (!msg.is_object()) continue;
+// static void sanitize_tool_messages_for_strict_templates(nlohmann::json& messages) {
+//     for (auto& msg : messages) {
+//         if (!msg.is_object()) continue;
         
-        if (msg.value("role", "") == "tool") {
-            msg["role"] = "user";
-            std::string content = msg.value("content", "");
-            msg["content"] = "[Tool executed successfully. Result: " + content + "]\n\nNow respond to the user based on this tool result.";
-            msg.erase("tool_call_id");
-            msg.erase("name");
-        }
+//         if (msg.value("role", "") == "tool") {
+//             msg["role"] = "user";
+//             std::string content = msg.value("content", "");
+//             msg["content"] = "[Tool executed successfully. Result: " + content + "]\n\nNow respond to the user based on this tool result.";
+//             msg.erase("tool_call_id");
+//             msg.erase("name");
+//         }
         
-        if (msg.value("role", "") == "assistant" && msg.contains("tool_calls")) {
-            msg.erase("tool_calls");
-        }
+//         if (msg.value("role", "") == "assistant" && msg.contains("tool_calls")) {
+//             msg.erase("tool_calls");
+//         }
         
-        // Safety: ensure user/system never have tool fields
-        if (msg.value("role", "") == "user" || msg.value("role", "") == "system") {
-            msg.erase("tool_call_id");
-            msg.erase("name");
-            msg.erase("tool_calls");
-        }
-    }
+//         // Safety: ensure user/system never have tool fields
+//         if (msg.value("role", "") == "user" || msg.value("role", "") == "system") {
+//             msg.erase("tool_call_id");
+//             msg.erase("name");
+//             msg.erase("tool_calls");
+//         }
+//     }
     
-    nlohmann::json cleaned = nlohmann::json::array();
-    for (auto& msg : messages) {
-        if (!cleaned.empty() && cleaned.back().value("role", "") == msg.value("role", "") && msg.value("role", "") != "system") {
-            cleaned.back()["content"] = cleaned.back()["content"].get<std::string>() + "\n" + msg["content"].get<std::string>();
-        } else {
-            cleaned.push_back(msg);
-        }
-    }
-    messages = cleaned;
-}
+//     nlohmann::json cleaned = nlohmann::json::array();
+//     for (auto& msg : messages) {
+//         if (!cleaned.empty() && cleaned.back().value("role", "") == msg.value("role", "") && msg.value("role", "") != "system") {
+//             cleaned.back()["content"] = cleaned.back()["content"].get<std::string>() + "\n" + msg["content"].get<std::string>();
+//         } else {
+//             cleaned.push_back(msg);
+//         }
+//     }
+//     messages = cleaned;
+// }
 
 
 static std::string strip_tool_code_blocks(const std::string& text) {
