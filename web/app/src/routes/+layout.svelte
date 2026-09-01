@@ -30,8 +30,8 @@
 	import FloatingWindow from '$lib/components/app/misc/FloatingWindow.svelte';
 	import HardwareDashboard from '$lib/components/app/hardware/HardwareDashboard.svelte';
 	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
-	import Calendar from '$lib/components/app/misc/Calendar.svelte';
 	import Notes from '$lib/components/app/misc/Notes.svelte';
+	// REMOVED: import Calendar from '$lib/components/app/misc/Calendar.svelte';
 
 	let { children } = $props();
 
@@ -334,7 +334,8 @@
 	</div>
 {:else if isCalendarWindow}
 	<div class="h-screen w-screen overflow-hidden bg-background">
-		<Calendar fullscreen />
+		<!-- REPLACED: Old DOM <Calendar fullscreen /> with new Window OS implementation -->
+		<CalendarWindow />
 	</div>
 {:else if isNotesWindow}
 	<div class="h-screen w-screen overflow-hidden bg-background">

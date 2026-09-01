@@ -13,7 +13,8 @@
 		'hardware-telemetry': { store: hardwareWindow, title: 'Hardware', icon: Activity }
 	};
 
-	const ACTION_BAR_IDS = new Set(['calendar', 'notes', 'settings']);
+	// REMOVED 'calendar' from this set so it WILL appear in the footer dock
+	const ACTION_BAR_IDS = new Set(['notes', 'settings']);
 	let dockWindows = $derived(dockStore.windows.filter(w => !ACTION_BAR_IDS.has(w.id)));
 
 	function handleRestore(id: string) {
