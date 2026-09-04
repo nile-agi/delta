@@ -45,7 +45,8 @@ class AgentStore {
 			notices: activity.notices ?? [],
 			compaction: activity.compaction,
 			stopReason: activity.stopReason,
-			iterations: activity.iterations
+			iterations: activity.iterations,
+			transcript: activity.transcript
 		});
 	}
 
@@ -56,7 +57,8 @@ class AgentStore {
 			notices: [...current.notices],
 			compaction: current.compaction,
 			stopReason: current.stopReason,
-			iterations: current.iterations
+			iterations: current.iterations,
+			transcript: current.transcript
 		};
 		fn(next);
 		this.activities.set(messageId, next);
