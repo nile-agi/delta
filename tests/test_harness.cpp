@@ -816,26 +816,15 @@ static void test_scratchpad_survives_an_unfinished_run() {
     check(prompt_has_plan, "the system prompt showed the conversation's plan");
     check(memory.get_plan(convo).is_object(), "the plan is still there for the next turn");
 
-    // A finished run with a step still pending keeps the plan too.
-    ScriptedServer done_early({{{"role", "assistant"}, {"content", "I'll stop here."}}});
-    done_early.start();
-    Harness h2(done_early.url(), "test-model", true);
-    h2.set_options(options);
-    h2.run(json::array({user("pause")}), log.sink());
-    done_early.stop();
-    check(memory.get_plan(convo).is_object(), "a reply with pending steps keeps the plan");
-
-    // Once every step is done, a normal stop clears it.
-    memory.set_plan(
-        convo, "tidy the folder",
-        json::array({{{"step", "list files"}, {"status", "done"}}, {{"step", "delete junk"}, {"status", "done"}}}));
+    // When the model finishes its turn the plan has served its purpose, even if it never marked
+    // the steps done -- small models rarely do -- so a stale plan is not carried into the next turn.
     ScriptedServer finished({{{"role", "assistant"}, {"content", "All tidy."}}});
     finished.start();
-    Harness h3(finished.url(), "test-model", true);
-    h3.set_options(options);
-    h3.run(json::array({user("thanks")}), log.sink());
+    Harness h2(finished.url(), "test-model", true);
+    h2.set_options(options);
+    h2.run(json::array({user("thanks")}), log.sink());
     finished.stop();
-    check(memory.get_plan(convo).is_null(), "a completed plan is cleared when the run stops");
+    check(memory.get_plan(convo).is_null(), "a normal stop clears the plan even with steps still pending");
 }
 
 // ----------------------------------------------------------- context manager

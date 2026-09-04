@@ -59,18 +59,6 @@ std::string summarize_result(const std::string& tool, const ToolResult& result) 
     return tool + " finished";
 }
 
-// True when a plan exists and at least one step is still pending or in progress.
-bool plan_has_open_steps(const nlohmann::json& plan) {
-    if (!plan.is_object() || !plan.contains("steps") || !plan["steps"].is_array())
-        return false;
-    for (const auto& step : plan["steps"]) {
-        const std::string status = step.value("status", "pending");
-        if (status == "pending" || status == "in_progress")
-            return true;
-    }
-    return false;
-}
-
 // Answers a tool call without running it, for calls the harness refuses to execute.
 nlohmann::json refused_tool_message(const std::string& call_id, const std::string& name, const std::string& error) {
     return {{"role", "tool"},
@@ -297,18 +285,16 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
     const size_t history_size = transcript.size();
 
     // Every exit passes through here so the transcript delta and the plan are handled the same
-    // way regardless of why the run ended. A plan keyed by the conversation is kept whenever the
-    // work is unfinished (budget hit, abort, error, or a reply with open steps) so the next turn
-    // can pick it up; a per-run plan has no next turn, so it is always cleared.
+    // way regardless of why the run ended. A plan keyed by the conversation is kept when the run
+    // was cut short (budget hit, abort, error) so "keep going" resumes it, and cleared when the
+    // model finished its turn: it rarely marks steps done, and a stale plan in the next prompt
+    // would read as unfinished work. A per-run plan has no next turn, so it is always cleared.
     auto finish = [&](RunResult& r) -> RunResult {
         r.transcript_delta = nlohmann::json::array();
         for (size_t i = history_size; i < transcript.size(); i++)
             r.transcript_delta.push_back(transcript[i]);
-        auto& memory = MemoryStore::instance();
-        const bool per_run = options_.scratchpad_id.empty();
-        const bool finished_cleanly = r.stop_reason == "stop";
-        if (per_run || (finished_cleanly && !plan_has_open_steps(memory.get_plan(pad))))
-            memory.clear_plan(pad);
+        if (options_.scratchpad_id.empty() || r.stop_reason == "stop")
+            MemoryStore::instance().clear_plan(pad);
         return r;
     };
 
