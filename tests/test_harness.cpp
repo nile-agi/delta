@@ -1333,6 +1333,33 @@ static void test_fetch_url_does_not_follow_redirects_off_http() {
           "the contents of /etc/hosts were not fetched");
 }
 
+static void test_fetch_url_refuses_link_local_addresses() {
+    test("fetch_url refuses link-local addresses such as cloud metadata endpoints");
+
+    const auto started = std::chrono::steady_clock::now();
+    ToolResult direct =
+        ToolRegistry::instance().execute("fetch_url", {{"url", "http://169.254.169.254/latest/meta-data/"}});
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - started).count();
+    check(!direct.success, "a direct request is refused");
+    check(direct.error_message.find("not allowed") != std::string::npos, "with an explanation");
+    check(elapsed < 3, "without trying to connect first");
+
+    // A redirect from an allowed host to a link-local one is refused as well.
+    httplib::Server server;
+    server.Get("/hop", [](const httplib::Request&, httplib::Response& res) {
+        res.set_redirect("http://169.254.169.254/latest/meta-data/");
+    });
+    const int port = server.bind_to_any_port("127.0.0.1");
+    std::thread thread([&server] { server.listen_after_bind(); });
+    server.wait_until_ready();
+    ToolResult hopped = ToolRegistry::instance().execute(
+        "fetch_url", {{"url", "http://127.0.0.1:" + std::to_string(port) + "/hop"}, {"raw", true}});
+    server.stop();
+    thread.join();
+    check(!hopped.success, "a redirect to a link-local address is refused");
+}
+
 // ---------------------------------------------------------------------- main
 
 int main() {
@@ -1392,6 +1419,7 @@ int main() {
     test_shell_defaults_to_the_home_directory();
     test_shell_does_not_wait_forever_for_a_child_that_closed_its_output();
     test_fetch_url_does_not_follow_redirects_off_http();
+    test_fetch_url_refuses_link_local_addresses();
 
     AgentDatabase::instance().close();
     std::remove(db_path.c_str());
