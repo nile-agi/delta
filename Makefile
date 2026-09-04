@@ -1,4 +1,4 @@
-.PHONY: all engine sidecars web preview dev run clean help submodules ensure-submodules
+.PHONY: all engine sidecars web preview dev run clean help submodules ensure-submodules test
 
 help:
 	@echo "make sidecars - Build C++ engine + copy binaries into src-tauri/binaries/ (needed by the app)"
@@ -7,6 +7,7 @@ help:
 	@echo "make preview  - Build web + serve it WITH the engine at http://localhost:8080 (browser)"
 	@echo "make dev      - Run Tauri desktop app (auto-builds sidecars if missing)"
 	@echo "make run      - Full rebuild then run"
+	@echo "make test     - Build and run the agent harness tests (scripted model server, no GPU needed)"
 	@echo "make clean    - Remove build artifacts"
 
 # `engine` is omitted on purpose: `sidecars` already builds everything the app
@@ -78,6 +79,13 @@ dev:
 	cd src-tauri && cargo tauri dev
 
 run: all dev
+
+test: ensure-submodules
+	@bash scripts/clean-stale-cmake-cache.sh build
+	mkdir -p build
+	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON -DCMAKE_C_COMPILER=/usr/bin/cc -DCMAKE_CXX_COMPILER=/usr/bin/c++
+	cmake --build build -j$$(sysctl -n hw.ncpu) --target delta-harness-tests
+	./build/delta-harness-tests
 
 clean:
 	rm -rf build build_tauri_*
