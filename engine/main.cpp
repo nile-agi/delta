@@ -137,6 +137,11 @@ class CliRunPrinter {
   public:
     bool operator()(const delta::agent::HarnessEvent& event) {
         using delta::agent::EventType;
+#ifndef _WIN32
+        // Ctrl-C during a reply stops the run; the prompt loop decides afterwards whether to exit.
+        if (g_exit_requested)
+            return false;
+#endif
 
         switch (event.type) {
         case EventType::Content: {
@@ -226,7 +231,10 @@ class CliRunPrinter {
 
         std::string answer;
         if (!std::getline(std::cin, answer)) {
-            // stdin is gone (piped input, closed terminal): refuse rather than hang.
+            // stdin is gone (piped input, closed terminal) or the read was interrupted by Ctrl-C:
+            // refuse rather than hang, and leave the stream usable for the next prompt.
+            if (!std::cin.eof())
+                std::cin.clear();
             delta::agent::ApprovalBroker::instance().resolve(id, "deny");
             std::cout << "  (no input available, skipping)" << std::endl;
             return;
@@ -276,7 +284,8 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     session.config = &config;
     session.model_mgr = &model_mgr;
     session.current_model = current_model;
-    session.max_tokens = 256;
+    // Replies are bounded by the harness's max_tokens; 256 cut answers off mid-sentence.
+    session.max_tokens = 2048;
     session.temperature = config.temperature;
     session.gpu_layers = config.n_gpu_layers;
     session.multimodal = config.multimodal;
@@ -377,11 +386,14 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
         }
     }
 
+    // The agent database backs /memory, /plan and /policies as well as the tools, so open it
+    // whether or not a model is loaded.
+    if (!agent::AgentDatabase::instance().init())
+        UI::print_error("Agent database unavailable - calendar, notes and memory tools are disabled.");
+    else if (!agent::MemoryStore::instance().init(agent::AgentDatabase::instance().handle()))
+        UI::print_error("Memory store unavailable - Delta will not remember anything this session.");
+
     if (!harness_url.empty()) {
-        if (!agent::AgentDatabase::instance().init())
-            UI::print_error("Agent database unavailable - calendar, notes and memory tools are disabled.");
-        else
-            agent::MemoryStore::instance().init(agent::AgentDatabase::instance().handle());
         agent::register_all_tools();
     } else if (!current_model.empty()) {
         // No reachable model server: fall back to in-process inference, loading the weights now
@@ -393,6 +405,10 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
 
     // The transcript the harness sees. It trims this to the model's context window itself.
     nlohmann::json conversation = nlohmann::json::array();
+    // One plan scratchpad for the whole interactive session, so "keep going" resumes the plan.
+    const std::string scratchpad_id = "cli_" + std::to_string(static_cast<long long>(time(nullptr)));
+    session.scratchpad_id = scratchpad_id;
+    session.conversation = &conversation;
 
 #ifndef _WIN32
     // Register signal handlers so closing terminal or Ctrl+C stops llama-server
@@ -478,8 +494,13 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
 
                 agent::Harness harness(harness_url, session.current_model, harness_supports_tools);
                 agent::RunOptions options;
-                options.max_tokens = session.max_tokens > 0 ? session.max_tokens : 512;
+                options.max_tokens = session.max_tokens;
                 options.tools_enabled = harness_supports_tools;
+                options.scratchpad_id = scratchpad_id;
+#ifndef _WIN32
+                // Lets Ctrl-C land while the model is still thinking, before any output arrives.
+                options.abort_requested = [] { return g_exit_requested != 0; };
+#endif
                 harness.set_options(options);
 
                 CliRunPrinter printer;
@@ -489,7 +510,19 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
 
                 if (result.success) {
                     response = result.content;
-                    conversation.push_back({{"role", "assistant"}, {"content", response}});
+                    // Keep the tool calls and their results, not just the reply, so the next turn
+                    // can refer to what was actually read, written or run.
+                    for (const auto& msg : result.transcript_delta)
+                        conversation.push_back(msg);
+                } else if (result.client_aborted) {
+#ifndef _WIN32
+                    // Ctrl-C: stop this reply, stay in the session. Another Ctrl-C at the prompt exits.
+                    g_exit_requested = 0;
+                    if (!std::cin.eof())
+                        std::cin.clear();
+#endif
+                    UI::print_info("Stopped.");
+                    conversation.erase(conversation.size() - 1);
                 } else {
                     UI::print_error(result.error.empty() ? "The model did not return a response." : result.error);
                     conversation.erase(conversation.size() - 1); // drop the user turn we could not answer

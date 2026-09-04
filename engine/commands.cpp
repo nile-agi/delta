@@ -3,6 +3,8 @@
  */
 
 #include "commands.h"
+#include "agent/memory_store.h"
+#include "agent/tool_registry.h"
 #include "update.h"
 #include "history.h"
 #include "model_api_server.h"
@@ -1367,6 +1369,13 @@ void Commands::init() {
     command_map_["list-available"] = handle_available;
     command_map_["clear-screen"] = handle_clear_screen;
     command_map_["help"] = handle_help;
+    command_map_["memory"] = handle_memory;
+    command_map_["memories"] = handle_memory;
+    command_map_["forget"] = handle_forget;
+    command_map_["plan"] = handle_plan;
+    command_map_["tools"] = handle_tools;
+    command_map_["policies"] = handle_policies;
+    command_map_["clear"] = handle_clear;
 
     initialized_ = true;
 }
@@ -1383,7 +1392,7 @@ bool Commands::process_command(const std::string& input, InteractiveSession& ses
     // Check if command exists
     auto it = command_map_.find(command);
     if (it == command_map_.end()) {
-        UI::print_info("ℹ Type /help to see available commands");
+        UI::print_info("Type /help to see available commands");
         return true;
     }
 
@@ -1420,6 +1429,20 @@ void Commands::show_help() {
     std::cout << "  " << UI::GREEN << "/clear-screen" << UI::RESET << "         - Clear the terminal screen"
               << std::endl;
     std::cout << "  " << UI::GREEN << "/help" << UI::RESET << "                 - Show this help" << std::endl;
+    std::cout << std::endl;
+    std::cout << UI::BRIGHT_GREEN << UI::BOLD << "Agent Commands:" << UI::RESET << std::endl;
+    std::cout << "  " << UI::GREEN << "/memory [query]" << UI::RESET << "       - Show what Delta remembers about you"
+              << std::endl;
+    std::cout << "  " << UI::GREEN << "/forget <id>" << UI::RESET << "          - Delete one memory" << std::endl;
+    std::cout << "  " << UI::GREEN << "/plan" << UI::RESET
+              << "                 - Show the plan Delta is working through" << std::endl;
+    std::cout << "  " << UI::GREEN << "/tools" << UI::RESET << "                - List the tools Delta can use"
+              << std::endl;
+    std::cout << "  " << UI::GREEN << "/policies [reset]" << UI::RESET
+              << "     - Show or forget remembered allow/deny answers" << std::endl;
+    std::cout << "  " << UI::GREEN << "/clear" << UI::RESET << "                - Start a fresh conversation"
+              << std::endl;
+    std::cout << "  " << UI::YELLOW << "Ctrl-C" << UI::RESET << "               - Stop the current reply" << std::endl;
     std::cout << std::endl;
     std::cout << "  " << UI::YELLOW << "exit, quit" << UI::RESET << "           - Exit interactive mode" << std::endl;
     std::cout << std::endl;
@@ -1702,6 +1725,164 @@ bool Commands::handle_remove(const std::vector<std::string>& args, InteractiveSe
 // ============================================================================
 // HISTORY AND SESSION MANAGEMENT COMMANDS
 // ============================================================================
+
+// ---------------------------------------------------------------- agent commands
+
+namespace {
+bool memory_ready() {
+    if (delta::agent::MemoryStore::instance().ready())
+        return true;
+    UI::print_info("Memory is not available: the agent database did not open this session.");
+    return false;
+}
+
+void print_memory_line(const delta::agent::Memory& m) {
+    std::cout << "  " << UI::GREEN << m.id << UI::RESET << "  [" << m.kind << (m.importance >= 3 ? ", pinned" : "")
+              << "]  " << m.content << std::endl;
+}
+} // namespace
+
+bool Commands::handle_memory(const std::vector<std::string>& args, InteractiveSession& session) {
+    (void)session;
+    if (!memory_ready())
+        return true;
+    auto& memory = delta::agent::MemoryStore::instance();
+
+    std::string query;
+    for (const auto& arg : args)
+        query += (query.empty() ? "" : " ") + arg;
+
+    auto results = memory.search(query, 20);
+    if (results.empty()) {
+        UI::print_info(query.empty() ? "Delta has not remembered anything yet."
+                                     : "No memories match \"" + query + "\".");
+        return true;
+    }
+    std::cout << "\n"
+              << UI::BRIGHT_GREEN << UI::BOLD
+              << (query.empty() ? "What Delta remembers:" : "Memories matching \"" + query + "\":") << UI::RESET
+              << std::endl;
+    for (const auto& m : results)
+        print_memory_line(m);
+    std::cout << "  (" << memory.count() << " total; /forget <id> removes one)\n" << std::endl;
+    return true;
+}
+
+bool Commands::handle_forget(const std::vector<std::string>& args, InteractiveSession& session) {
+    (void)session;
+    if (args.empty()) {
+        UI::print_info("Usage: /forget <memory id>  (find ids with /memory)");
+        return true;
+    }
+    if (!memory_ready())
+        return true;
+    if (delta::agent::MemoryStore::instance().forget(args[0]))
+        UI::print_success("Forgotten.");
+    else
+        UI::print_error("No memory with id " + args[0]);
+    return true;
+}
+
+bool Commands::handle_plan(const std::vector<std::string>& args, InteractiveSession& session) {
+    (void)args;
+    if (!memory_ready())
+        return true;
+    auto plan = delta::agent::MemoryStore::instance().get_plan(session.scratchpad_id);
+    if (!plan.is_object() || !plan.contains("steps") || !plan["steps"].is_array() || plan["steps"].empty()) {
+        UI::print_info("No plan in progress.");
+        return true;
+    }
+    std::cout << "\n" << UI::BRIGHT_GREEN << UI::BOLD << "Plan: " << UI::RESET << plan.value("goal", "") << std::endl;
+    int idx = 0;
+    for (const auto& step : plan["steps"]) {
+        const std::string status = step.value("status", "pending");
+        const char* mark = status == "done"          ? "[x]"
+                           : status == "in_progress" ? "[>]"
+                           : status == "blocked"     ? "[!]"
+                                                     : "[ ]";
+        std::cout << "  " << mark << " " << idx++ << ". " << step.value("step", "");
+        if (step.contains("note") && step["note"].is_string() && !step["note"].get<std::string>().empty())
+            std::cout << "  -- " << step["note"].get<std::string>();
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+    return true;
+}
+
+bool Commands::handle_tools(const std::vector<std::string>& args, InteractiveSession& session) {
+    (void)args;
+    (void)session;
+    auto& registry = delta::agent::ToolRegistry::instance();
+    auto names = registry.get_tool_names();
+    if (names.empty()) {
+        UI::print_info("No tools are registered; the model server may not be running.");
+        return true;
+    }
+    std::map<std::string, std::vector<const delta::agent::ToolDefinition*>> by_category;
+    for (const auto& name : names) {
+        const auto* def = registry.get_definition(name);
+        if (def)
+            by_category[def->category].push_back(def);
+    }
+    nlohmann::json policies = delta::agent::MemoryStore::instance().ready()
+                                  ? delta::agent::MemoryStore::instance().list_policies()
+                                  : nlohmann::json::object();
+    auto remembered = [&](const std::string& tool) -> std::string {
+        if (policies.is_object() && policies.contains(tool) && policies[tool].is_string())
+            return policies[tool].get<std::string>();
+        return "";
+    };
+
+    std::cout << std::endl;
+    for (const auto& [category, defs] : by_category) {
+        std::cout << UI::BRIGHT_GREEN << UI::BOLD << category << UI::RESET << std::endl;
+        for (const auto* def : defs) {
+            std::cout << "  " << UI::GREEN << def->name << UI::RESET << "  (" << delta::agent::risk_name(def->risk)
+                      << ")";
+            const std::string decision = remembered(def->name);
+            if (!decision.empty())
+                std::cout << "  remembered: " << decision;
+            std::cout << std::endl;
+        }
+    }
+    std::cout << "  Destructive tools ask before running; /policies shows saved answers.\n" << std::endl;
+    return true;
+}
+
+bool Commands::handle_policies(const std::vector<std::string>& args, InteractiveSession& session) {
+    (void)session;
+    if (!memory_ready())
+        return true;
+    auto& memory = delta::agent::MemoryStore::instance();
+    if (!args.empty() && args[0] == "reset") {
+        memory.clear_policies();
+        UI::print_success("Forgot every remembered allow/deny answer. Destructive tools will ask again.");
+        return true;
+    }
+    // list_policies() returns {tool: decision}.
+    nlohmann::json policies = memory.list_policies();
+    if (!policies.is_object() || policies.empty()) {
+        UI::print_info("No remembered answers. Answer [a]lways or ne[v]er at an approval prompt to save one.");
+        return true;
+    }
+    std::cout << "\n" << UI::BRIGHT_GREEN << UI::BOLD << "Remembered answers:" << UI::RESET << std::endl;
+    for (auto it = policies.begin(); it != policies.end(); ++it) {
+        std::cout << "  " << UI::GREEN << it.key() << UI::RESET << "  "
+                  << (it.value().is_string() ? it.value().get<std::string>() : it.value().dump()) << std::endl;
+    }
+    std::cout << "  (/policies reset clears them)\n" << std::endl;
+    return true;
+}
+
+bool Commands::handle_clear(const std::vector<std::string>& args, InteractiveSession& session) {
+    (void)args;
+    if (session.conversation)
+        session.conversation->clear();
+    if (delta::agent::MemoryStore::instance().ready() && !session.scratchpad_id.empty())
+        delta::agent::MemoryStore::instance().clear_plan(session.scratchpad_id);
+    UI::print_success("Conversation cleared. Long-term memories are kept; use /forget to remove one.");
+    return true;
+}
 
 bool Commands::handle_clear_screen(const std::vector<std::string>& args, InteractiveSession& session) {
     (void)args;

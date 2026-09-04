@@ -6,23 +6,24 @@
 #define DELTA_COMMANDS_H
 
 #include "delta_cli.h"
+#include "json.hpp"
 #include <string>
 #include <vector>
 #include <map>
 #include <mutex>
 
 #if defined(_WIN32) || defined(_MSC_VER)
-    #ifndef WIN32_LEAN_AND_MEAN
-    #define WIN32_LEAN_AND_MEAN
-    #endif
-    #ifndef NOMINMAX
-    #define NOMINMAX
-    #endif
-    #include <windows.h>
-    typedef DWORD process_id_t;
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+typedef DWORD process_id_t;
 #else
-    #include <unistd.h>
-    typedef pid_t process_id_t;
+#include <unistd.h>
+typedef pid_t process_id_t;
 #endif
 
 namespace delta {
@@ -44,37 +45,44 @@ struct InteractiveSession {
     int gpu_layers;
     bool multimodal;
     bool no_color;
-    
-    InteractiveSession() : engine(nullptr), config(nullptr), model_mgr(nullptr),
-                          current_model(""), max_tokens(512), temperature(0.8),
-                          gpu_layers(0), multimodal(false), no_color(false) {}
+    // Agent state for the session: the plan scratchpad key and the harness transcript, so the
+    // /plan and /clear commands act on the same conversation the harness is driving.
+    std::string scratchpad_id;
+    nlohmann::json* conversation;
+
+    InteractiveSession()
+        : engine(nullptr), config(nullptr), model_mgr(nullptr), current_model(""), max_tokens(512), temperature(0.8),
+          gpu_layers(0), multimodal(false), no_color(false), scratchpad_id(""), conversation(nullptr) {}
 };
 
 class Commands {
-public:
+  public:
     // Initialize command system
     static void init();
-    
+
     // Process slash command
     static bool process_command(const std::string& input, InteractiveSession& session);
-    
+
     // Launch server automatically (for auto-start on delta launch). Uses port 8080 only.
     // Launches llama-server with -m <path>. If model_path empty and models_dir set, uses first .gguf in models_dir.
-    static bool launch_server_auto(const std::string& model_path, int port = 8080, int ctx_size = 0, const std::string& model_alias = "", const std::string& models_dir = "");
-    /** Start UI-only server (model API + static web UI on 8080) when no model; avoids --models-dir on unsupported builds. */
+    static bool launch_server_auto(const std::string& model_path, int port = 8080, int ctx_size = 0,
+                                   const std::string& model_alias = "", const std::string& models_dir = "");
+    /** Start UI-only server (model API + static web UI on 8080) when no model; avoids --models-dir on unsupported
+     * builds. */
     static bool launch_ui_only_server();
     /** Restore UI-only server on 8080 after unload (call from deferred thread so response can be sent first). */
     static void start_ui_only_server_on_8080();
-    
+
     // Restart llama-server with new model (for model switching)
-    static bool restart_llama_server(const std::string& model_path, const std::string& model_name, int ctx_size, const std::string& model_alias);
-    
+    static bool restart_llama_server(const std::string& model_path, const std::string& model_name, int ctx_size,
+                                     const std::string& model_alias);
+
     // Stop llama-server
     static void stop_llama_server();
-    
+
     // Get current server port
     static int get_current_port() { return current_port_; }
-    
+
     // Command handlers
     static bool handle_download(const std::vector<std::string>& args, InteractiveSession& session);
     static bool handle_remove(const std::vector<std::string>& args, InteractiveSession& session);
@@ -83,27 +91,34 @@ public:
     static bool handle_available(const std::vector<std::string>& args, InteractiveSession& session);
     static bool handle_clear_screen(const std::vector<std::string>& args, InteractiveSession& session);
     static bool handle_help(const std::vector<std::string>& args, InteractiveSession& session);
-    
+    // Agent commands: inspect and prune what the harness remembers and plans.
+    static bool handle_memory(const std::vector<std::string>& args, InteractiveSession& session);
+    static bool handle_forget(const std::vector<std::string>& args, InteractiveSession& session);
+    static bool handle_plan(const std::vector<std::string>& args, InteractiveSession& session);
+    static bool handle_tools(const std::vector<std::string>& args, InteractiveSession& session);
+    static bool handle_policies(const std::vector<std::string>& args, InteractiveSession& session);
+    static bool handle_clear(const std::vector<std::string>& args, InteractiveSession& session);
+
     // Utility functions
     static std::vector<std::string> parse_args(const std::string& input);
     static void show_help();
     static bool is_online_command(const std::string& command);
     static void show_offline_message(const std::string& command);
-    
-private:
+
+  private:
     static std::map<std::string, CommandHandler> command_map_;
     static bool initialized_;
-    
+
     // Process management for llama-server
     static process_id_t llama_server_pid_;
     static std::string current_model_path_;
     static int current_port_;
     static std::mutex server_mutex_;
-    
+
     // Helper to build llama-server command (always -m with absolute path).
-    static std::string build_llama_server_cmd(const std::string& server_bin, const std::string& model_path,
-                                               int port, int ctx_size, const std::string& model_alias,
-                                               const std::string& public_path, const std::string& models_dir = "");
+    static std::string build_llama_server_cmd(const std::string& server_bin, const std::string& model_path, int port,
+                                              int ctx_size, const std::string& model_alias,
+                                              const std::string& public_path, const std::string& models_dir = "");
     static std::string get_webui_public_path();
 };
 
