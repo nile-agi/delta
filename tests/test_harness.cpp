@@ -1122,14 +1122,26 @@ static void test_summary_is_reused_across_iterations() {
     });
     server.start();
 
+    auto& memory = MemoryStore::instance();
+    const std::string pinned_id = memory.remember("The user's cat is called Biscuit", "fact", "pets", 3, "test");
+
     Harness harness(server.url(), "test-model", true);
     harness.set_options(test_options());
     EventLog log;
     auto result = harness.run(history, log.sink());
     server.stop();
+    memory.forget(pinned_id);
 
     check(result.success, "the run completed");
     check_eq(result.iterations, 3, "it took three iterations");
+    int prompts_with_memory = 0;
+    for (const auto& request : server.requests()) {
+        const auto& messages = request["messages"];
+        if (!messages.empty() && messages[0].value("content", "").find("Biscuit") != std::string::npos &&
+            messages[0].value("content", "").rfind("Summarize", 0) != 0)
+            prompts_with_memory++;
+    }
+    check_eq(prompts_with_memory, 3, "every iteration's system prompt carried the pinned memory");
     int summaries = 0;
     for (const auto& request : server.requests()) {
         const auto& messages = request["messages"];

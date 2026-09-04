@@ -91,6 +91,11 @@ class Harness {
     bool supports_tools_;
     RunOptions options_;
     std::string run_id_;
+
+    // Memory and calendar context for the current run, built once: the user's last message does
+    // not change between iterations, so neither does what is worth recalling for it.
+    mutable std::string context_cache_;
+    mutable std::string context_cache_key_;
 };
 
 } // namespace agent

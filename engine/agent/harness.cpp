@@ -137,6 +137,27 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
     auto& memory = MemoryStore::instance();
     std::string context_block;
 
+    // The plan changes as tools run, so it is rendered fresh; the rest is cached per user turn.
+    std::string plan_block;
+    if (memory.ready()) {
+        auto plan = memory.get_plan(scratchpad_key());
+        if (plan.is_object() && plan.contains("steps") && plan["steps"].is_array() && !plan["steps"].empty()) {
+            plan_block += "\nYour current plan (goal: " + plan.value("goal", "") + "):\n";
+            int idx = 0;
+            for (const auto& step : plan["steps"]) {
+                plan_block += "  " + std::to_string(idx++) + ". [" + step.value("status", "pending") + "] " +
+                              step.value("step", "") + "\n";
+            }
+        }
+    }
+
+    const std::string cache_key = std::string(today_buf) + "|" + last_user_text(messages);
+    if (cache_key == context_cache_key_) {
+        if (!context_cache_.empty() || !plan_block.empty())
+            prompt += "\n--- Context ---" + context_cache_ + plan_block;
+        return prompt;
+    }
+
     if (memory.ready()) {
         auto pinned_memories = memory.pinned(5);
         auto relevant = memory.search(last_user_text(messages), 5);
@@ -152,16 +173,6 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
         }
         if (!lines.empty())
             context_block += "\nWhat you remember about this user:\n" + lines;
-
-        auto plan = memory.get_plan(scratchpad_key());
-        if (plan.is_object() && plan.contains("steps") && plan["steps"].is_array() && !plan["steps"].empty()) {
-            context_block += "\nYour current plan (goal: " + plan.value("goal", "") + "):\n";
-            int idx = 0;
-            for (const auto& step : plan["steps"]) {
-                context_block += "  " + std::to_string(idx++) + ". [" + step.value("status", "pending") + "] " +
-                                 step.value("step", "") + "\n";
-            }
-        }
     }
 
     const bool calendar_on = options_.enabled_categories.empty() || options_.enabled_categories.count("calendar") > 0;
@@ -200,8 +211,11 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
         }
     }
 
-    if (!context_block.empty())
-        prompt += "\n--- Context ---" + context_block;
+    context_cache_ = context_block;
+    context_cache_key_ = cache_key;
+
+    if (!context_block.empty() || !plan_block.empty())
+        prompt += "\n--- Context ---" + context_block + plan_block;
 
     return prompt;
 }
