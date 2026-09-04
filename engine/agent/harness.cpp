@@ -475,6 +475,10 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
 
             const ToolDefinition* def = registry.get_definition(name);
             if (!def) {
+                // Shown as a step like any other call, so the UI has something to attach the
+                // failure to.
+                if (!emit(EventType::ToolStart, {{"name", name}, {"arguments", arguments}, {"risk", "unknown"}}))
+                    return aborted();
                 if (!refuse(call_id, name, "No tool called " + name))
                     return aborted();
                 continue;

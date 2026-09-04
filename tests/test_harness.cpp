@@ -1152,6 +1152,27 @@ static void test_summary_is_reused_across_iterations() {
     check(log.count(EventType::Compaction) >= 3, "every iteration still reported compaction");
 }
 
+static void test_unknown_tool_is_reported_as_a_step() {
+    test("a call to a tool that does not exist shows up as a failed step, not just a stray result");
+
+    ScriptedServer server({assistant_calling("no_such_tool", {{"x", 1}}, "call_missing"),
+                           {{"role", "assistant"}, {"content", "Sorry, I cannot do that."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("do the thing")}), log.sink());
+    server.stop();
+
+    check(result.success, "the run completed");
+    json start = log.first(EventType::ToolStart);
+    check(start.is_object() && start.value("name", "") == "no_such_tool", "a tool_start was emitted for it");
+    json done = log.first(EventType::ToolResult);
+    check(done.is_object() && !done.value("success", true), "followed by a failed tool_result");
+    auto requests = server.requests();
+    check(requests.size() == 2 && tool_messages(requests[1]).size() == 1, "and the model was told");
+}
+
 static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
     test("a transport failure ends the run with an error instead of retrying without tools");
 
@@ -1352,6 +1373,7 @@ int main() {
     test_scratchpad_survives_an_unfinished_run();
     test_abort_request_is_noticed_while_the_model_is_silent();
     test_summary_is_reused_across_iterations();
+    test_unknown_tool_is_reported_as_a_step();
     test_transport_failure_is_not_mistaken_for_schema_rejection();
     test_schema_rejection_retries_without_tools();
 
