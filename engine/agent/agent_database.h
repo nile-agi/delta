@@ -1,6 +1,7 @@
 #ifndef DELTA_AGENT_DATABASE_H
 #define DELTA_AGENT_DATABASE_H
 
+#include <mutex>
 #include <string>
 #include <vector>
 #include "json.hpp"
@@ -56,7 +57,6 @@ class AgentDatabase {
     std::vector<RpcNode> list_rpc_nodes();
     bool update_rpc_node_status(const std::string& id, bool enabled);
     bool delete_rpc_node(const std::string& id);
-    bool set_rpc_node_enabled(const std::string& id, bool enabled);
 
   private:
     AgentDatabase() = default;
@@ -66,6 +66,10 @@ class AgentDatabase {
 
     sqlite3* db_ = nullptr;
     std::string db_path_;
+    // Serialises every public method. Statements are already safe on their own (SQLite runs in
+    // serialized mode), but update_event and friends read a row and then write it back, and two
+    // requests doing that at once lost each other's fields. Recursive because update_* call get_*.
+    std::recursive_mutex mutex_;
 
     bool run_migrations();
     int get_schema_version();

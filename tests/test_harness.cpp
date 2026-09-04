@@ -1241,6 +1241,36 @@ static void test_schema_rejection_retries_without_tools() {
         check(saw_tools[0] && !saw_tools[1], "the retry dropped the tool schemas");
 }
 
+// ------------------------------------------------------------ agent database
+
+static void test_concurrent_updates_do_not_lose_each_other() {
+    test("two threads updating different fields of one event never overwrite each other");
+
+    auto& db = AgentDatabase::instance();
+    const std::string id =
+        db.create_event({{"title", "start"}, {"start_time", "2026-09-05T09:00"}, {"location", "none"}});
+    check(!id.empty(), "the event was created");
+
+    constexpr int kRounds = 150;
+    std::thread titles([&] {
+        for (int i = 0; i < kRounds; i++)
+            db.update_event(id, {{"title", "title-" + std::to_string(i)}});
+    });
+    std::thread places([&] {
+        for (int i = 0; i < kRounds; i++)
+            db.update_event(id, {{"location", "place-" + std::to_string(i)}});
+    });
+    titles.join();
+    places.join();
+
+    json final_event = db.get_event(id);
+    check_eq(final_event.value("title", ""), std::string("title-") + std::to_string(kRounds - 1),
+             "the last title written survived");
+    check_eq(final_event.value("location", ""), std::string("place-") + std::to_string(kRounds - 1),
+             "the last location written survived");
+    check(db.delete_event(id), "cleanup: the event was deleted");
+}
+
 // ---------------------------------------------------------------- sandboxes
 
 static std::string home_path() {
@@ -1414,6 +1444,7 @@ int main() {
     test_policy_is_remembered();
     test_scratchpad_plan();
 
+    test_concurrent_updates_do_not_lose_each_other();
     test_file_tools_follow_symlinks_before_checking_scope();
     test_shell_refuses_credential_paths_in_the_command();
     test_shell_defaults_to_the_home_directory();

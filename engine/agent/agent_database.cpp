@@ -22,6 +22,7 @@ AgentDatabase::~AgentDatabase() {
 }
 
 bool AgentDatabase::init(const std::string& db_path) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_)
         return true;
 
@@ -51,6 +52,7 @@ bool AgentDatabase::init(const std::string& db_path) {
 }
 
 void AgentDatabase::close() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_) {
         sqlite3_close(db_);
         db_ = nullptr;
@@ -278,6 +280,7 @@ nlohmann::json AgentDatabase::row_to_event(sqlite3_stmt* stmt) {
 }
 
 std::string AgentDatabase::create_event(const nlohmann::json& data) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::string id = generate_uuid();
     std::string now = get_current_timestamp();
     sqlite3_stmt* stmt;
@@ -311,6 +314,7 @@ std::string AgentDatabase::create_event(const nlohmann::json& data) {
 }
 
 nlohmann::json AgentDatabase::get_event(const std::string& id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     std::string sql = std::string("SELECT ") + ALL_COLS + " FROM calendar_events WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
@@ -326,6 +330,7 @@ nlohmann::json AgentDatabase::get_event(const std::string& id) {
 std::vector<nlohmann::json> AgentDatabase::list_events(const std::string& start, const std::string& end, int limit,
                                                        const std::string& type, const std::string& status,
                                                        const std::string& priority, const std::string& tags) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::string sql = std::string("SELECT ") + ALL_COLS + " FROM calendar_events";
     std::vector<std::string> conditions;
     if (!start.empty())
@@ -376,6 +381,7 @@ std::vector<nlohmann::json> AgentDatabase::list_events(const std::string& start,
 }
 
 bool AgentDatabase::update_event(const std::string& id, const nlohmann::json& data) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto existing = get_event(id);
     if (existing.is_null())
         return false;
@@ -419,6 +425,7 @@ bool AgentDatabase::update_event(const std::string& id, const nlohmann::json& da
 }
 
 bool AgentDatabase::delete_event(const std::string& id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     const char* sql = "DELETE FROM calendar_events WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -430,6 +437,7 @@ bool AgentDatabase::delete_event(const std::string& id) {
 }
 
 std::vector<nlohmann::json> AgentDatabase::get_upcoming_reminders() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::vector<nlohmann::json> results;
     const char* sql = R"(
     SELECT id, title, start_time, reminder_minutes, type FROM calendar_events
@@ -456,6 +464,7 @@ std::vector<nlohmann::json> AgentDatabase::get_upcoming_reminders() {
 }
 
 bool AgentDatabase::mark_reminded(const std::string& id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const char* sql = "UPDATE calendar_events SET reminded = 1 WHERE id = ?";
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -469,6 +478,7 @@ bool AgentDatabase::mark_reminded(const std::string& id) {
 // --- Notes CRUD ---
 
 std::string AgentDatabase::create_note(const nlohmann::json& data) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::string id = generate_uuid();
     std::string now = get_current_timestamp();
     sqlite3_stmt* stmt;
@@ -494,6 +504,7 @@ std::string AgentDatabase::create_note(const nlohmann::json& data) {
 }
 
 nlohmann::json AgentDatabase::get_note(const std::string& id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     const char* sql = "SELECT id, title, content, folder, tags, pinned, created_at, updated_at FROM notes WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -515,6 +526,7 @@ nlohmann::json AgentDatabase::get_note(const std::string& id) {
 
 std::vector<nlohmann::json> AgentDatabase::list_notes(const std::string& folder, const std::string& search,
                                                       const std::string& tags, int limit, bool pinned_only) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::string sql = "SELECT id, title, content, folder, tags, pinned, created_at, updated_at FROM notes WHERE 1=1";
     std::vector<std::string> params;
     if (pinned_only)
@@ -560,6 +572,7 @@ std::vector<nlohmann::json> AgentDatabase::list_notes(const std::string& folder,
 }
 
 bool AgentDatabase::update_note(const std::string& id, const nlohmann::json& data) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto existing = get_note(id);
     if (existing.is_null())
         return false;
@@ -587,6 +600,7 @@ bool AgentDatabase::update_note(const std::string& id, const nlohmann::json& dat
 }
 
 bool AgentDatabase::delete_note(const std::string& id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     const char* sql = "DELETE FROM notes WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -598,6 +612,7 @@ bool AgentDatabase::delete_note(const std::string& id) {
 }
 
 std::string AgentDatabase::add_rpc_node(const std::string& name, const std::string& endpoint) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::string id = generate_uuid();
     sqlite3_stmt* stmt;
     // Parse endpoint "host:port"
@@ -630,6 +645,7 @@ std::string AgentDatabase::add_rpc_node(const std::string& name, const std::stri
 }
 
 std::vector<AgentDatabase::RpcNode> AgentDatabase::get_enabled_rpc_nodes() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::vector<RpcNode> nodes;
     sqlite3_stmt* stmt;
     const char* sql =
@@ -662,6 +678,7 @@ std::vector<AgentDatabase::RpcNode> AgentDatabase::get_enabled_rpc_nodes() {
 }
 
 std::vector<AgentDatabase::RpcNode> AgentDatabase::list_rpc_nodes() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::vector<RpcNode> nodes;
     sqlite3_stmt* stmt;
     const char* sql = "SELECT id, name, ip, port, enabled, created_at FROM worker_nodes ORDER BY created_at DESC";
@@ -690,6 +707,7 @@ std::vector<AgentDatabase::RpcNode> AgentDatabase::list_rpc_nodes() {
 }
 
 bool AgentDatabase::update_rpc_node_status(const std::string& id, bool enabled) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     const char* sql = "UPDATE worker_nodes SET enabled = ? WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -702,6 +720,7 @@ bool AgentDatabase::update_rpc_node_status(const std::string& id, bool enabled) 
 }
 
 bool AgentDatabase::delete_rpc_node(const std::string& id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     const char* sql = "DELETE FROM worker_nodes WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
