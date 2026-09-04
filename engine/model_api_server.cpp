@@ -171,6 +171,25 @@ static json sse_content_chunk(const std::string& text) {
 
 // Delta's own SSE frames, carried on the same stream as the OpenAI chunks. Clients that do not
 // understand them can ignore any frame whose "object" is not a chat.completion.chunk.
+// The messages a run added, with each tool result capped so the frame stays small. The context
+// manager truncates them again on the way back in, so nothing is lost that would have been kept.
+static json bounded_transcript(const json& transcript) {
+    constexpr size_t kMaxChars = 6000;
+    json out = json::array();
+    if (!transcript.is_array())
+        return out;
+    for (const auto& msg : transcript) {
+        json copy = msg;
+        if (copy.value("role", "") == "tool" && copy.contains("content") && copy["content"].is_string()) {
+            std::string content = copy["content"].get<std::string>();
+            if (content.size() > kMaxChars)
+                copy["content"] = content.substr(0, kMaxChars) + " ...[truncated]";
+        }
+        out.push_back(copy);
+    }
+    return out;
+}
+
 static json sse_agent_event(const std::string& event, const json& data) {
     return json{{"object", "delta.agent.event"}, {"event", event}, {"data", data}};
 }
@@ -882,6 +901,14 @@ class ModelAPIServer {
                 run_options.max_tokens = body.value("max_tokens", 2048);
                 if (body.contains("max_iterations") && body["max_iterations"].is_number_integer())
                     run_options.max_iterations = std::max(1, std::min(100, body["max_iterations"].get<int>()));
+                // The client's conversation id keys the plan scratchpad, so a plan the model
+                // started on one turn is still there on the next.
+                if (body.contains("conversation_id") && body["conversation_id"].is_string()) {
+                    std::string cid = body["conversation_id"].get<std::string>();
+                    if (cid.size() > 128)
+                        cid.resize(128);
+                    run_options.scratchpad_id = cid;
+                }
 
                 {
                     static const char* kCategories[] = {"calendar", "notes", "memory", "task",
@@ -963,10 +990,12 @@ class ModelAPIServer {
                                     emit(sse_content_chunk(result.content));
                                 }
                                 if (!result.executed_tools.empty())
-                                    emit(sse_agent_event("run_summary", {{"tool_calls", result.tool_calls},
-                                                                         {"iterations", result.iterations},
-                                                                         {"stop_reason", result.stop_reason},
-                                                                         {"tools", result.executed_tools}}));
+                                    emit(sse_agent_event(
+                                        "run_summary", {{"tool_calls", result.tool_calls},
+                                                        {"iterations", result.iterations},
+                                                        {"stop_reason", result.stop_reason},
+                                                        {"tools", result.executed_tools},
+                                                        {"transcript", bounded_transcript(result.transcript_delta)}}));
                             } catch (const std::exception& e) {
                                 std::cerr << "[delta-server] exception in stream provider: " << e.what() << std::endl;
                                 emit(sse_content_chunk(std::string("Error: ") + e.what()));
@@ -997,6 +1026,9 @@ class ModelAPIServer {
                     json message = {{"role", "assistant"}, {"content", result.content}};
                     if (!result.executed_tools.empty())
                         message["tool_calls"] = result.executed_tools;
+                    // Not OpenAI-shaped; the harness's own record of the turn for clients that
+                    // want to resend it as history.
+                    json transcript = bounded_transcript(result.transcript_delta);
                     json response = {{"id", "chatcmpl-delta"},
                                      {"object", "chat.completion"},
                                      {"choices", {{{"index", 0}, {"message", message}, {"finish_reason", "stop"}}}},
@@ -1005,6 +1037,7 @@ class ModelAPIServer {
                         response["tool_calls_made"] = result.tool_calls;
                         response["iterations"] = result.iterations;
                         response["stop_reason"] = result.stop_reason;
+                        response["transcript"] = transcript;
                     }
                     res.set_content(response.dump(), "application/json");
                 }

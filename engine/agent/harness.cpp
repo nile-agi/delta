@@ -59,6 +59,26 @@ std::string summarize_result(const std::string& tool, const ToolResult& result) 
     return tool + " finished";
 }
 
+// True when a plan exists and at least one step is still pending or in progress.
+bool plan_has_open_steps(const nlohmann::json& plan) {
+    if (!plan.is_object() || !plan.contains("steps") || !plan["steps"].is_array())
+        return false;
+    for (const auto& step : plan["steps"]) {
+        const std::string status = step.value("status", "pending");
+        if (status == "pending" || status == "in_progress")
+            return true;
+    }
+    return false;
+}
+
+// Answers a tool call without running it, for calls the harness refuses to execute.
+nlohmann::json refused_tool_message(const std::string& call_id, const std::string& name, const std::string& error) {
+    return {{"role", "tool"},
+            {"tool_call_id", call_id},
+            {"name", name},
+            {"content", nlohmann::json{{"error", error}}.dump()}};
+}
+
 } // namespace
 
 Harness::Harness(const std::string& llama_server_url, const std::string& model_name, bool supports_tools)
@@ -144,7 +164,7 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
         if (!lines.empty())
             context_block += "\nWhat you remember about this user:\n" + lines;
 
-        auto plan = memory.get_plan(run_id_);
+        auto plan = memory.get_plan(scratchpad_key());
         if (plan.is_object() && plan.contains("steps") && plan["steps"].is_array() && !plan["steps"].empty()) {
             context_block += "\nYour current plan (goal: " + plan.value("goal", "") + "):\n";
             int idx = 0;
@@ -242,7 +262,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
     RunResult result;
     auto& registry = ToolRegistry::instance();
 
-    set_active_run_id(run_id_);
+    const std::string pad = scratchpad_key();
+    set_active_run_id(pad);
     MemoryStore::instance().prune_plans();
 
     auto emit = [&](EventType type, nlohmann::json data) -> bool {
@@ -271,6 +292,25 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         if (msg.is_object())
             transcript.push_back(msg);
     }
+
+    // Everything after this index was added by this run and goes back to the caller.
+    const size_t history_size = transcript.size();
+
+    // Every exit passes through here so the transcript delta and the plan are handled the same
+    // way regardless of why the run ended. A plan keyed by the conversation is kept whenever the
+    // work is unfinished (budget hit, abort, error, or a reply with open steps) so the next turn
+    // can pick it up; a per-run plan has no next turn, so it is always cleared.
+    auto finish = [&](RunResult& r) -> RunResult {
+        r.transcript_delta = nlohmann::json::array();
+        for (size_t i = history_size; i < transcript.size(); i++)
+            r.transcript_delta.push_back(transcript[i]);
+        auto& memory = MemoryStore::instance();
+        const bool per_run = options_.scratchpad_id.empty();
+        const bool finished_cleanly = r.stop_reason == "stop";
+        if (per_run || (finished_cleanly && !plan_has_open_steps(memory.get_plan(pad))))
+            memory.clear_plan(pad);
+        return r;
+    };
 
     const auto started = std::chrono::steady_clock::now();
     auto out_of_time = [&] {
@@ -316,13 +356,16 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             result.client_aborted = true;
             result.stop_reason = "client_aborted";
             result.error = "client disconnected";
-            MemoryStore::instance().clear_plan(run_id_);
-            return result;
+            return finish(result);
         }
 
         // A model advertised as tool-capable can still reject the schemas. Retry once without them
-        // rather than failing the whole turn.
-        if (response.is_object() && response.contains("error") && !active.empty() && !tools_disabled_by_error) {
+        // rather than failing the whole turn. Only a reply from the server counts: a transport
+        // failure (connection refused, a stalled stream) would fail again without tools too.
+        const bool server_rejected = response.is_object() && response.contains("error") &&
+                                     !(response["error"].is_string() &&
+                                       response["error"].get<std::string>().rfind("HTTP request failed", 0) == 0);
+        if (server_rejected && !active.empty() && !tools_disabled_by_error) {
             std::cerr << "[delta-harness] tools rejected, retrying without them: " << response["error"].dump()
                       << std::endl;
             tools_disabled_by_error = true;
@@ -341,15 +384,14 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             result.error = message;
             result.stop_reason = "error";
             emit(EventType::Error, {{"message", message}});
-            MemoryStore::instance().clear_plan(run_id_);
-            return result;
+            return finish(result);
         }
 
         if (!response.contains("choices") || !response["choices"].is_array() || response["choices"].empty()) {
             result.error = "No choices in the model response";
             result.stop_reason = "error";
             emit(EventType::Error, {{"message", result.error}});
-            return result;
+            return finish(result);
         }
 
         const auto& choice = response["choices"][0];
@@ -357,8 +399,9 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             result.error = "No message in the model response";
             result.stop_reason = "error";
             emit(EventType::Error, {{"message", result.error}});
-            return result;
+            return finish(result);
         }
+        const bool cut_off = choice.value("finish_reason", "") == "length";
 
         nlohmann::json assistant = choice["message"];
         const std::string content = message_text(assistant);
@@ -369,15 +412,27 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             assistant.contains("tool_calls") && assistant["tool_calls"].is_array() && !assistant["tool_calls"].empty();
 
         if (!has_tool_calls) {
+            transcript.push_back(assistant);
             result.success = true;
             result.content = content;
             result.stop_reason = "stop";
-            MemoryStore::instance().clear_plan(run_id_);
-            return result;
+            return finish(result);
         }
 
         // Record the assistant turn exactly as the model produced it, then answer every call.
         transcript.push_back(assistant);
+
+        // A refused call still gets a tool message, so the transcript never carries a tool_call
+        // without its answer. Returns false when the client has gone away.
+        auto refuse = [&](const std::string& call_id, const std::string& name, const std::string& why) -> bool {
+            transcript.push_back(refused_tool_message(call_id, name, why));
+            return emit(EventType::ToolResult, {{"name", name}, {"success", false}, {"error", why}});
+        };
+        auto aborted = [&]() -> RunResult {
+            result.client_aborted = true;
+            result.stop_reason = "client_aborted";
+            return finish(result);
+        };
 
         for (const auto& call : assistant["tool_calls"]) {
             if (!call.is_object() || !call.contains("function"))
@@ -385,36 +440,47 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             const std::string name = call["function"].value("name", "");
             const std::string call_id = call.value("id", name);
 
+            // The model ran out of output tokens part-way through its call. The arguments are
+            // whatever fragment survived, so running the tool would act on the wrong input.
+            if (cut_off) {
+                if (!refuse(call_id, name,
+                            "This tool call was cut off by the output token limit before it was complete. "
+                            "Make the call again with shorter arguments."))
+                    return aborted();
+                continue;
+            }
+
             nlohmann::json arguments = nlohmann::json::object();
+            bool arguments_ok = true;
             if (call["function"].contains("arguments")) {
                 const auto& raw = call["function"]["arguments"];
                 if (raw.is_string()) {
                     try {
                         arguments = nlohmann::json::parse(raw.get<std::string>());
                     } catch (...) {
-                        arguments = nlohmann::json::object();
+                        arguments_ok = false;
                     }
                 } else if (raw.is_object()) {
                     arguments = raw;
                 }
             }
-
-            const ToolDefinition* def = registry.get_definition(name);
-            if (!def) {
-                transcript.push_back({{"role", "tool"},
-                                      {"tool_call_id", call_id},
-                                      {"name", name},
-                                      {"content", nlohmann::json{{"error", "No tool called " + name}}.dump()}});
-                emit(EventType::ToolResult, {{"name", name}, {"success", false}, {"error", "No tool called " + name}});
+            if (!arguments_ok) {
+                if (!refuse(call_id, name,
+                            "The arguments for this tool call were not valid JSON, so it was not run. "
+                            "Make the call again with well-formed arguments."))
+                    return aborted();
                 continue;
             }
 
-            if (!emit(EventType::ToolStart,
-                      {{"name", name}, {"arguments", arguments}, {"risk", risk_name(def->risk)}})) {
-                result.client_aborted = true;
-                result.stop_reason = "client_aborted";
-                return result;
+            const ToolDefinition* def = registry.get_definition(name);
+            if (!def) {
+                if (!refuse(call_id, name, "No tool called " + name))
+                    return aborted();
+                continue;
             }
+
+            if (!emit(EventType::ToolStart, {{"name", name}, {"arguments", arguments}, {"risk", risk_name(def->risk)}}))
+                return aborted();
 
             Decision decision = policy.decide(*def);
 
@@ -426,13 +492,12 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
                                                         {"risk", risk_name(def->risk)},
                                                         {"description", def->description}})) {
                     ApprovalBroker::instance().cancel(approval_id);
-                    result.client_aborted = true;
-                    result.stop_reason = "client_aborted";
-                    return result;
+                    return aborted();
                 }
                 const std::string answer =
                     ApprovalBroker::instance().wait(approval_id, options_.approval_timeout_seconds);
-                emit(EventType::ApprovalResolved, {{"id", approval_id}, {"decision", answer}});
+                if (!emit(EventType::ApprovalResolved, {{"id", approval_id}, {"decision", answer}}))
+                    return aborted();
 
                 if (answer == "allow") {
                     decision = Decision::Allow;
@@ -456,7 +521,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
                                           {"tool_call_id", call_id},
                                           {"name", name},
                                           {"content", nlohmann::json{{"denied", true}, {"reason", why}}.dump()}});
-                    emit(EventType::ToolResult, {{"name", name}, {"success", false}, {"error", why}});
+                    if (!emit(EventType::ToolResult, {{"name", name}, {"success", false}, {"error", why}}))
+                        return aborted();
                     continue;
                 }
             } else if (decision == Decision::Deny) {
@@ -465,7 +531,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
                                       {"tool_call_id", call_id},
                                       {"name", name},
                                       {"content", nlohmann::json{{"denied", true}, {"reason", why}}.dump()}});
-                emit(EventType::ToolResult, {{"name", name}, {"success", false}, {"error", why}});
+                if (!emit(EventType::ToolResult, {{"name", name}, {"success", false}, {"error", why}}))
+                    return aborted();
                 continue;
             }
 
@@ -481,10 +548,11 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
                 tool_result.success ? tool_result.content : nlohmann::json{{"error", tool_result.error_message}}.dump();
             transcript.push_back({{"role", "tool"}, {"tool_call_id", call_id}, {"name", name}, {"content", payload}});
 
-            emit(EventType::ToolResult, {{"name", name},
-                                         {"success", tool_result.success},
-                                         {"summary", summarize_result(name, tool_result)},
-                                         {"error", tool_result.error_message}});
+            if (!emit(EventType::ToolResult, {{"name", name},
+                                              {"success", tool_result.success},
+                                              {"summary", summarize_result(name, tool_result)},
+                                              {"error", tool_result.error_message}}))
+                return aborted();
         }
     }
 
@@ -495,9 +563,11 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
     result.content = last_content.empty() ? "I worked through several steps but ran out of room before finishing. "
                                             "Tell me to keep going and I will pick up where I stopped."
                                           : last_content;
+    // Close the transcript on an assistant turn so the stored conversation never ends on a tool
+    // result, which strict chat templates reject on the next turn.
+    transcript.push_back({{"role", "assistant"}, {"content", result.content}});
     emit(EventType::Status, {{"message", "Stopped after " + std::to_string(result.iterations) + " steps."}});
-    MemoryStore::instance().clear_plan(run_id_);
-    return result;
+    return finish(result);
 }
 
 } // namespace agent

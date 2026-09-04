@@ -624,7 +624,11 @@ class ChatStore {
 						// Keep the tool activity with the message so reopening the conversation still
 						// shows what the harness actually did.
 						const agentActivity = agentStore.finish(assistantMessage.id);
-						if (agentActivity?.steps.length || agentActivity?.notices.length) {
+						if (
+							agentActivity?.steps.length ||
+							agentActivity?.notices.length ||
+							agentActivity?.transcript?.length
+						) {
 							updateData.agent_activity = agentActivity;
 						}
 

@@ -1,3 +1,5 @@
+import type { ApiChatMessageData } from './api';
+
 /**
  * Events the Delta harness streams alongside the regular OpenAI chunks.
  *
@@ -63,6 +65,8 @@ export interface AgentRunSummaryData {
 	iterations: number;
 	stop_reason: string;
 	tools: Array<{ name: string; arguments: Record<string, unknown>; success: boolean }>;
+	/** The messages the run added (tool calls, results, final reply), to resend as history. */
+	transcript?: ApiChatMessageData[];
 }
 
 export type AgentEventData =
@@ -108,4 +112,9 @@ export interface AgentActivity {
 	compaction?: AgentCompactionData;
 	stopReason?: string;
 	iterations?: number;
+	/**
+	 * What the harness appended to the conversation this turn. Sent back in place of the bare
+	 * assistant message on later turns so the model still sees what its tools returned.
+	 */
+	transcript?: ApiChatMessageData[];
 }

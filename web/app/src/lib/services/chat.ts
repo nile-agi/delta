@@ -126,12 +126,18 @@ export class ChatService {
 		this.abortControllers.set(requestId, abortController);
 
 		const normalizedMessages: ApiChatMessageData[] = messages
-			.map((msg) => {
+			.flatMap((msg): ApiChatMessageData[] => {
 				if ('id' in msg && 'convId' in msg && 'timestamp' in msg) {
 					const dbMsg = msg as DatabaseMessage & { extra?: DatabaseMessageExtra[] };
-					return ChatService.convertMessageToChatServiceData(dbMsg);
+					// An assistant turn the harness produced with tools is replayed as the full
+					// record (tool calls and results) so the model can still see what they returned.
+					const transcript = dbMsg.agent_activity?.transcript;
+					if (useTools && dbMsg.role === 'assistant' && transcript?.length) {
+						return transcript.map((m: ApiChatMessageData) => ({ ...m }));
+					}
+					return [ChatService.convertMessageToChatServiceData(dbMsg)];
 				} else {
-					return msg as ApiChatMessageData;
+					return [msg as ApiChatMessageData];
 				}
 			})
 			.filter((msg) => {
@@ -150,7 +156,10 @@ export class ChatService {
 		const requestBody: ApiChatCompletionRequest = {
 			messages: alternatingMessages.map((msg: ApiChatMessageData) => ({
 				role: msg.role,
-				content: useTools ? flattenContent(msg.content) : msg.content
+				content: useTools ? flattenContent(msg.content) : msg.content,
+				...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
+				...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
+				...(msg.name ? { name: msg.name } : {})
 			})),
 			stream
 		};
@@ -158,6 +167,7 @@ export class ChatService {
 		if (useTools) {
 			// Each category defaults to on, so leaving these unset gives the model everything.
 			requestBody.use_tools = true;
+			if (conversationId) requestBody.conversation_id = conversationId;
 			requestBody.use_calendar_tools = useCalendarTools !== false;
 			requestBody.use_notes_tools = useNotesTools !== false;
 			requestBody.use_memory_tools = useMemoryTools !== false;
@@ -941,6 +951,8 @@ export class ChatService {
 		}
 
 		// Merge consecutive same-role messages so we get user -> assistant -> user -> assistant...
+		// Tool turns are left alone: each tool result answers one call id, and an assistant turn
+		// carrying tool_calls must stay its own message.
 		while (i < messages.length) {
 			const msg = messages[i];
 			// Skip empty system messages in the middle (shouldn't happen after injectSystemMessage)
@@ -949,11 +961,13 @@ export class ChatService {
 				continue;
 			}
 			const last = result[result.length - 1];
-			if (last && last.role === msg.role) {
+			const isToolTurn = msg.role === 'tool' || !!msg.tool_calls;
+			const lastIsToolTurn = !!last && (last.role === 'tool' || !!last.tool_calls);
+			if (last && last.role === msg.role && !isToolTurn && !lastIsToolTurn) {
 				// Merge content into last
 				last.content = ChatService.mergeContent(last.content, msg.content);
 			} else {
-				result.push({ role: msg.role, content: msg.content });
+				result.push({ ...msg });
 			}
 			i++;
 		}

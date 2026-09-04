@@ -16,9 +16,9 @@ enum class EventType {
     Content,          // a chunk of assistant text
     ToolStart,        // {name, arguments, risk}
     ToolResult,       // {name, success, summary, error}
-    ApprovalRequired, // {id, name, arguments, risk, reason}
+    ApprovalRequired, // {id, name, arguments, risk, description}
     ApprovalResolved, // {id, decision}
-    Compaction,       // {dropped, summarized, used_tokens, budget_tokens}
+    Compaction,       // {dropped, summarized, truncated_results, used_tokens, budget_tokens}
     Status,           // {message} -- iteration and budget notices
     Error,            // {message}
 };
@@ -41,6 +41,9 @@ struct RunOptions {
     // Empty means every registered category.
     std::set<std::string> enabled_categories;
     Policy::Config policy;
+    // Keys the plan scratchpad. Empty means a fresh scratchpad for this run only; a caller that
+    // passes the same id on every turn of a conversation lets the plan carry over between turns.
+    std::string scratchpad_id;
 };
 
 struct RunResult {
@@ -51,6 +54,10 @@ struct RunResult {
     std::string error;
     std::string stop_reason; // stop | max_iterations | time_budget | client_aborted | error
     nlohmann::json executed_tools = nlohmann::json::array();
+    // Every message this run appended after the caller's history: assistant turns with their
+    // tool_calls, the tool results, and the final reply. Append it to the stored conversation so
+    // the next turn can see what the tools did.
+    nlohmann::json transcript_delta = nlohmann::json::array();
     size_t streamed_chars = 0;
     bool client_aborted = false;
 };
@@ -74,6 +81,8 @@ class Harness {
     std::string build_system_prompt(const nlohmann::json& messages) const;
     nlohmann::json active_tools() const;
     std::string summarize(const nlohmann::json& dropped);
+    // The key the plan scratchpad lives under: the caller's conversation id when given, else this run.
+    std::string scratchpad_key() const { return options_.scratchpad_id.empty() ? run_id_ : options_.scratchpad_id; }
 
     LlmClient client_;
     bool supports_tools_;

@@ -34,6 +34,11 @@ export interface ApiChatMessageData {
 	role: ChatRole;
 	content: string | ApiChatMessageContentPart[];
 	timestamp?: number;
+	/** OpenAI-style tool calls on an assistant turn, replayed from a previous harness run. */
+	tool_calls?: unknown[];
+	/** On a `tool` turn: the call this result answers, and the tool's name. */
+	tool_call_id?: string;
+	name?: string;
 }
 
 export interface ApiModelDataEntry {
@@ -197,6 +202,8 @@ export interface ApiChatCompletionRequest {
 	use_shell_tools?: boolean;
 	use_web_tools?: boolean;
 	max_iterations?: number;
+	/** Keys the harness's plan scratchpad so a plan carries over between turns. */
+	conversation_id?: string;
 }
 
 export interface ApiChatCompletionStreamChunk {

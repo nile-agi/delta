@@ -13,19 +13,27 @@
 #include "agent/context_manager.h"
 #include "agent/harness.h"
 #include "agent/memory_store.h"
+#include "agent/tool_files.h"
 #include "agent/tool_registry.h"
+#include "agent/tool_shell.h"
+#include "agent/tool_web.h"
 #include "vendor/llama.cpp/vendor/cpp-httplib/httplib.h"
 #include "vendor/json.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 using json = nlohmann::json;
 using namespace delta::agent;
@@ -161,7 +169,7 @@ class ScriptedServer {
                       nullptr);
                 index++;
             }
-            frame(json::object(), "tool_calls");
+            frame(json::object(), message.value("finish_reason", "tool_calls").c_str());
         } else {
             frame(json::object(), "stop");
         }
@@ -645,6 +653,191 @@ static void test_client_abort_stops_the_run() {
     check_eq(result.stop_reason, std::string("client_aborted"), "the stop reason says so");
 }
 
+static void test_truncated_tool_call_is_not_executed() {
+    test("a tool call cut off by the token limit is refused, not run with empty arguments");
+
+    json cut_off = assistant_calling("test_write", {{"title", "half a"}});
+    cut_off["finish_reason"] = "length";
+    ScriptedServer server({cut_off, {{"role", "assistant"}, {"content", "Let me try again."}}});
+    server.start();
+
+    const int before = g_write_spy.calls;
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+
+    EventLog log;
+    auto result = harness.run(json::array({user("add it")}), log.sink());
+    server.stop();
+
+    check_eq(g_write_spy.calls - before, 0, "the tool did not run");
+    check(result.success, "the run still completes");
+    auto requests = server.requests();
+    check_eq(requests.size(), size_t(2), "the model got a second turn");
+    if (requests.size() == 2) {
+        auto tools = tool_messages(requests[1]);
+        check_eq(tools.size(), size_t(1), "the call was answered with a tool message");
+        if (!tools.empty())
+            check(tools[0].value("content", "").find("cut off") != std::string::npos,
+                  "the tool message explains the call was cut off");
+    }
+    json first_result = log.first(EventType::ToolResult);
+    check(first_result.is_object() && !first_result.value("success", true), "the UI sees a failed step");
+}
+
+static void test_unparseable_arguments_are_rejected() {
+    test("a tool call with unparseable arguments is refused, not run with {}");
+
+    json bad = {
+        {"role", "assistant"},
+        {"content", ""},
+        {"tool_calls", json::array({{{"id", "call_bad"},
+                                     {"type", "function"},
+                                     {"function", {{"name", "test_write"}, {"arguments", "{\"title\": oops"}}}}})}};
+    ScriptedServer server({bad, {{"role", "assistant"}, {"content", "Sorry."}}});
+    server.start();
+
+    const int before = g_write_spy.calls;
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+
+    EventLog log;
+    auto result = harness.run(json::array({user("add it")}), log.sink());
+    server.stop();
+
+    check_eq(g_write_spy.calls - before, 0, "the tool did not run");
+    check(result.success, "the run still completes");
+    auto requests = server.requests();
+    if (requests.size() == 2) {
+        auto tools = tool_messages(requests[1]);
+        check_eq(tools.size(), size_t(1), "the call was answered with a tool message");
+        if (!tools.empty()) {
+            check_eq(tools[0].value("tool_call_id", ""), std::string("call_bad"), "keyed by the call id");
+            check(tools[0].value("content", "").find("error") != std::string::npos, "and it carries an error");
+        }
+    } else {
+        check(false, "the model got a second turn");
+    }
+}
+
+static void test_client_abort_during_tool_result_stops_before_next_turn() {
+    test("a client that disconnects while a tool result is reported stops the run before the next model call");
+
+    ScriptedServer server({assistant_calling("test_read", json::object()),
+                           {{"role", "assistant"}, {"content", "should never get here"}}});
+    server.start();
+
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+
+    auto result = harness.run(json::array({user("hello")}),
+                              [](const HarnessEvent& event) { return event.type != EventType::ToolResult; });
+    server.stop();
+
+    check(result.client_aborted, "the run reports the abort");
+    check_eq(server.requests().size(), size_t(1), "no second request was made to the model");
+}
+
+static void test_transcript_delta_carries_tool_turns_into_the_next_run() {
+    test("the run returns the messages it added, so the next turn can see what tools did");
+
+    ScriptedServer server({assistant_calling("test_read", json::object(), "call_r"),
+                           {{"role", "assistant"}, {"content", "I found alpha and beta."}}});
+    server.start();
+
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("what is there?")}), log.sink());
+    server.stop();
+
+    check(result.success, "the first run succeeded");
+    check_eq(result.transcript_delta.size(), size_t(3), "assistant call, tool result and final reply were returned");
+    if (result.transcript_delta.size() == 3) {
+        check(result.transcript_delta[0].contains("tool_calls"), "the first entry is the assistant's tool call");
+        check_eq(result.transcript_delta[1].value("role", ""), std::string("tool"), "the second is the tool result");
+        check_eq(result.transcript_delta[2].value("content", ""), std::string("I found alpha and beta."),
+                 "the last is the final reply");
+    }
+
+    // Feed the delta back as history and check the model sees the earlier tool result.
+    json history = json::array({user("what is there?")});
+    for (const auto& msg : result.transcript_delta)
+        history.push_back(msg);
+    history.push_back(user("and the first one was?"));
+
+    ScriptedServer second({{{"role", "assistant"}, {"content", "alpha"}}});
+    second.start();
+    Harness again(second.url(), "test-model", true);
+    again.set_options(test_options());
+    auto result2 = again.run(history, log.sink());
+    second.stop();
+
+    check(result2.success, "the second run succeeded");
+    auto requests = second.requests();
+    bool saw_alpha = false;
+    if (!requests.empty()) {
+        for (const auto& msg : tool_messages(requests[0]))
+            if (msg.value("content", "").find("alpha") != std::string::npos)
+                saw_alpha = true;
+    }
+    check(saw_alpha, "the model was shown the earlier tool result");
+}
+
+static void test_scratchpad_survives_an_unfinished_run() {
+    test("a plan keyed by the conversation survives max_iterations and is shown on the next turn");
+
+    auto& memory = MemoryStore::instance();
+    const std::string convo = "conv_keep_going";
+    memory.clear_plan(convo);
+    memory.set_plan(
+        convo, "tidy the folder",
+        json::array({{{"step", "list files"}, {"status", "done"}}, {{"step", "delete junk"}, {"status", "pending"}}}));
+
+    std::vector<json> script;
+    for (int i = 0; i < 6; i++)
+        script.push_back(assistant_calling("test_read", json::object(), "c" + std::to_string(i)));
+    ScriptedServer server(script);
+    server.start();
+
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.max_iterations = 2;
+    options.scratchpad_id = convo;
+    harness.set_options(options);
+    EventLog log;
+    auto result = harness.run(json::array({user("keep going")}), log.sink());
+    server.stop();
+
+    check_eq(result.stop_reason, std::string("max_iterations"), "the run hit its budget");
+    auto requests = server.requests();
+    bool prompt_has_plan = false;
+    if (!requests.empty() && requests[0].contains("messages") && !requests[0]["messages"].empty())
+        prompt_has_plan = requests[0]["messages"][0].value("content", "").find("delete junk") != std::string::npos;
+    check(prompt_has_plan, "the system prompt showed the conversation's plan");
+    check(memory.get_plan(convo).is_object(), "the plan is still there for the next turn");
+
+    // A finished run with a step still pending keeps the plan too.
+    ScriptedServer done_early({{{"role", "assistant"}, {"content", "I'll stop here."}}});
+    done_early.start();
+    Harness h2(done_early.url(), "test-model", true);
+    h2.set_options(options);
+    h2.run(json::array({user("pause")}), log.sink());
+    done_early.stop();
+    check(memory.get_plan(convo).is_object(), "a reply with pending steps keeps the plan");
+
+    // Once every step is done, a normal stop clears it.
+    memory.set_plan(
+        convo, "tidy the folder",
+        json::array({{{"step", "list files"}, {"status", "done"}}, {{"step", "delete junk"}, {"status", "done"}}}));
+    ScriptedServer finished({{{"role", "assistant"}, {"content", "All tidy."}}});
+    finished.start();
+    Harness h3(finished.url(), "test-model", true);
+    h3.set_options(options);
+    h3.run(json::array({user("thanks")}), log.sink());
+    finished.stop();
+    check(memory.get_plan(convo).is_null(), "a completed plan is cleared when the run stops");
+}
+
 // ----------------------------------------------------------- context manager
 
 static void test_context_keeps_system_prompt_and_recent_turns() {
@@ -859,6 +1052,74 @@ static void test_scratchpad_plan() {
     check(memory.get_plan(run).is_null(), "clearing the plan removes it");
 }
 
+static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
+    test("a transport failure ends the run with an error instead of retrying without tools");
+
+    // Nothing listens here, so every request fails at the transport level.
+    httplib::Server placeholder;
+    const int port = placeholder.bind_to_any_port("127.0.0.1");
+    placeholder.stop();
+
+    Harness harness("http://127.0.0.1:" + std::to_string(port), "test-model", true);
+    harness.set_options(test_options());
+
+    EventLog log;
+    auto result = harness.run(json::array({user("hello")}), log.sink());
+
+    check(!result.success, "the run failed");
+    check_eq(result.stop_reason, std::string("error"), "with an error stop reason");
+    json status = log.first(EventType::Status);
+    check(status.is_null() || status.value("message", "").find("rejected the tool schemas") == std::string::npos,
+          "the user was not told the model rejected the tool schemas");
+}
+
+static void test_schema_rejection_retries_without_tools() {
+    test("an HTTP 400 for a request with tools is retried without them");
+
+    httplib::Server server;
+    std::mutex mutex;
+    std::vector<bool> saw_tools;
+    server.Get("/props", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content(json{{"n_ctx", 4096}}.dump(), "application/json");
+    });
+    server.Post("/v1/chat/completions", [&](const httplib::Request& req, httplib::Response& res) {
+        json body = json::parse(req.body, nullptr, false);
+        const bool with_tools = body.is_object() && body.contains("tools") && !body["tools"].empty();
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            saw_tools.push_back(with_tools);
+        }
+        if (with_tools) {
+            res.status = 400;
+            res.set_content(json{{"error", {{"message", "tools are not supported by this template"}}}}.dump(),
+                            "application/json");
+            return;
+        }
+        json chunk = {
+            {"object", "chat.completion.chunk"},
+            {"choices",
+             json::array({{{"index", 0}, {"delta", {{"content", "plain answer"}}}, {"finish_reason", "stop"}}})}};
+        res.set_content("data: " + chunk.dump() + "\n\ndata: [DONE]\n\n", "text/event-stream");
+    });
+    const int port = server.bind_to_any_port("127.0.0.1");
+    std::thread thread([&server] { server.listen_after_bind(); });
+    server.wait_until_ready();
+
+    Harness harness("http://127.0.0.1:" + std::to_string(port), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("hello")}), log.sink());
+
+    server.stop();
+    thread.join();
+
+    check(result.success, "the run succeeded on the retry");
+    check_eq(result.content, std::string("plain answer"), "with the tool-less answer");
+    check_eq(saw_tools.size(), size_t(2), "exactly one retry was made");
+    if (saw_tools.size() == 2)
+        check(saw_tools[0] && !saw_tools[1], "the retry dropped the tool schemas");
+}
+
 // ---------------------------------------------------------------------- main
 
 int main() {
@@ -889,6 +1150,13 @@ int main() {
     test_blocking_mode_refuses_without_asking();
     test_iteration_budget();
     test_client_abort_stops_the_run();
+    test_truncated_tool_call_is_not_executed();
+    test_unparseable_arguments_are_rejected();
+    test_client_abort_during_tool_result_stops_before_next_turn();
+    test_transcript_delta_carries_tool_turns_into_the_next_run();
+    test_scratchpad_survives_an_unfinished_run();
+    test_transport_failure_is_not_mistaken_for_schema_rejection();
+    test_schema_rejection_retries_without_tools();
 
     test_context_keeps_system_prompt_and_recent_turns();
     test_context_never_orphans_tool_messages();

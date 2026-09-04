@@ -1,5 +1,5 @@
 export type ChatMessageType = 'root' | 'text' | 'think';
-export type ChatRole = 'user' | 'assistant' | 'system';
+export type ChatRole = 'user' | 'assistant' | 'system' | 'tool';
 
 export interface ChatUploadedFile {
 	id: string;

@@ -175,6 +175,10 @@ class AgentStore {
 				this.mutate(messageId, (activity) => {
 					activity.stopReason = data.stop_reason;
 					activity.iterations = data.iterations;
+					// Only worth keeping when tools ran; a bare reply is already the message itself.
+					if (data.transcript && data.transcript.some((m: ApiChatMessageData) => m.role === 'tool')) {
+						activity.transcript = data.transcript;
+					}
 				});
 				break;
 			}
