@@ -7,9 +7,13 @@ export type SettingsConfigValue = string | number | boolean;
 export interface SettingsFieldConfig {
 	key: string;
 	label: string;
-	type: 'input' | 'textarea' | 'checkbox' | 'select';
+	type: 'input' | 'textarea' | 'checkbox' | 'select' | 'action';
 	help?: string;
 	options?: Array<{ value: string; label: string; icon?: typeof import('@lucide/svelte').Icon }>;
+	/** For `action` fields: what the button does. Resolves to a short status line to show. */
+	action?: () => Promise<string>;
+	/** For `action` fields: the button caption. */
+	actionLabel?: string;
 }
 
 export interface SettingsChatServiceOptions {

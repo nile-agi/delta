@@ -88,8 +88,8 @@
 				</div>
 
 				<p class="mt-2 text-[11px] text-muted-foreground">
-					“Always” and “Never” are remembered for this tool across conversations. You can reset
-					them in Settings.
+					“Always” and “Never” are remembered for this tool across conversations. Settings →
+					Agent tools → “Forget all” resets them.
 				</p>
 			</div>
 		</div>

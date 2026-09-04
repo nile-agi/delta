@@ -20,6 +20,7 @@
 		RotateCcw
 	} from '@lucide/svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
+	import { agentService } from '$lib/services/agent';
 	import { ChatSettingsFields } from '$lib/components/app';
 	import ImportExportTab from './ImportExportTab.svelte';
 	import ModelManagementTab from '../ModelManagement/ModelManagementTab.svelte';
@@ -212,6 +213,20 @@
 					key: 'useWebTools',
 					label: 'Fetch web pages',
 					type: 'checkbox'
+				},
+				{
+					key: 'resetToolPolicies',
+					label: 'Remembered approval answers',
+					type: 'action',
+					actionLabel: 'Forget all',
+					help: 'Answering "Always" or "Never" to a tool approval is remembered across conversations. Forgetting them makes destructive tools ask again.',
+					action: async () => {
+						const before = Object.keys(await agentService.getToolPolicies()).length;
+						await agentService.resetToolPolicies();
+						return before === 0
+							? 'Nothing was remembered.'
+							: `Forgot ${before} remembered answer${before === 1 ? '' : 's'}.`;
+					}
 				}
 			]
 		},
