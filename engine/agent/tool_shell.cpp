@@ -77,6 +77,13 @@ ShellOutput run_shell_command(const std::string& command, const std::string& wor
         close(fds[1]);
         if (!working_dir.empty() && chdir(working_dir.c_str()) != 0)
             _exit(127);
+        if (working_dir.empty()) {
+            // No directory given: run from home, as the tool's description promises, rather
+            // than from wherever the server happened to be started.
+            const char* home = getenv("HOME");
+            if (home && *home)
+                (void)chdir(home);
+        }
         const char* shell = getenv("SHELL");
         if (!shell || !*shell)
             shell = "/bin/sh";
@@ -121,17 +128,54 @@ ShellOutput run_shell_command(const std::string& command, const std::string& wor
     }
     close(fds[0]);
 
+    // Output has ended, but the child may still be running (it closed stdout, or left a
+    // background job holding the pipe). Give it until the deadline, then kill the whole group.
+    int status = 0;
+    if (!killed) {
+        for (;;) {
+            const pid_t done = waitpid(pid, &status, WNOHANG);
+            if (done == pid || (done < 0 && errno != EINTR))
+                break;
+            if (time(nullptr) >= deadline) {
+                killed = true;
+                break;
+            }
+            usleep(20000);
+        }
+    }
     if (killed) {
         result.timed_out = true;
         kill(-pid, SIGKILL);
+        waitpid(pid, &status, 0);
     }
-    int status = 0;
-    waitpid(pid, &status, 0);
+    // Anything the shell left behind in its process group ends with it.
+    kill(-pid, SIGTERM);
     result.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     return result;
 }
 
 #endif
+
+// Returns the credential fragment a command line mentions, or "" when it mentions none. A
+// substring check, on purpose: it has to catch "cat ~/.ssh/id_rsa", "cd .aws && cat credentials"
+// and quoted forms alike, and a false positive only costs the model a rephrase.
+std::string command_reaches_credentials(const std::string& command) {
+    for (const auto& needle : credential_path_needles()) {
+        if (command.find(needle) != std::string::npos)
+            return needle;
+        // The same name without its leading slash, when it starts a path token.
+        const std::string bare = needle.substr(1);
+        size_t pos = command.find(bare);
+        while (pos != std::string::npos) {
+            const char before = pos == 0 ? ' ' : command[pos - 1];
+            if (before == ' ' || before == '\t' || before == '\'' || before == '"' || before == '=' || before == '(' ||
+                before == '~')
+                return needle;
+            pos = command.find(bare, pos + 1);
+        }
+    }
+    return "";
+}
 
 void register_shell_tools() {
     auto& registry = ToolRegistry::instance();
@@ -156,6 +200,12 @@ void register_shell_tools() {
             const std::string command = args.value("command", "");
             if (command.empty())
                 return {false, "", "command is required"};
+            const std::string secret = command_reaches_credentials(command);
+            if (!secret.empty())
+                return {false, "",
+                        "That command reaches into " + secret +
+                            ", which looks like it holds credentials. "
+                            "Delta will not touch it."};
 
             std::string dir;
             if (args.contains("working_dir") && args["working_dir"].is_string() &&

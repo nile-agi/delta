@@ -37,7 +37,8 @@ class Policy {
     Policy() = default;
     explicit Policy(Config config);
 
-    // `remembered` comes from MemoryStore::get_policy(); pass "" when the user has not answered.
+    // Consults the run-scoped answers first, then the decision MemoryStore remembers for this tool
+    // from earlier conversations, then the risk default.
     Decision decide(const ToolDefinition& def) const;
 
     // Decisions the user made during this run only ("allow once" / "allow for this conversation").

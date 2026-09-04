@@ -15,6 +15,9 @@ struct ShellOutput {
     std::string error;
 };
 
+// The credential path fragment `command` mentions (see credential_path_needles()), or "".
+std::string command_reaches_credentials(const std::string& command);
+
 // Runs `command` through the system shell, capturing output and enforcing a wall-clock limit.
 ShellOutput run_shell_command(const std::string& command, const std::string& working_dir, int timeout_seconds);
 

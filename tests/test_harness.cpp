@@ -1147,6 +1147,98 @@ static void test_schema_rejection_retries_without_tools() {
         check(saw_tools[0] && !saw_tools[1], "the retry dropped the tool schemas");
 }
 
+// ---------------------------------------------------------------- sandboxes
+
+static std::string home_path() {
+    const char* home = std::getenv("HOME");
+    return home ? home : "";
+}
+
+static void test_file_tools_follow_symlinks_before_checking_scope() {
+    test("a symlink inside the sandbox that points outside it is refused");
+
+    const std::string link = "/tmp/delta-harness-escape";
+    std::remove(link.c_str());
+#if !defined(_WIN32)
+    check(symlink("/etc", link.c_str()) == 0, "the test symlink was created");
+#endif
+
+    auto& registry = ToolRegistry::instance();
+    ToolResult read = registry.execute("read_file", {{"path", link + "/hosts"}});
+    check(!read.success, "read_file refuses to read through the link");
+    check(read.error_message.find("outside") != std::string::npos, "and says the path is out of scope");
+
+    ToolResult listed = registry.execute("list_directory", {{"path", link}});
+    check(!listed.success, "list_directory refuses to list through the link");
+
+    ToolResult written =
+        registry.execute("write_file", {{"path", link + "/delta-harness-should-not-exist"}, {"content", "x"}});
+    check(!written.success, "write_file refuses to write through the link");
+
+    ToolResult shell = registry.execute("run_command", {{"command", "pwd"}, {"working_dir", link}});
+    check(!shell.success, "run_command refuses a working_dir that resolves outside the sandbox");
+
+    std::remove(link.c_str());
+}
+
+static void test_shell_refuses_credential_paths_in_the_command() {
+    test("run_command refuses a command that reaches for credential files");
+
+    auto& registry = ToolRegistry::instance();
+    ToolResult ssh = registry.execute("run_command", {{"command", "cat ~/.ssh/id_rsa"}});
+    check(!ssh.success, "reading ~/.ssh is refused");
+    check(ssh.error_message.find("credentials") != std::string::npos, "with the credentials explanation");
+
+    ToolResult aws = registry.execute("run_command", {{"command", "cat " + home_path() + "/.aws/credentials"}});
+    check(!aws.success, "reading ~/.aws by absolute path is refused too");
+
+    ToolResult fine = registry.execute("run_command", {{"command", "echo hello"}});
+    check(fine.success, "an ordinary command still runs");
+}
+
+static void test_shell_defaults_to_the_home_directory() {
+    test("run_command runs in the home directory when no working_dir is given");
+
+    ToolResult out = ToolRegistry::instance().execute("run_command", {{"command", "pwd"}});
+    check(out.success, "the command ran");
+    json payload = json::parse(out.content, nullptr, false);
+    std::string printed = payload.is_object() ? payload.value("output", "") : "";
+    while (!printed.empty() && (printed.back() == '\n' || printed.back() == '\r'))
+        printed.pop_back();
+    check_eq(printed, home_path(), "pwd printed the home directory");
+}
+
+static void test_shell_does_not_wait_forever_for_a_child_that_closed_its_output() {
+    test("run_command still honours its timeout when the child closes stdout and keeps running");
+
+    const auto started = std::chrono::steady_clock::now();
+    ShellOutput out = run_shell_command("exec >/dev/null 2>&1; sleep 30", "", 1);
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - started).count();
+
+    check(elapsed < 5, "it returned within a few seconds instead of waiting for the child");
+    check(out.timed_out, "and reports the timeout");
+}
+
+static void test_fetch_url_does_not_follow_redirects_off_http() {
+    test("fetch_url refuses a redirect to a non-http scheme");
+
+    httplib::Server server;
+    server.Get("/go", [](const httplib::Request&, httplib::Response& res) { res.set_redirect("file:///etc/hosts"); });
+    const int port = server.bind_to_any_port("127.0.0.1");
+    std::thread thread([&server] { server.listen_after_bind(); });
+    server.wait_until_ready();
+
+    ToolResult out = ToolRegistry::instance().execute(
+        "fetch_url", {{"url", "http://127.0.0.1:" + std::to_string(port) + "/go"}, {"raw", true}});
+
+    server.stop();
+    thread.join();
+
+    check(!out.success || out.content.find("localhost") == std::string::npos,
+          "the contents of /etc/hosts were not fetched");
+}
+
 // ---------------------------------------------------------------------- main
 
 int main() {
@@ -1164,6 +1256,9 @@ int main() {
         return 1;
     }
     register_test_tools();
+    register_file_tools();
+    register_shell_tools();
+    register_web_tools();
 
     test_multi_step_loop();
     test_write_result_reaches_model();
@@ -1195,6 +1290,12 @@ int main() {
     test_memory_store_roundtrip();
     test_policy_is_remembered();
     test_scratchpad_plan();
+
+    test_file_tools_follow_symlinks_before_checking_scope();
+    test_shell_refuses_credential_paths_in_the_command();
+    test_shell_defaults_to_the_home_directory();
+    test_shell_does_not_wait_forever_for_a_child_that_closed_its_output();
+    test_fetch_url_does_not_follow_redirects_off_http();
 
     AgentDatabase::instance().close();
     std::remove(db_path.c_str());

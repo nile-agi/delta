@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+#include <climits>
 #include <sys/stat.h>
 
 #if defined(_WIN32)
@@ -99,6 +100,34 @@ ToolResult ok_json(const nlohmann::json& payload) {
     return {true, payload.dump(), ""};
 }
 
+// Follows symlinks so the scope check sees where a path really leads. The path need not exist:
+// the longest existing prefix is resolved and the rest is appended, so a file about to be
+// created under a symlinked directory is still judged by the directory's real location.
+std::string resolve_symlinks(const std::string& normalized) {
+#if defined(_WIN32)
+    return normalized;
+#else
+    std::string existing = normalized;
+    std::string rest;
+    while (!existing.empty() && !path_exists(existing)) {
+        const size_t slash = existing.find_last_of('/');
+        if (slash == std::string::npos)
+            return normalized;
+        rest = existing.substr(slash) + rest;
+        existing = slash == 0 ? "/" : existing.substr(0, slash);
+    }
+    if (existing.empty())
+        return normalized;
+    char buf[PATH_MAX];
+    if (!realpath(existing.c_str(), buf))
+        return normalized;
+    std::string real = buf;
+    if (real == "/")
+        real.clear();
+    return lexically_normal(real + rest);
+#endif
+}
+
 } // namespace
 
 std::string resolve_agent_path(const std::string& raw) {
@@ -126,7 +155,22 @@ std::string resolve_agent_path(const std::string& raw) {
 #endif
             p = std::string(buf) + "/" + p;
     }
-    return lexically_normal(normalize_separators(p));
+    return resolve_symlinks(lexically_normal(normalize_separators(p)));
+}
+
+const std::vector<std::string>& credential_path_needles() {
+    static const std::vector<std::string> needles = {"/.ssh",
+                                                     "/.aws",
+                                                     "/.gnupg",
+                                                     "/.gpg",
+                                                     "/.netrc",
+                                                     "/.docker/config.json",
+                                                     "/.kube",
+                                                     "/.config/gcloud",
+                                                     "/Library/Keychains",
+                                                     "/.password-store",
+                                                     "/.delta-cli/agent.db"};
+    return needles;
 }
 
 std::string path_denied_reason(const std::string& resolved_path) {
@@ -134,30 +178,20 @@ std::string path_denied_reason(const std::string& resolved_path) {
         return "Empty path";
 
     const std::string home = normalize_separators(home_dir());
+    // The home directory itself may be reached through a symlink; compare against both forms.
+    const std::string real_home = home.empty() ? "" : resolve_symlinks(lexically_normal(home));
 
     // The agent works inside the user's own space plus temp. Everything else -- system
     // directories, other users' homes -- is out of reach.
     const bool in_scope = (!home.empty() && within(resolved_path, lexically_normal(home))) ||
-                          within(resolved_path, "/tmp") || within(resolved_path, "/private/tmp") ||
-                          within(resolved_path, "/var/tmp");
+                          (!real_home.empty() && within(resolved_path, real_home)) || within(resolved_path, "/tmp") ||
+                          within(resolved_path, "/private/tmp") || within(resolved_path, "/var/tmp") ||
+                          within(resolved_path, "/private/var/tmp");
     if (!in_scope)
         return "Path is outside the home directory and temp folders, which is where Delta is allowed to work";
 
     // Secrets stay off limits even inside the home directory.
-    static const char* forbidden[] = {"/.ssh",
-                                      "/.aws",
-                                      "/.gnupg",
-                                      "/.gpg",
-                                      "/.netrc",
-                                      "/.docker/config.json",
-                                      "/.kube",
-                                      "/.config/gcloud",
-                                      "/Library/Keychains",
-                                      "/.password-store",
-                                      "/.delta-cli/agent.db",
-                                      nullptr};
-    for (int i = 0; forbidden[i]; i++) {
-        const std::string needle = forbidden[i];
+    for (const auto& needle : credential_path_needles()) {
         if (resolved_path.find(needle) != std::string::npos)
             return std::string("Path looks like it holds credentials (") + needle + "), which Delta will not touch";
     }
