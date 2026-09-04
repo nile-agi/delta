@@ -31,7 +31,9 @@
 	import HardwareDashboard from '$lib/components/app/hardware/HardwareDashboard.svelte';
 	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
 	import Notes from '$lib/components/app/misc/Notes.svelte';
-	// REMOVED: import Calendar from '$lib/components/app/misc/Calendar.svelte';
+	
+	// ❌ REMOVED: import { Calendar } from 'bits-ui';
+	// ❌ REMOVED: import Calendar from '$lib/components/app/misc/Calendar.svelte';
 
 	let { children } = $props();
 
@@ -334,7 +336,7 @@
 	</div>
 {:else if isCalendarWindow}
 	<div class="h-screen w-screen overflow-hidden bg-background">
-		<!-- REPLACED: Old DOM <Calendar fullscreen /> with new Window OS implementation -->
+		<!-- ✅ NEW: Only Window OS Calendar - no old DOM calendar -->
 		<CalendarWindow />
 	</div>
 {:else if isNotesWindow}
@@ -370,7 +372,10 @@
 
 		<ChatSettingsDialog />
 		<NotesWindow />
+		
+		<!-- ✅ NEW: Only Window OS Calendar - no old DOM calendar -->
 		<CalendarWindow />
+		
 		<WindowDock />
 
 		<!-- In-app fallback: only used in plain browsers or when OS window creation fails -->

@@ -1025,6 +1025,33 @@ export const modelsCatalog: ModelFamily[] = [
 			}
 		]
 	},
+	{
+		id: 'spark-llm',
+		name: 'Spark LLM',
+		description:
+			"SparkLLM focuses on developing leading general-purpose foundation models and professional AI agent products.",
+		icon: 'tokenspark-logo.svg',
+		models: [
+			{
+				name: 'spark-x2.5:4b',
+				display_name: 'spark x2.5 4B',
+				download_url: 'abenzerps/Spark-X2.5-4B-GGUF',
+				file_size_gb: 2.6,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(2.6),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'spark-x2.5:1.7b',
+				display_name: 'spark x2.5 1.7B',
+				download_url: 'iamalexied/Spark-X2.5-1.7B-GGUF',
+				file_size_gb: 1.11,
+				context_size: 32768,
+				required_ram_gb: calculateRequiredRAM(1.11),
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
 ];
 
 /**
@@ -1061,6 +1088,7 @@ export const FAMILY_LOGO_FILES: Record<string, string> = {
 	ibm: 'ibm logo.png',
 	granite: 'ibm logo.png',
 	tencent: 'tencent-color.svg',
+	sparkLLM: 'tokenspark-logo.svg',
 };
 
 /** True if icon is a logo filename (has file extension). */
@@ -1094,6 +1122,7 @@ export function getFamilyIconForModelName(name: string): string {
 	if (lower.includes('Bonsai')) return FAMILY_LOGO_FILES.Bonsai;
 	if (lower.includes('liquidai')) return FAMILY_LOGO_FILES.liquidai;
 	if (lower.includes('granite') || lower.includes('ibm')) return FAMILY_LOGO_FILES.ibm;
+	if (lower.includes('sparkLLM')) return FAMILY_LOGO_FILES.sparkLLM;
 	return '●';
 }
 
@@ -1114,6 +1143,7 @@ const PROVIDER_BY_LOGO: Record<string, string> = {
 	'liquidai logo.webp': 'LiquidAI',
 	'ibm logo.png': 'IBM',
 	'tencent-color.svg': 'Tencent',
+	'tokenspark-logo.svg': 'SparkLLM',
 };
 
 /** Display order for provider sections in the Catalog; unknown providers fall after these. */
@@ -1132,6 +1162,7 @@ export const PROVIDER_ORDER: string[] = [
 	'LiquidAI',
 	'IBM',
 	'Tencent',
+	'SparkLLM',
 	'Other',
 ];
 

@@ -2363,6 +2363,33 @@ void ModelManager::init_model_registry() {
         true
     };
 
+    // ===== SPARK SERIES (XHToken Spark x2.5 models) =====
+    model_registry_["spark-x2.5:4b"] = {
+        "spark-x2.5:4b",
+        "spark-x2.5:4b",
+        "abenzerps/Spark-X2.5-4B-GGUF",
+        "Spark-X2.5-4B-Q4_K_M.gguf",
+        "Q4_K_M",
+        2480LL * 1024 * 1024, // ~2.6 GB
+        "Compact, general-purpose, efficient and accessible model. Deriver strong performance in conversation, writing, translation, reasoning, coding, tool use and agentic workflows. It supports a native context length of up to 1M tokens, and covers more than 200 languages.",
+        "spark x2.5 4B",
+        0,    // use model default (-c from model)
+        true // supports_tools
+    };
+
+    model_registry_["spark-x2.5:1.7b"] = {
+        "spark-x2.5:1.7b",
+        "spark-x2.5:1.7b",
+        "iamalexied/Spark-X2.5-1.7B-GGUF",
+        "Spark-X2.5-1.7B.gguf-Q4_K_M.gguf",
+        "Q4_K_M",
+        1059LL * 1024 * 1024, // ~1.11 GB
+        "Compact, general-purpose, efficient and accessible model. Deriver strong performance in conversation, writing, translation, reasoning, coding, tool use and agentic workflows. It supports a native context length of up to 1M tokens, and covers more than 200 languages.",
+        "spark x2.5 1.7B",
+        0,    // use model default (-c from model)
+        true // supports_tools
+    };
+
 }
 
 std::vector<ModelRegistry> ModelManager::get_registry_models() {

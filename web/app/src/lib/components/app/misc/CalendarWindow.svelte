@@ -39,7 +39,7 @@
 		<Calendar fullscreen />
 	</div>
 {:else}
-	<!-- Main app: render Calendar inside FloatingWindow -->
+	<!-- Main app: render Calendar inside FloatingWindow (NEW Window OS Calendar) -->
 	<FloatingWindow title="Calendar" store={calendarWindow}>
 		<Calendar />
 	</FloatingWindow>
