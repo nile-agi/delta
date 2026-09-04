@@ -962,6 +962,8 @@ class ModelAPIServer {
 
                             try {
                                 agent::Harness harness(job->llama_url, job->llama_model, job->supports_tools);
+                                // A closed connection stops the run even while the model is silent.
+                                job->options.abort_requested = [&sink] { return !sink.is_writable(); };
                                 harness.set_options(job->options);
 
                                 auto result = harness.run(job->messages, [&](const agent::HarnessEvent& event) -> bool {

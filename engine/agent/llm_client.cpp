@@ -52,7 +52,21 @@ struct SseContext {
     bool aborted = false;
     size_t forwarded = 0;
     const ContentCallback* forward = nullptr;
+    const std::function<bool()>* abort_check = nullptr;
 };
+
+// curl calls this regularly even while no data is flowing, which is when the write callback
+// cannot see an abort. Returning non-zero fails the transfer with CURLE_ABORTED_BY_CALLBACK.
+int sse_progress_callback(void* userdata, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
+    auto* ctx = static_cast<SseContext*>(userdata);
+    if (ctx->aborted)
+        return 1;
+    if (ctx->abort_check && (*ctx->abort_check)()) {
+        ctx->aborted = true;
+        return 1;
+    }
+    return 0;
+}
 
 // Merge an OpenAI streaming tool_call fragment into the accumulating array (fragments arrive by index).
 void merge_tool_call_delta(nlohmann::json& acc, const nlohmann::json& fragment) {
@@ -239,6 +253,8 @@ nlohmann::json LlmClient::chat_stream(const nlohmann::json& messages, const nloh
     SseContext ctx;
     if (on_content)
         ctx.forward = &on_content;
+    if (abort_check_)
+        ctx.abort_check = &abort_check_;
 
     std::string url = server_url_ + "/v1/chat/completions";
     std::string body = request_body.dump();
@@ -255,6 +271,9 @@ nlohmann::json LlmClient::chat_stream(const nlohmann::json& messages, const nloh
     // No overall timeout: a long generation is legitimate. Bail only if the stream truly stalls.
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, config_.stall_timeout_seconds);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, sse_progress_callback);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &ctx);
 
     CURLcode res = curl_easy_perform(curl);
     long http_code = 0;

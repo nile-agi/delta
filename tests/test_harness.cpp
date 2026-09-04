@@ -109,11 +109,16 @@ class ScriptedServer {
                 index = requests_.size() - 1;
             }
 
+            if (delay_ms_ > 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms_));
             const json message =
                 index < script_.size() ? script_[index] : json{{"role", "assistant"}, {"content", "done"}};
             res.set_content(sse_for(message), "text/event-stream");
         });
     }
+
+    // Hold every completion response for this long, to stand in for a slow model.
+    void set_response_delay_ms(int ms) { delay_ms_ = ms; }
 
     void start() {
         port_ = server_.bind_to_any_port("127.0.0.1");
@@ -181,6 +186,7 @@ class ScriptedServer {
     httplib::Server server_;
     std::thread thread_;
     int port_ = 0;
+    int delay_ms_ = 0;
     std::vector<json> script_;
     std::vector<json> requests_;
     std::mutex mutex_;
@@ -1041,6 +1047,38 @@ static void test_scratchpad_plan() {
     check(memory.get_plan(run).is_null(), "clearing the plan removes it");
 }
 
+static void test_abort_request_is_noticed_while_the_model_is_silent() {
+    test("an abort request stops the run while the model has not yet produced anything");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "far too late"}}});
+    server.set_response_delay_ms(4000);
+    server.start();
+
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    std::atomic<bool> abort_flag{false};
+    options.abort_requested = [&abort_flag] { return abort_flag.load(); };
+    harness.set_options(options);
+
+    // Raise the flag shortly after the request has gone out, the way Ctrl-C would.
+    std::thread raiser([&abort_flag] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        abort_flag = true;
+    });
+
+    const auto started = std::chrono::steady_clock::now();
+    EventLog log;
+    auto result = harness.run(json::array({user("hello")}), log.sink());
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+    raiser.join();
+    server.stop();
+
+    check(result.client_aborted, "the run reports the abort");
+    check(elapsed < 3000, "and returned before the model answered");
+    check(log.text().empty(), "nothing from the late reply was streamed");
+}
+
 static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
     test("a transport failure ends the run with an error instead of retrying without tools");
 
@@ -1144,6 +1182,7 @@ int main() {
     test_client_abort_during_tool_result_stops_before_next_turn();
     test_transcript_delta_carries_tool_turns_into_the_next_run();
     test_scratchpad_survives_an_unfinished_run();
+    test_abort_request_is_noticed_while_the_model_is_silent();
     test_transport_failure_is_not_mistaken_for_schema_rejection();
     test_schema_rejection_retries_without_tools();
 

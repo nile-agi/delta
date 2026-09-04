@@ -77,6 +77,7 @@ void Harness::set_options(const RunOptions& options) {
     LlmConfig cfg = client_.config();
     cfg.max_tokens = options_.max_tokens;
     client_.set_config(cfg);
+    client_.set_abort_check(options_.abort_requested);
 }
 
 nlohmann::json Harness::active_tools() const {
@@ -465,6 +466,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
                 continue;
             }
 
+            if (options_.abort_requested && options_.abort_requested())
+                return aborted();
             if (!emit(EventType::ToolStart, {{"name", name}, {"arguments", arguments}, {"risk", risk_name(def->risk)}}))
                 return aborted();
 

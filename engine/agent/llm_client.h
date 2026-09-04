@@ -29,6 +29,10 @@ class LlmClient {
     void set_config(const LlmConfig& cfg) { config_ = cfg; }
     const LlmConfig& config() const { return config_; }
 
+    // Polled about once a second while a streaming request is in flight, including before the
+    // first byte arrives. Returning true aborts the request as if the client had disconnected.
+    void set_abort_check(std::function<bool()> check) { abort_check_ = std::move(check); }
+
     // Blocking call. Returns the parsed response, or {"error": "..."} on failure.
     nlohmann::json chat(const nlohmann::json& messages, const nlohmann::json& tools,
                         const std::string& tool_choice = "auto");
@@ -51,6 +55,7 @@ class LlmClient {
     std::string server_url_;
     std::string model_name_;
     LlmConfig config_;
+    std::function<bool()> abort_check_;
     int tokenize_supported_ = -1; // -1 unknown, 0 no, 1 yes
 };
 

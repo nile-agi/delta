@@ -44,6 +44,9 @@ struct RunOptions {
     // Keys the plan scratchpad. Empty means a fresh scratchpad for this run only; a caller that
     // passes the same id on every turn of a conversation lets the plan carry over between turns.
     std::string scratchpad_id;
+    // Polled while the model is generating and before each tool, so a caller can stop a run
+    // (Ctrl-C, a closed connection) even when no event is flowing. Empty means never.
+    std::function<bool()> abort_requested;
 };
 
 struct RunResult {
