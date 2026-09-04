@@ -425,9 +425,18 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
 
         // A refused call still gets a tool message, so the transcript never carries a tool_call
         // without its answer. Returns false when the client has gone away.
-        auto refuse = [&](const std::string& call_id, const std::string& name, const std::string& why) -> bool {
+        // `announce` emits the tool_start the UI needs to attach the failure to, for calls refused
+        // before they were ever announced.
+        auto refuse = [&](const std::string& call_id, const std::string& name, const std::string& why,
+                          bool announce) -> bool {
+            if (announce && !emit(EventType::ToolStart, {{"call_id", call_id},
+                                                         {"name", name},
+                                                         {"arguments", nlohmann::json::object()},
+                                                         {"risk", "unknown"}}))
+                return false;
             transcript.push_back(refused_tool_message(call_id, name, why));
-            return emit(EventType::ToolResult, {{"name", name}, {"success", false}, {"error", why}});
+            return emit(EventType::ToolResult,
+                        {{"call_id", call_id}, {"name", name}, {"success", false}, {"error", why}});
         };
         auto aborted = [&]() -> RunResult {
             result.client_aborted = true;
@@ -446,7 +455,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             if (cut_off) {
                 if (!refuse(call_id, name,
                             "This tool call was cut off by the output token limit before it was complete. "
-                            "Make the call again with shorter arguments."))
+                            "Make the call again with shorter arguments.",
+                            true))
                     return aborted();
                 continue;
             }
@@ -468,7 +478,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             if (!arguments_ok) {
                 if (!refuse(call_id, name,
                             "The arguments for this tool call were not valid JSON, so it was not run. "
-                            "Make the call again with well-formed arguments."))
+                            "Make the call again with well-formed arguments.",
+                            true))
                     return aborted();
                 continue;
             }
@@ -477,16 +488,18 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             if (!def) {
                 // Shown as a step like any other call, so the UI has something to attach the
                 // failure to.
-                if (!emit(EventType::ToolStart, {{"name", name}, {"arguments", arguments}, {"risk", "unknown"}}))
+                if (!emit(EventType::ToolStart,
+                          {{"call_id", call_id}, {"name", name}, {"arguments", arguments}, {"risk", "unknown"}}))
                     return aborted();
-                if (!refuse(call_id, name, "No tool called " + name))
+                if (!refuse(call_id, name, "No tool called " + name, false))
                     return aborted();
                 continue;
             }
 
             if (options_.abort_requested && options_.abort_requested())
                 return aborted();
-            if (!emit(EventType::ToolStart, {{"name", name}, {"arguments", arguments}, {"risk", risk_name(def->risk)}}))
+            if (!emit(EventType::ToolStart,
+                      {{"call_id", call_id}, {"name", name}, {"arguments", arguments}, {"risk", risk_name(def->risk)}}))
                 return aborted();
 
             Decision decision = policy.decide(*def);
@@ -494,6 +507,7 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             if (decision == Decision::Ask) {
                 const std::string approval_id = ApprovalBroker::instance().open(name, arguments);
                 if (!emit(EventType::ApprovalRequired, {{"id", approval_id},
+                                                        {"call_id", call_id},
                                                         {"name", name},
                                                         {"arguments", arguments},
                                                         {"risk", risk_name(def->risk)},
@@ -528,7 +542,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
                                           {"tool_call_id", call_id},
                                           {"name", name},
                                           {"content", nlohmann::json{{"denied", true}, {"reason", why}}.dump()}});
-                    if (!emit(EventType::ToolResult, {{"name", name}, {"success", false}, {"error", why}}))
+                    if (!emit(EventType::ToolResult,
+                              {{"call_id", call_id}, {"name", name}, {"success", false}, {"error", why}}))
                         return aborted();
                     continue;
                 }
@@ -538,7 +553,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
                                       {"tool_call_id", call_id},
                                       {"name", name},
                                       {"content", nlohmann::json{{"denied", true}, {"reason", why}}.dump()}});
-                if (!emit(EventType::ToolResult, {{"name", name}, {"success", false}, {"error", why}}))
+                if (!emit(EventType::ToolResult,
+                          {{"call_id", call_id}, {"name", name}, {"success", false}, {"error", why}}))
                     return aborted();
                 continue;
             }
@@ -555,7 +571,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
                 tool_result.success ? tool_result.content : nlohmann::json{{"error", tool_result.error_message}}.dump();
             transcript.push_back({{"role", "tool"}, {"tool_call_id", call_id}, {"name", name}, {"content", payload}});
 
-            if (!emit(EventType::ToolResult, {{"name", name},
+            if (!emit(EventType::ToolResult, {{"call_id", call_id},
+                                              {"name", name},
                                               {"success", tool_result.success},
                                               {"summary", summarize_result(name, tool_result)},
                                               {"error", tool_result.error_message}}))

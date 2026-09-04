@@ -14,9 +14,9 @@ namespace agent {
 
 enum class EventType {
     Content,          // a chunk of assistant text
-    ToolStart,        // {name, arguments, risk}
-    ToolResult,       // {name, success, summary, error}
-    ApprovalRequired, // {id, name, arguments, risk, description}
+    ToolStart,        // {call_id, name, arguments, risk}
+    ToolResult,       // {call_id, name, success, summary, error}
+    ApprovalRequired, // {id, call_id, name, arguments, risk, description}
     ApprovalResolved, // {id, decision}
     Compaction,       // {dropped, summarized, truncated_results, used_tokens, budget_tokens}
     Status,           // {message} -- iteration and budget notices

@@ -22,12 +22,15 @@ export type AgentEventName =
 	| 'run_summary';
 
 export interface AgentToolStartData {
+	/** The model's id for this call; ties the result and any approval back to this step. */
+	call_id?: string;
 	name: string;
 	arguments: Record<string, unknown>;
 	risk: AgentToolRisk;
 }
 
 export interface AgentToolResultData {
+	call_id?: string;
 	name: string;
 	success: boolean;
 	summary?: string;
@@ -35,6 +38,7 @@ export interface AgentToolResultData {
 }
 
 export interface AgentApprovalRequiredData {
+	call_id?: string;
 	id: string;
 	name: string;
 	arguments: Record<string, unknown>;
@@ -93,6 +97,8 @@ export type AgentApprovalDecision = 'allow' | 'always' | 'deny' | 'never';
  */
 export interface AgentActivityStep {
 	id: string;
+	/** The model's call id, when the engine reported one. */
+	callId?: string;
 	name: string;
 	arguments: Record<string, unknown>;
 	risk: AgentToolRisk;

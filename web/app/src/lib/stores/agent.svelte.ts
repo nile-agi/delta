@@ -66,15 +66,21 @@ class AgentStore {
 	 * Finds the step a result belongs to: the most recent one still open for that tool name.
 	 * Matching by name from the end is enough because the harness runs tool calls one at a time.
 	 */
-	private findOpenStep(activity: AgentActivity, name: string): AgentActivityStep | undefined {
+	private findOpenStep(
+		activity: AgentActivity,
+		name: string,
+		callId?: string
+	): AgentActivityStep | undefined {
 		for (let i = activity.steps.length - 1; i >= 0; i--) {
 			const step = activity.steps[i];
-			if (
-				step.name === name &&
-				(step.status === 'running' || step.status === 'awaiting-approval')
-			) {
-				return step;
+			const open = step.status === 'running' || step.status === 'awaiting-approval';
+			if (!open) continue;
+			// The call id is exact; the name is the fallback for engines that do not send one.
+			if (callId && step.callId) {
+				if (step.callId === callId) return step;
+				continue;
 			}
+			if (step.name === name) return step;
 		}
 		return undefined;
 	}
@@ -86,6 +92,7 @@ class AgentStore {
 				this.mutate(messageId, (activity) => {
 					activity.steps.push({
 						id: `${messageId}-${activity.steps.length}-${data.name}`,
+						callId: data.call_id,
 						name: data.name,
 						arguments: data.arguments ?? {},
 						risk: data.risk ?? 'safe',
@@ -99,7 +106,7 @@ class AgentStore {
 			case 'approval_required': {
 				const data = event.data as AgentApprovalRequiredData;
 				this.mutate(messageId, (activity) => {
-					const step = this.findOpenStep(activity, data.name);
+					const step = this.findOpenStep(activity, data.name, data.call_id);
 					if (step) {
 						step.status = 'awaiting-approval';
 						step.approvalId = data.id;
@@ -128,7 +135,7 @@ class AgentStore {
 			case 'tool_result': {
 				const data = event.data as AgentToolResultData;
 				this.mutate(messageId, (activity) => {
-					const step = this.findOpenStep(activity, data.name);
+					const step = this.findOpenStep(activity, data.name, data.call_id);
 					if (!step) return;
 					step.status = data.success
 						? 'success'

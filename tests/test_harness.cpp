@@ -1173,6 +1173,35 @@ static void test_unknown_tool_is_reported_as_a_step() {
     check(requests.size() == 2 && tool_messages(requests[1]).size() == 1, "and the model was told");
 }
 
+static void test_tool_events_carry_the_call_id() {
+    test("tool_start and tool_result events carry the call id so two calls to one tool stay apart");
+
+    json twice = {{"role", "assistant"},
+                  {"content", ""},
+                  {"tool_calls", json::array({tool_call("test_read", json::object(), "call_first"),
+                                              tool_call("test_fail", json::object(), "call_second")})}};
+    ScriptedServer server({twice, {{"role", "assistant"}, {"content", "done"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("go")}), log.sink());
+    server.stop();
+
+    check(result.success, "the run completed");
+    std::vector<std::string> start_ids, result_ids;
+    for (const auto& [type, data] : log.events) {
+        if (type == EventType::ToolStart)
+            start_ids.push_back(data.value("call_id", ""));
+        if (type == EventType::ToolResult)
+            result_ids.push_back(data.value("call_id", ""));
+    }
+    check(start_ids.size() == 2 && start_ids[0] == "call_first" && start_ids[1] == "call_second",
+          "each tool_start names its call");
+    check(result_ids.size() == 2 && result_ids[0] == "call_first" && result_ids[1] == "call_second",
+          "each tool_result names the call it answers");
+}
+
 static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
     test("a transport failure ends the run with an error instead of retrying without tools");
 
@@ -1431,6 +1460,7 @@ int main() {
     test_abort_request_is_noticed_while_the_model_is_silent();
     test_summary_is_reused_across_iterations();
     test_unknown_tool_is_reported_as_a_step();
+    test_tool_events_carry_the_call_id();
     test_transport_failure_is_not_mistaken_for_schema_rejection();
     test_schema_rejection_retries_without_tools();
 
