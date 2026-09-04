@@ -1,6 +1,7 @@
 #include "context_manager.h"
 #include "llm_client.h"
 #include <algorithm>
+#include <functional>
 #include <iostream>
 
 namespace delta {
@@ -148,8 +149,40 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
         stats_.dropped_messages = static_cast<int>(dropped.size());
 
         std::string summary;
-        if (summarize_ && stats_.dropped_messages >= kMinDroppedForSummary)
-            summary = summarize_(dropped);
+        if (summarize_ && stats_.dropped_messages >= kMinDroppedForSummary) {
+            // Within one run the dropped prefix only ever grows by a message or two per
+            // iteration, so a summary that already covers all but a few of them is still good.
+            auto hash_prefix = [&](size_t count) {
+                std::string text;
+                for (size_t i = 0; i < count && i < dropped.size(); i++)
+                    text += message_text(dropped[i]) + '\x1f';
+                return std::hash<std::string>{}(text);
+            };
+            // Messages dropped since the cached summary was made are appended to it verbatim
+            // (shortened) until enough pile up to be worth folding into a fresh summary.
+            constexpr size_t kMaxAppendedToSummary = 2 * kMinDroppedForSummary;
+            const bool reusable = !cached_summary_.empty() && dropped.size() >= cached_summary_count_ &&
+                                  dropped.size() - cached_summary_count_ < kMaxAppendedToSummary &&
+                                  hash_prefix(cached_summary_count_) == cached_summary_hash_;
+            if (reusable) {
+                summary = cached_summary_;
+                for (size_t i = cached_summary_count_; i < dropped.size(); i++) {
+                    std::string text = message_text(dropped[i]);
+                    if (text.empty())
+                        continue;
+                    if (text.size() > 200)
+                        text = text.substr(0, 200) + "...";
+                    summary += "\n" + dropped[i].value("role", "") + ": " + text;
+                }
+            } else {
+                summary = summarize_(dropped);
+                if (!summary.empty()) {
+                    cached_summary_ = summary;
+                    cached_summary_count_ = dropped.size();
+                    cached_summary_hash_ = hash_prefix(dropped.size());
+                }
+            }
+        }
         if (!summary.empty()) {
             stats_.summarized = true;
             summary_note = "\n\nSummary of the earlier part of this conversation, which no longer fits in "

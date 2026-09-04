@@ -57,6 +57,12 @@ class ContextManager {
     Summarizer summarize_;
     TokenCounter count_;
     ContextStats stats_;
+
+    // The last summary produced and what it covered, so the next build() of the same run can
+    // reuse it instead of paying another model round-trip for the same dropped messages.
+    std::string cached_summary_;
+    size_t cached_summary_count_ = 0; // dropped messages the summary covers
+    size_t cached_summary_hash_ = 0;  // of those messages, to notice a different history
 };
 
 } // namespace agent

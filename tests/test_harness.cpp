@@ -111,14 +111,28 @@ class ScriptedServer {
 
             if (delay_ms_ > 0)
                 std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms_));
-            const json message =
-                index < script_.size() ? script_[index] : json{{"role", "assistant"}, {"content", "done"}};
+            json message;
+            if (responder_)
+                message = responder_(body);
+            else
+                message = index < script_.size() ? script_[index] : json{{"role", "assistant"}, {"content", "done"}};
+            if (body.is_object() && !body.value("stream", false)) {
+                // A blocking request (the harness's summariser) expects a plain completion body.
+                json reply = {
+                    {"object", "chat.completion"},
+                    {"choices", json::array({{{"index", 0}, {"message", message}, {"finish_reason", "stop"}}})}};
+                res.set_content(reply.dump(), "application/json");
+                return;
+            }
             res.set_content(sse_for(message), "text/event-stream");
         });
     }
 
     // Hold every completion response for this long, to stand in for a slow model.
     void set_response_delay_ms(int ms) { delay_ms_ = ms; }
+
+    // Answer each request from a function of its body instead of the fixed script.
+    void set_responder(std::function<json(const json&)> fn) { responder_ = std::move(fn); }
 
     void start() {
         port_ = server_.bind_to_any_port("127.0.0.1");
@@ -187,6 +201,7 @@ class ScriptedServer {
     std::thread thread_;
     int port_ = 0;
     int delay_ms_ = 0;
+    std::function<json(const json&)> responder_;
     std::vector<json> script_;
     std::vector<json> requests_;
     std::mutex mutex_;
@@ -1079,6 +1094,52 @@ static void test_abort_request_is_noticed_while_the_model_is_silent() {
     check(log.text().empty(), "nothing from the late reply was streamed");
 }
 
+static void test_summary_is_reused_across_iterations() {
+    test("a compacted conversation is summarised once per run, not once per iteration");
+
+    // A history far larger than the 4096-token window, so every iteration has to compact.
+    json history = json::array();
+    for (int i = 0; i < 100; i++) {
+        history.push_back({{"role", i % 2 == 0 ? "user" : "assistant"},
+                           {"content", "Turn " + std::to_string(i) +
+                                           ": a long-winded message that fills up the context window with plenty of "
+                                           "words about nothing in particular so that compaction is unavoidable here, "
+                                           "and then keeps going for another clause or two just to be sure of it."}});
+    }
+    history.push_back(user("and now, what is there?"));
+
+    // Summaries are answered with plain text; everything else drives a three-step tool loop.
+    ScriptedServer server({});
+    server.set_responder([](const json& request) -> json {
+        const auto& messages = request["messages"];
+        if (!messages.empty() && messages[0].value("content", "").rfind("Summarize", 0) == 0)
+            return {{"role", "assistant"}, {"content", "Earlier we talked at length about nothing."}};
+        static std::atomic<int> turn{0};
+        const int n = turn++;
+        if (n < 2)
+            return assistant_calling("test_read", json::object(), "c" + std::to_string(n));
+        return json{{"role", "assistant"}, {"content", "done"}};
+    });
+    server.start();
+
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(history, log.sink());
+    server.stop();
+
+    check(result.success, "the run completed");
+    check_eq(result.iterations, 3, "it took three iterations");
+    int summaries = 0;
+    for (const auto& request : server.requests()) {
+        const auto& messages = request["messages"];
+        if (!messages.empty() && messages[0].value("content", "").rfind("Summarize", 0) == 0)
+            summaries++;
+    }
+    check_eq(summaries, 1, "the model was asked for a summary exactly once");
+    check(log.count(EventType::Compaction) >= 3, "every iteration still reported compaction");
+}
+
 static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
     test("a transport failure ends the run with an error instead of retrying without tools");
 
@@ -1278,6 +1339,7 @@ int main() {
     test_transcript_delta_carries_tool_turns_into_the_next_run();
     test_scratchpad_survives_an_unfinished_run();
     test_abort_request_is_noticed_while_the_model_is_silent();
+    test_summary_is_reused_across_iterations();
     test_transport_failure_is_not_mistaken_for_schema_rejection();
     test_schema_rejection_retries_without_tools();
 
