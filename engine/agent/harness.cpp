@@ -225,8 +225,8 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
     if (memory.ready()) {
         // Scoped to this conversation plus the general ones, so an unrelated job's details never
         // turn up in the prompt.
-        auto pinned_memories = memory.pinned(5, scratchpad_key());
-        auto relevant = memory.search(last_user_text(messages), 5, scratchpad_key());
+        auto pinned_memories = memory.pinned(5, memory_key());
+        auto relevant = memory.search(last_user_text(messages), 5, memory_key());
         std::set<std::string> seen;
         std::string lines;
         for (const auto& m : pinned_memories) {
@@ -333,6 +333,7 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
 
     const std::string pad = scratchpad_key();
     set_active_run_id(pad);
+    set_active_memory_scope(memory_key());
     // Nothing deferred is loaded yet, and load_tools may never reach past what the client allows.
     begin_tool_session(options_.enabled_categories);
     MemoryStore::instance().prune_plans();

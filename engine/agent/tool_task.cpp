@@ -9,6 +9,7 @@ namespace {
 // Each request is served on its own thread, so the active run id is thread-local rather than
 // global: two conversations running at once must not write to each other's scratchpad.
 thread_local std::string g_run_id;
+thread_local std::string g_memory_scope;
 } // namespace
 
 void set_active_run_id(const std::string& run_id) {
@@ -17,6 +18,14 @@ void set_active_run_id(const std::string& run_id) {
 
 std::string active_run_id() {
     return g_run_id;
+}
+
+void set_active_memory_scope(const std::string& scope) {
+    g_memory_scope = scope;
+}
+
+std::string active_memory_scope() {
+    return g_memory_scope.empty() ? g_run_id : g_memory_scope;
 }
 
 void register_task_tools() {

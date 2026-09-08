@@ -920,6 +920,7 @@ class ModelAPIServer {
                     if (cid.size() > 128)
                         cid.resize(128);
                     run_options.scratchpad_id = cid;
+                    run_options.memory_scope = cid;
                 }
 
                 {

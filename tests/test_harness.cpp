@@ -1938,6 +1938,37 @@ static void test_create_event_respects_an_explicit_type() {
         db.delete_event(item.value("id", ""));
 }
 
+static void test_memories_outlive_the_session_that_saved_them() {
+    test("a memory saved in one session is still there in the next one on the same thread");
+
+    auto& memory = MemoryStore::instance();
+    const std::string scope = "cli";
+
+    // First session: the model saves something with the default scope.
+    ScriptedServer first({assistant_calling("remember", {{"content", "The deploy script lives in ops/"}}, "c0"),
+                          {{"role", "assistant"}, {"content", "Noted."}}});
+    first.start();
+    Harness a(first.url(), "test-model", true);
+    RunOptions opts_a = test_options();
+    opts_a.enabled_categories = {"memory"};
+    opts_a.scratchpad_id = "session_one";
+    opts_a.memory_scope = scope;
+    a.set_options(opts_a);
+    EventLog log;
+    a.run(json::array({user("keep that in mind")}), log.sink());
+    first.stop();
+
+    // Second session: a different scratchpad, same thread of conversation.
+    auto found = memory.search("deploy", 20, scope);
+    check(!found.empty(), "the next session can still recall it");
+
+    // And it stays out of an unrelated thread.
+    check(memory.search("deploy", 20, "some_other_thread").empty(), "without leaking sideways");
+
+    for (const auto& m : found)
+        memory.forget(m.id);
+}
+
 // ------------------------------------------------------- deferred tool loading
 
 // The tool names a recorded request actually offered the model.
@@ -2222,6 +2253,7 @@ int main() {
     test_create_event_respects_an_explicit_type();
     test_the_prompt_tells_the_model_to_ask_when_it_is_unsure();
     test_the_model_is_told_when_it_is_running_out_of_steps();
+    test_memories_outlive_the_session_that_saved_them();
     test_memories_do_not_leak_between_conversations();
     test_remember_scopes_to_the_current_job_by_default();
     test_working_notes_survive_into_the_next_turn();

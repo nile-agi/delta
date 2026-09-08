@@ -43,7 +43,7 @@ void register_memory_tools() {
                 return {false, "", "content is required"};
             // Scoped by default: a detail from one job has no business surfacing in an unrelated one.
             const std::string scope = args.value("scope", "this_task");
-            const std::string conversation = scope == "general" ? std::string() : active_run_id();
+            const std::string conversation = scope == "general" ? std::string() : active_memory_scope();
             const std::string id =
                 MemoryStore::instance().remember(content, args.value("kind", "fact"), args.value("tags", ""),
                                                  args.value("importance", 1), "chat", conversation);
@@ -67,7 +67,7 @@ void register_memory_tools() {
          "memory"},
         [](const nlohmann::json& args) -> ToolResult {
             const int limit = std::max(1, std::min(20, args.value("limit", 5)));
-            auto results = MemoryStore::instance().search(args.value("query", ""), limit, active_run_id());
+            auto results = MemoryStore::instance().search(args.value("query", ""), limit, active_memory_scope());
             nlohmann::json out = nlohmann::json::array();
             for (const auto& m : results) {
                 MemoryStore::instance().touch(m.id);

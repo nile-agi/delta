@@ -410,7 +410,9 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     // The transcript the harness sees. It trims this to the model's context window itself.
     nlohmann::json conversation = nlohmann::json::array();
     // One plan scratchpad for the whole interactive session, so "keep going" resumes the plan.
-    const std::string scratchpad_id = "cli_" + std::to_string(static_cast<long long>(time(nullptr)));
+    // Includes the pid so two terminals started in the same second do not share a plan.
+    const std::string scratchpad_id = "cli_" + std::to_string(static_cast<long long>(time(nullptr))) + "_" +
+                                      std::to_string(static_cast<long long>(getpid()));
     session.scratchpad_id = scratchpad_id;
     session.conversation = &conversation;
 
@@ -501,6 +503,9 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
                 options.max_tokens = session.max_tokens;
                 options.tools_enabled = harness_supports_tools;
                 options.scratchpad_id = scratchpad_id;
+                // The terminal is one continuing conversation with the user, so memories saved in
+                // one session are recalled in the next; the plan and notes stay session-local.
+                options.memory_scope = "cli";
 #ifndef _WIN32
                 // Lets Ctrl-C land while the model is still thinking, before any output arrives.
                 options.abort_requested = [] { return g_exit_requested != 0; };

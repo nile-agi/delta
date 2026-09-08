@@ -52,6 +52,10 @@ struct RunOptions {
     // Keys the plan scratchpad. Empty means a fresh scratchpad for this run only; a caller that
     // passes the same id on every turn of a conversation lets the plan carry over between turns.
     std::string scratchpad_id;
+    // Which thread of conversation a saved memory belongs to. Separate from the scratchpad because
+    // a plan dies with the session while a memory should outlive it: the CLI keeps one memory scope
+    // across launches but a fresh scratchpad each time. Empty falls back to the scratchpad key.
+    std::string memory_scope;
     // Polled while the model is generating and before each tool, so a caller can stop a run
     // (Ctrl-C, a closed connection) even when no event is flowing. Empty means never.
     std::function<bool()> abort_requested;
@@ -97,6 +101,8 @@ class Harness {
     std::string summarize(const nlohmann::json& dropped);
     // The key the plan scratchpad lives under: the caller's conversation id when given, else this run.
     std::string scratchpad_key() const { return options_.scratchpad_id.empty() ? run_id_ : options_.scratchpad_id; }
+    // The key memories are saved against and recalled by.
+    std::string memory_key() const { return options_.memory_scope.empty() ? scratchpad_key() : options_.memory_scope; }
 
     LlmClient client_;
     bool supports_tools_;
