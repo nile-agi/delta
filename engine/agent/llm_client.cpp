@@ -252,6 +252,15 @@ nlohmann::json LlmClient::chat(const nlohmann::json& messages, const nlohmann::j
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, collect_body);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_str);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, config_.blocking_timeout_seconds);
+    // The summariser runs through here. Without this a disconnect or a Ctrl-C could not interrupt
+    // it and the run sat blocked for the full timeout with the abort plumbing unused.
+    SseContext abort_ctx;
+    if (abort_check_) {
+        abort_ctx.abort_check = &abort_check_;
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, sse_progress_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &abort_ctx);
+    }
 
     CURLcode res = curl_easy_perform(curl);
     long http_code = 0;
@@ -260,7 +269,9 @@ nlohmann::json LlmClient::chat(const nlohmann::json& messages, const nlohmann::j
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK)
-        return {{"error", std::string("HTTP request failed: ") + curl_easy_strerror(res)}};
+        return {{"error", (res == CURLE_ABORTED_BY_CALLBACK)
+                              ? std::string("client disconnected")
+                              : std::string("HTTP request failed: ") + curl_easy_strerror(res)}};
     if (http_code >= 400) {
         std::cerr << "[delta-harness] llama-server HTTP " << http_code << ": " << response_str.substr(0, 500)
                   << std::endl;

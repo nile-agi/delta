@@ -1004,7 +1004,10 @@ class ModelAPIServer {
                                 } else if (result.streamed_chars == 0 && !result.content.empty()) {
                                     emit(sse_content_chunk(result.content));
                                 }
-                                if (!result.executed_tools.empty())
+                                // Always sent, not just when a tool ran: a turn where every call
+                                // was refused still has a transcript the client must keep, or the
+                                // model loses all record that it was turned down.
+                                if (!result.executed_tools.empty() || !result.transcript_delta.empty())
                                     emit(sse_agent_event(
                                         "run_summary", {{"tool_calls", result.tool_calls},
                                                         {"iterations", result.iterations},
