@@ -315,9 +315,13 @@ nlohmann::json LlmClient::chat_stream(const nlohmann::json& messages, const nloh
                       << std::endl;
         }
         try {
-            return nlohmann::json::parse(ctx.raw);
+            nlohmann::json parsed = nlohmann::json::parse(ctx.raw);
+            // The status tells a caller whether the server disliked the request or simply broke.
+            if (parsed.is_object())
+                parsed["http_status"] = http_code;
+            return parsed;
         } catch (...) {
-            return {{"error", "Failed to parse LLM response"}};
+            return {{"error", "Failed to parse LLM response"}, {"http_status", http_code}};
         }
     }
 

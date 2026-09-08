@@ -1462,6 +1462,54 @@ static void test_a_tool_that_keeps_failing_gets_a_nudge() {
     }
 }
 
+static void test_an_empty_reply_is_not_passed_off_as_an_answer() {
+    test("a model that says nothing at all is asked again rather than ending the turn silently");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", ""}},
+                           {{"role", "assistant"}, {"content", "Sorry -- here is the answer."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("well?")}), log.sink());
+    server.stop();
+
+    check(result.success, "the run completed");
+    check(server.requests().size() >= 2, "the model was asked again");
+    check(result.content.find("here is the answer") != std::string::npos, "and the user got a real reply");
+}
+
+static void test_a_server_error_is_not_blamed_on_the_tool_schemas() {
+    test("a failing model server is reported as such, not as a model that cannot do tools");
+
+    httplib::Server server;
+    server.Get("/props", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content(json{{"n_ctx", 4096}}.dump(), "application/json");
+    });
+    server.Post("/v1/chat/completions", [](const httplib::Request&, httplib::Response& res) {
+        res.status = 500;
+        res.set_content(json{{"error", {{"message", "the model is reloading"}}}}.dump(), "application/json");
+    });
+    const int port = server.bind_to_any_port("127.0.0.1");
+    std::thread thread([&server] { server.listen_after_bind(); });
+    server.wait_until_ready();
+
+    Harness harness("http://127.0.0.1:" + std::to_string(port), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("hello")}), log.sink());
+
+    server.stop();
+    thread.join();
+
+    check(!result.success, "the run failed");
+    check_eq(result.stop_reason, std::string("error"), "and says it was an error");
+    json status = log.first(EventType::Status);
+    check(status.is_null() || status.value("message", "").find("rejected the tool schemas") == std::string::npos,
+          "the user was not told the model cannot do tools");
+    check(result.error.find("reloading") != std::string::npos, "the server's own reason is passed on");
+}
+
 static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
     test("a transport failure ends the run with an error instead of retrying without tools");
 
@@ -1955,6 +2003,8 @@ int main() {
     test_a_repeated_call_gets_a_nudge();
     test_a_model_going_in_circles_is_stopped();
     test_a_tool_that_keeps_failing_gets_a_nudge();
+    test_an_empty_reply_is_not_passed_off_as_an_answer();
+    test_a_server_error_is_not_blamed_on_the_tool_schemas();
     test_sampling_and_thinking_reach_the_model();
     test_thinking_flag_is_sent_even_without_tools();
     test_reasoning_only_reply_still_answers_the_user();

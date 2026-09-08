@@ -450,6 +450,7 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
     std::string failing_tool;
     int consecutive_failures = 0;
     bool going_in_circles = false;
+    int empty_replies = 0;
 
     for (int iteration = 0; iteration < options_.max_iterations; iteration++) {
         result.iterations = iteration + 1;
@@ -492,11 +493,20 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         }
 
         // A model advertised as tool-capable can still reject the schemas. Retry once without them
-        // rather than failing the whole turn. Only a reply from the server counts: a transport
-        // failure (connection refused, a stalled stream) would fail again without tools too.
-        const bool server_rejected = response.is_object() && response.contains("error") &&
-                                     !(response["error"].is_string() &&
-                                       response["error"].get<std::string>().rfind("HTTP request failed", 0) == 0);
+        // rather than failing the whole turn. Only a complaint about the request counts: a transport
+        // failure would fail again without tools, and a 5xx means the server is broken, not the
+        // schemas -- dropping tools there would mislead the user and cripple the rest of the run.
+        bool server_rejected = false;
+        if (response.is_object() && response.contains("error")) {
+            const auto& err = response["error"];
+            const std::string message = err.is_string()   ? err.get<std::string>()
+                                        : err.is_object() ? err.value("message", std::string())
+                                                          : std::string();
+            const int status = response.value("http_status", 0);
+            const bool about_tools =
+                message.find("tool") != std::string::npos || message.find("template") != std::string::npos;
+            server_rejected = (status >= 400 && status < 500) || (status >= 500 && about_tools);
+        }
         if (server_rejected && !active.empty() && !tools_disabled_by_error) {
             std::cerr << "[delta-harness] tools rejected, retrying without them: " << response["error"].dump()
                       << std::endl;
@@ -544,6 +554,13 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             assistant.contains("tool_calls") && assistant["tool_calls"].is_array() && !assistant["tool_calls"].empty();
 
         if (!has_tool_calls) {
+            // Nothing at all: no answer, no action. Ending the turn here would leave the user
+            // staring at an empty reply, so take one more sample before giving up.
+            if (content.empty() && empty_replies == 0) {
+                empty_replies++;
+                emit(EventType::Status, {{"message", "The model replied with nothing; asking again."}});
+                continue;
+            }
             transcript.push_back(assistant);
             result.success = true;
             result.content = content;
