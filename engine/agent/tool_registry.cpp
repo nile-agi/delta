@@ -65,6 +65,24 @@ ToolResult ToolRegistry::execute(const std::string& name, const nlohmann::json& 
     if (it == handlers_.end()) {
         return {false, "", "Unknown tool: " + name};
     }
+
+    // Check the schema's own required list before running anything. Small models leave arguments
+    // out, and a tool that then sees a default-constructed value does the wrong thing quietly; an
+    // error naming the argument is something the model can actually act on.
+    auto def = definitions_.find(name);
+    if (def != definitions_.end()) {
+        const auto& params = def->second.parameters;
+        if (params.is_object() && params.contains("required") && params["required"].is_array()) {
+            for (const auto& required : params["required"]) {
+                if (!required.is_string())
+                    continue;
+                const std::string key = required.get<std::string>();
+                if (!arguments.is_object() || !arguments.contains(key) || arguments[key].is_null())
+                    return {false, "", name + " needs a '" + key + "' argument. Call it again with one."};
+            }
+        }
+    }
+
     try {
         return it->second(arguments);
     } catch (const std::exception& e) {

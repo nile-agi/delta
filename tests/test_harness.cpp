@@ -272,6 +272,7 @@ struct ToolSpy {
     std::mutex mutex;
 };
 
+static ToolSpy g_strict_spy;
 static ToolSpy g_read_spy;
 static ToolSpy g_write_spy;
 static ToolSpy g_destructive_spy;
@@ -302,6 +303,19 @@ static void register_test_tools() {
                                std::lock_guard<std::mutex> lock(g_destructive_spy.mutex);
                                g_destructive_spy.last_arguments = args;
                                return {true, json{{"deleted", true}}.dump(), ""};
+                           });
+
+    // Declares a required argument but does not check for it itself, which is the common case.
+    registry.register_tool({"test_strict",
+                            "Needs a target",
+                            {{"type", "object"},
+                             {"properties", {{"target", {{"type", "string"}, {"description", "what to act on"}}}}},
+                             {"required", {"target"}}},
+                            ToolRisk::Safe,
+                            "testing"},
+                           [](const json& args) -> ToolResult {
+                               g_strict_spy.calls++;
+                               return {true, json{{"got", args.value("target", "")}}.dump(), ""};
                            });
 
     registry.register_tool({"test_fail", "Always fails", no_params, ToolRisk::Safe, "testing"},
@@ -1510,6 +1524,31 @@ static void test_a_server_error_is_not_blamed_on_the_tool_schemas() {
     check(result.error.find("reloading") != std::string::npos, "the server's own reason is passed on");
 }
 
+static void test_a_call_missing_a_required_argument_never_runs() {
+    test("a tool call missing a required argument is answered with a clear error instead of running");
+
+    ScriptedServer server({assistant_calling("test_strict", json::object(), "c0"),
+                           {{"role", "assistant"}, {"content", "let me try again"}}});
+    server.start();
+    const int before = g_strict_spy.calls;
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("do it")}), log.sink());
+    server.stop();
+
+    check_eq(g_strict_spy.calls - before, 0, "the tool was not run");
+    auto requests = server.requests();
+    check(requests.size() >= 2, "the model got another turn");
+    if (requests.size() >= 2) {
+        auto tools = tool_messages(requests[1]);
+        check(!tools.empty(), "the call was answered");
+        if (!tools.empty())
+            check(tools[0].value("content", "").find("target") != std::string::npos,
+                  "and the error names the argument it wanted");
+    }
+}
+
 static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
     test("a transport failure ends the run with an error instead of retrying without tools");
 
@@ -2060,6 +2099,7 @@ int main() {
     test_a_model_going_in_circles_is_stopped();
     test_a_tool_that_keeps_failing_gets_a_nudge();
     test_an_empty_reply_is_not_passed_off_as_an_answer();
+    test_a_call_missing_a_required_argument_never_runs();
     test_a_server_error_is_not_blamed_on_the_tool_schemas();
     test_sampling_and_thinking_reach_the_model();
     test_thinking_flag_is_sent_even_without_tools();
