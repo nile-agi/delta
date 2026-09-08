@@ -1878,8 +1878,10 @@ bool Commands::handle_clear(const std::vector<std::string>& args, InteractiveSes
     (void)args;
     if (session.conversation)
         session.conversation->clear();
-    if (delta::agent::MemoryStore::instance().ready() && !session.scratchpad_id.empty())
+    if (delta::agent::MemoryStore::instance().ready() && !session.scratchpad_id.empty()) {
         delta::agent::MemoryStore::instance().clear_plan(session.scratchpad_id);
+        delta::agent::MemoryStore::instance().clear_notes(session.scratchpad_id);
+    }
     UI::print_success("Conversation cleared. Long-term memories are kept; use /forget to remove one.");
     return true;
 }

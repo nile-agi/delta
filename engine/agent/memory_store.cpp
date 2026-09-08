@@ -83,7 +83,10 @@ nlohmann::json Memory::to_json() const {
             {"source", source},
             {"created_at", created_at},
             {"updated_at", updated_at},
-            {"use_count", use_count}};
+            {"use_count", use_count},
+            // Empty means general: recalled in every conversation.
+            {"conversation_id", conversation_id},
+            {"scope", conversation_id.empty() ? "general" : "conversation"}};
 }
 
 MemoryStore& MemoryStore::instance() {

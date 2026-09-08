@@ -337,6 +337,7 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
     // Nothing deferred is loaded yet, and load_tools may never reach past what the client allows.
     begin_tool_session(options_.enabled_categories);
     MemoryStore::instance().prune_plans();
+    MemoryStore::instance().prune_notes();
 
     auto emit = [&](EventType type, nlohmann::json data) -> bool {
         if (!sink)
@@ -421,6 +422,9 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         LlmConfig brief = saved;
         brief.max_tokens = std::min(saved.max_tokens, 400);
         client_.set_config(brief);
+        // No tools go out on this turn, so the budget must not still reserve room for them --
+        // otherwise the closing summary drops history it did not need to.
+        context.set_tool_overhead(0);
         nlohmann::json request_messages = context.build(build_system_prompt(transcript), closing);
         size_t forwarded = 0;
         bool aborted = false;
