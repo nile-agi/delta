@@ -398,6 +398,37 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         return r;
     };
 
+    // One last turn with no tools, so a run that ran out of room reports what it actually did
+    // instead of printing an apology. Streamed like any other answer, so the user watches it arrive.
+    auto wrap_up = [&](const std::string& why) -> std::string {
+        nlohmann::json closing = transcript;
+        closing.push_back({{"role", "user"},
+                           {"content", why + " Do not call any tools now. In a few sentences, tell me what you "
+                                             "did, what you found, and what is still left to do."}});
+
+        LlmConfig saved = client_.config();
+        LlmConfig brief = saved;
+        brief.max_tokens = std::min(saved.max_tokens, 400);
+        client_.set_config(brief);
+        nlohmann::json request_messages = context.build(build_system_prompt(transcript), closing);
+        size_t forwarded = 0;
+        bool aborted = false;
+        nlohmann::json response = client_.chat_stream(
+            request_messages, nlohmann::json::array(), "auto",
+            [&](const std::string& delta) -> bool { return emit(EventType::Content, {{"text", delta}}); }, forwarded,
+            aborted);
+        client_.set_config(saved);
+        result.streamed_chars += forwarded;
+
+        if (aborted || !response.is_object() || !response.contains("choices") || !response["choices"].is_array() ||
+            response["choices"].empty())
+            return "";
+        const auto& choice = response["choices"][0];
+        if (!choice.contains("message") || !choice["message"].is_object())
+            return "";
+        return message_text(choice["message"]);
+    };
+
     const auto started = std::chrono::steady_clock::now();
     auto out_of_time = [&] {
         const auto elapsed =
@@ -672,9 +703,14 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
     if (result.stop_reason.empty())
         result.stop_reason = "max_iterations";
     result.success = true;
-    result.content = last_content.empty() ? "I worked through several steps but ran out of room before finishing. "
-                                            "Tell me to keep going and I will pick up where I stopped."
-                                          : last_content;
+    emit(EventType::Status, {{"message", "Out of steps; asking for a summary of what was done."}});
+    std::string closing = wrap_up(result.stop_reason == "time_budget" ? "You have run out of time for this task."
+                                                                      : "You have run out of steps for this task.");
+    if (closing.empty())
+        closing = last_content.empty() ? "I worked through several steps but ran out of room before finishing. "
+                                         "Tell me to keep going and I will pick up where I stopped."
+                                       : last_content;
+    result.content = closing;
     // Close the transcript on an assistant turn so the stored conversation never ends on a tool
     // result, which strict chat templates reject on the next turn.
     transcript.push_back({{"role", "assistant"}, {"content", result.content}});

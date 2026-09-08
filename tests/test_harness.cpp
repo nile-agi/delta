@@ -1352,6 +1352,35 @@ static void test_thinking_flag_is_sent_even_without_tools() {
     }
 }
 
+static void test_budget_exhaustion_asks_the_model_to_wrap_up() {
+    test("a run that hits its step budget still tells the user what it did");
+
+    ScriptedServer server({});
+    server.set_responder([](const json& request) -> json {
+        const auto& messages = request["messages"];
+        if (!messages.empty() && messages[0].value("content", "").rfind("Summarize", 0) == 0)
+            return {{"role", "assistant"}, {"content", "earlier context"}};
+        // No tools offered means this is the closing turn.
+        if (!request.contains("tools") || request["tools"].empty())
+            return {{"role", "assistant"}, {"content", "I checked the folder twice and found nothing new."}};
+        return assistant_calling("test_read", json::object(), "c");
+    });
+    server.start();
+
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.max_iterations = 3;
+    harness.set_options(options);
+    EventLog log;
+    auto result = harness.run(json::array({user("keep looking")}), log.sink());
+    server.stop();
+
+    check_eq(result.stop_reason, std::string("max_iterations"), "it stopped at the budget");
+    check(result.content.find("found nothing new") != std::string::npos, "the model wrote the closing summary");
+    check(result.content.find("ran out of room") == std::string::npos, "rather than a canned apology");
+    check(log.text().find("found nothing new") != std::string::npos, "and the user saw it arrive");
+}
+
 static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
     test("a transport failure ends the run with an error instead of retrying without tools");
 
@@ -1841,6 +1870,7 @@ int main() {
     test_summary_is_reused_across_iterations();
     test_unknown_tool_is_reported_as_a_step();
     test_tool_events_carry_the_call_id();
+    test_budget_exhaustion_asks_the_model_to_wrap_up();
     test_sampling_and_thinking_reach_the_model();
     test_thinking_flag_is_sent_even_without_tools();
     test_reasoning_only_reply_still_answers_the_user();
