@@ -44,6 +44,9 @@ class MemoryStore {
     bool init(sqlite3* db);
     bool ready() const { return db_ != nullptr && mutex_ != nullptr; }
 
+    // Called when the owner closes the connection, so this side stops using a freed handle.
+    void detach();
+
     // --- long-term memory ---
     // `conversation_id` empty saves a general memory, visible everywhere. Anything else scopes the
     // memory to that conversation, so one job's details never surface in an unrelated one.

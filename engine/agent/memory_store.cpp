@@ -95,6 +95,15 @@ MemoryStore& MemoryStore::instance() {
     return store;
 }
 
+void MemoryStore::detach() {
+    if (!mutex_) {
+        db_ = nullptr;
+        return;
+    }
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
+    db_ = nullptr;
+}
+
 bool MemoryStore::init(sqlite3* db) {
     if (!db)
         return false;

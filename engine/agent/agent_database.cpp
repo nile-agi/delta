@@ -1,4 +1,5 @@
 #include "agent_database.h"
+#include "memory_store.h"
 #include "time_compat.h"
 #include <nlohmann/json.hpp>
 #include <filesystem>
@@ -53,6 +54,8 @@ bool AgentDatabase::init(const std::string& db_path) {
 
 void AgentDatabase::close() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    // Tell the sharer first, or it keeps a freed pointer and still reports itself ready.
+    MemoryStore::instance().detach();
     if (db_) {
         sqlite3_close(db_);
         db_ = nullptr;
@@ -613,7 +616,6 @@ bool AgentDatabase::delete_note(const std::string& id) {
 
 std::string AgentDatabase::add_rpc_node(const std::string& name, const std::string& endpoint) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    std::string id = generate_uuid();
     sqlite3_stmt* stmt;
     // Parse endpoint "host:port"
     size_t colon = endpoint.rfind(':');
@@ -641,7 +643,12 @@ std::string AgentDatabase::add_rpc_node(const std::string& name, const std::stri
 
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    return (rc == SQLITE_DONE) ? id : "";
+    if (rc != SQLITE_DONE)
+        return "";
+    // worker_nodes keys on an autoincrement column, so hand back the row that was actually
+    // written. The generated id returned before matched no row, and a follow-up toggle or delete
+    // against it silently did nothing.
+    return std::to_string(sqlite3_last_insert_rowid(db_));
 }
 
 std::vector<AgentDatabase::RpcNode> AgentDatabase::get_enabled_rpc_nodes() {
@@ -716,7 +723,7 @@ bool AgentDatabase::update_rpc_node_status(const std::string& id, bool enabled) 
     sqlite3_bind_text(stmt, 2, id.c_str(), -1, SQLITE_TRANSIENT);
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    return rc == SQLITE_DONE;
+    return rc == SQLITE_DONE && sqlite3_changes(db_) > 0;
 }
 
 bool AgentDatabase::delete_rpc_node(const std::string& id) {

@@ -1744,6 +1744,22 @@ static void test_schema_rejection_retries_without_tools() {
 
 // ------------------------------------------------------------ agent database
 
+static void test_a_created_row_can_be_found_by_the_id_it_returns() {
+    test("the id handed back by a create names the row that was actually written");
+
+    auto& db = AgentDatabase::instance();
+
+    const std::string event_id = db.create_event({{"title", "id round trip"}, {"start_time", "2026-11-01T09:00"}});
+    check(!event_id.empty(), "an event id came back");
+    check(!db.get_event(event_id).is_null(), "and it finds the event");
+    check(db.delete_event(event_id), "and deletes it");
+
+    const std::string note_id = db.create_note({{"title", "id round trip"}, {"content", "body"}});
+    check(!note_id.empty(), "a note id came back");
+    check(!db.get_note(note_id).is_null(), "and it finds the note");
+    check(db.delete_note(note_id), "and deletes it");
+}
+
 static void test_concurrent_updates_do_not_lose_each_other() {
     test("two threads updating different fields of one event never overwrite each other");
 
@@ -2341,6 +2357,7 @@ int main() {
     test_deferred_tools_are_announced_but_not_loaded();
     test_load_tools_puts_a_category_in_front_of_the_model();
     test_load_tools_cannot_reach_a_category_the_user_turned_off();
+    test_a_created_row_can_be_found_by_the_id_it_returns();
     test_concurrent_updates_do_not_lose_each_other();
     test_file_tools_follow_symlinks_before_checking_scope();
     test_shell_refuses_credential_paths_in_the_command();
