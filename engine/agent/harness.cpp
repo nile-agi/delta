@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
+#include <map>
 #include <ctime>
 #include <iostream>
 #include <random>
@@ -439,6 +440,17 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
     std::string last_content;
     bool tools_disabled_by_error = false;
 
+    // Going in circles is the characteristic failure of a small model with tools: it calls the same
+    // thing, gets the same answer, and calls it again. Warn on the third time, stop on the fourth.
+    // Keyed by tool name and arguments, so a different question to the same tool starts over.
+    constexpr int kWarnAfterRepeats = 3;
+    constexpr int kStopAfterRepeats = 4;
+    std::map<std::string, int> identical_calls;
+    std::map<std::string, std::string> previous_payload;
+    std::string failing_tool;
+    int consecutive_failures = 0;
+    bool going_in_circles = false;
+
     for (int iteration = 0; iteration < options_.max_iterations; iteration++) {
         result.iterations = iteration + 1;
 
@@ -686,8 +698,38 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             // Every result goes back to the model, success or failure. This is the core difference
             // from the loop this replaces, which answered write tools with a templated sentence and
             // never let the model see what happened.
-            const std::string payload =
+            std::string payload =
                 tool_result.success ? tool_result.content : nlohmann::json{{"error", tool_result.error_message}}.dump();
+
+            // Same call, same answer, again. The warning rides along with the real result rather
+            // than replacing it, so the model still has what it asked for.
+            const std::string signature = name + "|" + arguments.dump();
+            auto& seen = identical_calls[signature];
+            seen = (previous_payload.count(signature) && previous_payload[signature] == payload) ? seen + 1 : 1;
+            previous_payload[signature] = payload;
+            if (seen >= kStopAfterRepeats) {
+                going_in_circles = true;
+            } else if (seen >= kWarnAfterRepeats) {
+                payload += "\n\n[Delta: you have now called " + name + " with these arguments " + std::to_string(seen) +
+                           " times and got the same result each time. Calling it again will not change anything. "
+                           "Use what you already have, try something different, or tell the user what is blocking "
+                           "you.]";
+            }
+
+            if (!tool_result.success) {
+                consecutive_failures = (failing_tool == name) ? consecutive_failures + 1 : 1;
+                failing_tool = name;
+                if (consecutive_failures >= kStopAfterRepeats) {
+                    going_in_circles = true;
+                } else if (consecutive_failures >= kWarnAfterRepeats) {
+                    payload += "\n\n[Delta: " + name + " has now failed " + std::to_string(consecutive_failures) +
+                               " times in a row. Read the error, then either fix the arguments or take a different "
+                               "approach -- repeating the call will not help.]";
+                }
+            } else {
+                consecutive_failures = 0;
+                failing_tool.clear();
+            }
             transcript.push_back({{"role", "tool"}, {"tool_call_id", call_id}, {"name", name}, {"content", payload}});
 
             if (!emit(EventType::ToolResult, {{"call_id", call_id},
@@ -697,15 +739,28 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
                                               {"error", tool_result.error_message}}))
                 return aborted();
         }
+
+        if (going_in_circles) {
+            result.stop_reason = "stuck";
+            break;
+        }
     }
 
     // Fell out of the loop: the model kept calling tools until a budget ran out.
     if (result.stop_reason.empty())
         result.stop_reason = "max_iterations";
     result.success = true;
-    emit(EventType::Status, {{"message", "Out of steps; asking for a summary of what was done."}});
-    std::string closing = wrap_up(result.stop_reason == "time_budget" ? "You have run out of time for this task."
-                                                                      : "You have run out of steps for this task.");
+    std::string why = "You have run out of steps for this task.";
+    std::string notice = "Out of steps; asking for a summary of what was done.";
+    if (result.stop_reason == "time_budget") {
+        why = "You have run out of time for this task.";
+        notice = "Out of time; asking for a summary of what was done.";
+    } else if (result.stop_reason == "stuck") {
+        why = "You have repeated the same action several times without making progress, so I stopped you.";
+        notice = "Stopped: the same step was repeating without progress.";
+    }
+    emit(EventType::Status, {{"message", notice}});
+    std::string closing = wrap_up(why);
     if (closing.empty())
         closing = last_content.empty() ? "I worked through several steps but ran out of room before finishing. "
                                          "Tell me to keep going and I will pick up where I stopped."

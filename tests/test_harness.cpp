@@ -646,10 +646,11 @@ static void test_blocking_mode_refuses_without_asking() {
 static void test_iteration_budget() {
     test("a model that never stops calling tools is cut off by the iteration budget");
 
-    // Longer than the budget, so the loop must be what stops it.
+    // Longer than the budget, so the loop must be what stops it. The arguments differ each time:
+    // a model repeating one identical call is stuck, which is a different thing and stops sooner.
     std::vector<json> script;
     for (int i = 0; i < 20; i++)
-        script.push_back(assistant_calling("test_read", json::object(), "c" + std::to_string(i)));
+        script.push_back(assistant_calling("test_read", {{"page", i}}, "c" + std::to_string(i)));
 
     ScriptedServer server(script);
     server.start();
@@ -1381,6 +1382,86 @@ static void test_budget_exhaustion_asks_the_model_to_wrap_up() {
     check(log.text().find("found nothing new") != std::string::npos, "and the user saw it arrive");
 }
 
+static void test_a_repeated_call_gets_a_nudge() {
+    test("calling the same tool with the same arguments over and over earns a warning");
+
+    ScriptedServer server({assistant_calling("test_read", json::object(), "c1"),
+                           assistant_calling("test_read", json::object(), "c2"),
+                           assistant_calling("test_read", json::object(), "c3"),
+                           {{"role", "assistant"}, {"content", "fine, I will stop"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("look it up")}), log.sink());
+    server.stop();
+
+    check(result.success, "the run completed");
+    auto requests = server.requests();
+    check(requests.size() >= 4, "the model got a fourth turn");
+    if (requests.size() < 4)
+        return;
+    auto tools = tool_messages(requests[3]);
+    check(!tools.empty(), "the tool results were sent back");
+    if (!tools.empty()) {
+        const std::string last = tools[tools.size() - 1].value("content", "");
+        check(last.find("same result") != std::string::npos, "the last result warns about the repetition");
+        check(last.find("alpha") != std::string::npos, "without hiding what the tool actually returned");
+    }
+}
+
+static void test_a_model_going_in_circles_is_stopped() {
+    test("a model that will not stop repeating itself is cut off and asked to explain");
+
+    ScriptedServer server({});
+    server.set_responder([](const json& request) -> json {
+        const auto& messages = request["messages"];
+        if (!messages.empty() && messages[0].value("content", "").rfind("Summarize", 0) == 0)
+            return {{"role", "assistant"}, {"content", "earlier context"}};
+        if (!request.contains("tools") || request["tools"].empty())
+            return {{"role", "assistant"}, {"content", "I kept checking the same thing and got nowhere."}};
+        return assistant_calling("test_read", json::object(), "c");
+    });
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.max_iterations = 20; // the loop must stop long before this
+    harness.set_options(options);
+    EventLog log;
+    auto result = harness.run(json::array({user("go")}), log.sink());
+    server.stop();
+
+    check_eq(result.stop_reason, std::string("stuck"), "the run reports why it stopped");
+    check(result.iterations < 10, "it stopped early rather than burning the whole budget");
+    check(result.content.find("got nowhere") != std::string::npos, "and the model explained itself");
+}
+
+static void test_a_tool_that_keeps_failing_gets_a_nudge() {
+    test("a tool failing the same way repeatedly earns a warning telling the model to change tack");
+
+    ScriptedServer server({assistant_calling("test_fail", json::object(), "c1"),
+                           assistant_calling("test_fail", json::object(), "c2"),
+                           assistant_calling("test_fail", json::object(), "c3"),
+                           {{"role", "assistant"}, {"content", "I will try another way"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("try it")}), log.sink());
+    server.stop();
+
+    auto requests = server.requests();
+    check(requests.size() >= 4, "the model got a fourth turn");
+    if (requests.size() < 4)
+        return;
+    auto tools = tool_messages(requests[3]);
+    if (!tools.empty()) {
+        const std::string last = tools[tools.size() - 1].value("content", "");
+        check(last.find("failed") != std::string::npos, "the warning names the repeated failure");
+        check(last.find("disk is on fire") != std::string::npos, "and still carries the real error");
+    }
+}
+
 static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
     test("a transport failure ends the run with an error instead of retrying without tools");
 
@@ -1871,6 +1952,9 @@ int main() {
     test_unknown_tool_is_reported_as_a_step();
     test_tool_events_carry_the_call_id();
     test_budget_exhaustion_asks_the_model_to_wrap_up();
+    test_a_repeated_call_gets_a_nudge();
+    test_a_model_going_in_circles_is_stopped();
+    test_a_tool_that_keeps_failing_gets_a_nudge();
     test_sampling_and_thinking_reach_the_model();
     test_thinking_flag_is_sent_even_without_tools();
     test_reasoning_only_reply_still_answers_the_user();
