@@ -8,6 +8,16 @@ const IS_TAURI =
 	typeof window !== 'undefined' &&
 	('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 
+// True when the content array holds an attachment a plain string cannot carry.
+function hasAttachmentParts(content: unknown): boolean {
+	return (
+		Array.isArray(content) &&
+		content.some(
+			(p: Record<string, unknown>) => typeof p?.type === 'string' && p.type !== 'text'
+		)
+	);
+}
+
 function flattenContent(content: unknown): string {
 	if (typeof content === 'string') return content;
 	if (Array.isArray(content)) {
@@ -156,7 +166,9 @@ export class ChatService {
 		const requestBody: ApiChatCompletionRequest = {
 			messages: alternatingMessages.map((msg: ApiChatMessageData) => ({
 				role: msg.role,
-				content: useTools ? flattenContent(msg.content) : msg.content,
+				// Flattening drops image and audio parts, so a message carrying one is sent as-is.
+				content:
+					useTools && !hasAttachmentParts(msg.content) ? flattenContent(msg.content) : msg.content,
 				...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
 				...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
 				...(msg.name ? { name: msg.name } : {})

@@ -90,7 +90,18 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
                 continue;
             }
             nlohmann::json copy = msg;
-            copy["content"] = message_text(msg);
+            // Keep attachments intact; only flatten content that is really just text. The token
+            // cost still comes from the text, which is the best estimate available here.
+            bool attachment = false;
+            if (msg.contains("content") && msg["content"].is_array()) {
+                for (const auto& part : msg["content"]) {
+                    if (part.is_object() && part.contains("type") && part["type"].is_string() &&
+                        part["type"].get<std::string>() != "text")
+                        attachment = true;
+                }
+            }
+            if (!attachment)
+                copy["content"] = message_text(msg);
             if (is_tool_message(copy)) {
                 std::string content = copy["content"].get<std::string>();
                 if (content.size() > kMaxToolResultChars) {

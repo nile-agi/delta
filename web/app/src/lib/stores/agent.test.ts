@@ -36,6 +36,6 @@ describe('agent store', () => {
 		agentStore.handleEvent('m2', event('tool_result', { call_id: 'a', name: 'read_file', success: false, error: 'nope' }));
 
 		const steps = agentStore.activityFor('m2')?.steps ?? [];
-		expect(steps.map((s) => s.status)).toEqual(['failed', 'running']);
+		expect(steps.map((s: AgentActivityStep) => s.status)).toEqual(['failed', 'running']);
 	});
 });

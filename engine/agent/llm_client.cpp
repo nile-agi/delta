@@ -180,6 +180,20 @@ size_t sse_write_callback(void* contents, size_t size, size_t nmemb, void* userd
 LlmClient::LlmClient(std::string server_url, std::string model_name)
     : server_url_(std::move(server_url)), model_name_(std::move(model_name)) {}
 
+namespace {
+// True when the message's content array holds something a plain string cannot represent.
+bool has_non_text_parts(const nlohmann::json& msg) {
+    if (!msg.is_object() || !msg.contains("content") || !msg["content"].is_array())
+        return false;
+    for (const auto& part : msg["content"]) {
+        if (part.is_object() && part.contains("type") && part["type"].is_string() &&
+            part["type"].get<std::string>() != "text")
+            return true;
+    }
+    return false;
+}
+} // namespace
+
 nlohmann::json LlmClient::build_request_body(const nlohmann::json& messages, const nlohmann::json& tools,
                                              const std::string& tool_choice, bool stream) const {
     // llama-server wants a plain string content on every message.
@@ -189,7 +203,10 @@ nlohmann::json LlmClient::build_request_body(const nlohmann::json& messages, con
             continue;
         nlohmann::json clean;
         clean["role"] = msg.value("role", "user");
-        clean["content"] = message_text(msg);
+        // Content is flattened to a string, which is what most chat templates want. The exception
+        // is a message carrying an image or audio part: flattening would silently throw the
+        // attachment away, so those go out in OpenAI's array form for the model to handle.
+        clean["content"] = has_non_text_parts(msg) ? msg["content"] : nlohmann::json(message_text(msg));
         // Preserve the fields that make multi-turn tool conversations work.
         if (msg.contains("tool_call_id"))
             clean["tool_call_id"] = msg["tool_call_id"];

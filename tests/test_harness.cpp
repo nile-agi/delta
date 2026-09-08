@@ -1549,6 +1549,39 @@ static void test_a_call_missing_a_required_argument_never_runs() {
     }
 }
 
+static void test_image_attachments_reach_the_model() {
+    test("an attachment survives the trip to the model instead of being flattened away");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "I see it"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+
+    json message = {
+        {"role", "user"},
+        {"content", json::array({{{"type", "text"}, {"text", "what is this?"}},
+                                 {{"type", "image_url"}, {"image_url", {{"url", "data:image/png;base64,AAAA"}}}}})}};
+    EventLog log;
+    harness.run(json::array({message}), log.sink());
+    server.stop();
+
+    auto requests = server.requests();
+    check(!requests.empty(), "a request was made");
+    if (requests.empty())
+        return;
+    const auto& sent = requests[0]["messages"];
+    bool found_image = false;
+    for (const auto& m : sent) {
+        if (!m.contains("content") || !m["content"].is_array())
+            continue;
+        for (const auto& part : m["content"]) {
+            if (part.is_object() && part.value("type", "") == "image_url")
+                found_image = true;
+        }
+    }
+    check(found_image, "the image part was sent, not silently dropped");
+}
+
 static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
     test("a transport failure ends the run with an error instead of retrying without tools");
 
@@ -2125,6 +2158,7 @@ int main() {
     test_a_tool_that_keeps_failing_gets_a_nudge();
     test_an_empty_reply_is_not_passed_off_as_an_answer();
     test_a_call_missing_a_required_argument_never_runs();
+    test_image_attachments_reach_the_model();
     test_a_server_error_is_not_blamed_on_the_tool_schemas();
     test_sampling_and_thinking_reach_the_model();
     test_thinking_flag_is_sent_even_without_tools();
