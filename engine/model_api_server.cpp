@@ -1037,9 +1037,10 @@ class ModelAPIServer {
                         return;
                     }
 
+                    // Deliberately no `tool_calls` on the message. The harness has already run
+                    // them; an OpenAI-compatible client that saw them here would run every one a
+                    // second time, with the side effects. What was run is reported below instead.
                     json message = {{"role", "assistant"}, {"content", result.content}};
-                    if (!result.executed_tools.empty())
-                        message["tool_calls"] = result.executed_tools;
                     // Not OpenAI-shaped; the harness's own record of the turn for clients that
                     // want to resend it as history.
                     json transcript = bounded_transcript(result.transcript_delta);
@@ -1049,10 +1050,12 @@ class ModelAPIServer {
                                      {"usage", {{"prompt_tokens", 0}, {"completion_tokens", 0}, {"total_tokens", 0}}}};
                     if (result.tool_calls > 0) {
                         response["tool_calls_made"] = result.tool_calls;
+                        response["tools_run"] = result.executed_tools;
                         response["iterations"] = result.iterations;
                         response["stop_reason"] = result.stop_reason;
-                        response["transcript"] = transcript;
                     }
+                    if (!transcript.empty())
+                        response["transcript"] = transcript;
                     res.set_content(response.dump(), "application/json");
                 }
             } catch (const json::parse_error&) {
