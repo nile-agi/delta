@@ -213,8 +213,10 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
     }
 
     if (memory.ready()) {
-        auto pinned_memories = memory.pinned(5);
-        auto relevant = memory.search(last_user_text(messages), 5);
+        // Scoped to this conversation plus the general ones, so an unrelated job's details never
+        // turn up in the prompt.
+        auto pinned_memories = memory.pinned(5, scratchpad_key());
+        auto relevant = memory.search(last_user_text(messages), 5, scratchpad_key());
         std::set<std::string> seen;
         std::string lines;
         for (const auto& m : pinned_memories) {

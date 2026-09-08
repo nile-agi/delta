@@ -1527,6 +1527,67 @@ static void test_working_notes_are_cleared_when_the_job_finishes() {
     check(memory.get_notes(convo).empty(), "the notes went with the job");
 }
 
+static void test_memories_do_not_leak_between_conversations() {
+    test("what you learn in one conversation stays there unless it is a general way of doing things");
+
+    auto& memory = MemoryStore::instance();
+    const std::string alpha = "conv_alpha";
+    const std::string beta = "conv_beta";
+    const std::string specific = memory.remember("The staging box is called pluto", "fact", "", 3, "test", alpha);
+    const std::string general =
+        memory.remember("Always run the tests before committing", "preference", "", 3, "test", "");
+    check(!specific.empty() && !general.empty(), "both memories were saved");
+
+    auto has = [](const std::vector<Memory>& found, const std::string& id) {
+        for (const auto& m : found)
+            if (m.id == id)
+                return true;
+        return false;
+    };
+
+    check(has(memory.search("", 50, alpha), specific), "the conversation that learned it can recall it");
+    check(!has(memory.search("", 50, beta), specific), "another conversation cannot");
+    check(has(memory.search("", 50, alpha), general), "a general memory is available in one conversation");
+    check(has(memory.search("", 50, beta), general), "and in the other");
+
+    check(!has(memory.pinned(50, beta), specific), "nor is it pinned into another conversation's prompt");
+    check(has(memory.pinned(50, beta), general), "while the general one is");
+
+    // Browsing with no conversation shows everything, which is what /memory is for.
+    check(has(memory.search("", 50, ""), specific), "browsing without a conversation still shows it");
+
+    memory.forget(specific);
+    memory.forget(general);
+}
+
+static void test_remember_scopes_to_the_current_job_by_default() {
+    test("a memory the model saves mid-task belongs to that task unless it says otherwise");
+
+    auto& memory = MemoryStore::instance();
+    const std::string convo = "conv_scope_default";
+
+    ScriptedServer server({assistant_calling("remember", {{"content", "The report is due on Friday"}}, "c0"),
+                           {{"role", "assistant"}, {"content", "Saved."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.enabled_categories = {"memory"};
+    options.scratchpad_id = convo;
+    harness.set_options(options);
+    EventLog log;
+    auto result = harness.run(json::array({user("keep that in mind")}), log.sink());
+    server.stop();
+
+    check(result.success, "the run completed");
+    auto here = memory.search("report", 20, convo);
+    auto elsewhere = memory.search("report", 20, "conv_somewhere_else");
+    check(!here.empty(), "the job that saved it can recall it");
+    check(elsewhere.empty(), "another conversation cannot");
+
+    for (const auto& m : here)
+        memory.forget(m.id);
+}
+
 // ------------------------------------------------------- deferred tool loading
 
 // The tool names a recorded request actually offered the model.
@@ -1799,6 +1860,8 @@ int main() {
     test_policy_is_remembered();
     test_scratchpad_plan();
 
+    test_memories_do_not_leak_between_conversations();
+    test_remember_scopes_to_the_current_job_by_default();
     test_working_notes_survive_into_the_next_turn();
     test_working_notes_are_capped_and_keep_the_newest();
     test_working_notes_are_cleared_when_the_job_finishes();

@@ -17,6 +17,9 @@ struct Memory {
     std::string tags;
     int importance = 1; // 1 normal, 2 notable, 3 always-load
     std::string source;
+    // Empty means general: a way of doing things that applies in any conversation. Otherwise the
+    // conversation that learned it, and the only one it is recalled in.
+    std::string conversation_id;
     std::string created_at;
     std::string updated_at;
     int use_count = 0;
@@ -42,14 +45,18 @@ class MemoryStore {
     bool ready() const { return db_ != nullptr; }
 
     // --- long-term memory ---
+    // `conversation_id` empty saves a general memory, visible everywhere. Anything else scopes the
+    // memory to that conversation, so one job's details never surface in an unrelated one.
     std::string remember(const std::string& content, const std::string& kind, const std::string& tags, int importance,
-                         const std::string& source = "");
+                         const std::string& source = "", const std::string& conversation_id = "");
     bool forget(const std::string& id);
     bool touch(const std::string& id);
     // Keyword-ranked retrieval. Falls back to most-important-and-recent when `query` is empty.
-    std::vector<Memory> search(const std::string& query, int limit) const;
-    // Memories marked importance >= 3, always loaded into the system prompt.
-    std::vector<Memory> pinned(int limit) const;
+    // `conversation_id` limits the result to general memories plus that conversation's own; pass ""
+    // to browse everything, which is what the /memory command and the settings UI want.
+    std::vector<Memory> search(const std::string& query, int limit, const std::string& conversation_id = "") const;
+    // Memories marked importance >= 3, always loaded into the system prompt. Same scoping rule.
+    std::vector<Memory> pinned(int limit, const std::string& conversation_id = "") const;
     std::vector<Memory> recent(int limit) const;
     int count() const;
 

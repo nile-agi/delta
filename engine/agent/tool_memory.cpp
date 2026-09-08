@@ -1,6 +1,7 @@
 #include "tool_memory.h"
 #include "memory_store.h"
 #include "tool_registry.h"
+#include "tool_task.h"
 #include <algorithm>
 
 namespace delta {
@@ -11,10 +12,12 @@ void register_memory_tools() {
 
     registry.register_tool(
         {"remember",
-         "Save a durable fact, preference, or piece of context about the user so it survives after "
-         "this conversation ends. Use it when the user tells you something worth knowing later "
-         "(how they like things done, what they are working on, names, recurring constraints). "
-         "Do not use it for one-off task details or anything already stored as an event or note.",
+         "Save something about the user that should outlive this exchange. Two kinds: scope='general' "
+         "for how they like things done, which you will recall in any conversation, and the default "
+         "scope='this_task' for details that only make sense within the job you are on now. Prefer "
+         "the default -- a detail from one job showing up in an unrelated one is worse than not "
+         "recalling it. Use note_to_self for working notes, and do not save anything already stored "
+         "as an event or a note.",
          {{"type", "object"},
           {"properties",
            {{"content", {{"type", "string"}, {"description", "The fact, written so it makes sense on its own"}}},
@@ -24,6 +27,11 @@ void register_memory_tools() {
               {"description", "fact = about the user or world; preference = how they want things done; "
                               "project = ongoing work; reference = a pointer to something external"}}},
             {"tags", {{"type", "string"}, {"description", "Comma-separated tags for retrieval"}}},
+            {"scope",
+             {{"type", "string"},
+              {"enum", {"this_task", "general"}},
+              {"description", "this_task (default) keeps it to the job you are on now; general is for a "
+                              "standing preference or a way of doing things that applies to any conversation"}}},
             {"importance",
              {{"type", "integer"}, {"description", "1 = recall when relevant (default), 3 = always keep in mind"}}}}},
           {"required", {"content"}}},
@@ -33,8 +41,12 @@ void register_memory_tools() {
             const std::string content = args.value("content", "");
             if (content.empty())
                 return {false, "", "content is required"};
-            const std::string id = MemoryStore::instance().remember(
-                content, args.value("kind", "fact"), args.value("tags", ""), args.value("importance", 1), "chat");
+            // Scoped by default: a detail from one job has no business surfacing in an unrelated one.
+            const std::string scope = args.value("scope", "this_task");
+            const std::string conversation = scope == "general" ? std::string() : active_run_id();
+            const std::string id =
+                MemoryStore::instance().remember(content, args.value("kind", "fact"), args.value("tags", ""),
+                                                 args.value("importance", 1), "chat", conversation);
             if (id.empty())
                 return {false, "", "Could not save that memory"};
             return {true, nlohmann::json{{"saved", true}, {"id", id}}.dump(), ""};
@@ -54,7 +66,7 @@ void register_memory_tools() {
          "memory"},
         [](const nlohmann::json& args) -> ToolResult {
             const int limit = std::max(1, std::min(20, args.value("limit", 5)));
-            auto results = MemoryStore::instance().search(args.value("query", ""), limit);
+            auto results = MemoryStore::instance().search(args.value("query", ""), limit, active_run_id());
             nlohmann::json out = nlohmann::json::array();
             for (const auto& m : results) {
                 MemoryStore::instance().touch(m.id);

@@ -104,6 +104,7 @@ bool MemoryStore::init(sqlite3* db) {
         tags TEXT DEFAULT '',
         importance INTEGER DEFAULT 1,
         source TEXT DEFAULT '',
+        conversation_id TEXT DEFAULT '',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         use_count INTEGER DEFAULT 0
@@ -133,6 +134,23 @@ bool MemoryStore::init(sqlite3* db) {
       );
     )";
 
+    // Databases created before memories were scoped have no conversation_id. Add it rather than
+    // rebuilding the table; the existing rows are general, which is how they were saved.
+    bool has_conversation_id = false;
+    sqlite3_stmt* columns = nullptr;
+    if (sqlite3_prepare_v2(db, "PRAGMA table_info(agent_memories)", -1, &columns, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(columns) == SQLITE_ROW) {
+            const unsigned char* name = sqlite3_column_text(columns, 1);
+            if (name && std::string(reinterpret_cast<const char*>(name)) == "conversation_id")
+                has_conversation_id = true;
+        }
+        sqlite3_finalize(columns);
+        if (!has_conversation_id) {
+            sqlite3_exec(db, "ALTER TABLE agent_memories ADD COLUMN conversation_id TEXT DEFAULT ''", nullptr, nullptr,
+                         nullptr);
+        }
+    }
+
     char* err = nullptr;
     if (sqlite3_exec(db_, schema, nullptr, nullptr, &err) != SQLITE_OK) {
         std::cerr << "[delta-memory] schema init failed: " << (err ? err : "unknown") << std::endl;
@@ -144,7 +162,7 @@ bool MemoryStore::init(sqlite3* db) {
 }
 
 std::string MemoryStore::remember(const std::string& content, const std::string& kind, const std::string& tags,
-                                  int importance, const std::string& source) {
+                                  int importance, const std::string& source, const std::string& conversation_id) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!db_ || content.empty())
         return "";
@@ -155,9 +173,12 @@ std::string MemoryStore::remember(const std::string& content, const std::string&
     // re-save the same fact whenever it comes up again.
     {
         sqlite3_stmt* dup = nullptr;
-        const char* dup_sql = "SELECT id FROM agent_memories WHERE lower(content) = lower(?) LIMIT 1";
+        // Scoped: the same sentence learned in two conversations is two memories, not one.
+        const char* dup_sql =
+            "SELECT id FROM agent_memories WHERE lower(content) = lower(?) AND conversation_id = ? LIMIT 1";
         if (sqlite3_prepare_v2(db_, dup_sql, -1, &dup, nullptr) == SQLITE_OK) {
             sqlite3_bind_text(dup, 1, content.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(dup, 2, conversation_id.c_str(), -1, SQLITE_TRANSIENT);
             if (sqlite3_step(dup) == SQLITE_ROW) {
                 std::string existing = col_text(dup, 0);
                 sqlite3_finalize(dup);
@@ -181,7 +202,7 @@ std::string MemoryStore::remember(const std::string& content, const std::string&
     const std::string id = new_id();
     sqlite3_stmt* stmt = nullptr;
     const char* sql = "INSERT INTO agent_memories (id, kind, content, tags, importance, source, created_at, "
-                      "updated_at, use_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)";
+                      "updated_at, use_count, conversation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         std::cerr << "[delta-memory] remember prepare failed: " << sqlite3_errmsg(db_) << std::endl;
         return "";
@@ -194,6 +215,7 @@ std::string MemoryStore::remember(const std::string& content, const std::string&
     sqlite3_bind_text(stmt, 6, source.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 7, now.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 8, now.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 9, conversation_id.c_str(), -1, SQLITE_TRANSIENT);
     const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_finalize(stmt);
     return ok ? id : "";
@@ -226,13 +248,28 @@ bool MemoryStore::touch(const std::string& id) {
     return ok;
 }
 
+// Keeps the general memories plus the ones this conversation learned. An empty conversation means
+// "no filtering", which is what browsing wants. Legacy rows have no conversation and count as
+// general: they were saved when every memory applied everywhere.
+static std::vector<Memory> in_scope(std::vector<Memory> all, const std::string& conversation_id) {
+    if (conversation_id.empty())
+        return all;
+    std::vector<Memory> out;
+    out.reserve(all.size());
+    for (auto& m : all) {
+        if (m.conversation_id.empty() || m.conversation_id == conversation_id)
+            out.push_back(std::move(m));
+    }
+    return out;
+}
+
 std::vector<Memory> MemoryStore::query_all() const {
     std::vector<Memory> out;
     if (!db_)
         return out;
     sqlite3_stmt* stmt = nullptr;
-    const char* sql = "SELECT id, kind, content, tags, importance, source, created_at, updated_at, use_count "
-                      "FROM agent_memories";
+    const char* sql = "SELECT id, kind, content, tags, importance, source, created_at, updated_at, use_count, "
+                      "conversation_id FROM agent_memories";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
         return out;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -246,15 +283,16 @@ std::vector<Memory> MemoryStore::query_all() const {
         m.created_at = col_text(stmt, 6);
         m.updated_at = col_text(stmt, 7);
         m.use_count = sqlite3_column_int(stmt, 8);
+        m.conversation_id = col_text(stmt, 9);
         out.push_back(std::move(m));
     }
     sqlite3_finalize(stmt);
     return out;
 }
 
-std::vector<Memory> MemoryStore::search(const std::string& query, int limit) const {
+std::vector<Memory> MemoryStore::search(const std::string& query, int limit, const std::string& conversation_id) const {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto all = query_all();
+    auto all = in_scope(query_all(), conversation_id);
     if (all.empty() || limit <= 0)
         return {};
 
@@ -301,9 +339,9 @@ std::vector<Memory> MemoryStore::search(const std::string& query, int limit) con
     return out;
 }
 
-std::vector<Memory> MemoryStore::pinned(int limit) const {
+std::vector<Memory> MemoryStore::pinned(int limit, const std::string& conversation_id) const {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto all = query_all();
+    auto all = in_scope(query_all(), conversation_id);
     std::vector<Memory> out;
     std::sort(all.begin(), all.end(), [](const Memory& a, const Memory& b) { return a.updated_at > b.updated_at; });
     for (auto& m : all) {
