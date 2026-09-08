@@ -41,6 +41,11 @@ void ContextManager::recompute_budget() {
         budget_ = 512; // a tiny window still has to carry the system prompt and one turn
 }
 
+void ContextManager::set_reserve_output(int tokens) {
+    reserve_output_ = tokens > 0 ? tokens : 512;
+    recompute_budget();
+}
+
 void ContextManager::set_tool_overhead(int tokens) {
     tool_overhead_ = tokens > 0 ? tokens : 0;
     recompute_budget();

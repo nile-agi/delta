@@ -38,6 +38,10 @@ class ContextManager {
     // this the budget silently ignores the largest fixed cost of an agent turn.
     void set_tool_overhead(int tokens);
 
+    // How much of the window is held back for the model's reply. Lowered when a small context and
+    // a large tool set would otherwise leave no room for the conversation.
+    void set_reserve_output(int tokens);
+
     void set_summarizer(Summarizer fn) { summarize_ = std::move(fn); }
     void set_token_counter(TokenCounter fn) { count_ = std::move(fn); }
 

@@ -378,6 +378,22 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             cached_tool_hash = hash;
         }
         context.set_tool_overhead(cached_tool_tokens);
+
+        // A small window plus a large tool set can leave no room for the conversation at all. The
+        // reply length is the one thing the harness can give up, so trim it rather than send a
+        // request the server will reject.
+        constexpr int kMinRoomForHistory = 768;
+        constexpr int kMinReplyTokens = 256;
+        const int spare = n_ctx - cached_tool_tokens - kMinRoomForHistory;
+        if (spare < options_.max_tokens) {
+            const int trimmed = std::max(kMinReplyTokens, spare);
+            if (trimmed < options_.max_tokens) {
+                LlmConfig cfg = client_.config();
+                cfg.max_tokens = trimmed;
+                client_.set_config(cfg);
+                context.set_reserve_output(trimmed);
+            }
+        }
     };
 
     // Working transcript: the client's history plus everything this run adds.

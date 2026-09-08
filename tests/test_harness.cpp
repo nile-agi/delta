@@ -967,6 +967,30 @@ static void test_the_compaction_summary_is_paid_for(void) {
     check_eq(context.stats().used_tokens, total, "and the reported figure matches what was built");
 }
 
+static void test_a_narrow_window_gives_up_output_room_rather_than_overflowing() {
+    test("on a small context the reply length is trimmed so the request still fits");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "ok"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.enabled_categories = {"bulky"}; // a deliberately huge schema
+    options.n_ctx = 2048;
+    options.max_tokens = 1800; // more than the window can spare once the schemas are counted
+    harness.set_options(options);
+    EventLog log;
+    harness.run(json::array({user("hello")}), log.sink());
+    server.stop();
+
+    auto requests = server.requests();
+    check(!requests.empty(), "a request was made");
+    if (requests.empty())
+        return;
+    const int asked_for = requests[0].value("max_tokens", 0);
+    check(asked_for > 0 && asked_for < 1800, "the reply budget was cut to fit the window");
+    check(asked_for >= 256, "but not so far that the model cannot answer");
+}
+
 // ----------------------------------------------------------- context manager
 
 static void test_context_keeps_system_prompt_and_recent_turns() {
@@ -2293,6 +2317,7 @@ int main() {
 
     test_context_budget_accounts_for_tool_schemas();
     test_the_compaction_summary_is_paid_for();
+    test_a_narrow_window_gives_up_output_room_rather_than_overflowing();
     test_harness_charges_the_conversation_for_the_tool_schemas();
     test_context_keeps_system_prompt_and_recent_turns();
     test_context_never_orphans_tool_messages();
