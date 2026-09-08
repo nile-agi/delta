@@ -585,7 +585,7 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 1.89,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(1.89),
-				quantization: 'Q8_0'	
+				quantization: 'Q8_0'
 			},
 			{
 				name: 'deepseek-r1:7b',
@@ -626,7 +626,7 @@ export const modelsCatalog: ModelFamily[] = [
 				quantization: 'Q4_K_M'
 
 			}
-		]	
+		]
 	},
 	{
 		id: 'deepseek-ocr',
@@ -642,9 +642,9 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 2.61,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(2.61),
-				quantization: 'Q6_K'	
+				quantization: 'Q6_K'
 			}
-		]	
+		]
 	},
 	{
 		id: 'deepseek-coder',
@@ -660,7 +660,7 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 1.43,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(1.43),
-				quantization: 'Q8_0'	
+				quantization: 'Q8_0'
 			},
 			{
 				name: 'deepseek-coder-6.7b',
@@ -669,7 +669,7 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 6.7,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(6.7),
-				quantization: 'Q4_K_M'	
+				quantization: 'Q4_K_M'
 			},
 			{
 				name: 'deepseek-coder-7b',
@@ -678,9 +678,9 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 4.22,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(4.22),
-				quantization: 'Q4_K_M'	
+				quantization: 'Q4_K_M'
 			}
-		]	
+		]
 	},
 	{
 		id: 'Llama 3.2',
@@ -696,7 +696,7 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 1.32,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(1.32),
-				quantization: 'Q8_0'	
+				quantization: 'Q8_0'
 			},
 			{
 				name: 'llama3.2-3b',
@@ -705,9 +705,9 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 2.32,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(2.32),
-				quantization: 'Q5_K_M'	
+				quantization: 'Q5_K_M'
 			}
-		]	
+		]
 	},
 	{
 		id: 'Llama 3.1',
@@ -723,9 +723,9 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 4.92,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(4.92),
-				quantization: 'Q4_K_M'	
+				quantization: 'Q4_K_M'
 			}
-		]	
+		]
 	},
 	{
 		id: 'Tiny Aya',
@@ -741,7 +741,7 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 2.14,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(2.14),
-				quantization: 'Q4_K_M'	
+				quantization: 'Q4_K_M'
 			},
 			{
 				name: 'tiny-aya-earth',
@@ -750,7 +750,7 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 2.14,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(2.14),
-				quantization: 'Q4_K_M'	
+				quantization: 'Q4_K_M'
 			},
 			{
 				name: 'tiny-aya-fire',
@@ -759,7 +759,7 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 2.14,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(2.14),
-				quantization: 'Q4_K_M'	
+				quantization: 'Q4_K_M'
 			},
 			{
 				name: 'tiny-aya-water',
@@ -768,9 +768,9 @@ export const modelsCatalog: ModelFamily[] = [
 				file_size_gb: 2.14,
 				context_size: 131072,
 				required_ram_gb: calculateRequiredRAM(2.14),
-				quantization: 'Q4_K_M'	
+				quantization: 'Q4_K_M'
 			}
-		]	
+		]
 	},
 	// {
 	// 	id: 'Bonsai',
@@ -786,7 +786,7 @@ export const modelsCatalog: ModelFamily[] = [
 	// 			file_size_gb: 1.16,
 	// 			context_size: 65536,
 	// 			required_ram_gb: calculateRequiredRAM(1.16),
-	// 			quantization: 'Q1_0'	
+	// 			quantization: 'Q1_0'
 	// 		},
 	// 		{
 	// 			name: 'Bonsai-4B',
@@ -795,7 +795,7 @@ export const modelsCatalog: ModelFamily[] = [
 	// 			file_size_gb: 0.572,
 	// 			context_size: 65536,
 	// 			required_ram_gb: calculateRequiredRAM(0.572),
-	// 			quantization: 'Q1_0'	
+	// 			quantization: 'Q1_0'
 	// 		},
 	// 		{
 	// 			name: 'Bonsai-1.7B',
@@ -804,9 +804,9 @@ export const modelsCatalog: ModelFamily[] = [
 	// 			file_size_gb: 0.248,
 	// 			context_size: 65536,
 	// 			required_ram_gb: calculateRequiredRAM(0.248),
-	// 			quantization: 'Q1_0'	
+	// 			quantization: 'Q1_0'
 	// 		},
-	// 	]	
+	// 	]
 	// }
 
 		{
@@ -1025,29 +1025,56 @@ export const modelsCatalog: ModelFamily[] = [
 			}
 		]
 	},
+	// {
+	// 	id: 'spark-llm',
+	// 	name: 'Spark LLM',
+	// 	description:
+	// 		"SparkLLM focuses on developing leading general-purpose foundation models and professional AI agent products.",
+	// 	icon: 'tokenspark-logo.svg',
+	// 	models: [
+	// 		{
+	// 			name: 'spark-x2.5:4b',
+	// 			display_name: 'spark x2.5 4B',
+	// 			download_url: 'abenzerps/Spark-X2.5-4B-GGUF',
+	// 			file_size_gb: 2.6,
+	// 			context_size: 131072,
+	// 			required_ram_gb: calculateRequiredRAM(2.6),
+	// 			quantization: 'Q4_K_M'
+	// 		},
+	// 		{
+	// 			name: 'spark-x2.5:1.7b',
+	// 			display_name: 'spark x2.5 1.7B',
+	// 			download_url: 'iamalexied/Spark-X2.5-1.7B-GGUF',
+	// 			file_size_gb: 1.11,
+	// 			context_size: 131072,
+	// 			required_ram_gb: calculateRequiredRAM(1.11),
+	// 			quantization: 'Q4_K_M'
+	// 		}
+	// 	]
+	// },
 	{
-		id: 'spark-llm',
-		name: 'Spark LLM',
+		id: 'MiniCPM5',
+		name: 'MiniCPM5',
 		description:
-			"SparkLLM focuses on developing leading general-purpose foundation models and professional AI agent products.",
-		icon: 'tokenspark-logo.svg',
+			"OpenBMB (Open Lab for Big Model Base) aims to build foundation models and systems towards AGI.",
+		icon: 'openbmb logo.webp',
 		models: [
 			{
-				name: 'spark-x2.5:4b',
-				display_name: 'spark x2.5 4B',
-				download_url: 'abenzerps/Spark-X2.5-4B-GGUF',
-				file_size_gb: 2.6,
-				context_size: 32768,
-				required_ram_gb: calculateRequiredRAM(2.6),
-				quantization: 'Q4_K_M'
+				name: 'MiniCPM5:1b',
+				display_name: 'MiniCPM5 1B',
+				download_url: 'NANI-Nithin/MiniCPM5-1B-GGUF',
+				file_size_gb: 0.892,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(0.892),
+				quantization: 'Q6_K'
 			},
 			{
-				name: 'spark-x2.5:1.7b',
-				display_name: 'spark x2.5 1.7B',
-				download_url: 'iamalexied/Spark-X2.5-1.7B-GGUF',
-				file_size_gb: 1.11,
-				context_size: 32768,
-				required_ram_gb: calculateRequiredRAM(1.11),
+				name: 'MiniCPM5:2b',
+				display_name: 'MiniCPM5 2B',
+				download_url: 'openbmb/MiniCPM5-2B-GGUF',
+				file_size_gb: 1.56,
+				context_size: 131072,
+				required_ram_gb: calculateRequiredRAM(1.56),
 				quantization: 'Q4_K_M'
 			}
 		]
@@ -1089,6 +1116,7 @@ export const FAMILY_LOGO_FILES: Record<string, string> = {
 	granite: 'ibm logo.png',
 	tencent: 'tencent-color.svg',
 	sparkLLM: 'tokenspark-logo.svg',
+	MiniCPM5: 'openbmb logo.webp',
 };
 
 /** True if icon is a logo filename (has file extension). */
@@ -1123,6 +1151,7 @@ export function getFamilyIconForModelName(name: string): string {
 	if (lower.includes('liquidai')) return FAMILY_LOGO_FILES.liquidai;
 	if (lower.includes('granite') || lower.includes('ibm')) return FAMILY_LOGO_FILES.ibm;
 	if (lower.includes('sparkLLM')) return FAMILY_LOGO_FILES.sparkLLM;
+	if (lower.includes('MiniCPM5')) return FAMILY_LOGO_FILES.MiniCPM5;
 	return '●';
 }
 
@@ -1144,6 +1173,7 @@ const PROVIDER_BY_LOGO: Record<string, string> = {
 	'ibm logo.png': 'IBM',
 	'tencent-color.svg': 'Tencent',
 	'tokenspark-logo.svg': 'SparkLLM',
+	'MiniCPM5 logo.webp': 'MiniCPM5',
 };
 
 /** Display order for provider sections in the Catalog; unknown providers fall after these. */
@@ -1163,6 +1193,7 @@ export const PROVIDER_ORDER: string[] = [
 	'IBM',
 	'Tencent',
 	'SparkLLM',
+	'MiniCPM5',
 	'Other',
 ];
 

@@ -1211,12 +1211,12 @@ void ModelManager::init_model_registry() {
         true // supports_tools
     };
     model_registry_["gemma3:27b"] = {
-        "gemma3:27b", "gemma3-27b",          
-        "google/gemma-3-27b-it-GGUF", 
+        "gemma3:27b", "gemma3-27b",
+        "google/gemma-3-27b-it-GGUF",
         "gemma-3-27b-it-Q4_K_M.gguf",
-        "Q4_K_M",     
-        16500LL * 1024 * 1024, 
-        "Gemma 3 27B Instruct",       
+        "Q4_K_M",
+        16500LL * 1024 * 1024,
+        "Gemma 3 27B Instruct",
         "Gemma 3 27B",
         32768,
         true // supports_tools
@@ -1260,7 +1260,7 @@ void ModelManager::init_model_registry() {
         "Gemma 3N E2B",
         0,   // use model default (-c from model)
         true // supports_tools
-    };  
+    };
 
     model_registry_["gemma3n:e4b"] = {
         "gemma3n:e4b",
@@ -2367,7 +2367,7 @@ void ModelManager::init_model_registry() {
     model_registry_["spark-x2.5:4b"] = {
         "spark-x2.5:4b",
         "spark-x2.5:4b",
-        "abenzerps/Spark-X2.5-4B-GGUF",
+        "XHToken/Spark-X2.5-4B-GGUF",
         "Spark-X2.5-4B-Q4_K_M.gguf",
         "Q4_K_M",
         2480LL * 1024 * 1024, // ~2.6 GB
@@ -2380,12 +2380,39 @@ void ModelManager::init_model_registry() {
     model_registry_["spark-x2.5:1.7b"] = {
         "spark-x2.5:1.7b",
         "spark-x2.5:1.7b",
-        "iamalexied/Spark-X2.5-1.7B-GGUF",
-        "Spark-X2.5-1.7B.gguf-Q4_K_M.gguf",
+        "XHToken/Spark-X2.5-1.7B-GGUF",
+        "Spark-X2.5-1.7B-Q4_K_M.gguf",
         "Q4_K_M",
         1059LL * 1024 * 1024, // ~1.11 GB
         "Compact, general-purpose, efficient and accessible model. Deriver strong performance in conversation, writing, translation, reasoning, coding, tool use and agentic workflows. It supports a native context length of up to 1M tokens, and covers more than 200 languages.",
         "spark x2.5 1.7B",
+        0,    // use model default (-c from model)
+        true // supports_tools
+    };
+
+    // ===== MiniCPM5 SERIES (OpenBMB) =====
+    model_registry_["MiniCPM5:1b"] = {
+        "MiniCPM5:1b",
+        "MiniCPM5:1b",
+        "NANI-Nithin/MiniCPM5-1B-GGUF",
+        "MiniCPM5-1B-Q6_K.gguf",
+        "Q6_K",
+        851LL * 1024 * 1024, // ~0.892GB
+        "It is a dense 1B Transformer built for on-device, local deployment, and resource-constrained scenarios, reaching 1B-class open-source SOTA.",
+        "MiniCPM5 1B",
+        0,    // use model default (-c from model)
+        true // supports_tools
+    };
+
+    model_registry_["MiniCPM5:2b"] = {
+        "MiniCPM5:2b",
+        "MiniCPM5:2b",
+        "openbmb/MiniCPM5-2B-GGUF",
+        "MiniCPM5-2B-Q4_K_M.gguf",
+        "Q4_K_M",
+        1488LL * 1024 * 1024, // ~1.56 GB
+        "It is a dense 2B Transformer that scales up the same training recipe, built for on-device, local deployment, and resource-constrained scenarios, reaching 2B-class open-source SOTA.",
+        "MiniCPM5 2B",
         0,    // use model default (-c from model)
         true // supports_tools
     };
