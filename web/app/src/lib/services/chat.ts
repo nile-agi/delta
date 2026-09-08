@@ -18,6 +18,36 @@ function hasAttachmentParts(content: unknown): boolean {
 	);
 }
 
+// Streamed tool calls arrive as fragments keyed by index: the first carries the name, later ones
+// append to the arguments. Collecting them without merging leaves entries with no name and a
+// sliced argument string, which is what the UI ends up showing.
+function mergeToolCallDeltas(
+	collected: DatabaseMessageToolCall[],
+	fragments: DatabaseMessageToolCall[]
+): void {
+	for (const fragment of fragments) {
+		const raw = fragment as Record<string, unknown>;
+		const index = typeof raw.index === 'number' ? raw.index : collected.length;
+		while (collected.length <= index) collected.push({});
+		const slot = collected[index] as Record<string, unknown>;
+
+		if (typeof raw.id === 'string' && raw.id) slot.id = raw.id;
+		if (typeof raw.type === 'string' && raw.type) slot.type = raw.type;
+
+		const fn = raw.function as Record<string, unknown> | undefined;
+		if (!fn) continue;
+		const target = (slot.function ?? (slot.function = {})) as Record<string, unknown>;
+		if (typeof fn.name === 'string' && fn.name) {
+			target.name = ((target.name as string) ?? '') + fn.name;
+			slot.name = target.name;
+		}
+		if (typeof fn.arguments === 'string') {
+			target.arguments = ((target.arguments as string) ?? '') + fn.arguments;
+			slot.arguments = target.arguments;
+		}
+	}
+}
+
 function flattenContent(content: unknown): string {
 	if (typeof content === 'string') return content;
 	if (Array.isArray(content)) {
@@ -410,7 +440,7 @@ export class ChatService {
 							const content = parsed.choices[0]?.delta?.content;
 							const reasoningContent = parsed.choices[0]?.delta?.reasoning_content;
 							const deltaToolCalls = parsed.choices[0]?.delta?.tool_calls;
-							if (deltaToolCalls?.length) collectedToolCalls.push(...deltaToolCalls);
+							if (deltaToolCalls?.length) mergeToolCallDeltas(collectedToolCalls, deltaToolCalls);
 							const timings = parsed.timings;
 							const promptProgress = parsed.prompt_progress;
 
@@ -588,7 +618,7 @@ export class ChatService {
 				const content = parsed.choices[0]?.delta?.content;
 				const reasoningContent = parsed.choices[0]?.delta?.reasoning_content;
 				const deltaToolCalls = parsed.choices[0]?.delta?.tool_calls;
-				if (deltaToolCalls?.length) collectedToolCalls.push(...deltaToolCalls);
+				if (deltaToolCalls?.length) mergeToolCallDeltas(collectedToolCalls, deltaToolCalls);
 				const timings = parsed.timings;
 				const promptProgress = parsed.prompt_progress;
 

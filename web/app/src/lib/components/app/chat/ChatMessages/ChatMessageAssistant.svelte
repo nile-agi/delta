@@ -356,7 +356,8 @@
 					<Wrench class="h-3.5 w-3.5" />
 					<span>Tool calls:</span>
 				</span>
-				{#each message.tool_calls as toolCall, index (toolCall.name ?? String(index))}
+				<!-- Keyed by position: two calls to the same tool share a name, and a duplicate key throws. -->
+				{#each message.tool_calls as toolCall, index (index)}
 					{@const badge = formatToolCallBadge(toolCall, index)}
 					<button
 						type="button"
