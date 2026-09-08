@@ -46,6 +46,10 @@ struct RunOptions {
     // Passed to the chat template. Thinking models route their reply through reasoning_content when
     // this is on; turning it off is how you get tool calls out of Gemma 4 reliably.
     bool enable_thinking = false;
+    // Any further sampler settings the caller wants forwarded verbatim (top_k, min_p, the
+    // penalties, and so on). Merged into the request; the settings UI sends a dozen of these and
+    // the agent path used to drop every one.
+    nlohmann::json extra_sampling = nlohmann::json::object();
     // Empty means every registered category.
     std::set<std::string> enabled_categories;
     Policy::Config policy;

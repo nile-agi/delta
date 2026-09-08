@@ -1364,6 +1364,7 @@ static void test_sampling_and_thinking_reach_the_model() {
     options.temperature = 0.35;
     options.top_p = 0.7;
     options.enable_thinking = true;
+    options.extra_sampling = {{"top_k", 25}, {"repeat_penalty", 1.15}};
     harness.set_options(options);
     EventLog log;
     harness.run(json::array({user("hello")}), log.sink());
@@ -1374,6 +1375,8 @@ static void test_sampling_and_thinking_reach_the_model() {
     if (!requests.empty()) {
         check(std::abs(requests[0].value("temperature", -1.0) - 0.35) < 1e-6, "the temperature was sent");
         check(std::abs(requests[0].value("top_p", -1.0) - 0.7) < 1e-6, "top_p was sent");
+        check_eq(requests[0].value("top_k", 0), 25, "so were the samplers the caller passed through");
+        check(std::abs(requests[0].value("repeat_penalty", 0.0) - 1.15) < 1e-6, "including the penalties");
         check(requests[0].contains("chat_template_kwargs") &&
                   requests[0]["chat_template_kwargs"].value("enable_thinking", false),
               "the thinking flag was sent");

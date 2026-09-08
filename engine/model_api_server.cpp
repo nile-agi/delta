@@ -904,6 +904,34 @@ class ModelAPIServer {
                 agent::RunOptions run_options;
                 run_options.tools_enabled = model_supports_tools && body.value("use_tools", true);
                 run_options.max_tokens = body.value("max_tokens", 2048);
+                // The UI sends -1 for "no limit". Taken literally that reserves no output room at
+                // all, so the budget under-reserves and the wrap-up's length cap is defeated.
+                if (run_options.max_tokens <= 0)
+                    run_options.max_tokens = 2048;
+
+                // Everything else the client asked for, forwarded rather than dropped. The agent
+                // path used to discard every sampler the settings screen offers.
+                static const char* kSamplers[] = {"top_k",
+                                                  "min_p",
+                                                  "typ_p",
+                                                  "dynatemp_range",
+                                                  "dynatemp_exponent",
+                                                  "xtc_probability",
+                                                  "xtc_threshold",
+                                                  "repeat_last_n",
+                                                  "repeat_penalty",
+                                                  "presence_penalty",
+                                                  "frequency_penalty",
+                                                  "dry_multiplier",
+                                                  "dry_base",
+                                                  "dry_allowed_length",
+                                                  "dry_penalty_last_n",
+                                                  "samplers",
+                                                  nullptr};
+                for (int i = 0; kSamplers[i]; i++) {
+                    if (body.contains(kSamplers[i]) && !body[kSamplers[i]].is_null())
+                        run_options.extra_sampling[kSamplers[i]] = body[kSamplers[i]];
+                }
                 // The web client sends these with every request; the harness used to discard them.
                 if (body.contains("temperature") && body["temperature"].is_number())
                     run_options.temperature = body["temperature"].get<double>();

@@ -223,6 +223,13 @@ nlohmann::json LlmClient::build_request_body(const nlohmann::json& messages, con
         body["temperature"] = config_.temperature;
     if (config_.top_p >= 0.0)
         body["top_p"] = config_.top_p;
+    // Anything else the caller asked for, without this layer needing to know each name.
+    if (config_.extra_sampling.is_object()) {
+        for (auto it = config_.extra_sampling.begin(); it != config_.extra_sampling.end(); ++it) {
+            if (!body.contains(it.key()))
+                body[it.key()] = it.value();
+        }
+    }
     // Sent whether or not tools are offered: how the model thinks should not depend on that.
     body["chat_template_kwargs"] = {{"enable_thinking", config_.enable_thinking}};
     if (!tools.empty()) {

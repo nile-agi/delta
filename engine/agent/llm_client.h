@@ -17,6 +17,8 @@ struct LlmConfig {
     int max_tokens = 2048;
     double temperature = -1.0; // < 0 leaves it to the server default
     double top_p = -1.0;       // < 0 leaves it to the server default
+    // Forwarded as-is alongside the request; see RunOptions::extra_sampling.
+    nlohmann::json extra_sampling = nlohmann::json::object();
     bool enable_thinking = false;
     long stall_timeout_seconds = 120; // abort only if the stream truly stalls
     long blocking_timeout_seconds = 300;

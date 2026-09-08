@@ -81,6 +81,7 @@ void Harness::set_options(const RunOptions& options) {
     cfg.temperature = options_.temperature;
     cfg.top_p = options_.top_p;
     cfg.enable_thinking = options_.enable_thinking;
+    cfg.extra_sampling = options_.extra_sampling;
     client_.set_config(cfg);
     client_.set_abort_check(options_.abort_requested);
 }
