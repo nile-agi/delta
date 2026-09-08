@@ -105,6 +105,10 @@ class Harness {
 
     // Memory and calendar context for the current run, built once: the user's last message does
     // not change between iterations, so neither does what is worth recalling for it.
+    // How many iterations are left, so the prompt can warn a model that is nearly out of room.
+    // -1 before a run starts.
+    int steps_remaining_ = -1;
+
     mutable std::string context_cache_;
     mutable std::string context_cache_key_;
 };

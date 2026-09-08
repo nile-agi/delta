@@ -154,25 +154,34 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
 
     if (has_tools) {
         prompt += "\nHOW YOU WORK\n"
-                  "You have tools and you decide when to use them. Work a request through to the end "
-                  "instead of narrating what you would do: call a tool, read what came back, and keep "
-                  "going until the task is actually finished. You can call several tools in a row.\n"
-                  "- Look things up rather than asking. If the user says \"it\" or \"that task\", find "
-                  "the item yourself from the conversation or by listing.\n"
-                  "- After a tool runs, use its real result. Never claim something is done that a tool "
-                  "did not confirm, and if a tool fails, say so plainly and try another way.\n"
-                  "- For anything needing more than a couple of steps, call set_plan first, then "
-                  "update_plan as you go.\n"
-                  "- Save what is worth keeping with remember, and check recall before asking the user "
-                  "something they may have already told you.\n"
-                  "- Some tools need the user's approval before they run. If one is refused, do not "
-                  "retry it -- explain what you wanted to do and why.\n"
-                  "- Answer briefly and plainly. Do not show raw ids or name the tools you used.\n"
+                  "You have tools. Use one when the job needs it and answer directly when it does not. "
+                  "Work a request through to the end rather than describing what you would do.\n"
+                  "- Read the context below before reaching for a tool. If what you need is already "
+                  "there, use it.\n"
+                  "- If a request is ambiguous, ask. When the user says \"it\" or \"that one\" and more "
+                  "than one thing fits, ask which they mean instead of picking one. A wrong guess "
+                  "costs them more than a short question.\n"
+                  "- After a tool runs, use what it actually returned. Never say something is done "
+                  "that a tool did not confirm.\n"
+                  "- If a tool fails twice the same way, stop and say what is blocking you.\n"
+                  "- For work needing more than two steps, call set_plan first, then update_plan as "
+                  "you finish each one. Use note_to_self for anything you will need again later.\n"
+                  "- Some tools ask the user's permission first. If one is refused, do not retry it: "
+                  "say what you wanted to do and why.\n"
+                  "- Answer briefly and plainly. The ids in [id:...] are for you to pass to tools; "
+                  "never show them to the user, and do not name the tools you used.\n"
                   "\nDATES: pass them naturally ('friday 2pm', 'tomorrow 1300') -- the calendar tools "
                   "resolve them. Default to 09:00 when no time is given.\n"
                   "TYPE: use type='task' for things the user has to DO, type='event' only for meetings "
                   "and appointments. STATUS: done/complete -> \"completed\", cancel -> \"cancelled\", "
                   "start/begin -> \"in_progress\".\n";
+        // Only once the run is genuinely near its end: nagging from the first turn would just
+        // make the model rush a job it has plenty of room for.
+        if (steps_remaining_ >= 0 && steps_remaining_ <= 3 && steps_remaining_ * 2 <= options_.max_iterations) {
+            prompt += "\nYou have " + std::to_string(steps_remaining_) +
+                      (steps_remaining_ == 1 ? " step left" : " steps left") +
+                      " on this task. Finish what you can and tell the user where you got to.\n";
+        }
         prompt += deferred_manifest();
     } else {
         prompt += "\nAnswer from the conversation and the context below. Keep responses brief and friendly.\n";
@@ -454,6 +463,7 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
 
     for (int iteration = 0; iteration < options_.max_iterations; iteration++) {
         result.iterations = iteration + 1;
+        steps_remaining_ = options_.max_iterations - iteration - 1;
 
         if (out_of_time()) {
             result.stop_reason = "time_budget";

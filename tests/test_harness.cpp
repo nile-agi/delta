@@ -1746,6 +1746,62 @@ static void test_remember_scopes_to_the_current_job_by_default() {
         memory.forget(m.id);
 }
 
+static void test_the_prompt_tells_the_model_to_ask_when_it_is_unsure() {
+    test("the prompt asks the model to check with the user rather than guess");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "ok"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.enabled_categories.clear();
+    harness.set_options(options);
+    EventLog log;
+    harness.run(json::array({user("move it to friday")}), log.sink());
+    server.stop();
+
+    auto requests = server.requests();
+    check(!requests.empty(), "a request was made");
+    if (requests.empty())
+        return;
+    const std::string prompt = requests[0]["messages"][0].value("content", "");
+    check(prompt.find("Look things up rather than asking") == std::string::npos,
+          "the old guess-first instruction is gone");
+    check(prompt.find("ask") != std::string::npos, "the model is told to ask");
+    check(prompt.find("id") != std::string::npos, "and what the bracketed ids are for");
+}
+
+static void test_the_model_is_told_when_it_is_running_out_of_steps() {
+    test("a model close to its step budget is told so, rather than being cut off without warning");
+
+    ScriptedServer server({});
+    server.set_responder([](const json& request) -> json {
+        const auto& messages = request["messages"];
+        if (!messages.empty() && messages[0].value("content", "").rfind("Summarize", 0) == 0)
+            return {{"role", "assistant"}, {"content", "earlier"}};
+        if (!request.contains("tools") || request["tools"].empty())
+            return {{"role", "assistant"}, {"content", "wrapping up"}};
+        static std::atomic<int> n{0};
+        return assistant_calling("test_read", {{"page", n++}}, "c");
+    });
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.max_iterations = 3;
+    harness.set_options(options);
+    EventLog log;
+    harness.run(json::array({user("go")}), log.sink());
+    server.stop();
+
+    auto requests = server.requests();
+    check(requests.size() >= 3, "the run used its steps");
+    if (requests.size() < 3)
+        return;
+    const std::string first = requests[0]["messages"][0].value("content", "");
+    const std::string last = requests[2]["messages"][0].value("content", "");
+    check(first.find("steps left") == std::string::npos, "the first turn is not nagged about the budget");
+    check(last.find("steps left") != std::string::npos, "but the last one knows it is nearly out");
+}
+
 // ------------------------------------------------------- deferred tool loading
 
 // The tool names a recorded request actually offered the model.
@@ -2024,6 +2080,8 @@ int main() {
     test_policy_is_remembered();
     test_scratchpad_plan();
 
+    test_the_prompt_tells_the_model_to_ask_when_it_is_unsure();
+    test_the_model_is_told_when_it_is_running_out_of_steps();
     test_memories_do_not_leak_between_conversations();
     test_remember_scopes_to_the_current_job_by_default();
     test_working_notes_survive_into_the_next_turn();
