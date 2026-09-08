@@ -39,14 +39,21 @@ class AgentStore {
 
 	/** Restores persisted activity when an old conversation is opened. */
 	hydrate(messageId: string, activity: AgentActivity | undefined): void {
-		if (!activity || (!activity.steps?.length && !activity.notices?.length)) return;
+		// A tool turn can leave a transcript and nothing else; refusing it here left the store and
+		// the database disagreeing after a reload.
+		if (
+			!activity ||
+			(!activity.steps?.length && !activity.notices?.length && !activity.transcript?.length)
+		)
+			return;
 		this.activities.set(messageId, {
 			steps: activity.steps ?? [],
 			notices: activity.notices ?? [],
 			compaction: activity.compaction,
 			stopReason: activity.stopReason,
 			iterations: activity.iterations,
-			transcript: activity.transcript
+			transcript: activity.transcript,
+			reasoning: activity.reasoning
 		});
 	}
 
@@ -58,7 +65,8 @@ class AgentStore {
 			compaction: current.compaction,
 			stopReason: current.stopReason,
 			iterations: current.iterations,
-			transcript: current.transcript
+			transcript: current.transcript,
+			reasoning: current.reasoning
 		};
 		fn(next);
 		this.activities.set(messageId, next);
@@ -156,6 +164,18 @@ class AgentStore {
 				this.mutate(messageId, (activity) => {
 					activity.compaction = data;
 				});
+				break;
+			}
+
+			case 'reasoning': {
+				// Thinking, not the answer. Kept with the activity so the panel can show it without
+				// it ever being mistaken for what the model actually said.
+				const data = event.data as { text?: string };
+				if (data.text) {
+					this.mutate(messageId, (activity) => {
+						activity.reasoning = (activity.reasoning ?? '') + data.text;
+					});
+				}
 				break;
 			}
 

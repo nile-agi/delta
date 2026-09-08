@@ -956,9 +956,7 @@ class ChatStore {
 		if (!conversationId) return;
 
 		const streamingState = this.conversationStreamingStates.get(conversationId);
-		if (!streamingState || !streamingState.response.trim()) {
-			return;
-		}
+		if (!streamingState) return;
 
 		const messages =
 			conversationId === this.activeConversation?.id
@@ -967,7 +965,19 @@ class ChatStore {
 
 		if (!messages.length) return;
 
-		const lastMessage = messages[messages.length - 1];
+		// The streamed message is not always the last one in the path, so go by its id.
+		const lastMessage =
+			messages.find((m) => m.id === streamingState.messageId) ?? messages[messages.length - 1];
+
+		// A tool-only turn streams no text but still has an activity worth keeping, so an empty
+		// response is only a reason to stop when there is nothing else to save either.
+		const interruptedActivity = agentStore.finish(lastMessage?.id ?? '');
+		const hasActivity = Boolean(
+			interruptedActivity?.steps.length ||
+				interruptedActivity?.notices.length ||
+				interruptedActivity?.transcript?.length
+		);
+		if (!streamingState.response.trim() && !hasActivity) return;
 
 		if (lastMessage && lastMessage.role === 'assistant') {
 			try {
@@ -975,9 +985,14 @@ class ChatStore {
 					content: string;
 					thinking?: string;
 					timings?: ChatMessageTimings;
+					agent_activity?: AgentActivity;
 				} = {
 					content: streamingState.response
 				};
+
+				if (hasActivity && interruptedActivity) {
+					updateData.agent_activity = interruptedActivity;
+				}
 
 				if (lastMessage.thinking?.trim()) {
 					updateData.thinking = lastMessage.thinking;
@@ -999,7 +1014,10 @@ class ChatStore {
 
 				await DatabaseStore.updateMessage(lastMessage.id, updateData);
 
-				lastMessage.content = this.currentResponse;
+				lastMessage.content = updateData.content;
+				if (updateData.agent_activity) {
+					lastMessage.agent_activity = updateData.agent_activity;
+				}
 				if (updateData.thinking !== undefined) {
 					lastMessage.thinking = updateData.thinking;
 				}
@@ -1007,7 +1025,7 @@ class ChatStore {
 					lastMessage.timings = updateData.timings;
 				}
 			} catch (error) {
-				lastMessage.content = this.currentResponse;
+				lastMessage.content = streamingState.response;
 				console.error('Failed to save partial response:', error);
 			}
 		} else {

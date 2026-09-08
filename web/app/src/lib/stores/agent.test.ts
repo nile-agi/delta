@@ -29,6 +29,17 @@ describe('agent store', () => {
 		expect(activity?.transcript?.length).toBe(3);
 	});
 
+	it('restores an activity that has only a transcript, which is what a tool turn leaves', () => {
+		agentStore.begin('m3');
+		agentStore.hydrate('m3', {
+			steps: [],
+			notices: [],
+			transcript: [{ role: 'assistant', content: 'done' }]
+		} as unknown as AgentActivity);
+
+		expect(agentStore.activityFor('m3')?.transcript?.length).toBe(1);
+	});
+
 	it('matches a result to the step with the same call id, not just the same name', () => {
 		agentStore.begin('m2');
 		agentStore.handleEvent('m2', event('tool_start', { call_id: 'a', name: 'read_file', arguments: {}, risk: 'caution' }));

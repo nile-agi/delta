@@ -126,4 +126,6 @@ export interface AgentActivity {
 	 * assistant message on later turns so the model still sees what its tools returned.
 	 */
 	transcript?: ApiChatMessageData[];
+	/** The model's thinking this turn, when it streamed it on its own channel. */
+	reasoning?: string;
 }
