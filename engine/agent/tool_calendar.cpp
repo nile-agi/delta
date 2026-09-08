@@ -472,35 +472,6 @@ void register_calendar_tools() {
             auto event = db.get_event(id);
             return {true, strip_id(event).dump(), ""};
         });
-
-    registry.register_tool(
-        {"get_current_time",
-         "Get the current date and time. NOTE: CURRENT TIME, TODAY, and TOMORROW are already in the system prompt. "
-         "Only call this if you need date info beyond what is provided above.",
-         {{"type", "object"}, {"properties", nlohmann::json::object()}, {"required", nlohmann::json::array()}}},
-        [](const nlohmann::json&) -> ToolResult {
-            time_t now = time(nullptr);
-            struct tm t{};
-            local_time(&now, &t);
-            char iso_buf[32], date_buf[16], day_buf[16];
-            strftime(iso_buf, sizeof(iso_buf), "%Y-%m-%dT%H:%M:%S", &t);
-            strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &t);
-            strftime(day_buf, sizeof(day_buf), "%A", &t);
-
-            time_t tomorrow_t = now + 24 * 3600;
-            struct tm tm_tom{};
-            local_time(&tomorrow_t, &tm_tom);
-            char tom_buf[16], tom_day_buf[16];
-            strftime(tom_buf, sizeof(tom_buf), "%Y-%m-%d", &tm_tom);
-            strftime(tom_day_buf, sizeof(tom_day_buf), "%A", &tm_tom);
-
-            nlohmann::json result = {{"datetime", std::string(iso_buf)},
-                                     {"date", std::string(date_buf)},
-                                     {"day_of_week", std::string(day_buf)},
-                                     {"tomorrow", std::string(tom_buf)},
-                                     {"tomorrow_day", std::string(tom_day_buf)}};
-            return {true, result.dump(), ""};
-        });
 }
 
 } // namespace agent

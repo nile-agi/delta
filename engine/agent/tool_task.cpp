@@ -22,6 +22,34 @@ std::string active_run_id() {
 void register_task_tools() {
     auto& registry = ToolRegistry::instance();
 
+    registry.register_tool({"load_tools",
+                            "Get hold of a group of tools you do not have yet. The system prompt lists the groups that "
+                            "are available but not loaded. Call this once with the group you need, then call the tools "
+                            "in it as normal. Do not call it for tools you already have.",
+                            {{"type", "object"},
+                             {"properties",
+                              {{"category",
+                                {{"type", "string"},
+                                 {"enum", {"notes", "files", "shell", "web"}},
+                                 {"description", "The group of tools to load"}}}}},
+                             {"required", {"category"}}},
+                            ToolRisk::Safe,
+                            "task"},
+                           [](const nlohmann::json& args) -> ToolResult {
+                               const std::string category = args.value("category", "");
+                               std::string error;
+                               if (!load_tool_category(category, error))
+                                   return {false, "", error};
+                               nlohmann::json names = nlohmann::json::array();
+                               auto& reg = ToolRegistry::instance();
+                               for (const auto& name : reg.get_tool_names()) {
+                                   const auto* def = reg.get_definition(name);
+                                   if (def && def->category == category)
+                                       names.push_back(name);
+                               }
+                               return {true, nlohmann::json{{"loaded", category}, {"tools", names}}.dump(), ""};
+                           });
+
     registry.register_tool(
         {"set_plan",
          "Write down a short plan before working through a request that needs several steps. "

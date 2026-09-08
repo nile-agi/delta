@@ -68,6 +68,30 @@ class ToolRegistry {
 // Registers every built-in tool. Safe to call more than once.
 void register_all_tools();
 
+// --- deferred tool loading ---
+//
+// A 2-8B model given 20+ schemas on every turn spends a third of its window on tools it will never
+// call. The categories below are held back: the model is told they exist, in one line each, and
+// calls load_tools to get their schemas. Everything else is offered from the start.
+
+// True for a category whose schemas wait until the model asks for them.
+bool is_deferred_category(const std::string& category);
+
+// One line saying what a category can do, for the manifest the model always sees.
+std::string category_summary(const std::string& category);
+
+// Starts a run's tool session: nothing deferred is loaded, and `permitted` (empty means all) caps
+// what load_tools may ever reach. Thread-local, like the active run id, because each request runs
+// on its own thread and must not change another run's tool set.
+void begin_tool_session(const std::set<std::string>& permitted);
+
+// Adds a deferred category to this run. Returns false and sets `error` when the category is
+// unknown, not deferred, or not permitted.
+bool load_tool_category(const std::string& category, std::string& error);
+
+// The deferred categories this run has loaded so far.
+const std::set<std::string>& loaded_tool_categories();
+
 } // namespace agent
 } // namespace delta
 

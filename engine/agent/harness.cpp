@@ -87,7 +87,46 @@ void Harness::set_options(const RunOptions& options) {
 nlohmann::json Harness::active_tools() const {
     if (!supports_tools_ || !options_.tools_enabled)
         return nlohmann::json::array();
-    return ToolRegistry::instance().get_tools_array(options_.enabled_categories);
+    auto& registry = ToolRegistry::instance();
+    const auto& loaded = loaded_tool_categories();
+
+    std::set<std::string> offered;
+    for (const auto& category : registry.get_categories()) {
+        if (!options_.enabled_categories.empty() && options_.enabled_categories.count(category) == 0)
+            continue;
+        // Deferred groups wait until the model asks for them by name.
+        if (is_deferred_category(category) && loaded.count(category) == 0)
+            continue;
+        offered.insert(category);
+    }
+    // An empty set means "everything" to get_tools_array, which is the opposite of what we want.
+    if (offered.empty())
+        return nlohmann::json::array();
+    return registry.get_tools_array(offered);
+}
+
+std::string Harness::deferred_manifest() const {
+    if (!supports_tools_ || !options_.tools_enabled)
+        return "";
+    auto& registry = ToolRegistry::instance();
+    const auto& loaded = loaded_tool_categories();
+
+    std::string lines;
+    for (const auto& category : registry.get_categories()) {
+        if (!is_deferred_category(category) || loaded.count(category) > 0)
+            continue;
+        if (!options_.enabled_categories.empty() && options_.enabled_categories.count(category) == 0)
+            continue;
+        const std::string summary = category_summary(category);
+        if (!summary.empty())
+            lines += "- " + category + ": " + summary + "\n";
+    }
+    if (lines.empty())
+        return "";
+    return "\nWHAT ELSE YOU CAN DO\n"
+           "You do not have these tools right now, but you can get them. Call load_tools with the "
+           "group name when the job actually needs one.\n" +
+           lines;
 }
 
 std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
@@ -133,6 +172,7 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
                   "TYPE: use type='task' for things the user has to DO, type='event' only for meetings "
                   "and appointments. STATUS: done/complete -> \"completed\", cancel -> \"cancelled\", "
                   "start/begin -> \"in_progress\".\n";
+        prompt += deferred_manifest();
     } else {
         prompt += "\nAnswer from the conversation and the context below. Keep responses brief and friendly.\n";
     }
@@ -271,6 +311,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
 
     const std::string pad = scratchpad_key();
     set_active_run_id(pad);
+    // Nothing deferred is loaded yet, and load_tools may never reach past what the client allows.
+    begin_tool_session(options_.enabled_categories);
     MemoryStore::instance().prune_plans();
 
     auto emit = [&](EventType type, nlohmann::json data) -> bool {
@@ -291,7 +333,6 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
     context.set_summarizer([this](const nlohmann::json& dropped) { return summarize(dropped); });
 
     Policy policy(options_.policy);
-    nlohmann::json tools = active_tools();
 
     // The schemas go out with every request but are not part of `transcript`, so unless the budget
     // is told what they cost it happily fills the window and the request overflows on the server.
@@ -362,7 +403,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             break;
         }
 
-        nlohmann::json active = tools_disabled_by_error ? nlohmann::json::array() : tools;
+        // Recomputed every pass because load_tools can add a group part-way through a run.
+        nlohmann::json active = tools_disabled_by_error ? nlohmann::json::array() : active_tools();
         charge_tools(active);
 
         const std::string system_prompt = build_system_prompt(transcript);

@@ -91,6 +91,9 @@ class Harness {
   private:
     std::string build_system_prompt(const nlohmann::json& messages) const;
     nlohmann::json active_tools() const;
+    // The one-line summary of every tool group the model could load but has not, so it always
+    // knows the full extent of what it can do without paying for the schemas.
+    std::string deferred_manifest() const;
     std::string summarize(const nlohmann::json& dropped);
     // The key the plan scratchpad lives under: the caller's conversation id when given, else this run.
     std::string scratchpad_key() const { return options_.scratchpad_id.empty() ? run_id_ : options_.scratchpad_id; }

@@ -99,6 +99,74 @@ std::set<std::string> ToolRegistry::get_categories() const {
     return cats;
 }
 
+namespace {
+
+// Held back until the model asks. Chosen because they are powerful but occasional: a personal
+// assistant reaches for the calendar every day and for the shell once a week.
+const std::set<std::string>& deferred_categories() {
+    static const std::set<std::string> deferred = {"notes", "files", "shell", "web"};
+    return deferred;
+}
+
+// Per-run tool session. Thread-local for the same reason the active run id is (see tool_task.h):
+// two conversations served at once must not change each other's tool set.
+thread_local std::set<std::string> g_loaded_categories;
+thread_local std::set<std::string> g_permitted_categories;
+
+} // namespace
+
+bool is_deferred_category(const std::string& category) {
+    return deferred_categories().count(category) > 0;
+}
+
+std::string category_summary(const std::string& category) {
+    if (category == "calendar")
+        return "the user's events, tasks and reminders";
+    if (category == "notes")
+        return "read, write and organise the notes the user has written";
+    if (category == "memory")
+        return "what you remember about the user between conversations";
+    if (category == "task")
+        return "your plan and working notes for the job in hand";
+    if (category == "files")
+        return "read, write, list and delete files under the home directory";
+    if (category == "shell")
+        return "run a command on this machine and read its output";
+    if (category == "web")
+        return "fetch a web page, or open one in the user's browser";
+    return "";
+}
+
+void begin_tool_session(const std::set<std::string>& permitted) {
+    g_loaded_categories.clear();
+    g_permitted_categories = permitted;
+}
+
+bool load_tool_category(const std::string& category, std::string& error) {
+    if (category.empty()) {
+        error = "category is required";
+        return false;
+    }
+    if (!is_deferred_category(category)) {
+        if (ToolRegistry::instance().get_categories().count(category) > 0) {
+            error = "The " + category + " tools are already available; just call them.";
+        } else {
+            error = "There is no tool group called " + category + ".";
+        }
+        return false;
+    }
+    if (!g_permitted_categories.empty() && g_permitted_categories.count(category) == 0) {
+        error = "The user has turned the " + category + " tools off for this conversation.";
+        return false;
+    }
+    g_loaded_categories.insert(category);
+    return true;
+}
+
+const std::set<std::string>& loaded_tool_categories() {
+    return g_loaded_categories;
+}
+
 void register_all_tools() {
     static bool done = false;
     if (done)
@@ -110,7 +178,6 @@ void register_all_tools() {
     // The calendar and notes tools predate the risk model; tag them here so their definitions
     // stay as they are.
     auto& reg = ToolRegistry::instance();
-    reg.set_tool_metadata("get_current_time", ToolRisk::Safe, "calendar");
     reg.set_tool_metadata("list_events", ToolRisk::Safe, "calendar");
     reg.set_tool_metadata("create_event", ToolRisk::Caution, "calendar");
     reg.set_tool_metadata("update_event", ToolRisk::Caution, "calendar");

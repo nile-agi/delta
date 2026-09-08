@@ -1450,6 +1450,100 @@ static void test_concurrent_updates_do_not_lose_each_other() {
     check(db.delete_event(id), "cleanup: the event was deleted");
 }
 
+// ------------------------------------------------------- deferred tool loading
+
+// The tool names a recorded request actually offered the model.
+static std::set<std::string> offered_tools(const json& request) {
+    std::set<std::string> names;
+    if (!request.contains("tools"))
+        return names;
+    for (const auto& t : request["tools"]) {
+        if (t.is_object() && t.contains("function"))
+            names.insert(t["function"].value("name", ""));
+    }
+    return names;
+}
+
+static RunOptions all_categories() {
+    RunOptions options = test_options();
+    options.enabled_categories.clear(); // empty means everything the client allows
+    return options;
+}
+
+static void test_deferred_tools_are_announced_but_not_loaded() {
+    test("rarely needed tools are described in the prompt instead of being sent as schemas");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "ok"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(all_categories());
+    EventLog log;
+    harness.run(json::array({user("hello")}), log.sink());
+    server.stop();
+
+    auto requests = server.requests();
+    check(!requests.empty(), "a request was made");
+    if (requests.empty())
+        return;
+    const auto sent = offered_tools(requests[0]);
+    check(sent.count("create_event") == 1, "a core tool was sent");
+    check(sent.count("load_tools") == 1, "so was the way to ask for more");
+    check(sent.count("write_file") == 0, "a deferred tool was held back");
+    check(sent.count("run_command") == 0, "and so was the shell");
+
+    const std::string prompt = requests[0]["messages"][0].value("content", "");
+    check(prompt.find("files") != std::string::npos, "the prompt still tells the model about files");
+    check(prompt.find("shell") != std::string::npos, "and about the shell");
+    check(prompt.find("load_tools") != std::string::npos, "and how to get hold of them");
+}
+
+static void test_load_tools_puts_a_category_in_front_of_the_model() {
+    test("load_tools makes a held-back category callable for the rest of the run");
+
+    ScriptedServer server({assistant_calling("load_tools", {{"category", "files"}}, "c0"),
+                           {{"role", "assistant"}, {"content", "got them"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(all_categories());
+    EventLog log;
+    auto result = harness.run(json::array({user("read a file for me")}), log.sink());
+    server.stop();
+
+    check(result.success, "the run completed");
+    auto requests = server.requests();
+    check_eq(requests.size(), size_t(2), "the model got a second turn");
+    if (requests.size() < 2)
+        return;
+    check(offered_tools(requests[0]).count("read_file") == 0, "the first turn had no file tools");
+    check(offered_tools(requests[1]).count("read_file") == 1, "the second turn did");
+}
+
+static void test_load_tools_cannot_reach_a_category_the_user_turned_off() {
+    test("load_tools cannot get past what the user switched off");
+
+    ScriptedServer server({assistant_calling("load_tools", {{"category", "shell"}}, "c0"),
+                           {{"role", "assistant"}, {"content", "I cannot run commands."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.enabled_categories = {"task", "calendar"}; // no shell
+    harness.set_options(options);
+    EventLog log;
+    auto result = harness.run(json::array({user("run ls for me")}), log.sink());
+    server.stop();
+
+    check(result.success, "the run completed");
+    auto requests = server.requests();
+    check(requests.size() >= 2, "the model got another turn");
+    if (requests.size() < 2)
+        return;
+    auto tools = tool_messages(requests[1]);
+    check_eq(tools.size(), size_t(1), "the attempt was answered");
+    if (!tools.empty())
+        check(tools[0].value("content", "").find("error") != std::string::npos, "and refused");
+    check(offered_tools(requests[1]).count("run_command") == 0, "the shell stayed out of reach");
+}
+
 // ---------------------------------------------------------------- sandboxes
 
 static std::string home_path() {
@@ -1586,9 +1680,7 @@ int main() {
         return 1;
     }
     register_test_tools();
-    register_file_tools();
-    register_shell_tools();
-    register_web_tools();
+    register_all_tools();
 
     test_multi_step_loop();
     test_write_result_reaches_model();
@@ -1630,6 +1722,9 @@ int main() {
     test_policy_is_remembered();
     test_scratchpad_plan();
 
+    test_deferred_tools_are_announced_but_not_loaded();
+    test_load_tools_puts_a_category_in_front_of_the_model();
+    test_load_tools_cannot_reach_a_category_the_user_turned_off();
     test_concurrent_updates_do_not_lose_each_other();
     test_file_tools_follow_symlinks_before_checking_scope();
     test_shell_refuses_credential_paths_in_the_command();
