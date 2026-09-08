@@ -204,10 +204,13 @@ nlohmann::json LlmClient::build_request_body(const nlohmann::json& messages, con
         {"messages", clean_messages}, {"stream", stream}, {"model", model_name_}, {"max_tokens", config_.max_tokens}};
     if (config_.temperature >= 0.0)
         body["temperature"] = config_.temperature;
+    if (config_.top_p >= 0.0)
+        body["top_p"] = config_.top_p;
+    // Sent whether or not tools are offered: how the model thinks should not depend on that.
+    body["chat_template_kwargs"] = {{"enable_thinking", config_.enable_thinking}};
     if (!tools.empty()) {
         body["tools"] = tools;
         body["tool_choice"] = tool_choice;
-        body["chat_template_kwargs"] = {{"enable_thinking", config_.enable_thinking}};
     }
     return body;
 }

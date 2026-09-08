@@ -901,6 +901,13 @@ class ModelAPIServer {
                 agent::RunOptions run_options;
                 run_options.tools_enabled = model_supports_tools && body.value("use_tools", true);
                 run_options.max_tokens = body.value("max_tokens", 2048);
+                // The web client sends these with every request; the harness used to discard them.
+                if (body.contains("temperature") && body["temperature"].is_number())
+                    run_options.temperature = body["temperature"].get<double>();
+                if (body.contains("top_p") && body["top_p"].is_number())
+                    run_options.top_p = body["top_p"].get<double>();
+                if (body.contains("enable_thinking") && body["enable_thinking"].is_boolean())
+                    run_options.enable_thinking = body["enable_thinking"].get<bool>();
                 if (body.contains("max_iterations") && body["max_iterations"].is_number_integer())
                     run_options.max_iterations = std::max(1, std::min(100, body["max_iterations"].get<int>()));
                 // The client's conversation id keys the plan scratchpad, so a plan the model

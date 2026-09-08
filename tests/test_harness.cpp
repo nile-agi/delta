@@ -22,6 +22,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -1304,6 +1305,53 @@ static void test_reasoning_is_kept_out_of_the_answer() {
     check(log.text().find("count them") == std::string::npos, "and was not streamed as part of the answer");
 }
 
+static void test_sampling_and_thinking_reach_the_model() {
+    test("the run's sampling settings and thinking flag are sent to the model");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "hi"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.temperature = 0.35;
+    options.top_p = 0.7;
+    options.enable_thinking = true;
+    harness.set_options(options);
+    EventLog log;
+    harness.run(json::array({user("hello")}), log.sink());
+    server.stop();
+
+    auto requests = server.requests();
+    check(!requests.empty(), "a request was made");
+    if (!requests.empty()) {
+        check(std::abs(requests[0].value("temperature", -1.0) - 0.35) < 1e-6, "the temperature was sent");
+        check(std::abs(requests[0].value("top_p", -1.0) - 0.7) < 1e-6, "top_p was sent");
+        check(requests[0].contains("chat_template_kwargs") &&
+                  requests[0]["chat_template_kwargs"].value("enable_thinking", false),
+              "the thinking flag was sent");
+    }
+}
+
+static void test_thinking_flag_is_sent_even_without_tools() {
+    test("the thinking flag is sent on a plain turn too, so tools do not change how the model thinks");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "hi"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", false); // no tool support at all
+    harness.set_options(test_options());
+    EventLog log;
+    harness.run(json::array({user("hello")}), log.sink());
+    server.stop();
+
+    auto requests = server.requests();
+    check(!requests.empty(), "a request was made");
+    if (!requests.empty()) {
+        check(!requests[0].contains("tools"), "no tools were offered");
+        check(requests[0].contains("chat_template_kwargs"), "the thinking flag was still sent");
+        // Greedy decoding makes small models repeat themselves; Qwen3 documents this explicitly.
+        check(requests[0].value("temperature", 0.0) > 0.0, "and a non-greedy temperature is the default");
+    }
+}
+
 static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
     test("a transport failure ends the run with an error instead of retrying without tools");
 
@@ -1563,6 +1611,8 @@ int main() {
     test_summary_is_reused_across_iterations();
     test_unknown_tool_is_reported_as_a_step();
     test_tool_events_carry_the_call_id();
+    test_sampling_and_thinking_reach_the_model();
+    test_thinking_flag_is_sent_even_without_tools();
     test_reasoning_only_reply_still_answers_the_user();
     test_reasoning_is_kept_out_of_the_answer();
     test_transport_failure_is_not_mistaken_for_schema_rejection();

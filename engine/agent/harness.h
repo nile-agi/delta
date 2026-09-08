@@ -39,6 +39,13 @@ struct RunOptions {
     int wall_clock_seconds = 900; // whole-run budget
     int approval_timeout_seconds = 180;
     bool tools_enabled = true;
+    // Sampling. The defaults are deliberately not greedy: at temperature 0 small models fall into
+    // repetition loops, which Qwen3's own documentation warns about. Negative means "server default".
+    double temperature = 0.6;
+    double top_p = 0.95;
+    // Passed to the chat template. Thinking models route their reply through reasoning_content when
+    // this is on; turning it off is how you get tool calls out of Gemma 4 reliably.
+    bool enable_thinking = false;
     // Empty means every registered category.
     std::set<std::string> enabled_categories;
     Policy::Config policy;

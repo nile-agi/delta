@@ -77,6 +77,9 @@ void Harness::set_options(const RunOptions& options) {
     options_ = options;
     LlmConfig cfg = client_.config();
     cfg.max_tokens = options_.max_tokens;
+    cfg.temperature = options_.temperature;
+    cfg.top_p = options_.top_p;
+    cfg.enable_thinking = options_.enable_thinking;
     client_.set_config(cfg);
     client_.set_abort_check(options_.abort_requested);
 }
