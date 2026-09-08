@@ -941,6 +941,32 @@ static void test_harness_charges_the_conversation_for_the_tool_schemas() {
     }
 }
 
+static void test_the_compaction_summary_is_paid_for(void) {
+    test("the summary of dropped messages is counted against the budget, not added on top of it");
+
+    ContextManager context(1400, 256);
+    // A summariser that ignores its brief and returns something enormous.
+    context.set_summarizer([](const json&) { return std::string(3000, 'x'); });
+
+    json history = json::array();
+    for (int i = 0; i < 60; i++) {
+        history.push_back({{"role", i % 2 == 0 ? "user" : "assistant"},
+                           {"content", "Turn " + std::to_string(i) +
+                                           " with enough words in it to take up a real number of tokens so that "
+                                           "the window has to evict something."}});
+    }
+
+    json built = context.build("SYSTEM PROMPT", history);
+    check(context.stats().dropped_messages > 0, "messages were dropped, so a summary was made");
+
+    int total = 0;
+    for (const auto& msg : built)
+        total += context.token_cost(msg);
+    check(total <= context.budget_tokens(), "everything actually sent fits the budget (" + std::to_string(total) +
+                                                " vs " + std::to_string(context.budget_tokens()) + ")");
+    check_eq(context.stats().used_tokens, total, "and the reported figure matches what was built");
+}
+
 // ----------------------------------------------------------- context manager
 
 static void test_context_keeps_system_prompt_and_recent_turns() {
@@ -2239,6 +2265,7 @@ int main() {
     test_schema_rejection_retries_without_tools();
 
     test_context_budget_accounts_for_tool_schemas();
+    test_the_compaction_summary_is_paid_for();
     test_harness_charges_the_conversation_for_the_tool_schemas();
     test_context_keeps_system_prompt_and_recent_turns();
     test_context_never_orphans_tool_messages();

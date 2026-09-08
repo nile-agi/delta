@@ -17,6 +17,9 @@ constexpr int kSafetyMargin = 320;
 constexpr int kMessageOverhead = 5;
 // Below this many dropped messages a summary is not worth a model call.
 constexpr int kMinDroppedForSummary = 4;
+// Room set aside for the summary of what was dropped. It is appended to the system prompt after
+// packing, so without a reservation it is spent on top of the budget rather than out of it.
+constexpr int kSummaryAllowance = 400;
 
 bool is_tool_message(const nlohmann::json& msg) {
     return msg.is_object() && msg.value("role", "") == "tool";
@@ -133,6 +136,11 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
     nlohmann::json system_msg = {{"role", "system"}, {"content", full_system}};
     const int system_cost = token_cost(system_msg);
     int remaining = budget_ - system_cost;
+    // Hold back room for the summary before deciding what fits, so appending it later cannot
+    // push the request over the window.
+    const bool summary_possible = static_cast<bool>(summarize_);
+    if (summary_possible)
+        remaining -= kSummaryAllowance;
     if (remaining < 256)
         remaining = 256; // an enormous system prompt still leaves room for the live turn
 
@@ -237,14 +245,27 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
     // tool result never loses the assistant turn that asked for it.
     while (keep_from < blocks.size() && turns[blocks[keep_from].first].value("role", "") != "user") {
         for (size_t i = blocks[keep_from].first; i < blocks[keep_from].second; i++) {
-            (void)i;
             stats_.dropped_messages++;
+            // Refund what this block was costing, or the reported usage counts messages that
+            // were never sent.
+            used -= token_cost(turns[i]);
         }
         keep_from++;
     }
+    if (used < 0)
+        used = 0;
 
-    if (!summary_note.empty())
+    // A summariser that ignores its brief must not be allowed to spend the whole window, so the
+    // note is trimmed to the room set aside for it.
+    if (!summary_note.empty()) {
+        int summary_cost = token_cost(nlohmann::json{{"role", "system"}, {"content", summary_note}});
+        if (summary_cost > kSummaryAllowance) {
+            const size_t allowed_chars = static_cast<size_t>(kSummaryAllowance) * 36 / 10;
+            summary_note = truncate_middle(summary_note, allowed_chars);
+            summary_cost = token_cost(nlohmann::json{{"role", "system"}, {"content", summary_note}});
+        }
         system_msg["content"] = system_msg["content"].get<std::string>() + summary_note;
+    }
 
     nlohmann::json out = nlohmann::json::array();
     out.push_back(system_msg);
@@ -253,7 +274,9 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
             out.push_back(turns[i]);
     }
 
-    stats_.used_tokens = system_cost + used;
+    // Measured on the finished system message rather than added up from parts: tokenisation is
+    // not additive, and this is the figure the UI shows.
+    stats_.used_tokens = token_cost(system_msg) + used;
     return out;
 }
 
