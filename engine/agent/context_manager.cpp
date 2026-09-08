@@ -29,9 +29,18 @@ bool carries_tool_calls(const nlohmann::json& msg) {
 
 ContextManager::ContextManager(int n_ctx, int reserve_output_tokens)
     : n_ctx_(n_ctx > 0 ? n_ctx : 4096), reserve_output_(reserve_output_tokens > 0 ? reserve_output_tokens : 512) {
-    budget_ = n_ctx_ - reserve_output_ - kSafetyMargin;
+    recompute_budget();
+}
+
+void ContextManager::recompute_budget() {
+    budget_ = n_ctx_ - reserve_output_ - kSafetyMargin - tool_overhead_;
     if (budget_ < 512)
         budget_ = 512; // a tiny window still has to carry the system prompt and one turn
+}
+
+void ContextManager::set_tool_overhead(int tokens) {
+    tool_overhead_ = tokens > 0 ? tokens : 0;
+    recompute_budget();
 }
 
 int ContextManager::estimate_tokens(const std::string& text) {
@@ -64,6 +73,7 @@ int ContextManager::token_cost(const nlohmann::json& message) const {
 nlohmann::json ContextManager::build(const std::string& system_prompt, const nlohmann::json& history) {
     stats_ = ContextStats{};
     stats_.budget_tokens = budget_;
+    stats_.tool_tokens = tool_overhead_;
 
     // Any system message the client sent belongs with the system prompt, not in the evictable
     // history, so a long conversation can never drop the user's persona settings.

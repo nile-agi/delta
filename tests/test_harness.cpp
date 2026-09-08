@@ -301,6 +301,14 @@ static void register_test_tools() {
 
     registry.register_tool({"test_fail", "Always fails", no_params, ToolRisk::Safe, "testing"},
                            [](const json&) -> ToolResult { return {false, "", "disk is on fire"}; });
+
+    // Its own category, with a deliberately enormous description, so a test can watch the schema
+    // cost come out of the context budget without disturbing the other tools.
+    std::string bulky_description = "A tool with a very long description. ";
+    while (bulky_description.size() < 4000)
+        bulky_description += "It goes on at considerable length about what it does and when to use it. ";
+    registry.register_tool({"test_bulky", bulky_description, no_params, ToolRisk::Safe, "bulky"},
+                           [](const json&) -> ToolResult { return {true, json{{"ok", true}}.dump(), ""}; });
 }
 
 static RunOptions test_options() {
@@ -846,6 +854,63 @@ static void test_scratchpad_survives_an_unfinished_run() {
     h2.run(json::array({user("thanks")}), log.sink());
     finished.stop();
     check(memory.get_plan(convo).is_null(), "a normal stop clears the plan even with steps still pending");
+}
+
+static void test_context_budget_accounts_for_tool_schemas() {
+    test("the context budget subtracts the tool schemas, which are sent alongside the messages");
+
+    ContextManager plain(4096, 2048);
+    const int without_tools = plain.budget_tokens();
+
+    ContextManager with_tools(4096, 2048);
+    with_tools.set_tool_overhead(900);
+    check_eq(with_tools.budget_tokens(), without_tools - 900, "the schemas come out of the budget");
+
+    json history = json::array({user("hello")});
+    with_tools.build("SYSTEM PROMPT", history);
+    check_eq(with_tools.stats().budget_tokens, without_tools - 900, "the stats report the reduced budget");
+    check_eq(with_tools.stats().tool_tokens, 900, "and name what the tools cost");
+
+    // A tool set too big for the window must not leave a negative or useless budget.
+    ContextManager squeezed(4096, 2048);
+    squeezed.set_tool_overhead(100000);
+    check(squeezed.budget_tokens() >= 512, "an oversized tool set cannot push the budget below the floor");
+}
+
+static void test_harness_charges_the_conversation_for_the_tool_schemas() {
+    test("a large tool set leaves less room for the conversation, and the client is told so");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "done"}}});
+    server.start();
+
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.enabled_categories = {"bulky"};
+    options.n_ctx = 2048;
+    options.max_tokens = 256;
+    harness.set_options(options);
+
+    json history = json::array();
+    for (int i = 0; i < 30; i++) {
+        history.push_back({{"role", i % 2 == 0 ? "user" : "assistant"},
+                           {"content", "Turn " + std::to_string(i) +
+                                           ": a long message with enough words in it to take up a real number of "
+                                           "tokens, so that the window has to evict something."}});
+    }
+    history.push_back(user("and now?"));
+
+    EventLog log;
+    auto result = harness.run(history, log.sink());
+    server.stop();
+
+    check(result.success, "the run completed");
+    json compaction = log.first(EventType::Compaction);
+    check(compaction.is_object(), "a compaction event was emitted");
+    if (compaction.is_object()) {
+        check(compaction.value("tool_tokens", 0) > 0, "it reports what the tool schemas cost");
+        // Without the tool cost the budget would be 2048 - 256 - 320 = 1472.
+        check(compaction.value("budget_tokens", 0) < 1472, "and the budget is smaller because of them");
+    }
 }
 
 // ----------------------------------------------------------- context manager
@@ -1464,6 +1529,8 @@ int main() {
     test_transport_failure_is_not_mistaken_for_schema_rejection();
     test_schema_rejection_retries_without_tools();
 
+    test_context_budget_accounts_for_tool_schemas();
+    test_harness_charges_the_conversation_for_the_tool_schemas();
     test_context_keeps_system_prompt_and_recent_turns();
     test_context_never_orphans_tool_messages();
     test_context_truncates_huge_tool_results();

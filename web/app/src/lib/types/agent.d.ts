@@ -54,6 +54,8 @@ export interface AgentApprovalResolvedData {
 
 export interface AgentCompactionData {
 	dropped: number;
+	/** What the tool schemas cost this turn; they are charged against the same window. */
+	tool_tokens?: number;
 	summarized: boolean;
 	truncated_results: number;
 	used_tokens: number;

@@ -15,6 +15,7 @@ using TokenCounter = std::function<int(const std::string&)>;
 
 struct ContextStats {
     int budget_tokens = 0;
+    int tool_tokens = 0;
     int used_tokens = 0;
     int dropped_messages = 0;
     int truncated_results = 0;
@@ -32,6 +33,10 @@ struct ContextStats {
 class ContextManager {
   public:
     ContextManager(int n_ctx, int reserve_output_tokens);
+
+    // What the tool schemas cost. They travel with the request but not in `history`, so without
+    // this the budget silently ignores the largest fixed cost of an agent turn.
+    void set_tool_overhead(int tokens);
 
     void set_summarizer(Summarizer fn) { summarize_ = std::move(fn); }
     void set_token_counter(TokenCounter fn) { count_ = std::move(fn); }
@@ -53,7 +58,10 @@ class ContextManager {
   private:
     int n_ctx_;
     int reserve_output_;
+    int tool_overhead_ = 0;
     int budget_;
+
+    void recompute_budget();
     Summarizer summarize_;
     TokenCounter count_;
     ContextStats stats_;

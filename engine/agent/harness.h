@@ -18,7 +18,7 @@ enum class EventType {
     ToolResult,       // {call_id, name, success, summary, error}
     ApprovalRequired, // {id, call_id, name, arguments, risk, description}
     ApprovalResolved, // {id, decision}
-    Compaction,       // {dropped, summarized, truncated_results, used_tokens, budget_tokens}
+    Compaction,       // {dropped, summarized, truncated_results, used_tokens, tool_tokens, budget_tokens}
     Status,           // {message} -- iteration and budget notices
     Error,            // {message}
 };

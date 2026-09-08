@@ -6,6 +6,7 @@
 #include "tool_task.h"
 #include <algorithm>
 #include <chrono>
+#include <functional>
 #include <ctime>
 #include <iostream>
 #include <random>
@@ -289,6 +290,27 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
     Policy policy(options_.policy);
     nlohmann::json tools = active_tools();
 
+    // The schemas go out with every request but are not part of `transcript`, so unless the budget
+    // is told what they cost it happily fills the window and the request overflows on the server.
+    // Counting is an HTTP round trip, so the result is cached until the tool set actually changes.
+    int cached_tool_tokens = -1;
+    size_t cached_tool_hash = 0;
+    auto charge_tools = [&](const nlohmann::json& active_tools_json) {
+        const std::string dumped = active_tools_json.empty() ? std::string() : active_tools_json.dump();
+        const size_t hash = std::hash<std::string>{}(dumped);
+        if (cached_tool_tokens < 0 || hash != cached_tool_hash) {
+            int cost = 0;
+            if (!dumped.empty()) {
+                cost = client_.count_tokens(dumped);
+                if (cost < 0)
+                    cost = ContextManager::estimate_tokens(dumped);
+            }
+            cached_tool_tokens = cost;
+            cached_tool_hash = hash;
+        }
+        context.set_tool_overhead(cached_tool_tokens);
+    };
+
     // Working transcript: the client's history plus everything this run adds.
     nlohmann::json transcript = nlohmann::json::array();
     for (const auto& msg : messages) {
@@ -332,6 +354,9 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             break;
         }
 
+        nlohmann::json active = tools_disabled_by_error ? nlohmann::json::array() : tools;
+        charge_tools(active);
+
         const std::string system_prompt = build_system_prompt(transcript);
         nlohmann::json request_messages = context.build(system_prompt, transcript);
         const auto& stats = context.stats();
@@ -340,10 +365,9 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
                                          {"summarized", stats.summarized},
                                          {"truncated_results", stats.truncated_results},
                                          {"used_tokens", stats.used_tokens},
+                                         {"tool_tokens", stats.tool_tokens},
                                          {"budget_tokens", stats.budget_tokens}});
         }
-
-        nlohmann::json active = tools_disabled_by_error ? nlohmann::json::array() : tools;
 
         size_t forwarded = 0;
         bool client_aborted = false;
