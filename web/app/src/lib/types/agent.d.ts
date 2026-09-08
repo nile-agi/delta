@@ -12,6 +12,7 @@ import type { ApiChatMessageData } from './api';
 export type AgentToolRisk = 'safe' | 'caution' | 'destructive';
 
 export type AgentEventName =
+	| 'reasoning'
 	| 'tool_start'
 	| 'tool_result'
 	| 'approval_required'

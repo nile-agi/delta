@@ -193,6 +193,10 @@ class CliRunPrinter {
             return true;
         }
 
+        case EventType::Reasoning:
+            // The model's working, not its answer. Kept off the terminal so the reply reads cleanly.
+            return true;
+
         case EventType::ApprovalResolved:
             return true;
         }

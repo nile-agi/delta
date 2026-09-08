@@ -318,6 +318,11 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             transcript.push_back(msg);
     }
 
+    // The model's thinking, when it streams on its own channel, goes out as its own event so a
+    // client can show or hide it without it ever being mistaken for the answer.
+    client_.set_reasoning_sink(
+        [&](const std::string& delta) -> bool { return emit(EventType::Reasoning, {{"text", delta}}); });
+
     // Everything after this index was added by this run and goes back to the caller.
     const size_t history_size = transcript.size();
 

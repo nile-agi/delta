@@ -10,6 +10,8 @@ namespace agent {
 
 // Receives each content delta as it streams; return false to abort (client disconnected).
 using ContentCallback = std::function<bool(const std::string& delta)>;
+// Receives each reasoning delta, for models that stream their thinking on a separate channel.
+using ReasoningCallback = std::function<bool(const std::string& delta)>;
 
 struct LlmConfig {
     int max_tokens = 2048;
@@ -32,6 +34,10 @@ class LlmClient {
     // Polled about once a second while a streaming request is in flight, including before the
     // first byte arrives. Returning true aborts the request as if the client had disconnected.
     void set_abort_check(std::function<bool()> check) { abort_check_ = std::move(check); }
+
+    // Where `reasoning_content` deltas go. Thinking models (Qwen3, DeepSeek-R1) and Gemma 4 with
+    // thinking on stream there instead of `content`; without a sink it is captured but not forwarded.
+    void set_reasoning_sink(ReasoningCallback sink) { reasoning_sink_ = std::move(sink); }
 
     // Blocking call. Returns the parsed response, or {"error": "..."} on failure.
     nlohmann::json chat(const nlohmann::json& messages, const nlohmann::json& tools,
@@ -56,6 +62,7 @@ class LlmClient {
     std::string model_name_;
     LlmConfig config_;
     std::function<bool()> abort_check_;
+    ReasoningCallback reasoning_sink_;
     int tokenize_supported_ = -1; // -1 unknown, 0 no, 1 yes
 };
 

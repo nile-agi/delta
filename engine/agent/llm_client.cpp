@@ -52,6 +52,8 @@ struct SseContext {
     bool aborted = false;
     size_t forwarded = 0;
     const ContentCallback* forward = nullptr;
+    std::string reasoning;
+    const ReasoningCallback* forward_reasoning = nullptr;
     const std::function<bool()>* abort_check = nullptr;
 };
 
@@ -115,6 +117,18 @@ void handle_sse_line(SseContext* ctx, const std::string& line) {
         for (const auto& fragment : delta["tool_calls"]) {
             if (fragment.is_object())
                 merge_tool_call_delta(ctx->tool_calls, fragment);
+        }
+    }
+    // Thinking models put their working here rather than in `content`. Capture it either way, so a
+    // reply that lands entirely on this channel is not lost.
+    if (delta.contains("reasoning_content") && delta["reasoning_content"].is_string()) {
+        const std::string thought = delta["reasoning_content"].get<std::string>();
+        if (!thought.empty()) {
+            ctx->reasoning += thought;
+            if (ctx->forward_reasoning && !(*ctx->forward_reasoning)(thought)) {
+                ctx->aborted = true;
+                return;
+            }
         }
     }
     if (delta.contains("content") && delta["content"].is_string()) {
@@ -253,6 +267,8 @@ nlohmann::json LlmClient::chat_stream(const nlohmann::json& messages, const nloh
     SseContext ctx;
     if (on_content)
         ctx.forward = &on_content;
+    if (reasoning_sink_)
+        ctx.forward_reasoning = &reasoning_sink_;
     if (abort_check_)
         ctx.abort_check = &abort_check_;
 
@@ -313,8 +329,14 @@ nlohmann::json LlmClient::chat_stream(const nlohmann::json& messages, const nloh
     }
 
     nlohmann::json message = {{"role", "assistant"}, {"content", ctx.content}};
+    if (!ctx.reasoning.empty())
+        message["reasoning_content"] = ctx.reasoning;
     if (!named_calls.empty())
         message["tool_calls"] = named_calls;
+    // Some templates route the whole reply through the reasoning channel. An empty turn helps
+    // nobody, so when there is nothing else to show, the thinking is the answer.
+    if (ctx.content.empty() && named_calls.empty() && !ctx.reasoning.empty())
+        message["content"] = ctx.reasoning;
     return {{"choices", {{{"index", 0}, {"message", message}, {"finish_reason", ctx.finish_reason}}}}};
 }
 

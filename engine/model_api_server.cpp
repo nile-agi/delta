@@ -199,6 +199,8 @@ static const char* agent_event_name(delta::agent::EventType type) {
     switch (type) {
     case EventType::Content:
         return "content";
+    case EventType::Reasoning:
+        return "reasoning";
     case EventType::ToolStart:
         return "tool_start";
     case EventType::ToolResult:

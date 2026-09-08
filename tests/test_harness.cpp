@@ -165,6 +165,10 @@ class ScriptedServer {
                    "\n\n";
         };
 
+        const std::string reasoning = message.value("reasoning_content", "");
+        if (!reasoning.empty())
+            frame({{"reasoning_content", reasoning}}, nullptr);
+
         const std::string content = message.value("content", "");
         if (!content.empty()) {
             const size_t mid = content.size() / 2;
@@ -1267,6 +1271,39 @@ static void test_tool_events_carry_the_call_id() {
           "each tool_result names the call it answers");
 }
 
+static void test_reasoning_only_reply_still_answers_the_user() {
+    test("a model that puts its whole reply in reasoning_content still answers");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", ""}, {"reasoning_content", "The answer is 42."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("what is the answer?")}), log.sink());
+    server.stop();
+
+    check(result.success, "the run completed");
+    check(!result.content.empty(), "the user is not left with an empty reply");
+    check(result.content.find("42") != std::string::npos, "and it is what the model actually said");
+}
+
+static void test_reasoning_is_kept_out_of_the_answer() {
+    test("reasoning is reported on its own and never mixed into the answer");
+
+    ScriptedServer server(
+        {{{"role", "assistant"}, {"content", "Two."}, {"reasoning_content", "Let me count them: one, then two."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("how many?")}), log.sink());
+    server.stop();
+
+    check_eq(result.content, std::string("Two."), "the answer is the content alone");
+    check(log.count(EventType::Reasoning) > 0, "the reasoning was reported as its own event");
+    check(log.text().find("count them") == std::string::npos, "and was not streamed as part of the answer");
+}
+
 static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
     test("a transport failure ends the run with an error instead of retrying without tools");
 
@@ -1526,6 +1563,8 @@ int main() {
     test_summary_is_reused_across_iterations();
     test_unknown_tool_is_reported_as_a_step();
     test_tool_events_carry_the_call_id();
+    test_reasoning_only_reply_still_answers_the_user();
+    test_reasoning_is_kept_out_of_the_answer();
     test_transport_failure_is_not_mistaken_for_schema_rejection();
     test_schema_rejection_retries_without_tools();
 
