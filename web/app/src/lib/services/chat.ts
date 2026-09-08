@@ -253,6 +253,9 @@ export class ChatService {
 						return;
 					} catch (tauriErr) {
 						if (tauriErr instanceof Error && tauriErr.name === 'AbortError') throw tauriErr;
+						// Never retry an agent turn: the harness runs tools as it goes, so a second
+						// attempt repeats every write, delete and shell command it already made.
+						if (useTools) throw tauriErr;
 						console.warn('[Delta] Tauri IPC streaming failed, falling back to XHR:', tauriErr);
 					}
 				}
@@ -377,7 +380,12 @@ export class ChatService {
 
 						try {
 							const raw: unknown = JSON.parse(data);
-							if (this.consumeAgentEvent(raw, onAgentEvent)) continue;
+							if (this.consumeAgentEvent(raw, onAgentEvent)) {
+								// A harness event is a real response. Treating it as silence made a
+								// tool-only turn look like a dead stream.
+								hasReceivedData = true;
+								continue;
+							}
 							const parsed = raw as ApiChatCompletionStreamChunk;
 
 							if (!firstValidChunkEmitted && parsed.object === 'chat.completion.chunk') {
@@ -552,7 +560,12 @@ export class ChatService {
 
 			try {
 				const raw: unknown = JSON.parse(data);
-				if (this.consumeAgentEvent(raw, onAgentEvent)) return;
+				if (this.consumeAgentEvent(raw, onAgentEvent)) {
+					// See the XHR transport: an agent event counts as data, otherwise the desktop
+					// path throws, falls back to XHR, and runs every tool a second time.
+					hasReceivedData = true;
+					return;
+				}
 				const parsed = raw as ApiChatCompletionStreamChunk;
 
 				if (!firstValidChunkEmitted && parsed.object === 'chat.completion.chunk') {
