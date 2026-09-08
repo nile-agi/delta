@@ -367,9 +367,9 @@ std::vector<Memory> MemoryStore::pinned(int limit, const std::string& conversati
     return out;
 }
 
-std::vector<Memory> MemoryStore::recent(int limit) const {
+std::vector<Memory> MemoryStore::recent(int limit, const std::string& conversation_id) const {
     std::lock_guard<std::recursive_mutex> lock(*mutex_);
-    auto all = query_all();
+    auto all = in_scope(query_all(), conversation_id);
     std::sort(all.begin(), all.end(), [](const Memory& a, const Memory& b) { return a.updated_at > b.updated_at; });
     if (static_cast<int>(all.size()) > limit)
         all.resize(limit);

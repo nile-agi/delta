@@ -954,17 +954,19 @@ class ModelAPIServer {
                 }
 
                 {
-                    static const char* kCategories[] = {"calendar", "notes", "memory", "task",
-                                                        "files",    "shell", "web",    nullptr};
-                    for (int i = 0; kCategories[i]; i++) {
-                        const std::string key = std::string("use_") + kCategories[i] + "_tools";
-                        if (body.value(key, true))
-                            run_options.enabled_categories.insert(kCategories[i]);
+                    // Taken from the registry, so registering a new group does not quietly make it
+                    // unreachable the way a hardcoded list would.
+                    const auto categories = agent::ToolRegistry::instance().get_categories();
+                    bool all_on = true;
+                    for (const auto& category : categories) {
+                        if (body.value("use_" + category + "_tools", true))
+                            run_options.enabled_categories.insert(category);
+                        else
+                            all_on = false;
                     }
-                    // An explicit "everything on" is represented as an empty set so newly
-                    // registered categories are picked up without a client change.
-                    if (run_options.enabled_categories.size() ==
-                        agent::ToolRegistry::instance().get_categories().size())
+                    // "Everything on" is an empty set, so a group added later is included without
+                    // the client needing to know about it.
+                    if (all_on)
                         run_options.enabled_categories.clear();
                 }
 

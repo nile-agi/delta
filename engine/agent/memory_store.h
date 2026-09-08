@@ -60,7 +60,7 @@ class MemoryStore {
     std::vector<Memory> search(const std::string& query, int limit, const std::string& conversation_id = "") const;
     // Memories marked importance >= 3, always loaded into the system prompt. Same scoping rule.
     std::vector<Memory> pinned(int limit, const std::string& conversation_id = "") const;
-    std::vector<Memory> recent(int limit) const;
+    std::vector<Memory> recent(int limit, const std::string& conversation_id = "") const;
     int count() const;
 
     // --- per-run scratchpad ---
