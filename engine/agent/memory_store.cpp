@@ -118,6 +118,14 @@ bool MemoryStore::init(sqlite3* db) {
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS agent_run_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL,
+        note TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_agent_run_notes_run ON agent_run_notes(run_id, id);
+
       CREATE TABLE IF NOT EXISTS agent_tool_policy (
         tool TEXT PRIMARY KEY,
         decision TEXT NOT NULL,
@@ -393,6 +401,91 @@ void MemoryStore::prune_plans(int keep_hours) {
     strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &t);
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, "DELETE FROM agent_scratchpad WHERE updated_at < ?", -1, &stmt, nullptr) != SQLITE_OK)
+        return;
+    sqlite3_bind_text(stmt, 1, buf, -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+// A job's worth of notes, not a filing cabinet: enough to carry findings across a long task,
+// bounded so they can never crowd the conversation out of the context window.
+namespace {
+constexpr int kMaxNotesPerRun = 20;
+constexpr size_t kMaxNoteChars = 400;
+} // namespace
+
+void MemoryStore::add_note(const std::string& run_id, const std::string& note) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_ || run_id.empty() || note.empty())
+        return;
+
+    std::string text = note;
+    if (text.size() > kMaxNoteChars)
+        text = text.substr(0, kMaxNoteChars) + "...";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, "INSERT INTO agent_run_notes (run_id, note, created_at) VALUES (?, ?, ?)", -1, &stmt,
+                           nullptr) != SQLITE_OK)
+        return;
+    const std::string now = utc_now();
+    sqlite3_bind_text(stmt, 1, run_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, text.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, now.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    // Keep only the newest few. An older note that still matters will have been acted on by now.
+    if (sqlite3_prepare_v2(db_,
+                           "DELETE FROM agent_run_notes WHERE run_id = ? AND id NOT IN "
+                           "(SELECT id FROM agent_run_notes WHERE run_id = ? ORDER BY id DESC LIMIT ?)",
+                           -1, &stmt, nullptr) != SQLITE_OK)
+        return;
+    sqlite3_bind_text(stmt, 1, run_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, run_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 3, kMaxNotesPerRun);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+nlohmann::json MemoryStore::get_notes(const std::string& run_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    nlohmann::json out = nlohmann::json::array();
+    if (!db_ || run_id.empty())
+        return out;
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, "SELECT note FROM agent_run_notes WHERE run_id = ? ORDER BY id ASC", -1, &stmt,
+                           nullptr) != SQLITE_OK)
+        return out;
+    sqlite3_bind_text(stmt, 1, run_id.c_str(), -1, SQLITE_TRANSIENT);
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+        out.push_back(col_text(stmt, 0));
+    sqlite3_finalize(stmt);
+    return out;
+}
+
+void MemoryStore::clear_notes(const std::string& run_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_ || run_id.empty())
+        return;
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, "DELETE FROM agent_run_notes WHERE run_id = ?", -1, &stmt, nullptr) != SQLITE_OK)
+        return;
+    sqlite3_bind_text(stmt, 1, run_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void MemoryStore::prune_notes(int keep_hours) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_)
+        return;
+    time_t cutoff_t = time(nullptr) - static_cast<time_t>(keep_hours) * 3600;
+    struct tm t{};
+    utc_time(&cutoff_t, &t);
+    char buf[32];
+    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &t);
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, "DELETE FROM agent_run_notes WHERE created_at < ?", -1, &stmt, nullptr) != SQLITE_OK)
         return;
     sqlite3_bind_text(stmt, 1, buf, -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);

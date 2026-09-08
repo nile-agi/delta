@@ -22,6 +22,30 @@ std::string active_run_id() {
 void register_task_tools() {
     auto& registry = ToolRegistry::instance();
 
+    registry.register_tool(
+        {"note_to_self",
+         "Write down something you have worked out that you will need later in this same job: a value "
+         "you read, a path you found, a decision you made, a dead end not to try again. Long "
+         "conversations get trimmed, and anything you note here stays in front of you when the "
+         "earlier messages are gone. Use remember instead for things that should outlive this job.",
+         {{"type", "object"},
+          {"properties",
+           {{"note", {{"type", "string"}, {"description", "One short line, written so it makes sense on its own"}}}}},
+          {"required", {"note"}}},
+         ToolRisk::Safe,
+         "task"},
+        [](const nlohmann::json& args) -> ToolResult {
+            const std::string run_id = active_run_id();
+            if (run_id.empty())
+                return {false, "", "No active run"};
+            const std::string note = args.value("note", "");
+            if (note.empty())
+                return {false, "", "note is required"};
+            auto& memory = MemoryStore::instance();
+            memory.add_note(run_id, note);
+            return {true, nlohmann::json{{"noted", true}, {"notes", memory.get_notes(run_id).size()}}.dump(), ""};
+        });
+
     registry.register_tool({"load_tools",
                             "Get hold of a group of tools you do not have yet. The system prompt lists the groups that "
                             "are available but not loaded. Call this once with the group you need, then call the tools "

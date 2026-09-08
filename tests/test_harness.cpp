@@ -1450,6 +1450,83 @@ static void test_concurrent_updates_do_not_lose_each_other() {
     check(db.delete_event(id), "cleanup: the event was deleted");
 }
 
+static void test_working_notes_survive_into_the_next_turn() {
+    test("a note the model writes to itself is in front of it on the next turn");
+
+    auto& memory = MemoryStore::instance();
+    const std::string convo = "conv_working_notes";
+    memory.clear_notes(convo);
+
+    ScriptedServer server(
+        {assistant_calling("note_to_self", {{"note", "The API key lives in ~/.config/app.toml"}}, "c0"),
+         {{"role", "assistant"}, {"content", "Noted."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.enabled_categories = {"task"};
+    options.scratchpad_id = convo;
+    harness.set_options(options);
+    EventLog log;
+    auto result = harness.run(json::array({user("remember where the key is while you work")}), log.sink());
+    server.stop();
+
+    check(result.success, "the run completed");
+    auto requests = server.requests();
+    check_eq(requests.size(), size_t(2), "the model got a second turn");
+    if (requests.size() >= 2) {
+        const std::string prompt = requests[1]["messages"][0].value("content", "");
+        check(prompt.find("app.toml") != std::string::npos, "the note is in the next system prompt");
+    }
+    memory.clear_notes(convo);
+}
+
+static void test_working_notes_are_capped_and_keep_the_newest() {
+    test("working notes cannot grow without bound and the newest survive");
+
+    auto& memory = MemoryStore::instance();
+    const std::string convo = "conv_note_cap";
+    memory.clear_notes(convo);
+    for (int i = 0; i < 40; i++)
+        memory.add_note(convo, "finding number " + std::to_string(i));
+
+    json notes = memory.get_notes(convo);
+    check(notes.is_array(), "the notes came back");
+    check(notes.size() > 0 && notes.size() <= 20, "and there are at most twenty of them");
+    if (!notes.empty()) {
+        const std::string newest = notes[notes.size() - 1].get<std::string>();
+        check(newest.find("number 39") != std::string::npos, "the most recent note was kept");
+    }
+
+    // An enormous note is trimmed rather than allowed to crowd out the prompt.
+    memory.clear_notes(convo);
+    memory.add_note(convo, std::string(5000, 'x'));
+    notes = memory.get_notes(convo);
+    check(!notes.empty() && notes[0].get<std::string>().size() < 1000, "an oversized note is shortened");
+    memory.clear_notes(convo);
+}
+
+static void test_working_notes_are_cleared_when_the_job_finishes() {
+    test("working notes belong to the job, not the conversation, so a finished run clears them");
+
+    auto& memory = MemoryStore::instance();
+    const std::string convo = "conv_notes_cleared";
+    memory.clear_notes(convo);
+    memory.add_note(convo, "something I found along the way");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "All done."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.scratchpad_id = convo;
+    harness.set_options(options);
+    EventLog log;
+    auto result = harness.run(json::array({user("thanks")}), log.sink());
+    server.stop();
+
+    check_eq(result.stop_reason, std::string("stop"), "the run finished normally");
+    check(memory.get_notes(convo).empty(), "the notes went with the job");
+}
+
 // ------------------------------------------------------- deferred tool loading
 
 // The tool names a recorded request actually offered the model.
@@ -1722,6 +1799,9 @@ int main() {
     test_policy_is_remembered();
     test_scratchpad_plan();
 
+    test_working_notes_survive_into_the_next_turn();
+    test_working_notes_are_capped_and_keep_the_newest();
+    test_working_notes_are_cleared_when_the_job_finishes();
     test_deferred_tools_are_announced_but_not_loaded();
     test_load_tools_puts_a_category_in_front_of_the_model();
     test_load_tools_cannot_reach_a_category_the_user_turned_off();

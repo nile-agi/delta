@@ -60,6 +60,17 @@ class MemoryStore {
     // Removes scratchpads older than `keep_hours`, so the table cannot grow without bound.
     void prune_plans(int keep_hours = 24);
 
+    // --- per-run working notes ---
+    //
+    // What the model has worked out while doing the current job: a value it read, a decision it
+    // made, something it will need again in ten turns. Distinct from a memory, which outlives the
+    // job, and safer than the transcript, which gets trimmed when the conversation grows. These are
+    // re-rendered into the system prompt every turn, so they survive compaction.
+    void add_note(const std::string& run_id, const std::string& note);
+    nlohmann::json get_notes(const std::string& run_id) const;
+    void clear_notes(const std::string& run_id);
+    void prune_notes(int keep_hours = 24);
+
     // --- remembered approval decisions ---
     // Returns "allow", "deny", or "" when the user has not answered for this tool yet.
     std::string get_policy(const std::string& tool) const;

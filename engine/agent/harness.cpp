@@ -181,9 +181,19 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
     auto& memory = MemoryStore::instance();
     std::string context_block;
 
-    // The plan changes as tools run, so it is rendered fresh; the rest is cached per user turn.
+    // The plan and the working notes change as tools run, so they are rendered fresh every
+    // iteration; the rest of the context is cached per user turn.
     std::string plan_block;
     if (memory.ready()) {
+        auto notes = memory.get_notes(scratchpad_key());
+        if (notes.is_array() && !notes.empty()) {
+            plan_block += "\nWhat you have worked out so far on this job:\n";
+            for (const auto& note : notes) {
+                if (note.is_string())
+                    plan_block += "- " + note.get<std::string>() + "\n";
+            }
+        }
+
         auto plan = memory.get_plan(scratchpad_key());
         if (plan.is_object() && plan.contains("steps") && plan["steps"].is_array() && !plan["steps"].empty()) {
             plan_block += "\nYour current plan (goal: " + plan.value("goal", "") + "):\n";
@@ -379,8 +389,10 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         r.transcript_delta = nlohmann::json::array();
         for (size_t i = history_size; i < transcript.size(); i++)
             r.transcript_delta.push_back(transcript[i]);
-        if (options_.scratchpad_id.empty() || r.stop_reason == "stop")
+        if (options_.scratchpad_id.empty() || r.stop_reason == "stop") {
             MemoryStore::instance().clear_plan(pad);
+            MemoryStore::instance().clear_notes(pad);
+        }
         return r;
     };
 
