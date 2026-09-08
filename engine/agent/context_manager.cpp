@@ -48,14 +48,31 @@ int ContextManager::estimate_tokens(const std::string& text) {
     return static_cast<int>(text.size() * 10 / 36) + 1;
 }
 
+size_t ContextManager::utf8_floor(const std::string& text, size_t offset) {
+    if (offset >= text.size())
+        return text.size();
+    // Continuation bytes are 10xxxxxx; step back until we are on a lead byte.
+    while (offset > 0 && (static_cast<unsigned char>(text[offset]) & 0xC0) == 0x80)
+        offset--;
+    return offset;
+}
+
+size_t ContextManager::utf8_ceil(const std::string& text, size_t offset) {
+    while (offset < text.size() && (static_cast<unsigned char>(text[offset]) & 0xC0) == 0x80)
+        offset++;
+    return offset;
+}
+
 std::string ContextManager::truncate_middle(const std::string& text, size_t max_chars) {
     if (text.size() <= max_chars)
         return text;
-    size_t head = max_chars * 3 / 5;
-    size_t tail = max_chars - head;
-    const size_t omitted = text.size() - head - tail;
+    size_t head = utf8_floor(text, max_chars * 3 / 5);
+    size_t tail_start = utf8_ceil(text, text.size() - (max_chars - (max_chars * 3 / 5)));
+    if (tail_start < head)
+        tail_start = head;
+    const size_t omitted = tail_start - head;
     return text.substr(0, head) + "\n\n... [" + std::to_string(omitted) + " characters truncated by Delta] ...\n\n" +
-           text.substr(text.size() - tail);
+           text.substr(tail_start);
 }
 
 int ContextManager::token_cost(const nlohmann::json& message) const {

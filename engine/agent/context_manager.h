@@ -55,6 +55,11 @@ class ContextManager {
     // know their output is huge can pre-trim.
     static std::string truncate_middle(const std::string& text, size_t max_chars);
 
+    // Moves an offset back to a character boundary, so a cut never lands inside a multi-byte
+    // sequence. Invalid text there would make the JSON encoder throw and take the run with it.
+    static size_t utf8_floor(const std::string& text, size_t offset);
+    static size_t utf8_ceil(const std::string& text, size_t offset);
+
   private:
     int n_ctx_;
     int reserve_output_;

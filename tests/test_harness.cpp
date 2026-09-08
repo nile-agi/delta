@@ -318,6 +318,14 @@ static void register_test_tools() {
                                return {true, json{{"got", args.value("target", "")}}.dump(), ""};
                            });
 
+    registry.register_tool({"test_wide", "Returns a lot of multi-byte text", no_params, ToolRisk::Safe, "testing"},
+                           [](const json&) -> ToolResult {
+                               std::string wide;
+                               while (wide.size() < 20000)
+                                   wide += "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e";
+                               return {true, json{{"text", wide}}.dump(), ""};
+                           });
+
     registry.register_tool({"test_fail", "Always fails", no_params, ToolRisk::Safe, "testing"},
                            [](const json&) -> ToolResult { return {false, "", "disk is on fire"}; });
 
@@ -1582,6 +1590,37 @@ static void test_image_attachments_reach_the_model() {
     check(found_image, "the image part was sent, not silently dropped");
 }
 
+static void test_truncation_never_produces_invalid_utf8() {
+    test("cutting an oversized result in half never splits a character");
+
+    // Three-byte characters, so a naive byte-offset cut lands mid-character almost every time.
+    std::string wide;
+    while (wide.size() < 20000)
+        wide += "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e";
+
+    for (size_t cap : {size_t(100), size_t(1001), size_t(6000), size_t(6001)}) {
+        const std::string cut = ContextManager::truncate_middle(wide, cap);
+        bool dumped = true;
+        try {
+            (void)json{{"content", cut}}.dump();
+        } catch (...) {
+            dumped = false;
+        }
+        check(dumped, "a cut at " + std::to_string(cap) + " bytes is still valid text");
+    }
+
+    // And a run carrying such a result must survive end to end.
+    ScriptedServer server(
+        {assistant_calling("test_wide", json::object(), "c0"), {{"role", "assistant"}, {"content", "read it"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("read the page")}), log.sink());
+    server.stop();
+    check(result.success, "the run completed rather than dying on a JSON error");
+}
+
 static void test_transport_failure_is_not_mistaken_for_schema_rejection() {
     test("a transport failure ends the run with an error instead of retrying without tools");
 
@@ -2159,6 +2198,7 @@ int main() {
     test_an_empty_reply_is_not_passed_off_as_an_answer();
     test_a_call_missing_a_required_argument_never_runs();
     test_image_attachments_reach_the_model();
+    test_truncation_never_produces_invalid_utf8();
     test_a_server_error_is_not_blamed_on_the_tool_schemas();
     test_sampling_and_thinking_reach_the_model();
     test_thinking_flag_is_sent_even_without_tools();

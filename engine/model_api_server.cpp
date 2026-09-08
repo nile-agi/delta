@@ -14,6 +14,7 @@
 #include "model_api_server.h"
 #include "agent/agent_database.h"
 #include "agent/tool_registry.h"
+#include "agent/context_manager.h"
 #include "agent/harness.h"
 #include "agent/memory_store.h"
 #include "agent/policy.h"
@@ -174,7 +175,9 @@ static json sse_content_chunk(const std::string& text) {
 // The messages a run added, with each tool result capped so the frame stays small. The context
 // manager truncates them again on the way back in, so nothing is lost that would have been kept.
 static json bounded_transcript(const json& transcript) {
-    constexpr size_t kMaxChars = 6000;
+    // Below the context manager's own 6000-char threshold, so a bounded result is not truncated
+    // a second time on the way back in and left with a marker inside a marker.
+    constexpr size_t kMaxChars = 5000;
     json out = json::array();
     if (!transcript.is_array())
         return out;
@@ -183,7 +186,7 @@ static json bounded_transcript(const json& transcript) {
         if (copy.value("role", "") == "tool" && copy.contains("content") && copy["content"].is_string()) {
             std::string content = copy["content"].get<std::string>();
             if (content.size() > kMaxChars)
-                copy["content"] = content.substr(0, kMaxChars) + " ...[truncated]";
+                copy["content"] = agent::ContextManager::truncate_middle(content, kMaxChars);
         }
         out.push_back(copy);
     }

@@ -1,4 +1,5 @@
 #include "memory_store.h"
+#include "context_manager.h"
 #include "time_compat.h"
 #include <algorithm>
 #include <cctype>
@@ -459,7 +460,7 @@ void MemoryStore::add_note(const std::string& run_id, const std::string& note) {
 
     std::string text = note;
     if (text.size() > kMaxNoteChars)
-        text = text.substr(0, kMaxNoteChars) + "...";
+        text = text.substr(0, ContextManager::utf8_floor(text, kMaxNoteChars)) + "...";
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db_, "INSERT INTO agent_run_notes (run_id, note, created_at) VALUES (?, ?, ?)", -1, &stmt,

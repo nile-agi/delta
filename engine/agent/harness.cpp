@@ -295,7 +295,7 @@ std::string Harness::summarize(const nlohmann::json& dropped) {
         const std::string role = msg.value("role", "");
         std::string text = message_text(msg);
         if (text.size() > 500)
-            text = text.substr(0, 500) + "...";
+            text = text.substr(0, ContextManager::utf8_floor(text, 500)) + "...";
         if (text.empty())
             continue;
         transcript += role + ": " + text + "\n";
