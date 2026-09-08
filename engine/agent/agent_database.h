@@ -21,6 +21,11 @@ class AgentDatabase {
     // writer instead of opening a second handle on the same file. Null until init() succeeds.
     sqlite3* handle() { return db_; }
 
+    // The lock guarding the connection. MemoryStore shares the same sqlite3* and must take this
+    // one too: with a mutex each, a read-modify-write on one side could interleave with the other,
+    // and sqlite3_changes() is connection-global so a delete could report the wrong result.
+    std::recursive_mutex& connection_mutex() { return mutex_; }
+
     // Calendar CRUD
     std::string create_event(const nlohmann::json& data);
     nlohmann::json get_event(const std::string& id);

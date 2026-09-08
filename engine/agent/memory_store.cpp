@@ -1,4 +1,5 @@
 #include "memory_store.h"
+#include "agent_database.h"
 #include "context_manager.h"
 #include "time_compat.h"
 #include <algorithm>
@@ -95,9 +96,11 @@ MemoryStore& MemoryStore::instance() {
 }
 
 bool MemoryStore::init(sqlite3* db) {
-    std::lock_guard<std::mutex> lock(mutex_);
     if (!db)
         return false;
+    // Adopt the connection's lock before touching it; every other method assumes it is set.
+    mutex_ = &AgentDatabase::instance().connection_mutex();
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     db_ = db;
 
     const char* schema = R"(
@@ -167,7 +170,7 @@ bool MemoryStore::init(sqlite3* db) {
 
 std::string MemoryStore::remember(const std::string& content, const std::string& kind, const std::string& tags,
                                   int importance, const std::string& source, const std::string& conversation_id) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_ || content.empty())
         return "";
 
@@ -226,7 +229,7 @@ std::string MemoryStore::remember(const std::string& content, const std::string&
 }
 
 bool MemoryStore::forget(const std::string& id) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_)
         return false;
     sqlite3_stmt* stmt = nullptr;
@@ -239,7 +242,7 @@ bool MemoryStore::forget(const std::string& id) {
 }
 
 bool MemoryStore::touch(const std::string& id) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_)
         return false;
     sqlite3_stmt* stmt = nullptr;
@@ -295,7 +298,7 @@ std::vector<Memory> MemoryStore::query_all() const {
 }
 
 std::vector<Memory> MemoryStore::search(const std::string& query, int limit, const std::string& conversation_id) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     auto all = in_scope(query_all(), conversation_id);
     if (all.empty() || limit <= 0)
         return {};
@@ -344,7 +347,7 @@ std::vector<Memory> MemoryStore::search(const std::string& query, int limit, con
 }
 
 std::vector<Memory> MemoryStore::pinned(int limit, const std::string& conversation_id) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     auto all = in_scope(query_all(), conversation_id);
     std::vector<Memory> out;
     std::sort(all.begin(), all.end(), [](const Memory& a, const Memory& b) { return a.updated_at > b.updated_at; });
@@ -356,7 +359,7 @@ std::vector<Memory> MemoryStore::pinned(int limit, const std::string& conversati
 }
 
 std::vector<Memory> MemoryStore::recent(int limit) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     auto all = query_all();
     std::sort(all.begin(), all.end(), [](const Memory& a, const Memory& b) { return a.updated_at > b.updated_at; });
     if (static_cast<int>(all.size()) > limit)
@@ -365,7 +368,7 @@ std::vector<Memory> MemoryStore::recent(int limit) const {
 }
 
 int MemoryStore::count() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_)
         return 0;
     sqlite3_stmt* stmt = nullptr;
@@ -379,7 +382,7 @@ int MemoryStore::count() const {
 }
 
 void MemoryStore::set_plan(const std::string& run_id, const std::string& goal, const nlohmann::json& steps) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_ || run_id.empty())
         return;
     sqlite3_stmt* stmt = nullptr;
@@ -399,7 +402,7 @@ void MemoryStore::set_plan(const std::string& run_id, const std::string& goal, c
 }
 
 nlohmann::json MemoryStore::get_plan(const std::string& run_id) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_ || run_id.empty())
         return nullptr;
     sqlite3_stmt* stmt = nullptr;
@@ -421,7 +424,7 @@ nlohmann::json MemoryStore::get_plan(const std::string& run_id) const {
 }
 
 void MemoryStore::clear_plan(const std::string& run_id) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_)
         return;
     sqlite3_stmt* stmt = nullptr;
@@ -433,7 +436,7 @@ void MemoryStore::clear_plan(const std::string& run_id) {
 }
 
 void MemoryStore::prune_plans(int keep_hours) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_)
         return;
     time_t cutoff_t = time(nullptr) - static_cast<time_t>(keep_hours) * 3600;
@@ -457,7 +460,7 @@ constexpr size_t kMaxNoteChars = 400;
 } // namespace
 
 void MemoryStore::add_note(const std::string& run_id, const std::string& note) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_ || run_id.empty() || note.empty())
         return;
 
@@ -490,7 +493,7 @@ void MemoryStore::add_note(const std::string& run_id, const std::string& note) {
 }
 
 nlohmann::json MemoryStore::get_notes(const std::string& run_id) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     nlohmann::json out = nlohmann::json::array();
     if (!db_ || run_id.empty())
         return out;
@@ -506,7 +509,7 @@ nlohmann::json MemoryStore::get_notes(const std::string& run_id) const {
 }
 
 void MemoryStore::clear_notes(const std::string& run_id) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_ || run_id.empty())
         return;
     sqlite3_stmt* stmt = nullptr;
@@ -518,7 +521,7 @@ void MemoryStore::clear_notes(const std::string& run_id) {
 }
 
 void MemoryStore::prune_notes(int keep_hours) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_)
         return;
     time_t cutoff_t = time(nullptr) - static_cast<time_t>(keep_hours) * 3600;
@@ -535,7 +538,7 @@ void MemoryStore::prune_notes(int keep_hours) {
 }
 
 std::string MemoryStore::get_policy(const std::string& tool) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_)
         return "";
     sqlite3_stmt* stmt = nullptr;
@@ -551,7 +554,7 @@ std::string MemoryStore::get_policy(const std::string& tool) const {
 }
 
 void MemoryStore::set_policy(const std::string& tool, const std::string& decision) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_)
         return;
     sqlite3_stmt* stmt = nullptr;
@@ -568,14 +571,14 @@ void MemoryStore::set_policy(const std::string& tool, const std::string& decisio
 }
 
 void MemoryStore::clear_policies() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_)
         return;
     sqlite3_exec(db_, "DELETE FROM agent_tool_policy", nullptr, nullptr, nullptr);
 }
 
 nlohmann::json MemoryStore::list_policies() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
     nlohmann::json out = nlohmann::json::object();
     if (!db_)
         return out;

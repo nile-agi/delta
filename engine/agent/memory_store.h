@@ -42,7 +42,7 @@ class MemoryStore {
 
     // Creates the tables if needed. Safe to call repeatedly.
     bool init(sqlite3* db);
-    bool ready() const { return db_ != nullptr; }
+    bool ready() const { return db_ != nullptr && mutex_ != nullptr; }
 
     // --- long-term memory ---
     // `conversation_id` empty saves a general memory, visible everywhere. Anything else scopes the
@@ -93,7 +93,9 @@ class MemoryStore {
     std::vector<Memory> query_all() const;
 
     sqlite3* db_ = nullptr;
-    mutable std::mutex mutex_;
+    // Points at AgentDatabase's lock, because both classes drive the same connection. Null until
+    // init() succeeds, which is also what ready() reports.
+    mutable std::recursive_mutex* mutex_ = nullptr;
 };
 
 } // namespace agent
