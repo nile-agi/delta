@@ -452,7 +452,13 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         client_.set_config(saved);
         result.streamed_chars += forwarded;
 
-        if (aborted || !response.is_object() || !response.contains("choices") || !response["choices"].is_array() ||
+        if (aborted) {
+            // The client went away mid-summary. Say so rather than reporting a finished run.
+            result.client_aborted = true;
+            result.stop_reason = "client_aborted";
+            return "";
+        }
+        if (!response.is_object() || !response.contains("choices") || !response["choices"].is_array() ||
             response["choices"].empty())
             return "";
         const auto& choice = response["choices"][0];
@@ -816,8 +822,17 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
                                        : last_content;
     result.content = closing;
     // Close the transcript on an assistant turn so the stored conversation never ends on a tool
-    // result, which strict chat templates reject on the next turn.
-    transcript.push_back({{"role", "assistant"}, {"content", result.content}});
+    // result, which strict chat templates reject on the next turn. When the fallback reused text
+    // the model already said, that message is in the transcript once and must not go in twice.
+    bool already_recorded = false;
+    for (size_t i = transcript.size(); i-- > 0;) {
+        if (transcript[i].value("role", "") != "assistant")
+            continue;
+        already_recorded = message_text(transcript[i]) == result.content;
+        break;
+    }
+    if (!already_recorded)
+        transcript.push_back({{"role", "assistant"}, {"content", result.content}});
     emit(EventType::Status, {{"message", "Stopped after " + std::to_string(result.iterations) + " steps."}});
     return finish(result);
 }

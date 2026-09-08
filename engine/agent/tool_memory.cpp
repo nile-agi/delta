@@ -44,6 +44,13 @@ void register_memory_tools() {
             // Scoped by default: a detail from one job has no business surfacing in an unrelated one.
             const std::string scope = args.value("scope", "this_task");
             const std::string conversation = scope == "general" ? std::string() : active_memory_scope();
+            if (scope != "general" && conversation.empty()) {
+                // Saving it now would make it visible in every conversation, which is the one thing
+                // this scope exists to prevent.
+                return {false, "",
+                        "There is no conversation to attach this to. Pass scope='general' if it "
+                        "really applies everywhere."};
+            }
             const std::string id =
                 MemoryStore::instance().remember(content, args.value("kind", "fact"), args.value("tags", ""),
                                                  args.value("importance", 1), "chat", conversation);
