@@ -451,6 +451,7 @@ class ChatStore {
 		// A regeneration reuses the message id, so drop whatever the previous run recorded.
 		agentStore.begin(assistantMessage.id);
 
+		const isContinuation = Boolean(options?.initialContent);
 		let streamedContent = options?.initialContent ?? '';
 		let streamedReasoningContent = options?.initialThinking ?? '';
 		const chunkQueue: string[] = [];
@@ -612,9 +613,14 @@ class ChatStore {
 							tool_calls?: DatabaseMessageToolCall[];
 							agent_activity?: AgentActivity;
 						} = {
-							content: finalContent || streamedContent,
-							thinking: reasoningContent || streamedReasoningContent,
-							timings: timings
+							// When continuing an existing message, `finalContent` holds only the new
+							// text; `streamedContent` was seeded with what was already there. Taking
+							// the former would delete the original body in front of the user.
+							content: isContinuation ? streamedContent : finalContent || streamedContent,
+							thinking: isContinuation
+								? streamedReasoningContent
+								: reasoningContent || streamedReasoningContent,
+							...(timings ? { timings } : {})
 						};
 
 						if (toolCalls?.length) {
