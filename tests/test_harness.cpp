@@ -1841,6 +1841,31 @@ static void test_the_model_is_told_when_it_is_running_out_of_steps() {
     check(last.find("steps left") != std::string::npos, "but the last one knows it is nearly out");
 }
 
+static void test_create_event_respects_an_explicit_type() {
+    test("the title heuristic guesses a type but never overrules the one the model asked for");
+
+    auto& registry = ToolRegistry::instance();
+    auto& db = AgentDatabase::instance();
+
+    // "call" is one of the words that makes a title look like a to-do.
+    ToolResult guessed =
+        registry.execute("create_event", {{"title", "call the dentist"}, {"start_time", "2026-10-01T09:00"}});
+    check(guessed.success, "the item was created");
+    json a = json::parse(guessed.content, nullptr, false);
+    check(a.is_object() && a.value("type", "") == "task", "with no type given it is read as a task");
+    check(guessed.content.find("note") != std::string::npos, "and the guess is explained");
+
+    ToolResult explicit_event = registry.execute(
+        "create_event",
+        {{"title", "call with the design team"}, {"start_time", "2026-10-02T09:00"}, {"type", "event"}});
+    check(explicit_event.success, "the second item was created");
+    json b = json::parse(explicit_event.content, nullptr, false);
+    check(b.is_object() && b.value("type", "") == "event", "an explicit type is left alone");
+
+    for (const auto& item : db.list_events("2026-10-01", "2026-10-03", 20, "", ""))
+        db.delete_event(item.value("id", ""));
+}
+
 // ------------------------------------------------------- deferred tool loading
 
 // The tool names a recorded request actually offered the model.
@@ -2120,6 +2145,7 @@ int main() {
     test_policy_is_remembered();
     test_scratchpad_plan();
 
+    test_create_event_respects_an_explicit_type();
     test_the_prompt_tells_the_model_to_ask_when_it_is_unsure();
     test_the_model_is_told_when_it_is_running_out_of_steps();
     test_memories_do_not_leak_between_conversations();

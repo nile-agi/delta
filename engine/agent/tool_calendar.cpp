@@ -249,8 +249,11 @@ void register_calendar_tools() {
             if (resolved_args.contains("end_time") && resolved_args["end_time"].is_string())
                 resolved_args["end_time"] = resolve_datetime(resolved_args["end_time"].get<std::string>());
 
-            // Auto-detect type if not explicitly set by model
-            if (!resolved_args.contains("type") || resolved_args["type"].get<std::string>() == "event") {
+            // Guess the type from the title, but only when the model did not say. Overruling an
+            // explicit type left the model asking for an event and silently getting a task.
+            bool guessed_task = false;
+            if (!resolved_args.contains("type") || !resolved_args["type"].is_string() ||
+                resolved_args["type"].get<std::string>().empty()) {
                 static const char* task_keywords[] = {
                     "work on",  "finish",   "review", "prepare", "submit",  "fix",    "build",  "write",
                     "read",     "buy",      "clean",  "call",    "email",   "send",   "study",  "practice",
@@ -259,6 +262,7 @@ void register_calendar_tools() {
                 for (int k = 0; task_keywords[k]; k++) {
                     if (title_lower.find(task_keywords[k]) != std::string::npos) {
                         resolved_args["type"] = "task";
+                        guessed_task = true;
                         break;
                     }
                 }
@@ -269,6 +273,10 @@ void register_calendar_tools() {
                 return {false, "", "Failed to create item."};
             auto event = db.get_event(id);
             auto result = strip_id(event);
+            if (guessed_task) {
+                result["note"] = "Recorded as a task because the title reads like something to do. "
+                                 "Pass type='event' if it is really an appointment.";
+            }
             if (!overlaps.empty()) {
                 nlohmann::json overlap_list = nlohmann::json::array();
                 for (auto& t : overlaps)
@@ -281,7 +289,9 @@ void register_calendar_tools() {
 
     registry.register_tool(
         {"list_events",
-         "Show calendar events and tasks. Use for 'what's on my calendar', 'what do I have today', 'show my tasks', "
+         "Search the calendar for events and tasks. This week's events and the active tasks are already "
+         "in the context above -- only call this to look outside that window or to filter, for example "
+         "'what do I have next month' or 'show me everything that is overdue'. Use for 'show my tasks', "
          "etc.",
          {{"type", "object"},
           {"properties",

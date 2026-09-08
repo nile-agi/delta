@@ -54,7 +54,8 @@ void register_memory_tools() {
 
     registry.register_tool(
         {"recall",
-         "Search your long-term memory for what you already know about a topic. Use it before "
+         "Search what you remember about the user. The most relevant memories are already in the context "
+         "above, so call this only when you need something that is not there. Use it before "
          "asking the user something they may have told you in an earlier conversation.",
          {{"type", "object"},
           {"properties",
