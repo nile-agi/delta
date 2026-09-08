@@ -2211,6 +2211,30 @@ static void test_fetch_url_refuses_link_local_addresses() {
     check(!hopped.success, "a redirect to a link-local address is refused");
 }
 
+static void test_read_file_does_not_load_more_than_it_returns() {
+    test("reading a large file returns a bounded slice without pulling the whole thing into memory");
+
+    const std::string path = "/tmp/delta-harness-large.txt";
+    {
+        std::ofstream out(path, std::ios::binary);
+        std::string chunk(1024, 'a');
+        for (int i = 0; i < 2048; i++) // 2 MB
+            out << chunk;
+    }
+
+    ToolResult result = ToolRegistry::instance().execute("read_file", {{"path", path}, {"max_bytes", 500}});
+    std::remove(path.c_str());
+
+    check(result.success, "the read succeeded");
+    json payload = json::parse(result.content, nullptr, false);
+    check(payload.is_object(), "it returned a result");
+    if (!payload.is_object())
+        return;
+    check(payload.value("truncated", false), "and says it was truncated");
+    check(payload.value("content", std::string()).size() < 4000, "the content is bounded");
+    check(payload.value("bytes", 0) >= 2 * 1024 * 1024, "while still reporting the real size of the file");
+}
+
 // ---------------------------------------------------------------------- main
 
 int main() {
@@ -2299,6 +2323,7 @@ int main() {
     test_shell_does_not_wait_forever_for_a_child_that_closed_its_output();
     test_fetch_url_does_not_follow_redirects_off_http();
     test_fetch_url_refuses_link_local_addresses();
+    test_read_file_does_not_load_more_than_it_returns();
 
     AgentDatabase::instance().close();
     std::remove(db_path.c_str());

@@ -227,12 +227,38 @@ void register_file_tools() {
                 return {false, "", "Could not open " + path};
             const size_t cap =
                 std::min<size_t>(kMaxReadBytes, std::max(1, args.value("max_bytes", (int)kMaxReadBytes)));
-            std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-            const size_t original = content.size();
-            bool truncated = false;
-            if (content.size() > cap) {
-                content = ContextManager::truncate_middle(content, cap);
-                truncated = true;
+            // Read only what is going to be returned. Slurping the file first meant a multi-gigabyte
+            // path could exhaust memory before the cap was ever applied.
+            in.seekg(0, std::ios::end);
+            const std::streamoff file_size = in.tellg();
+            const size_t original = file_size > 0 ? static_cast<size_t>(file_size) : 0;
+            in.seekg(0, std::ios::beg);
+
+            std::string content;
+            bool truncated = original > cap;
+            if (!truncated) {
+                content.resize(original);
+                if (original > 0)
+                    in.read(&content[0], static_cast<std::streamsize>(original));
+                content.resize(static_cast<size_t>(in.gcount()));
+            } else {
+                const size_t head = cap * 3 / 5;
+                const size_t tail = cap - head;
+                std::string head_text(head, '\0');
+                in.read(&head_text[0], static_cast<std::streamsize>(head));
+                head_text.resize(static_cast<size_t>(in.gcount()));
+                head_text.resize(ContextManager::utf8_floor(head_text, head_text.size()));
+
+                std::string tail_text(tail, '\0');
+                in.clear();
+                in.seekg(static_cast<std::streamoff>(original - tail), std::ios::beg);
+                in.read(&tail_text[0], static_cast<std::streamsize>(tail));
+                tail_text.resize(static_cast<size_t>(in.gcount()));
+                // The tail starts at an arbitrary byte, so step forward to a character boundary.
+                tail_text = tail_text.substr(ContextManager::utf8_ceil(tail_text, 0));
+
+                content = head_text + "\n\n... [" + std::to_string(original - head - tail) +
+                          " characters truncated by Delta] ...\n\n" + tail_text;
             }
             return ok_json({{"path", path}, {"bytes", original}, {"truncated", truncated}, {"content", content}});
         });
