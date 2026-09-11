@@ -59,6 +59,7 @@ class TaskStore {
     void checkpoint(const std::string& task_id, const std::string& summary);
     void record_budget(const std::string& task_id, const TaskBudget& budget);
     std::string record_receipt(const std::string& task_id, const TaskReceipt& receipt);
+    TaskReceipt receipt(const std::string& task_id, const std::string& idempotency_key) const;
     std::vector<TaskReceipt> receipts(const std::string& task_id, int limit) const;
 
   private:

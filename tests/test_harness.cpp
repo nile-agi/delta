@@ -1341,9 +1341,42 @@ static void test_harness_persists_plan_progress_and_tool_receipts_to_its_task() 
     const auto receipts = TaskStore::instance().receipts(result.task_id, 10);
     check_eq(receipts.size(), static_cast<size_t>(2), "each executed planning tool has a durable receipt");
     if (receipts.size() == 2) {
-        check_eq(receipts[0].tool_name, std::string("set_plan"), "the first receipt names set_plan");
-        check_eq(receipts[1].tool_name, std::string("update_plan"), "the second receipt names update_plan");
+        std::set<std::string> names;
+        for (const auto& receipt : receipts)
+            names.insert(receipt.tool_name);
+        check(names.count("set_plan") == 1, "the receipts include set_plan");
+        check(names.count("update_plan") == 1, "the receipts include update_plan");
     }
+}
+
+static void test_harness_replays_a_matching_task_receipt_without_running_the_tool() {
+    test("a resumed task does not re-execute a matching tool call receipt");
+
+    const int before = g_read_spy.calls;
+    ScriptedServer server({assistant_calling("test_read", json::object(), "stable-call"),
+                           {{"role", "assistant"}, {"content", "First pass complete."}},
+                           assistant_calling("test_read", json::object(), "stable-call"),
+                           {{"role", "assistant"}, {"content", "Reused the result."}}});
+    server.start();
+
+    RunOptions options = test_options();
+    options.memory_scope = "conversation-task-idempotency";
+    Harness first(server.url(), "test-model", true);
+    first.set_options(options);
+    EventLog first_log;
+    const auto initial = first.run(json::array({user("Read the test data")}), first_log.sink());
+
+    options.task_id = initial.task_id;
+    Harness resumed(server.url(), "test-model", true);
+    resumed.set_options(options);
+    EventLog log;
+    const auto replayed = resumed.run(json::array({user("Continue")}), log.sink());
+    server.stop();
+
+    check(initial.success && replayed.success, "both task passes completed");
+    check_eq(g_read_spy.calls - before, 1, "the matching resumed call did not run the tool again");
+    check_eq(TaskStore::instance().receipts(initial.task_id, 10).size(), static_cast<size_t>(1),
+             "the task retains one idempotent receipt");
 }
 
 static void test_abort_request_is_noticed_while_the_model_is_silent() {
@@ -2493,6 +2526,7 @@ int main() {
     test_harness_creates_and_completes_a_durable_task();
     test_harness_resumes_from_a_bounded_durable_task_dossier();
     test_harness_persists_plan_progress_and_tool_receipts_to_its_task();
+    test_harness_replays_a_matching_task_receipt_without_running_the_tool();
 
     test_create_event_respects_an_explicit_type();
     test_the_prompt_tells_the_model_to_ask_when_it_is_unsure();

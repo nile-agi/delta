@@ -302,6 +302,31 @@ std::string TaskStore::record_receipt(const std::string& task_id, const TaskRece
     return recorded ? id : "";
 }
 
+TaskReceipt TaskStore::receipt(const std::string& task_id, const std::string& idempotency_key) const {
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
+    TaskReceipt receipt;
+    if (!db_ || task_id.empty() || idempotency_key.empty())
+        return receipt;
+    sqlite3_stmt* statement = nullptr;
+    const char* sql = "SELECT id, step_id, tool_name, idempotency_key, status, arguments, result "
+                      "FROM agent_task_receipts WHERE task_id = ? AND idempotency_key = ?";
+    if (sqlite3_prepare_v2(db_, sql, -1, &statement, nullptr) != SQLITE_OK)
+        return receipt;
+    sqlite3_bind_text(statement, 1, task_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(statement, 2, idempotency_key.c_str(), -1, SQLITE_TRANSIENT);
+    if (sqlite3_step(statement) == SQLITE_ROW) {
+        receipt.id = column_text(statement, 0);
+        receipt.step_id = column_text(statement, 1);
+        receipt.tool_name = column_text(statement, 2);
+        receipt.idempotency_key = column_text(statement, 3);
+        receipt.status = column_text(statement, 4);
+        receipt.arguments = parse_json(column_text(statement, 5), nlohmann::json::object());
+        receipt.result = parse_json(column_text(statement, 6), nlohmann::json::object());
+    }
+    sqlite3_finalize(statement);
+    return receipt;
+}
+
 std::vector<TaskReceipt> TaskStore::receipts(const std::string& task_id, int limit) const {
     std::lock_guard<std::recursive_mutex> lock(*mutex_);
     std::vector<TaskReceipt> out;

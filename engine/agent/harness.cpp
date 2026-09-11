@@ -391,6 +391,7 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
     };
 
     auto& tasks = TaskStore::instance();
+    std::set<std::string> resume_receipt_keys;
     if (tasks.ready() && supports_tools_ && options_.tools_enabled) {
         const std::string conversation_id = memory_key();
         if (options_.task_id.empty()) {
@@ -411,7 +412,13 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         }
         if (!result.task_id.empty()) {
             const TaskRecord task = tasks.get_task(result.task_id);
-            task_dossier_ = task_dossier(task, tasks.receipts(result.task_id, 3));
+            const auto recent_receipts = tasks.receipts(result.task_id, 100);
+            for (const auto& receipt : recent_receipts)
+                resume_receipt_keys.insert(receipt.idempotency_key);
+            std::vector<TaskReceipt> dossier_receipts;
+            for (size_t i = 0; i < recent_receipts.size() && i < 3; i++)
+                dossier_receipts.push_back(recent_receipts[i]);
+            task_dossier_ = task_dossier(task, dossier_receipts);
         }
     }
 
@@ -774,6 +781,28 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             if (!emit(EventType::ToolStart,
                       {{"call_id", call_id}, {"name", name}, {"arguments", arguments}, {"risk", risk_name(def->risk)}}))
                 return aborted();
+
+            if (!result.task_id.empty() && tasks.ready() && resume_receipt_keys.count(call_id) != 0) {
+                const TaskReceipt prior = tasks.receipt(result.task_id, call_id);
+                if (!prior.id.empty()) {
+                    if (prior.tool_name != name || prior.arguments != bounded_receipt_value(arguments)) {
+                        if (!refuse(call_id, name,
+                                    "This tool call id was already used with different arguments, so it was not run.",
+                                    false))
+                            return aborted();
+                        continue;
+                    }
+                    const std::string replay = prior.result.dump();
+                    transcript.push_back(
+                        {{"role", "tool"}, {"tool_call_id", call_id}, {"name", name}, {"content", replay}});
+                    if (!emit(EventType::ToolResult, {{"call_id", call_id},
+                                                      {"name", name},
+                                                      {"success", prior.status == "succeeded"},
+                                                      {"summary", "Reused the recorded result for this task step."}}))
+                        return aborted();
+                    continue;
+                }
+            }
 
             Decision decision = policy.decide(*def);
 
