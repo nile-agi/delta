@@ -955,6 +955,11 @@ class ModelAPIServer {
                     run_options.scratchpad_id = cid;
                     run_options.memory_scope = cid;
                 }
+                if (body.contains("task_id") && body["task_id"].is_string()) {
+                    run_options.task_id = body["task_id"].get<std::string>();
+                    if (run_options.task_id.size() > 128)
+                        run_options.task_id.clear();
+                }
 
                 {
                     // Taken from the registry, so registering a new group does not quietly make it

@@ -53,6 +53,7 @@ class ContextManager {
     const ContextStats& stats() const { return stats_; }
 
     int budget_tokens() const { return budget_; }
+    int reserve_output_tokens() const { return reserve_output_; }
     // Characters-per-token estimate used when the tokenizer endpoint is unavailable.
     static int estimate_tokens(const std::string& text);
     int token_cost(const nlohmann::json& message) const;

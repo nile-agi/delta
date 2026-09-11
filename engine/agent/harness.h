@@ -126,6 +126,9 @@ class Harness {
 
     mutable std::string context_cache_;
     mutable std::string context_cache_key_;
+    // Loaded once at run start so durable task state neither grows unbounded nor adds database
+    // work to every model iteration.
+    std::string task_dossier_;
 };
 
 } // namespace agent

@@ -1269,6 +1269,50 @@ static void test_harness_creates_and_completes_a_durable_task() {
         check_eq(task_event.value("task_id", ""), result.task_id, "the event names the returned task");
 }
 
+static void test_harness_resumes_from_a_bounded_durable_task_dossier() {
+    test("a resumed task supplies bounded durable state to a fresh harness run");
+
+    auto& tasks = TaskStore::instance();
+    const std::string task_id = tasks.create_task("Prepare tomorrow's agenda", "conversation-task-resume");
+    tasks.set_plan(task_id,
+                   json::array({{{"id", "find-events"}, {"step", "Find tomorrow's events"}, {"status", "completed"}},
+                                {{"id", "draft-agenda"}, {"step", "Draft the agenda"}, {"status", "in_progress"}}}));
+    tasks.checkpoint(task_id, "The morning stand-up is at 09:00; draft the remaining agenda.");
+    tasks.record_receipt(task_id,
+                         TaskReceipt{"", "find-events", "list_events", "resume-list-events", "succeeded",
+                                     json{{"date", "tomorrow"}}, json{{"events", json::array({"stand-up 09:00"})}}});
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "I completed the agenda."}}});
+    server.start();
+
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.memory_scope = "conversation-task-resume";
+    options.task_id = task_id;
+    harness.set_options(options);
+    EventLog log;
+    const auto result = harness.run(json::array({user("Continue the agenda task")}), log.sink());
+    const auto requests = server.requests();
+    server.stop();
+
+    check(result.success, "the resumed run completed");
+    check_eq(result.task_id, task_id, "the run retains the supplied task id");
+    check(!requests.empty(), "the resumed run made a model request");
+    if (!requests.empty() && requests[0].contains("messages") && !requests[0]["messages"].empty()) {
+        const std::string prompt = requests[0]["messages"][0].value("content", "");
+        check(prompt.find("DURABLE TASK STATE") != std::string::npos, "the prompt labels durable task state");
+        check(prompt.find("Prepare tomorrow's agenda") != std::string::npos, "the prompt includes the saved goal");
+        check(prompt.find("Draft the agenda") != std::string::npos, "the prompt includes the persisted plan");
+        check(prompt.find("morning stand-up") != std::string::npos, "the prompt includes the checkpoint");
+        check(prompt.find("list_events") != std::string::npos, "the prompt includes recent tool evidence");
+    }
+
+    const TaskRecord stored = tasks.get_task(task_id);
+    check(stored.budget.context_window_tokens > 0, "the measured context window was checkpointed");
+    check(stored.budget.used_input_tokens > 0, "the measured prompt usage was checkpointed");
+    check(stored.budget.available_input_tokens >= 0, "the remaining input budget was checkpointed");
+}
+
 static void test_abort_request_is_noticed_while_the_model_is_silent() {
     test("an abort request stops the run while the model has not yet produced anything");
 
@@ -2414,6 +2458,7 @@ int main() {
     test_scratchpad_plan();
     test_task_store_persists_checkpoint_budget_and_receipt();
     test_harness_creates_and_completes_a_durable_task();
+    test_harness_resumes_from_a_bounded_durable_task_dossier();
 
     test_create_event_respects_an_explicit_type();
     test_the_prompt_tells_the_model_to_ask_when_it_is_unsure();
