@@ -1313,6 +1313,39 @@ static void test_harness_resumes_from_a_bounded_durable_task_dossier() {
     check(stored.budget.available_input_tokens >= 0, "the remaining input budget was checkpointed");
 }
 
+static void test_harness_persists_plan_progress_and_tool_receipts_to_its_task() {
+    test("a task mirrors model plan progress and executed tool receipts");
+
+    ScriptedServer server({assistant_calling("set_plan",
+                                             {{"goal", "Prepare tomorrow's agenda"},
+                                              {"steps", json::array({"Find events", "Draft agenda"})}},
+                                             "plan-call"),
+                           assistant_calling("update_plan", {{"step_index", 0}, {"status", "done"}}, "update-call"),
+                           {{"role", "assistant"}, {"content", "The agenda is ready."}}});
+    server.start();
+
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.memory_scope = "conversation-task-plan-persistence";
+    harness.set_options(options);
+    EventLog log;
+    const auto result = harness.run(json::array({user("Prepare tomorrow's agenda")}), log.sink());
+    server.stop();
+
+    check(result.success, "the planned task completed");
+    const TaskRecord task = TaskStore::instance().get_task(result.task_id);
+    check(task.plan.is_array() && task.plan.size() == 2, "the task keeps both plan steps");
+    if (task.plan.is_array() && task.plan.size() == 2)
+        check_eq(task.plan[0].value("status", ""), std::string("done"), "the completed step was persisted");
+
+    const auto receipts = TaskStore::instance().receipts(result.task_id, 10);
+    check_eq(receipts.size(), static_cast<size_t>(2), "each executed planning tool has a durable receipt");
+    if (receipts.size() == 2) {
+        check_eq(receipts[0].tool_name, std::string("set_plan"), "the first receipt names set_plan");
+        check_eq(receipts[1].tool_name, std::string("update_plan"), "the second receipt names update_plan");
+    }
+}
+
 static void test_abort_request_is_noticed_while_the_model_is_silent() {
     test("an abort request stops the run while the model has not yet produced anything");
 
@@ -2459,6 +2492,7 @@ int main() {
     test_task_store_persists_checkpoint_budget_and_receipt();
     test_harness_creates_and_completes_a_durable_task();
     test_harness_resumes_from_a_bounded_durable_task_dossier();
+    test_harness_persists_plan_progress_and_tool_receipts_to_its_task();
 
     test_create_event_respects_an_explicit_type();
     test_the_prompt_tells_the_model_to_ask_when_it_is_unsure();

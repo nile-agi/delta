@@ -101,6 +101,14 @@ std::string task_dossier(const TaskRecord& task, const std::vector<TaskReceipt>&
     return out;
 }
 
+nlohmann::json bounded_receipt_value(const nlohmann::json& value) {
+    constexpr size_t kReceiptStorageChars = 4096;
+    const std::string encoded = value.dump();
+    if (encoded.size() <= kReceiptStorageChars)
+        return value;
+    return {{"truncated", true}, {"content", ContextManager::truncate_middle(encoded, kReceiptStorageChars)}};
+}
+
 } // namespace
 
 Harness::Harness(const std::string& llama_server_url, const std::string& model_name, bool supports_tools)
@@ -834,6 +842,27 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             // never let the model see what happened.
             std::string payload =
                 tool_result.success ? tool_result.content : nlohmann::json{{"error", tool_result.error_message}}.dump();
+
+            if (!result.task_id.empty() && tasks.ready()) {
+                nlohmann::json receipt_result;
+                try {
+                    receipt_result = nlohmann::json::parse(payload);
+                } catch (...) {
+                    receipt_result = {{"content", payload}};
+                }
+                tasks.record_receipt(
+                    result.task_id,
+                    TaskReceipt{
+                        "", name == "update_plan" ? std::to_string(arguments.value("step_index", -1)) : std::string(),
+                        name, call_id, tool_result.success ? "succeeded" : "failed", bounded_receipt_value(arguments),
+                        bounded_receipt_value(receipt_result)});
+
+                if (tool_result.success && (name == "set_plan" || name == "update_plan")) {
+                    const nlohmann::json plan = MemoryStore::instance().get_plan(pad);
+                    if (plan.is_object() && plan.contains("steps") && plan["steps"].is_array())
+                        tasks.set_plan(result.task_id, plan["steps"]);
+                }
+            }
 
             // Same call, same answer, again. The warning rides along with the real result rather
             // than replacing it, so the model still has what it asked for.
