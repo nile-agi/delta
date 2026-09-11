@@ -94,6 +94,7 @@ std::string host_denied_reason(const std::string& host) {
     return denied ? "Requests to link-local addresses (" + host + ") are not allowed" : "";
 }
 
+#if LIBCURL_VERSION_NUM >= 0x075000
 // Runs before each request curl makes, including after a redirect, with the address it just
 // connected to. Refusing here closes the redirect route around the check above.
 int refuse_link_local_prereq(void*, char* conn_primary_ip, char*, int, int) {
@@ -111,6 +112,7 @@ int refuse_link_local_prereq(void*, char* conn_primary_ip, char*, int, int) {
     }
     return CURL_PREREQFUNC_OK;
 }
+#endif
 
 // Strips tags, script and style bodies, and collapses whitespace. Not a real HTML parser -- just
 // enough to turn a page into something a model can read.
@@ -221,7 +223,7 @@ void register_web_tools() {
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
             curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
             curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
-#ifdef CURLOPT_PREREQFUNCTION
+#if LIBCURL_VERSION_NUM >= 0x075000
             curl_easy_setopt(curl, CURLOPT_PREREQFUNCTION, refuse_link_local_prereq);
 #endif
             curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);

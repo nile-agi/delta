@@ -29,7 +29,10 @@ engine: ensure-submodules
 	@bash scripts/check-toolchain.sh
 	@bash scripts/clean-stale-cmake-cache.sh build
 	mkdir -p build
-	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON -DCMAKE_C_COMPILER=/usr/bin/cc -DCMAKE_CXX_COMPILER=/usr/bin/c++
+	# RDMA requires libibverbs and is not supported by the macOS toolchain. Make this explicit so a
+	# cached build tree from an older llama.cpp configuration cannot leave unresolved ibv_* symbols.
+	@rdma_arg=""; if [ "$$(uname -s)" = "Darwin" ]; then rdma_arg="-DGGML_RPC_RDMA=OFF"; fi; \
+	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_METAL=ON $$rdma_arg -DCMAKE_C_COMPILER=/usr/bin/cc -DCMAKE_CXX_COMPILER=/usr/bin/c++
 	cmake --build build -j$$(sysctl -n hw.ncpu) --target delta-server --target llama-server
 
 # Builds the sidecars and copies them into src-tauri/binaries/ with the
