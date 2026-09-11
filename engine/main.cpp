@@ -10,6 +10,7 @@
 #include "agent/agent_database.h"
 #include "agent/harness.h"
 #include "agent/memory_store.h"
+#include "agent/task_store.h"
 #include "agent/policy.h"
 #include "agent/tool_registry.h"
 #include <iostream>
@@ -394,8 +395,12 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     // whether or not a model is loaded.
     if (!agent::AgentDatabase::instance().init())
         UI::print_error("Agent database unavailable - calendar, notes and memory tools are disabled.");
-    else if (!agent::MemoryStore::instance().init(agent::AgentDatabase::instance().handle()))
-        UI::print_error("Memory store unavailable - Delta will not remember anything this session.");
+    else {
+        if (!agent::MemoryStore::instance().init(agent::AgentDatabase::instance().handle()))
+            UI::print_error("Memory store unavailable - Delta will not remember anything this session.");
+        if (!agent::TaskStore::instance().init(agent::AgentDatabase::instance().handle()))
+            UI::print_error("Task store unavailable - Delta cannot resume agent work this session.");
+    }
 
     if (!harness_url.empty()) {
         agent::register_all_tools();

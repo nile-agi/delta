@@ -262,6 +262,7 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
 
     // A summariser that ignores its brief must not be allowed to spend the whole window, so the
     // note is trimmed to the room set aside for it.
+    int summary_tokens = 0;
     if (!summary_note.empty()) {
         int summary_cost = token_cost(nlohmann::json{{"role", "system"}, {"content", summary_note}});
         if (summary_cost > kSummaryAllowance) {
@@ -270,6 +271,7 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
             summary_cost = token_cost(nlohmann::json{{"role", "system"}, {"content", summary_note}});
         }
         system_msg["content"] = system_msg["content"].get<std::string>() + summary_note;
+        summary_tokens = summary_cost;
     }
 
     nlohmann::json out = nlohmann::json::array();
@@ -281,7 +283,9 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
 
     // Measured on the finished system message rather than added up from parts: tokenisation is
     // not additive, and this is the figure the UI shows.
-    stats_.used_tokens = token_cost(system_msg) + used;
+    stats_.system_tokens = token_cost(system_msg);
+    stats_.summary_tokens = summary_tokens;
+    stats_.used_tokens = stats_.system_tokens + used;
     return out;
 }
 

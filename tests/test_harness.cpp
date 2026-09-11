@@ -13,6 +13,7 @@
 #include "agent/context_manager.h"
 #include "agent/harness.h"
 #include "agent/memory_store.h"
+#include "agent/task_store.h"
 #include "agent/tool_files.h"
 #include "agent/tool_registry.h"
 #include "agent/tool_shell.h"
@@ -964,6 +965,9 @@ static void test_the_compaction_summary_is_paid_for(void) {
         total += context.token_cost(msg);
     check(total <= context.budget_tokens(), "everything actually sent fits the budget (" + std::to_string(total) +
                                                 " vs " + std::to_string(context.budget_tokens()) + ")");
+    check(context.stats().system_tokens > context.stats().summary_tokens,
+          "the measured system prompt includes the summary and base instructions");
+    check(context.stats().summary_tokens > 0, "the summary cost is exposed for task budget checkpoints");
     check_eq(context.stats().used_tokens, total, "and the reported figure matches what was built");
 }
 
@@ -1203,6 +1207,38 @@ static void test_scratchpad_plan() {
 
     memory.clear_plan(run);
     check(memory.get_plan(run).is_null(), "clearing the plan removes it");
+}
+
+static void test_task_store_persists_checkpoint_budget_and_receipt() {
+    test("tasks persist their checkpoint, token budget, and receipts");
+
+    auto& tasks = TaskStore::instance();
+    check(tasks.ready(), "the task store is initialised");
+
+    const std::string task_id = tasks.create_task("Prepare tomorrow's agenda", "conversation-a");
+    check(!task_id.empty(), "a task was created");
+
+    tasks.set_plan(task_id, json::array({{{"id", "step-1"},
+                                          {"description", "Review calendar"},
+                                          {"success_criteria", "Agenda items are identified"},
+                                          {"status", "pending"}}}));
+    tasks.checkpoint(task_id, "Found the relevant calendar.");
+    tasks.record_budget(task_id, TaskBudget{4096, 512, 100, 200, 80, 900, 3204});
+    const std::string receipt_id =
+        tasks.record_receipt(task_id, TaskReceipt{"", "step-1", "list_events", "task-step-1-list-events", "succeeded",
+                                                  json::object(), json{{"count", 2}}});
+    check(!receipt_id.empty(), "a receipt was recorded");
+
+    const TaskRecord task = tasks.get_task(task_id);
+    check_eq(task.goal, std::string("Prepare tomorrow's agenda"), "the goal was stored");
+    check_eq(task.checkpoint, std::string("Found the relevant calendar."), "the checkpoint was stored");
+    check_eq(task.plan.size(), size_t(1), "the structured plan was stored");
+    check_eq(task.budget.available_input_tokens, 3204, "the remaining input budget was stored");
+
+    const auto receipts = tasks.receipts(task_id, 5);
+    check_eq(receipts.size(), size_t(1), "the receipt can be read back");
+    if (!receipts.empty())
+        check_eq(receipts[0].idempotency_key, std::string("task-step-1-list-events"), "the receipt keeps its key");
 }
 
 static void test_abort_request_is_noticed_while_the_model_is_silent() {
@@ -2291,6 +2327,10 @@ int main() {
         std::cerr << "could not initialise the memory store\n";
         return 1;
     }
+    if (!TaskStore::instance().init(AgentDatabase::instance().handle())) {
+        std::cerr << "could not initialise the task store\n";
+        return 1;
+    }
     register_test_tools();
     register_all_tools();
 
@@ -2344,6 +2384,7 @@ int main() {
     test_memory_store_roundtrip();
     test_policy_is_remembered();
     test_scratchpad_plan();
+    test_task_store_persists_checkpoint_budget_and_receipt();
 
     test_create_event_respects_an_explicit_type();
     test_the_prompt_tells_the_model_to_ask_when_it_is_unsure();

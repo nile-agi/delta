@@ -1,5 +1,6 @@
 #include "agent_database.h"
 #include "memory_store.h"
+#include "task_store.h"
 #include "time_compat.h"
 #include <nlohmann/json.hpp>
 #include <filesystem>
@@ -56,6 +57,7 @@ void AgentDatabase::close() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     // Tell the sharer first, or it keeps a freed pointer and still reports itself ready.
     MemoryStore::instance().detach();
+    TaskStore::instance().detach();
     if (db_) {
         sqlite3_close(db_);
         db_ = nullptr;

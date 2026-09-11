@@ -157,6 +157,7 @@ set(DELTA_SOURCES
     engine/api/note_routes.cpp
     engine/agent/agent_database.cpp
     engine/agent/memory_store.cpp
+    engine/agent/task_store.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
     engine/agent/tool_notes.cpp
@@ -241,6 +242,7 @@ add_executable(delta-server
     engine/api/note_routes.cpp
     engine/agent/agent_database.cpp
     engine/agent/memory_store.cpp
+    engine/agent/task_store.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
     engine/agent/tool_notes.cpp
@@ -349,6 +351,7 @@ add_executable(delta-harness-tests EXCLUDE_FROM_ALL
     tests/test_harness.cpp
     engine/agent/agent_database.cpp
     engine/agent/memory_store.cpp
+    engine/agent/task_store.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
     engine/agent/tool_notes.cpp

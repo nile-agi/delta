@@ -16,6 +16,8 @@ using TokenCounter = std::function<int(const std::string&)>;
 struct ContextStats {
     int budget_tokens = 0;
     int tool_tokens = 0;
+    int system_tokens = 0;
+    int summary_tokens = 0;
     int used_tokens = 0;
     int dropped_messages = 0;
     int truncated_results = 0;

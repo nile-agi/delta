@@ -17,6 +17,7 @@
 #include "agent/context_manager.h"
 #include "agent/harness.h"
 #include "agent/memory_store.h"
+#include "agent/task_store.h"
 #include "agent/policy.h"
 
 #include "tools/hardware_monitor.h"
@@ -1539,6 +1540,9 @@ class ModelAPIServer {
         }
         if (!agent::MemoryStore::instance().init(agent::AgentDatabase::instance().handle())) {
             std::cerr << "[WARNING] Failed to initialize agent memory — long-term recall is disabled" << std::endl;
+        }
+        if (!agent::TaskStore::instance().init(agent::AgentDatabase::instance().handle())) {
+            std::cerr << "[WARNING] Failed to initialize agent tasks — task recovery is disabled" << std::endl;
         }
         agent::register_all_tools();
         setup_routes();
