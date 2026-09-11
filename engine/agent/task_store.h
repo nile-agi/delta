@@ -54,6 +54,7 @@ class TaskStore {
 
     std::string create_task(const std::string& goal, const std::string& conversation_id);
     TaskRecord get_task(const std::string& task_id) const;
+    void set_status(const std::string& task_id, const std::string& status);
     void set_plan(const std::string& task_id, const nlohmann::json& plan);
     void checkpoint(const std::string& task_id, const std::string& summary);
     void record_budget(const std::string& task_id, const TaskBudget& budget);

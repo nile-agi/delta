@@ -1241,6 +1241,34 @@ static void test_task_store_persists_checkpoint_budget_and_receipt() {
         check_eq(receipts[0].idempotency_key, std::string("task-step-1-list-events"), "the receipt keeps its key");
 }
 
+static void test_harness_creates_and_completes_a_durable_task() {
+    test("a tool-capable harness run has a durable task lifecycle");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "Your agenda is ready."}}});
+    server.start();
+
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.memory_scope = "conversation-task-lifecycle";
+    harness.set_options(options);
+    EventLog log;
+    const auto result = harness.run(json::array({user("Prepare tomorrow's agenda")}), log.sink());
+    server.stop();
+
+    check(result.success, "the run completed");
+    check(!result.task_id.empty(), "the run returned its durable task id");
+    const TaskRecord task = TaskStore::instance().get_task(result.task_id);
+    check_eq(task.goal, std::string("Prepare tomorrow's agenda"), "the task uses the user goal");
+    check_eq(task.conversation_id, std::string("conversation-task-lifecycle"),
+             "the task is scoped to its conversation");
+    check_eq(task.status, std::string("completed"), "a normal stop completes the task");
+
+    const json task_event = log.first(EventType::TaskUpdate);
+    check(task_event.is_object(), "the task lifecycle was streamed");
+    if (task_event.is_object())
+        check_eq(task_event.value("task_id", ""), result.task_id, "the event names the returned task");
+}
+
 static void test_abort_request_is_noticed_while_the_model_is_silent() {
     test("an abort request stops the run while the model has not yet produced anything");
 
@@ -2385,6 +2413,7 @@ int main() {
     test_policy_is_remembered();
     test_scratchpad_plan();
     test_task_store_persists_checkpoint_budget_and_receipt();
+    test_harness_creates_and_completes_a_durable_task();
 
     test_create_event_respects_an_explicit_type();
     test_the_prompt_tells_the_model_to_ask_when_it_is_unsure();

@@ -1,6 +1,7 @@
 #include "harness.h"
 #include "agent_database.h"
 #include "memory_store.h"
+#include "task_store.h"
 #include "time_compat.h"
 #include "tool_registry.h"
 #include "tool_task.h"
@@ -346,6 +347,27 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         return sink(HarnessEvent{type, std::move(data)});
     };
 
+    auto& tasks = TaskStore::instance();
+    if (tasks.ready() && supports_tools_ && options_.tools_enabled) {
+        const std::string conversation_id = memory_key();
+        if (options_.task_id.empty()) {
+            result.task_id = tasks.create_task(last_user_text(messages), conversation_id);
+            if (!result.task_id.empty())
+                emit(EventType::TaskUpdate, {{"task_id", result.task_id}, {"status", "active"}, {"created", true}});
+        } else {
+            const TaskRecord task = tasks.get_task(options_.task_id);
+            if (task.id.empty() || task.conversation_id != conversation_id) {
+                result.error = "The requested task does not belong to this conversation.";
+                result.stop_reason = "error";
+                emit(EventType::Error, {{"message", result.error}});
+                return result;
+            }
+            result.task_id = task.id;
+            tasks.set_status(result.task_id, "active");
+            emit(EventType::TaskUpdate, {{"task_id", result.task_id}, {"status", "active"}, {"created", false}});
+        }
+    }
+
     // Resolve the real context window once per run.
     int n_ctx = options_.n_ctx;
     if (n_ctx <= 0)
@@ -423,6 +445,13 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         if (options_.scratchpad_id.empty() || r.stop_reason == "stop") {
             MemoryStore::instance().clear_plan(pad);
             MemoryStore::instance().clear_notes(pad);
+        }
+        if (!r.task_id.empty() && tasks.ready()) {
+            const std::string status = r.stop_reason == "stop"    ? "completed"
+                                       : r.stop_reason == "error" ? "failed"
+                                                                  : "interrupted";
+            tasks.set_status(r.task_id, status);
+            emit(EventType::TaskUpdate, {{"task_id", r.task_id}, {"status", status}, {"created", false}});
         }
         return r;
     };

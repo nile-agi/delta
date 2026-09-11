@@ -215,6 +215,8 @@ static const char* agent_event_name(delta::agent::EventType type) {
         return "approval_resolved";
     case EventType::Compaction:
         return "compaction";
+    case EventType::TaskUpdate:
+        return "task_update";
     case EventType::Status:
         return "status";
     case EventType::Error:

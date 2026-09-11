@@ -20,6 +20,7 @@ enum class EventType {
     ApprovalRequired, // {id, call_id, name, arguments, risk, description}
     ApprovalResolved, // {id, decision}
     Compaction,       // {dropped, summarized, truncated_results, used_tokens, tool_tokens, budget_tokens}
+    TaskUpdate,       // {task_id, status, created}
     Status,           // {message} -- iteration and budget notices
     Error,            // {message}
 };
@@ -60,6 +61,9 @@ struct RunOptions {
     // a plan dies with the session while a memory should outlive it: the CLI keeps one memory scope
     // across launches but a fresh scratchpad each time. Empty falls back to the scratchpad key.
     std::string memory_scope;
+    // Empty starts a new durable task for a tool-capable run. A supplied id resumes only a task
+    // scoped to this conversation.
+    std::string task_id;
     // Polled while the model is generating and before each tool, so a caller can stop a run
     // (Ctrl-C, a closed connection) even when no event is flowing. Empty means never.
     std::function<bool()> abort_requested;
@@ -79,6 +83,7 @@ struct RunResult {
     nlohmann::json transcript_delta = nlohmann::json::array();
     size_t streamed_chars = 0;
     bool client_aborted = false;
+    std::string task_id;
 };
 
 // The agent loop. One instance serves one run.

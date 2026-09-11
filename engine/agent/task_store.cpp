@@ -183,6 +183,22 @@ TaskRecord TaskStore::get_task(const std::string& task_id) const {
     return task;
 }
 
+void TaskStore::set_status(const std::string& task_id, const std::string& status) {
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
+    if (!db_ || task_id.empty() || status.empty())
+        return;
+    sqlite3_stmt* statement = nullptr;
+    const char* sql = "UPDATE agent_tasks SET status = ?, updated_at = ? WHERE id = ?";
+    if (sqlite3_prepare_v2(db_, sql, -1, &statement, nullptr) != SQLITE_OK)
+        return;
+    const std::string now = utc_now();
+    sqlite3_bind_text(statement, 1, status.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(statement, 2, now.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(statement, 3, task_id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(statement);
+    sqlite3_finalize(statement);
+}
+
 void TaskStore::set_plan(const std::string& task_id, const nlohmann::json& plan) {
     std::lock_guard<std::recursive_mutex> lock(*mutex_);
     if (!db_ || task_id.empty() || !plan.is_array())
