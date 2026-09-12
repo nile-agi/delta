@@ -1379,6 +1379,29 @@ static void test_harness_replays_a_matching_task_receipt_without_running_the_too
              "the task retains one idempotent receipt");
 }
 
+static void test_interrupted_task_persists_its_bounded_handoff() {
+    test("an interrupted task persists the model handoff for its next run");
+
+    ScriptedServer server(
+        {assistant_calling("test_read", json::object(), "handoff-read"),
+         {{"role", "assistant"}, {"content", "I found the source data; the next step is to review the two entries."}}});
+    server.start();
+
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = test_options();
+    options.memory_scope = "conversation-task-handoff";
+    options.max_iterations = 1;
+    harness.set_options(options);
+    EventLog log;
+    const auto result = harness.run(json::array({user("Review the test data")}), log.sink());
+    server.stop();
+
+    check_eq(result.stop_reason, std::string("max_iterations"), "the task stopped at its iteration budget");
+    const TaskRecord task = TaskStore::instance().get_task(result.task_id);
+    check(task.checkpoint.find("next step is to review") != std::string::npos, "the next-run handoff was persisted");
+    check(task.checkpoint.size() <= 1200, "the persisted handoff is bounded");
+}
+
 static void test_abort_request_is_noticed_while_the_model_is_silent() {
     test("an abort request stops the run while the model has not yet produced anything");
 
@@ -2527,6 +2550,7 @@ int main() {
     test_harness_resumes_from_a_bounded_durable_task_dossier();
     test_harness_persists_plan_progress_and_tool_receipts_to_its_task();
     test_harness_replays_a_matching_task_receipt_without_running_the_tool();
+    test_interrupted_task_persists_its_bounded_handoff();
 
     test_create_event_respects_an_explicit_type();
     test_the_prompt_tells_the_model_to_ask_when_it_is_unsure();

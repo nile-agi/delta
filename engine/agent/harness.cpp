@@ -513,6 +513,10 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             const std::string status = r.stop_reason == "stop"    ? "completed"
                                        : r.stop_reason == "error" ? "failed"
                                                                   : "interrupted";
+            // The closing model turn is the most compact account of what happened and what is
+            // left. Keep it for a later resume, but never let a verbose model consume task state.
+            if (!r.content.empty())
+                tasks.checkpoint(r.task_id, bounded_task_text(r.content, 1200));
             tasks.set_status(r.task_id, status);
             emit(EventType::TaskUpdate, {{"task_id", r.task_id}, {"status", status}, {"created", false}});
         }
