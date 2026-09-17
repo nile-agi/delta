@@ -161,11 +161,6 @@
 		saveTimeout = setTimeout(() => doSave(), 500);
 	}
 
-	function setupEditor(node: HTMLDivElement) {
-		const observer = new MutationObserver(() => updateContentFromEditor());
-		observer.observe(node, { childList: true, subtree: true, characterData: true, attributes: true });
-		return { destroy() { observer.disconnect(); } };
-	}
 
 	$effect(() => {
 		if (activeNote && editorRef && !isUpdatingFromEditor) {
@@ -531,7 +526,12 @@
 	}
 
 	// Actions
+	function flushSave() {
+		if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; doSave(); }
+	}
+
 	function handleCreate() {
+		flushSave();
 		notesStore.createNote();
 		setTimeout(() => {
 			const el = document.querySelector('.note-title-input') as HTMLInputElement | null;
@@ -542,10 +542,11 @@
 
 	function handleDelete(id: string, e: Event) {
 		e.stopPropagation();
+		flushSave();
 		notesStore.deleteNote(id);
 	}
 
-	function selectNote(id: string) { notesStore.setActive(id); }
+	function selectNote(id: string) { flushSave(); notesStore.setActive(id); }
 
 	function updateTitle(e: Event) {
 		const target = e.target as HTMLInputElement;
@@ -725,7 +726,7 @@
 									{note.content?.replace(/<[^>]*>/g, '').slice(0, 60) || 'No content'}
 								</div>
 								<div class="text-xs text-muted-foreground mt-1">
-									{new Date(note.updatedAt).toLocaleDateString()} • {new Date(note.updatedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+									{new Date(note.createdAt).toLocaleDateString()} • {new Date(note.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
 								</div>
 							</div>
 							<button
@@ -864,7 +865,7 @@
 			<div class="flex-1 relative overflow-hidden">
 				<div
 					bind:this={editorRef}
-					use:setupEditor
+					oninput={updateContentFromEditor}
 					contenteditable="true"
 					role="textbox"
 					aria-multiline="true"
@@ -908,11 +909,16 @@
 			<!-- Status Bar -->
 			<div class="border-t px-4 py-1.5 flex items-center justify-between text-xs text-muted-foreground bg-muted/10">
 				<div class="flex items-center gap-3">
+					<span>Created {new Date(activeNote.createdAt).toLocaleString()}</span>
+					<span>Updated {new Date(activeNote.updatedAt).toLocaleString()}</span>
 					<span>{wordCount} words</span>
 					<span>{charCount} chars</span>
 				</div>
 				<div class="flex items-center gap-2">
-					{#if lastSaved}
+					{#if notesStore.saveError}
+						<span role="alert">{notesStore.saveError}</span>
+						<button onclick={() => notesStore.retrySave()}>Retry</button>
+					{:else if lastSaved}
 						<Check class="h-3 w-3 text-green-500" />
 						<span>Saved {lastSaved}</span>
 					{/if}
