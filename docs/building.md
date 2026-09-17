@@ -185,6 +185,16 @@ cmake -S . -B build -DCMAKE_OSX_ARCHITECTURES=x86_64 -DGGML_METAL=ON  # Intel
 
 ## Linux Troubleshooting
 
+Before launching a Fedora AppImage, run the read-only runtime check:
+
+```bash
+./scripts/check-linux-runtime.sh
+```
+
+Fedora installations need the host WebKitGTK 4.1, GTK3, and EGL/GL runtime libraries. AppImage
+does not install those desktop runtime dependencies for the host system. The RPM bundle declares
+the corresponding package dependencies when an RPM is used.
+
 **Blank screen on Ubuntu / Linux:**
 The app sets `WEBKIT_DISABLE_COMPOSITING_MODE=1` automatically to work around WebKitGTK GPU compositing issues. If you still see a blank screen, try these environment variables:
 
