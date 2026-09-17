@@ -10,6 +10,7 @@ export interface Note {
 	color?: string | null;
 	emoji?: string | null;
 	tags?: string[];
+	folder?: string;
 }
 
 export type NoteUpdates = Partial<
