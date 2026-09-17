@@ -44,6 +44,7 @@ export { default as MarkdownContent } from './misc/MarkdownContent.svelte';
 
 export { default as ServerStatus } from './server/ServerStatus.svelte';
 export { default as ServerErrorSplash } from './server/ServerErrorSplash.svelte';
+export { default as ModelBackendWarning } from './server/ModelBackendWarning.svelte';
 export { default as ServerLoadingSplash } from './server/ServerLoadingSplash.svelte';
 export { default as ServerInfo } from './server/ServerInfo.svelte';
 

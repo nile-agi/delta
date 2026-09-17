@@ -26,6 +26,7 @@
 			if (el) { el.textContent = 'Starting...'; el.style.opacity = '1'; }
 			function doPoll() {
 				window.__TAURI_INTERNALS__.invoke('get_server_status').then(function(r) {
+					window.__DELTA_MODEL_BACKEND_ERROR__ = r[4] || '';
 					if (r[2]) {
 						window.__DELTA_PORT__ = r[0];
 						window.__DELTA_MODEL_API_PORT__ = r[1];

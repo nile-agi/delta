@@ -15,15 +15,25 @@ struct ServerState {
     error: bool,
 }
 
+type BackendDiagnostic = Arc<Mutex<Option<String>>>;
+
 #[tauri::command]
 fn get_server_port(state: tauri::State<'_, Mutex<ServerState>>) -> u16 {
     state.lock().unwrap_or_else(|e| e.into_inner()).port
 }
 
 #[tauri::command]
-fn get_server_status(state: tauri::State<'_, Mutex<ServerState>>) -> (u16, u16, bool, bool) {
+fn get_server_status(
+    state: tauri::State<'_, Mutex<ServerState>>,
+    backend_diagnostic: tauri::State<'_, BackendDiagnostic>,
+) -> (u16, u16, bool, bool, String) {
     let s = state.lock().unwrap_or_else(|e| e.into_inner());
-    (s.port, s.model_api_port, s.ready, s.error)
+    let diagnostic = backend_diagnostic
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .unwrap_or_default();
+    (s.port, s.model_api_port, s.ready, s.error, diagnostic)
 }
 
 fn startup_info(message: &str) {
@@ -41,7 +51,25 @@ fn startup_error(message: &str) {
     eprintln!("[Delta] ERROR: {}", message);
 }
 
-fn log_sidecar_events(mut rx: tauri::async_runtime::Receiver<CommandEvent>) {
+fn classify_backend_diagnostic(line: &str) -> Option<String> {
+    let normalized = line.to_ascii_lowercase();
+    let is_fatal = normalized.contains("could not create default egl display")
+        || normalized.contains("egl_bad_parameter")
+        || normalized.contains("llama-server aborted")
+        || normalized.contains("failed to start server")
+        || normalized.contains("llama-server exited");
+
+    if is_fatal {
+        Some(line.trim().chars().take(240).collect())
+    } else {
+        None
+    }
+}
+
+fn log_sidecar_events(
+    mut rx: tauri::async_runtime::Receiver<CommandEvent>,
+    backend_diagnostic: BackendDiagnostic,
+) {
     std::thread::spawn(move || {
         while let Some(event) = rx.blocking_recv() {
             match event {
@@ -57,6 +85,13 @@ fn log_sidecar_events(mut rx: tauri::async_runtime::Receiver<CommandEvent>) {
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
                         startup_warn(&format!("delta-server stderr: {}", trimmed));
+                        if let Some(diagnostic) = classify_backend_diagnostic(trimmed) {
+                            let mut current =
+                                backend_diagnostic.lock().unwrap_or_else(|e| e.into_inner());
+                            if current.is_none() {
+                                *current = Some(diagnostic);
+                            }
+                        }
                     }
                 }
                 CommandEvent::Error(error) => {
@@ -72,6 +107,28 @@ fn log_sidecar_events(mut rx: tauri::async_runtime::Receiver<CommandEvent>) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::classify_backend_diagnostic;
+
+    #[test]
+    fn captures_fatal_graphics_startup_errors() {
+        assert_eq!(
+            classify_backend_diagnostic(
+                "Could not create default EGL display: EGL_BAD_PARAMETER. Aborting..."
+            ),
+            Some(
+                "Could not create default EGL display: EGL_BAD_PARAMETER. Aborting...".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn ignores_non_fatal_sidecar_warnings() {
+        assert_eq!(classify_backend_diagnostic("schema version: 4"), None);
+    }
 }
 
 struct StreamAbortFlags {
@@ -246,6 +303,7 @@ pub fn run() {
             ready: false,
             error: false,
         }))
+        .manage(BackendDiagnostic::default())
         .manage(StreamAbortFlags {
             flags: Mutex::new(HashMap::new()),
         })
@@ -292,7 +350,8 @@ pub fn run() {
                         "Spawned delta-server sidecar on port {} (model API on {})",
                         server_port, model_api_port
                     ));
-                    log_sidecar_events(rx);
+                    let backend_diagnostic = app.state::<BackendDiagnostic>().inner().clone();
+                    log_sidecar_events(rx, backend_diagnostic);
                     let state = app.state::<Mutex<ServerState>>();
                     let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     s.child = Some(child);
