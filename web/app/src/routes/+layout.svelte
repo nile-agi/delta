@@ -164,8 +164,9 @@
 		});
 	});
 
-	// Remove the splash once ready — skip in auxiliary webviews
+	// Notes can render without waiting for the model server.
 	$effect(() => {
+		if (isNotesWindow) { document.getElementById('app-loading')?.remove(); return; }
 		if (isAuxWindow) return;
 		if ((serverReady && modelApiReady) || serverError) {
 			const el = document.getElementById('app-loading');

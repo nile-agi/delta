@@ -19,7 +19,7 @@
 		<script>
 		(function() {
 			if (!window.location.hash) {
-				history.replaceState(null, '', window.location.pathname + '#/');
+				history.replaceState(null, '', window.location.pathname + window.location.search + '#/');
 			}
 			var el = document.querySelector('#app-loading p');
 			if (!('__TAURI_INTERNALS__' in window)) return;
