@@ -12,7 +12,7 @@
 
 stdenv.mkDerivation rec {
   pname = "delta-cli";
-  version = "1.0.0";
+  version = "1.0.13";
 
   src = fetchFromGitHub {
     owner = "nile-agi";
