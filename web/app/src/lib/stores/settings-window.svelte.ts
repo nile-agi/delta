@@ -76,6 +76,12 @@ class SettingsWindowStore {
 		this.save();
 	}
 
+	openTo(section: string) {
+		this.pendingSection = section;
+		if (this.state.open && this.state.minimized) this.restore();
+		else this.open();
+	}
+
 	close() {
 		dockStore.unregister('settings');
 		this.state.open = false;
@@ -141,7 +147,12 @@ class SettingsWindowStore {
 		const h = Math.max(MIN_HEIGHT, Math.min(this.state.height, vh));
 		const x = Math.max(0, Math.min(this.state.x, vw - MIN_VISIBLE_X));
 		const y = Math.max(0, Math.min(this.state.y, vh - MIN_VISIBLE_Y));
-		if (x !== this.state.x || y !== this.state.y || w !== this.state.width || h !== this.state.height) {
+		if (
+			x !== this.state.x ||
+			y !== this.state.y ||
+			w !== this.state.width ||
+			h !== this.state.height
+		) {
 			this.state.x = x;
 			this.state.y = y;
 			this.state.width = w;
