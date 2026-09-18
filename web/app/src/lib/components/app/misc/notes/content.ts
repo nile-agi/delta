@@ -11,6 +11,9 @@ export const LegacyBlock = Node.create({
 	parseHTML() {
 		return [{ tag: 'div[data-legacy-html]' }];
 	},
+	renderText({ node }) {
+		return new DOMParser().parseFromString(node.attrs.html, 'text/html').body.textContent || '';
+	},
 	renderHTML({ node }) {
 		const doc = new DOMParser().parseFromString(node.attrs.html, 'text/html');
 		return [
@@ -38,6 +41,9 @@ export const Attachment = Node.create({
 	parseHTML() {
 		return [{ tag: 'div.file-attachment' }];
 	},
+	renderText({ node }) {
+		return `${node.attrs.name}\n${node.attrs.text}`;
+	},
 	renderHTML({ node, HTMLAttributes }) {
 		return [
 			'div',
@@ -50,7 +56,7 @@ export const Attachment = Node.create({
 
 export function prepareContent(content: string): string {
 	const doc = document.implementation.createHTMLDocument();
-	if (!content.trim().startsWith('<')) {
+	if (!/<\/?[a-z][^>]*>/i.test(content)) {
 		for (const line of content.split('\n')) {
 			const p = doc.createElement('p');
 			p.textContent = line;

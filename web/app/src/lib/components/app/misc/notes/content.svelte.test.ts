@@ -2,8 +2,8 @@ import { expect, it } from 'vitest';
 import { prepareContent, serializeContent } from './content';
 
 it('escapes plain text instead of interpreting it as markup', () => {
-	expect(prepareContent('hello <b>world</b>\nnext')).toBe(
-		'<p>hello &lt;b&gt;world&lt;/b&gt;</p><p>next</p>'
+	expect(prepareContent('hello < 3 & goodbye\nnext')).toBe(
+		'<p>hello &lt; 3 &amp; goodbye</p><p>next</p>'
 	);
 });
 it('converts legacy checked items and highlights', () => {
@@ -16,4 +16,8 @@ it('converts legacy checked items and highlights', () => {
 it('round trips unsupported legacy content rather than dropping it', () => {
 	const original = '<p>Before</p><iframe src="https://example.com">Example</iframe><p>After</p>';
 	expect(serializeContent(prepareContent(original))).toBe(original);
+});
+
+it('preserves legacy inline markup after a leading text node', () => {
+	expect(prepareContent('Hello <b>world</b>')).toBe('Hello <b>world</b>');
 });
