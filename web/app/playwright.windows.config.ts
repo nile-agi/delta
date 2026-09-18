@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
 	testDir: 'e2e',
-	testMatch: 'notes.test.ts',
+	testMatch: ['notes.test.ts', 'calendar.test.ts'],
 	fullyParallel: true,
 	workers: 2,
 	timeout: 45000,

@@ -164,10 +164,9 @@
 		});
 	});
 
-	// Notes can render without waiting for the model server.
+	// Standalone windows render without waiting for the model server.
 	$effect(() => {
-		if (isNotesWindow) { document.getElementById('app-loading')?.remove(); return; }
-		if (isAuxWindow) return;
+		if (isAuxWindow) { document.getElementById('app-loading')?.remove(); return; }
 		if ((serverReady && modelApiReady) || serverError) {
 			const el = document.getElementById('app-loading');
 			if (el) {
