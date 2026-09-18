@@ -14,7 +14,7 @@
 	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { resolveModelApiBaseUrl, resetModelApiResolution } from '$lib/utils/model-api-url';
 	import { getServerBaseUrl } from '$lib/utils/server-base-url';
-	import { ServerErrorSplash } from '$lib/components/app';
+	import { ModelBackendWarning, ServerErrorSplash } from '$lib/components/app';
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from 'svelte-sonner';
 	import NotificationCenter from '$lib/components/app/notifications/NotificationCenter.svelte';
@@ -35,6 +35,7 @@
 	let serverReady = $state(!IS_TAURI_ENV);
 	let serverError = $state(false);
 	let serverErrorMessage = $state('');
+	let modelBackendError = $state('');
 
 	function handleRetryConnection() {
 		serverError = false;
@@ -51,6 +52,7 @@
 
 	$effect(() => {
 		if (!IS_TAURI_ENV) return;
+		modelBackendError = (window as any).__DELTA_MODEL_BACKEND_ERROR__ || '';
 		if ((window as any).__DELTA_PORT__ != null && !(window as any).__DELTA_SERVER_ERROR__) {
 			serverReady = true;
 			return;
@@ -77,8 +79,12 @@
 		const poll = setInterval(async () => {
 			try {
 				const { invoke } = await import('@tauri-apps/api/core');
-				const [port, mapiPort, ready, error] = await invoke<[number, number, boolean, boolean]>('get_server_status');
+				const [port, mapiPort, ready, error, backendError] = await invoke<
+					[number, number, boolean, boolean, string]
+				>('get_server_status');
 				pollFailures = 0;
+				modelBackendError = backendError || '';
+				(window as any).__DELTA_MODEL_BACKEND_ERROR__ = modelBackendError;
 				if (ready) {
 					(window as any).__DELTA_PORT__ = port;
 					(window as any).__DELTA_MODEL_API_PORT__ = mapiPort;
@@ -308,6 +314,9 @@
 	/>
 
 	<ChatSettingsDialog />
+	{#if modelBackendError}
+		<ModelBackendWarning error={modelBackendError} />
+	{/if}
 	<NotesWindow />
 	<CalendarWindow />
 	<WindowDock />

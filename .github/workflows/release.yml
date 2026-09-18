@@ -252,6 +252,13 @@ jobs:
             patchelf \
             libcurl4-openssl-dev
 
+      - name: Check Linux WebView runtime
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          chmod +x scripts/check-linux-runtime.sh
+          scripts/check-linux-runtime.sh
+
       - name: Install Windows dependencies
         if: matrix.platform == 'windows-latest'
         shell: bash
@@ -321,7 +328,9 @@ jobs:
             ### Linux AppImage Setup
 
             1. Make the file executable: `chmod +x Delta_*.AppImage`
-            2. Run it: `./Delta_*.AppImage`
+            2. Install the host WebKitGTK 4.1, GTK3, and EGL/GL runtime libraries for your distribution.
+            3. Run it: `./Delta_*.AppImage`
+            4. If the window is blank under Wayland, retry with `GDK_BACKEND=x11`.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
@@ -363,7 +372,9 @@ jobs:
             ### Linux AppImage Setup
 
             1. Make the file executable: `chmod +x Delta_*.AppImage`
-            2. Run it: `./Delta_*.AppImage`
+            2. Install the host WebKitGTK 4.1, GTK3, and EGL/GL runtime libraries for your distribution.
+            3. Run it: `./Delta_*.AppImage`
+            4. If the window is blank under Wayland, retry with `GDK_BACKEND=x11`.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

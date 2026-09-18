@@ -18,6 +18,11 @@ fail() {
 WEB_INDEX="$REPO_ROOT/public/index.html"
 [[ -f "$WEB_INDEX" ]] || fail "public/index.html not found. Run the web UI build before building Tauri."
 
+[[ -d "$REPO_ROOT/public/_app" ]] || fail "public/_app not found. The SvelteKit assets are missing; run the web UI build before building Tauri."
+find "$REPO_ROOT/public/_app" -type f -print -quit | grep -q . ||
+  fail "public/_app is empty. The SvelteKit assets are missing; run the web UI build before building Tauri."
+grep -q 'id="app-loading"' "$WEB_INDEX" || fail "public/index.html is missing the startup loading surface. Rebuild web/app before packaging."
+
 for marker in "__DELTA_PORT__" "__DELTA_MODEL_API_PORT__" "delta-server-ready" "delta-server-error"; do
   grep -q "$marker" "$WEB_INDEX" || fail "public/index.html is missing '$marker'. Rebuild web/app before packaging."
 done
