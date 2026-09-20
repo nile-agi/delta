@@ -3,7 +3,9 @@ import { toLocalDateStr } from '$lib/utils/calendar';
 
 let events = $state<CalendarEvent[]>([]);
 let loading = $state(false);
+let loaded = $state(false);
 let currentMonth = $state(new Date());
+let latestLoad = 0;
 
 export function calendarEvents() {
 	return events;
@@ -11,6 +13,10 @@ export function calendarEvents() {
 
 export function calendarLoading() {
 	return loading;
+}
+
+export function calendarLoaded() {
+	return loaded;
 }
 
 export function calendarCurrentMonth() {
@@ -25,13 +31,18 @@ export function setCurrentMonth(date: Date) {
 const MONTH_EVENT_LIMIT = 500;
 
 export async function loadEvents(start?: string, end?: string) {
+	const loadId = ++latestLoad;
 	loading = true;
 	try {
-		events = await agentService.listEvents(start, end, MONTH_EVENT_LIMIT);
+		const nextEvents = await agentService.listEvents(start, end, MONTH_EVENT_LIMIT);
+		if (loadId === latestLoad) events = nextEvents;
 	} catch (e) {
 		console.error('Failed to load events:', e);
 	} finally {
-		loading = false;
+		if (loadId === latestLoad) {
+			loaded = true;
+			loading = false;
+		}
 	}
 }
 

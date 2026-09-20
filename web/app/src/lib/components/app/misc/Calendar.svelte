@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ChevronLeft, ChevronRight, Plus, X } from '@lucide/svelte';
+	import { ChevronLeft, ChevronRight, Loader2, Plus, X } from '@lucide/svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import CalendarDayPanel from '$lib/components/app/calendar/CalendarDayPanel.svelte';
 	import EventFormDialog from '$lib/components/app/calendar/EventFormDialog.svelte';
@@ -8,6 +8,8 @@
 	import { config } from '$lib/stores/settings.svelte';
 	import {
 		calendarEvents,
+		calendarLoaded,
+		calendarLoading,
 		calendarCurrentMonth,
 		setCurrentMonth,
 		loadMonthEvents,
@@ -35,6 +37,8 @@
 
 	const month = $derived(calendarCurrentMonth());
 	const events = $derived(calendarEvents());
+	const loaded = $derived(calendarLoaded());
+	const loading = $derived(calendarLoading());
 	const weekStart = $derived(String(config().calendarWeekStart ?? 'monday'));
 	const dayNames = $derived(weekdayNames(weekStart));
 	const tags = $derived(collectTags(events));
@@ -172,6 +176,15 @@
 				Today
 			</Button>
 			<h1 class="ml-3 text-base font-semibold tracking-tight">{monthLabel}</h1>
+			{#if loading && loaded}
+				<span
+					class="inline-flex items-center text-muted-foreground"
+					role="status"
+					aria-label="Refreshing calendar"
+				>
+					<Loader2 class="size-4 animate-spin" aria-hidden="true" />
+				</span>
+			{/if}
 		</div>
 
 		{#if tags.length > 0}
@@ -203,7 +216,7 @@
 		</Button>
 	</div>
 
-	<div class="flex min-h-0 flex-1">
+	<div class="relative flex min-h-0 flex-1" aria-busy={loading}>
 		<div class="flex min-w-0 flex-1 flex-col p-3">
 			<div class="grid grid-cols-7">
 				{#each dayNames as name (name)}
@@ -264,6 +277,17 @@
 			onDelete={handleDelete}
 			onTagSelect={toggleTag}
 		/>
+
+		{#if loading && !loaded}
+			<div
+				class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background text-muted-foreground"
+				role="status"
+				aria-label="Loading calendar"
+			>
+				<Loader2 class="size-7 animate-spin" aria-hidden="true" />
+				<span class="text-sm">Loading calendar…</span>
+			</div>
+		{/if}
 	</div>
 </div>
 
