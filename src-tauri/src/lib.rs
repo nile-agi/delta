@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use tauri::{Emitter, Manager};
 use tauri::ipc::Channel;
-use tauri::Manager;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
+
 
 struct ServerState {
     child: Option<CommandChild>,
@@ -386,11 +386,35 @@ pub fn run() {
                 // Wait for Model API server (starts quickly, always available)
                 // rather than llama-server (may take 30s+ to load a model)
                 startup_info(&format!("Waiting for Model API readiness on port {}", mapi_port));
+                // if wait_for_server(mapi_port) {
+                //     startup_info(&format!("Model API is reachable on port {}", mapi_port));
+                //     if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
+                //         s.ready = true;
+                //     }
+                //     if let Some(window) = app_handle.get_webview_window("main") {
+                //         let js = format!(
+                //             "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.dispatchEvent(new CustomEvent('delta-server-ready'))",
+                //             port, mapi_port
+                //         );
+                //         if let Err(e) = window.eval(&js) {
+                //             startup_error(&format!("Failed to inject ports: {}", e));
+                //         }
+                //     }
+
                 if wait_for_server(mapi_port) {
                     startup_info(&format!("Model API is reachable on port {}", mapi_port));
                     if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
                         s.ready = true;
                     }
+                    
+                    // ✅ Emit Tauri event for the frontend to listen to
+                    let _ = app_handle.emit("delta-server-ready", serde_json::json!({
+                        "port": port,
+                        "modelApiPort": mapi_port
+                    }));
+
+                    // Fallback: inject into window if it's already open
+                    // ✅ CORRECTED CODE:
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let js = format!(
                             "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.dispatchEvent(new CustomEvent('delta-server-ready'))",
@@ -400,11 +424,12 @@ pub fn run() {
                             startup_error(&format!("Failed to inject ports: {}", e));
                         }
                     }
-                } else {
+                } else { // <--- ✅ Fixed: Only one closing brace before `else`
                     startup_warn(&format!(
                         "Model API did not respond within 30 seconds on port {}",
                         mapi_port
                     ));
+
                     if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
                         s.error = true;
                     }
@@ -422,9 +447,38 @@ pub fn run() {
 
             Ok(())
         })
+        // .on_window_event(|window, event| {
+        //     if let tauri::WindowEvent::CloseRequested { .. } = event {
+        //         let app = window.app_handle();
+        //         let state = app.state::<Mutex<ServerState>>();
+        //         let child = {
+        //             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+        //             s.child.take()
+        //         };
+        //         if let Some(child) = child {
+        //             log::info!("Shutting down delta-server...");
+        //             let _ = child.kill();
+        //         }
+        //         kill_stale_server_processes();
+        //     }
+        // })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
+                // Auxiliary windows (e.g. the "hardware-telemetry" OS window) must NOT
+                // tear down the sidecar. Only the main window owns the server lifecycle.
+                if window.label() != "main" {
+                    return;
+                }
+
+                // Main window is closing: shut down auxiliary windows first so they
+                // don't outlive the server with a dead SSE stream.
                 let app = window.app_handle();
+                for (label, w) in app.webview_windows() {
+                    if label != "main" {
+                        let _ = w.close();
+                    }
+                }
+
                 let state = app.state::<Mutex<ServerState>>();
                 let child = {
                     let mut s = state.lock().unwrap_or_else(|e| e.into_inner());

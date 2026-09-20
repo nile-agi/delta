@@ -78,6 +78,8 @@ export class ChatService {
 			onModel,
 			onFirstValidChunk,
 			useTools,
+			useCalendarTools,      // ADD THIS
+			useNotesTools,         // ADD THIS
 			// Generation parameters
 			temperature,
 			max_tokens,
@@ -145,6 +147,11 @@ export class ChatService {
 			})),
 			stream
 		};
+
+		if (useTools) {
+			requestBody.use_calendar_tools = useCalendarTools !== false;
+			requestBody.use_notes_tools = useNotesTools !== false;
+		}
 
 		const selectedOption = selectedModelOption();
 		const activeModel = selectedModelName() ?? selectedOption?.model ?? null;
@@ -337,10 +344,8 @@ export class ChatService {
 
 					if (line.startsWith('data: ')) {
 						const data = line.slice(6);
-						if (data === '[DONE]') {
-							streamFinished = true;
-							continue;
-						}
+						if (data === '[DONE]') { streamFinished = true; continue; }
+						if (!data.includes('"choices"')) continue; // ignore named agent events (tool_update/reasoning)
 
 						try {
 							const parsed: ApiChatCompletionStreamChunk = JSON.parse(data);

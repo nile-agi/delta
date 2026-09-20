@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import { onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { ChatSidebar, ChatSettingsDialog, ConversationTitleUpdateDialog } from '$lib/components/app';
@@ -20,18 +21,46 @@
 	import NotificationCenter from '$lib/components/app/notifications/NotificationCenter.svelte';
 	import OnboardingDialog from '$lib/components/app/onboarding/OnboardingDialog.svelte';
 	import { goto } from '$app/navigation';
-	import { onDestroy } from 'svelte';
 	import { startReminderPolling, stopReminderPolling } from '$lib/services/reminders';
 	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
 	import NotesWindow from '$lib/components/app/misc/NotesWindow.svelte';
 	import CalendarWindow from '$lib/components/app/misc/CalendarWindow.svelte';
 	import WindowDock from '$lib/components/app/misc/WindowDock.svelte';
+	import FloatingWindow from '$lib/components/app/misc/FloatingWindow.svelte';
+	import HardwareDashboard from '$lib/components/app/hardware/HardwareDashboard.svelte';
+	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
+	import Notes from '$lib/components/app/misc/Notes.svelte';
 	
+	// ❌ REMOVED: import { Calendar } from 'bits-ui';
+	// ❌ REMOVED: import Calendar from '$lib/components/app/misc/Calendar.svelte';
+
 	let { children } = $props();
+
+	// Synchronous detection of standalone OS windows
+	const kind = browser ? new URLSearchParams(window.location.search).get('window') ?? '' : '';
+	let isHardwareWindow = $state(kind === 'hardware');
+	let isCalendarWindow = $state(kind === 'calendar');
+	let isNotesWindow = $state(kind === 'notes');
 
 	const IS_TAURI_ENV =
 		browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+	// Authoritative Tauri label check (survives URL normalization)
+	if (browser && IS_TAURI_ENV) {
+		import('@tauri-apps/api/window')
+			.then(({ getCurrentWindow }) => {
+				const label = getCurrentWindow().label;
+				if (label === 'hardware-telemetry') isHardwareWindow = true;
+				else if (label === 'calendar') isCalendarWindow = true;
+				else if (label === 'notes') isNotesWindow = true;
+			})
+			.catch(() => {});
+	}
+
+	// Convenience: true for any standalone auxiliary window (skip all main-app work)
+	const isAuxWindow = $derived(isHardwareWindow || isCalendarWindow || isNotesWindow);
+
 	let serverReady = $state(!IS_TAURI_ENV);
 	let serverError = $state(false);
 	let serverErrorMessage = $state('');
@@ -50,7 +79,9 @@
 		});
 	}
 
+	// Server-ready polling — skip entirely in any auxiliary webview
 	$effect(() => {
+		if (isAuxWindow) return;
 		if (!IS_TAURI_ENV) return;
 		modelBackendError = (window as any).__DELTA_MODEL_BACKEND_ERROR__ || '';
 		if ((window as any).__DELTA_PORT__ != null && !(window as any).__DELTA_SERVER_ERROR__) {
@@ -94,7 +125,8 @@
 					clearInterval(poll);
 				} else if (error) {
 					serverError = true;
-					serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
+					serverErrorMessage =
+						'Server failed to start. Check that no other instance is running and restart the app.';
 					clearInterval(poll);
 				}
 			} catch (e) {
@@ -117,7 +149,9 @@
 
 	let modelApiReady = $state(!browser || typeof window === 'undefined');
 
+	// Model API readiness — skip in any auxiliary webview
 	$effect(() => {
+		if (isAuxWindow) return;
 		if (!serverReady) return;
 		if (!browser || typeof window === 'undefined') {
 			modelApiReady = true;
@@ -134,7 +168,9 @@
 		});
 	});
 
+	// Standalone windows render without waiting for the model server.
 	$effect(() => {
+		if (isAuxWindow) { document.getElementById('app-loading')?.remove(); return; }
 		if ((serverReady && modelApiReady) || serverError) {
 			const el = document.getElementById('app-loading');
 			if (el) {
@@ -152,9 +188,8 @@
 	let currentConfig = $derived(config());
 	let sidebarOpen = $state(false);
 	let innerHeight = $state<number | undefined>();
-	let chatSidebar:
-		| { activateSearchMode?: () => void; editActiveConversation?: () => void }
-		| undefined = $state();
+	let chatSidebar: { activateSearchMode?: () => void; editActiveConversation?: () => void } | undefined =
+		$state();
 
 	let titleUpdateDialogOpen = $state(false);
 	let titleUpdateCurrentTitle = $state('');
@@ -201,7 +236,9 @@
 		}
 	}
 
+	// Sidebar auto-open logic — skip in auxiliary webviews
 	$effect(() => {
+		if (isAuxWindow) return;
 		const alwaysShow = currentConfig.alwaysShowSidebar === true;
 		const autoShowOnNewChat = currentConfig.autoShowSidebarOnNewChat !== false;
 		if (alwaysShow) {
@@ -218,17 +255,20 @@
 	});
 
 	$effect(() => {
+		if (isAuxWindow) return;
 		if (settingsWindow.state.docked === 'left' && sidebarOpen) {
 			sidebarOpen = false;
 		}
 	});
 
 	$effect(() => {
+		if (isAuxWindow) return;
 		if (!serverReady) return;
 		serverStore.fetchServerProps();
 	});
 
 	$effect(() => {
+		if (isAuxWindow) return;
 		if (serverReady && modelApiReady && !serverError) {
 			startReminderPolling();
 		}
@@ -239,6 +279,7 @@
 	});
 
 	$effect(() => {
+		if (isAuxWindow) return;
 		const serverProps = serverStore.serverProps;
 		if (serverProps?.default_generation_settings?.params) {
 			settingsStore.syncWithServerDefaults();
@@ -246,6 +287,7 @@
 	});
 
 	$effect(() => {
+		if (isAuxWindow) return;
 		if (!serverReady) return;
 		const apiKey = config().apiKey;
 
@@ -274,6 +316,7 @@
 	});
 
 	$effect(() => {
+		if (isAuxWindow) return;
 		setTitleUpdateConfirmationCallback(async (currentTitle: string, newTitle: string) => {
 			return new Promise<boolean>((resolve) => {
 				titleUpdateCurrentTitle = currentTitle;
@@ -286,62 +329,87 @@
 </script>
 
 <ModeWatcher />
-
 <Toaster richColors />
-<NotificationCenter />
 
-{#if serverError}
-	<div class="splash-screen">
-		<ServerErrorSplash
-			error={serverErrorMessage}
-			onRetry={handleRetryConnection}
-			showRetry={true}
-			showTroubleshooting={true}
-			class="h-full"
-		/>
-	</div>
-{:else if serverReady && modelApiReady}
-	{#if settingsStore.isInitialized && !config().onboardingCompleted}
-		<OnboardingDialog />
-	{/if}
-
-	<ConversationTitleUpdateDialog
-		bind:open={titleUpdateDialogOpen}
-		currentTitle={titleUpdateCurrentTitle}
-		newTitle={titleUpdateNewTitle}
-		onConfirm={handleTitleUpdateConfirm}
-		onCancel={handleTitleUpdateCancel}
-	/>
-
-	<ChatSettingsDialog />
-	{#if modelBackendError}
-		<ModelBackendWarning error={modelBackendError} />
-	{/if}
-	<NotesWindow />
-	<CalendarWindow />
-	<WindowDock />
-
-	<Sidebar.Provider bind:open={sidebarOpen}>
-		<div class="flex h-screen w-full" style:height={innerHeight}px>
-			<Sidebar.Root class="h-full">
-				<ChatSidebar bind:this={chatSidebar} />
-			</Sidebar.Root>
-
-			<Sidebar.Trigger
-				class="transition-left absolute z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
-					? 'md:left-[var(--sidebar-width)]'
-					: 'left-0'} {settingsWindow.state.docked === 'left' ? '!z-[100000] md:left-[var(--sidebar-width)]' : ''}"
-				style="translate: 1rem 1rem;"
-			/>
-
-			<Sidebar.Inset class="flex flex-1 flex-col overflow-hidden">
-				{@render children?.()}
-			</Sidebar.Inset>
-		</div>
-	</Sidebar.Provider>
-{/if}
-
+<!-- Always at top level — guarded effects make it harmless in auxiliary webviews -->
 <svelte:window onkeydown={handleKeydown} bind:innerHeight />
+
+{#if isHardwareWindow}
+	<div class="h-screen w-screen overflow-auto bg-background">
+		<HardwareDashboard fullscreen />
+	</div>
+{:else if isCalendarWindow}
+	<div class="h-screen w-screen overflow-hidden bg-background">
+		<!-- ✅ NEW: Only Window OS Calendar - no old DOM calendar -->
+		<CalendarWindow />
+	</div>
+{:else if isNotesWindow}
+	<div class="h-screen w-screen overflow-hidden bg-background">
+		<Notes fullscreen />
+	</div>
+{:else}
+	<!-- Main app: all the normal UI + DOM fallback for Hardware -->
+	<NotificationCenter />
+
+	{#if serverError}
+		<div class="splash-screen">
+			<ServerErrorSplash
+				error={serverErrorMessage}
+				onRetry={handleRetryConnection}
+				showRetry={true}
+				showTroubleshooting={true}
+				class="h-full"
+			/>
+		</div>
+	{:else if serverReady && modelApiReady}
+		{#if settingsStore.isInitialized && !config().onboardingCompleted}
+			<OnboardingDialog />
+		{/if}
+
+		<ConversationTitleUpdateDialog
+			bind:open={titleUpdateDialogOpen}
+			currentTitle={titleUpdateCurrentTitle}
+			newTitle={titleUpdateNewTitle}
+			onConfirm={handleTitleUpdateConfirm}
+			onCancel={handleTitleUpdateCancel}
+		/>
+
+		<ChatSettingsDialog />
+		{#if modelBackendError}
+			<ModelBackendWarning error={modelBackendError} />
+		{/if}
+		<NotesWindow />
+		
+		<!-- ✅ NEW: Only Window OS Calendar - no old DOM calendar -->
+		<CalendarWindow />
+		
+		<WindowDock />
+
+		<!-- In-app fallback: only used in plain browsers or when OS window creation fails -->
+		<FloatingWindow title="Hardware Telemetry" store={hardwareWindow} minWidth={380} minHeight={520}>
+			<HardwareDashboard />
+		</FloatingWindow>
+
+		<Sidebar.Provider bind:open={sidebarOpen}>
+			<div class="flex h-screen w-full" style:height={innerHeight}px>
+				<Sidebar.Root class="h-full">
+					<ChatSidebar bind:this={chatSidebar} />
+				</Sidebar.Root>
+
+				<Sidebar.Trigger
+					class="transition-left absolute z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
+						? 'md:left-[var(--sidebar-width)]'
+						: 'left-0'} {settingsWindow.state.docked === 'left' ? '!z-[100000] md:left-[var(--sidebar-width)]' : ''}"
+					style="translate: 1rem 1rem;"
+				/>
+
+				<Sidebar.Inset class="flex flex-1 flex-col overflow-hidden">
+					{@render children?.()}
+				</Sidebar.Inset>
+			</div>
+		</Sidebar.Provider>
+	{/if}
+{/if}
 
 <style>
 	.splash-screen {

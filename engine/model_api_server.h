@@ -9,24 +9,43 @@
 #include <functional>
 
 namespace delta {
-    void start_model_api_server(int port = 8081);
-    /** Start model API server on port and serve web UI from webui_path (for first-time users with no model). */
-    void start_model_api_server(int port, const std::string& webui_path);
-    void stop_model_api_server();
-    
-    // Callback function type for model switching
-    // Parameters: model_path, model_name, ctx_size, model_alias
-    using ModelSwitchCallback = std::function<bool(const std::string&, const std::string&, int, const std::string&)>;
-    
-    // Callback for unloading model / stopping llama-server
-    using ModelUnloadCallback = std::function<void()>;
-    
-    // Set callback to be called when model switch is requested
-    void set_model_switch_callback(ModelSwitchCallback callback);
-    
-    // Set callback to be called when model unload / stop server is requested
-    void set_model_unload_callback(ModelUnloadCallback callback);
-}
+void start_model_api_server(int port = 8081);
+/** Start model API server on port and serve web UI from webui_path (for first-time users with no model). */
+void start_model_api_server(int port, const std::string& webui_path);
+void stop_model_api_server();
+
+// Callback function type for model switching
+// Parameters: model_path, model_name, ctx_size, model_alias
+using ModelSwitchCallback = std::function<bool(const std::string&, const std::string&, int, const std::string&)>;
+
+// Callback for unloading model / stopping llama-server
+using ModelUnloadCallback = std::function<void()>;
+
+// Set callback to be called when model switch is requested
+void set_model_switch_callback(ModelSwitchCallback callback);
+
+// Set callback to be called when model unload / stop server is requested
+void set_model_unload_callback(ModelUnloadCallback callback);
+
+// DHATS Brain: self-heal status reporting
+struct HealStatus {
+    int recoveries = 0;  // Number of times llama-server was auto-restarted
+    int active_ngl = -1; // Currently active GPU layer count (-1 = all)
+    std::string reason;  // Reason for last heal (empty if never healed)
+};
+
+void report_heal(int recoveries, int active_ngl, const std::string& reason);
+HealStatus get_heal_status();
+struct ModelBlockStatus {
+    bool blocked = false;
+    std::string model_name;
+    std::string reason;
+    std::string recommendation;
+    int suggested_context = 0;
+};
+
+void report_model_block(const ModelBlockStatus& status);
+ModelBlockStatus get_model_block();
+} // namespace delta
 
 #endif // DELTA_MODEL_API_SERVER_H
-

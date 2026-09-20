@@ -16,6 +16,8 @@
 #include "agent/tool_registry.h"
 #include "agent/agent_loop.h"
 
+#include "tools/hardware_monitor.h"
+
 // Updated includes to point to the local vendor directory structure
 #include "vendor/llama.cpp/vendor/cpp-httplib/httplib.h"
 #include "api/note_routes.h"
@@ -34,9 +36,13 @@
 #include <iomanip>
 #include <future>
 #include <chrono>
+#include <csignal>
+#include <set>
+
 #ifdef _WIN32
 #include <windows.h>
 #include <sysinfoapi.h>
+#include <tlhelp32.h>
 #elif defined(__APPLE__)
 #include <sys/sysctl.h>
 #include <sys/types.h>
@@ -44,7 +50,168 @@
 #include <sys/sysinfo.h>
 #endif
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <sys/socket.h>
+#include <netdb.h>
+#include <unistd.h>
+#endif
+
 using json = nlohmann::json;
+
+// // Filter tools according to enabled types
+// static nlohmann::json filter_tools_by_config(const nlohmann::json& all_tools,
+//                                               bool use_calendar, bool use_notes) {
+//     if (use_calendar && use_notes) return all_tools; // All enabled
+
+//     nlohmann::json filtered = nlohmann::json::array();
+
+//     // Calendar tool names
+//     std::set<std::string> calendar_tools = {
+//         "create_event", "list_events", "delete_event", "update_event", "get_current_time"
+//     };
+
+//     // Notes tool names
+//     std::set<std::string> notes_tools = {
+//         "list_notes", "create_note", "get_note", "update_note", "delete_note"
+//     };
+
+//     for (const auto& tool : all_tools) {
+//         if (!tool.is_object() || !tool.contains("function")) continue;
+//         std::string name = tool["function"].value("name", "");
+
+//         bool is_calendar = calendar_tools.count(name) > 0;
+//         bool is_notes = notes_tools.count(name) > 0;
+
+//         if (!is_calendar && !is_notes) {
+//             filtered.push_back(tool);
+//         } else if (is_calendar && use_calendar) {
+//             filtered.push_back(tool);
+//         } else if (is_notes && use_notes) {
+//             filtered.push_back(tool);
+//         }
+//     }
+
+//     return filtered;
+// }
+
+// DHATS: Global hardware telemetry monitor
+static delta::HardwareMonitor g_hardware_monitor;
+
+// DHATS Brain: self-heal status (thread-safe)
+static std::mutex g_heal_mutex;
+static delta::HealStatus g_heal_status;
+
+void delta::report_heal(int recoveries, int active_ngl, const std::string& reason) {
+    std::lock_guard<std::mutex> lock(g_heal_mutex);
+    g_heal_status.recoveries = recoveries;
+    g_heal_status.active_ngl = active_ngl;
+    g_heal_status.reason = reason;
+}
+
+// ====================================================================
+// DHATS Brain: model block status (thread-safe)
+// FIXED: struct is declared in model_api_server.h (namespace delta),
+// definitions here are namespace-qualified so delta_server_wrapper.cpp
+// can call delta::report_model_block(...)
+// ====================================================================
+static std::mutex g_block_mutex;
+static delta::ModelBlockStatus g_block_status;
+
+void delta::report_model_block(const delta::ModelBlockStatus& status) {
+    std::lock_guard<std::mutex> lock(g_block_mutex);
+    g_block_status = status;
+}
+
+delta::ModelBlockStatus delta::get_model_block() {
+    std::lock_guard<std::mutex> lock(g_block_mutex);
+    return g_block_status;
+}
+
+delta::HealStatus delta::get_heal_status() {
+    std::lock_guard<std::mutex> lock(g_heal_mutex);
+    return g_heal_status;
+}
+
+static bool tcp_connect_ok(const std::string& host, int port, int timeout_ms = 800) {
+#ifdef _WIN32
+    WSADATA wsaData;
+    WSAStartup(MAKEWORD(2, 2), &wsaData);
+#endif
+    struct addrinfo hints = {}, *res = nullptr;
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0)
+        return false;
+    bool ok = false;
+    for (auto* p = res; p && !ok; p = p->ai_next) {
+#ifdef _WIN32
+        SOCKET fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (fd == INVALID_SOCKET)
+            continue;
+        DWORD tv = timeout_ms;
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
+        ok = (connect(fd, p->ai_addr, (int)p->ai_addrlen) == 0);
+        closesocket(fd);
+#else
+        int fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (fd < 0)
+            continue;
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = timeout_ms * 1000;
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+        ok = (connect(fd, p->ai_addr, p->ai_addrlen) == 0);
+        close(fd);
+#endif
+    }
+    freeaddrinfo(res);
+    return ok;
+}
+
+// Build complete hardware telemetry JSON payload
+static json build_hardware_json(const delta::HardwareMetrics& m) {
+    json gpus = json::array();
+    for (const auto& g : m.gpus) {
+        gpus.push_back({{"name", g.name},
+                        {"backend", g.backend},
+                        {"vram_used_gb", g.vram_used_gb},
+                        {"vram_total_gb", g.vram_total_gb},
+                        {"gpu_util_pct", g.gpu_util_pct},
+                        {"temp_c", g.temp_c},
+                        {"power_w", g.power_w}});
+    }
+
+    int rpc_count = 0;
+    try {
+        rpc_count = (int)delta::agent::AgentDatabase::instance().get_enabled_rpc_nodes().size();
+    } catch (...) {
+    }
+
+    // DHATS Brain: multi-tier offload status
+    auto heal = delta::get_heal_status();
+
+    return {{"system_ram_used_gb", m.system_ram_used_gb},
+            {"system_ram_total_gb", m.system_ram_total_gb},
+            {"cpu_util_pct", m.cpu_util_pct},
+            {"cpu_temp_c", m.cpu_temp_c},
+            {"system_power_w", m.system_power_w},
+            {"gpu_budget_gb", g_hardware_monitor.gpu_budget_gb()},
+            {"gpu_available_gb", g_hardware_monitor.gpu_available_gb()},
+            {"ram_available_gb", g_hardware_monitor.ram_available_gb()},
+            {"rpc_node_count", rpc_count},
+            {"gpus", gpus},
+            {"has_gpu", g_hardware_monitor.has_gpu()},
+            {"primary_backend", g_hardware_monitor.get_primary_backend()},
+            {"heal_recoveries", heal.recoveries},
+            {"active_ngl", heal.active_ngl},
+            {"heal_reason", heal.reason},
+            {"timestamp_ms", m.timestamp_ms}};
+}
 
 namespace delta {
 
@@ -259,6 +426,18 @@ class ModelAPIServer {
                                        {"size_bytes", model.size_bytes},
                                        {"installed", model.installed},
                                        {"supports_tools", model.supports_tools}};
+
+                    // DHATS: annotate with live compatibility
+                    if (model.size_bytes > 0) {
+                        auto reg = model_mgr_.get_registry_entry(model.name);
+                        int ctx = reg.max_context > 0 ? reg.max_context : 4096;
+                        auto compat = g_hardware_monitor.check_model_compatibility(
+                            model.size_bytes, estimate_model_layers(model.size_bytes), ctx);
+                        model_json["can_run"] = compat.can_run;
+                        model_json["efficient"] = compat.efficient;
+                        model_json["suggested_context"] = compat.suggested_context;
+                        model_json["compat_warning"] = compat.warning;
+                    }
                     models_array.push_back(model_json);
                 }
 
@@ -284,6 +463,18 @@ class ModelAPIServer {
                                        {"quantization", model.quantization},
                                        {"size_bytes", model.size_bytes},
                                        {"supports_tools", model.supports_tools}};
+
+                    // DHATS: annotate with live compatibility
+                    if (model.size_bytes > 0) {
+                        auto reg = model_mgr_.get_registry_entry(model.name);
+                        int ctx = reg.max_context > 0 ? reg.max_context : 4096;
+                        auto compat = g_hardware_monitor.check_model_compatibility(
+                            model.size_bytes, estimate_model_layers(model.size_bytes), ctx);
+                        model_json["can_run"] = compat.can_run;
+                        model_json["efficient"] = compat.efficient;
+                        model_json["suggested_context"] = compat.suggested_context;
+                        model_json["compat_warning"] = compat.warning;
+                    }
                     models_array.push_back(model_json);
                 }
 
@@ -589,6 +780,57 @@ class ModelAPIServer {
                     return;
                 }
 
+                auto registry_entry = model_mgr_.get_registry_entry(model_name);
+
+                // ===== DHATS: Pre-flight resource check =====
+                if (!registry_entry.name.empty()) {
+                    int model_ctx = ctx_override > 0
+                                        ? ctx_override
+                                        : (registry_entry.max_context > 0 ? registry_entry.max_context : 8192);
+
+                    auto compatibility = g_hardware_monitor.check_model_compatibility(
+                        registry_entry.size_bytes, estimate_model_layers(registry_entry.size_bytes), model_ctx);
+
+                    // BLOCK: Cannot run at all
+                    if (!compatibility.can_run) {
+                        // Report block status for UI
+                        ModelBlockStatus block_status;
+                        block_status.blocked = true;
+                        block_status.model_name = model_name;
+                        block_status.reason = compatibility.warning;
+                        block_status.recommendation = compatibility.recommendation;
+                        block_status.suggested_context = compatibility.suggested_context;
+                        report_model_block(block_status);
+
+                        json error = {
+                            {"error",
+                             {{"code", 412}, // Precondition Failed
+                              {"message", "Model cannot run with current resources"},
+                              {"details",
+                               {{"warning", compatibility.warning},
+                                {"recommendation", compatibility.recommendation},
+                                {"suggested_context", compatibility.suggested_context},
+                                {"gpu_mem_needed", compatibility.gpu_mem_needed},
+                                {"ram_needed", compatibility.ram_needed},
+                                {"model_size_gb", (double)registry_entry.size_bytes / (1024.0 * 1024.0 * 1024.0)},
+                                {"gpu_available_gb", g_hardware_monitor.gpu_available_gb()},
+                                {"ram_available_gb", g_hardware_monitor.ram_available_gb()}}}}}};
+                        res.status = 412;
+                        res.set_content(error.dump(), "application/json");
+                        return;
+                    }
+
+                    // Clear any previous block status
+                    report_model_block(ModelBlockStatus{});
+
+                    // Warn if inefficient but allow
+                    if (!compatibility.efficient) {
+                        std::cerr << "[DHATS] ⚠ " << compatibility.warning << std::endl;
+                        std::cerr << "[DHATS] Recommendation: " << compatibility.recommendation << std::endl;
+                    }
+                }
+                // ===== End DHATS check =====
+
                 std::string model_path = model_mgr_.get_model_path(model_name);
                 if (model_path.empty()) {
                     json error = {{"error", {{"code", 500}, {"message", "Could not get model path"}}}};
@@ -626,9 +868,7 @@ class ModelAPIServer {
                                 SetConsoleCP(65001);
 #endif
                                 std::this_thread::sleep_for(std::chrono::milliseconds(300));
-
                                 stop_model_api_server();
-
                                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
                                 if (g_model_switch_callback) {
@@ -641,7 +881,6 @@ class ModelAPIServer {
                             }
                         });
                         migration_thread.detach();
-
                         model_loaded = false;
                     } else {
                         try {
@@ -662,15 +901,9 @@ class ModelAPIServer {
                     {"model_alias", model_alias},
                     {"ctx_size", ctx_size},
                     {"loaded", model_loaded},
-                    {"message", model_loaded
-                                    ? "Model loaded successfully! The server is now using " + model_alias + "."
-                                    : (model_loaded == false && port_ == 8080
-                                           ? "Model migration in progress. The server is switching to full mode. This "
-                                             "may take a few seconds."
-                                           : "Model selected. The model path will be sent in API requests. Note: "
-                                             "llama-server uses the model loaded at startup. To actually use this "
-                                             "model, restart the server with: ./delta-server -m \"" +
-                                                 model_path + "\" --port 8080")}};
+                    {"message", model_loaded ? "Model loaded successfully!"
+                                             : (port_ == 8080 ? "Model migration in progress."
+                                                              : "Model selected. Restart server to use this model.")}};
 
                 res.set_content(result.dump(), "application/json");
             } catch (const json::parse_error& e) {
@@ -684,7 +917,7 @@ class ModelAPIServer {
             }
         });
 
-        server_->Post("/v1/chat/completions", [this](const httplib::Request& req, httplib::Response& res) {
+        server_->Post("/v1/chat/completions", [&](const httplib::Request& req, httplib::Response& res) {
             int llama_port = port_ - 1;
             {
                 httplib::Client probe("127.0.0.1", llama_port);
@@ -736,6 +969,12 @@ class ModelAPIServer {
                 bool stream = body.value("stream", false);
                 std::string model_name = body.value("model", std::string("default"));
 
+                // ENHANCEMENT A: Extract response_format for JSON Grammar Constraints
+                nlohmann::json response_format;
+                if (body.contains("response_format")) {
+                    response_format = body["response_format"];
+                }
+
                 std::string llama_url = "http://127.0.0.1:" + std::to_string(llama_port);
                 bool model_supports_tools = false;
                 auto reg = model_mgr_.get_registry_entry(model_name);
@@ -747,14 +986,29 @@ class ModelAPIServer {
                         llama_model_name = (dot != std::string::npos) ? reg.filename.substr(0, dot) : reg.filename;
                     }
                 }
+
+                // Read tool preferences from request
+                bool use_calendar_tools = body.value("use_calendar_tools", true);
+                bool use_notes_tools = body.value("use_notes_tools", true);
+
+                // If tools are disabled entirely, both categories are disabled
+                if (!model_supports_tools) {
+                    use_calendar_tools = false;
+                    use_notes_tools = false;
+                }
                 std::cerr << "[delta-server] agent loop: model=" << model_name << " -> llama_alias=" << llama_model_name
                           << ", supports_tools=" << (model_supports_tools ? "true" : "false")
-                          << ", msgs=" << messages.size() << std::endl;
+                          << ", calendar=" << (use_calendar_tools ? "true" : "false")
+                          << ", notes=" << (use_notes_tools ? "true" : "false") << ", msgs=" << messages.size()
+                          << std::endl;
 
                 if (stream) {
                     struct StreamJob {
                         std::string llama_url, llama_model;
                         bool supports_tools = false;
+                        bool use_calendar = true;
+                        bool use_notes = true;
+                        nlohmann::json response_format; // NEW
                         json messages;
                         bool started = false;
                     };
@@ -762,6 +1016,9 @@ class ModelAPIServer {
                     job->llama_url = llama_url;
                     job->llama_model = llama_model_name;
                     job->supports_tools = model_supports_tools;
+                    job->use_calendar = use_calendar_tools;
+                    job->use_notes = use_notes_tools;
+                    job->response_format = response_format; // NEW
                     job->messages = messages;
 
                     res.set_header("Cache-Control", "no-cache");
@@ -782,9 +1039,21 @@ class ModelAPIServer {
 
                             try {
                                 agent::AgentLoop loop(job->llama_url, job->llama_model, job->supports_tools);
+                                loop.set_tool_filters(job->use_calendar, job->use_notes);
+                                if (!job->response_format.empty())
+                                    loop.set_response_format(job->response_format);
+
+                                // NEW: agent lifecycle events go out as NAMED SSE events (never as chat content)
+                                loop.set_event_callback([&sink](const std::string& type, const nlohmann::json& data) {
+                                    const std::string frame = "event: " + type + "\ndata: " + data.dump() + "\n\n";
+                                    sink.write(frame.data(), frame.size());
+                                });
+
                                 auto result = loop.process(job->messages, [&](const std::string& delta) -> bool {
                                     if (delta.empty())
                                         return true;
+                                    if (delta.rfind("event: ", 0) == 0)
+                                        return true; // safety: never render raw SSE frames
                                     if (!sink.is_writable())
                                         return false;
                                     return emit(sse_content_chunk(delta));
@@ -797,7 +1066,8 @@ class ModelAPIServer {
 
                                 if (!result.success) {
                                     std::cerr << "[delta-server] stream error: " << result.error << std::endl;
-                                    emit(sse_content_chunk(result.error));
+                                    emit(sse_content_chunk(std::string(
+                                        "Sorry, I hit a snagly processing that. Please try rephrasing or try again.")));
                                 } else if (result.streamed_chars == 0) {
                                     std::istringstream iss(result.content);
                                     std::string line;
@@ -821,7 +1091,15 @@ class ModelAPIServer {
                             return true;
                         });
                 } else {
+                    // Inside the non-streaming block:
                     agent::AgentLoop loop(llama_url, llama_model_name, model_supports_tools);
+                    loop.set_tool_filters(use_calendar_tools, use_notes_tools);
+
+                    // ADD THIS: Pass response_format to enable Native JSON Grammar
+                    if (body.contains("response_format")) {
+                        loop.set_response_format(body["response_format"]);
+                    }
+
                     auto result = loop.process(messages);
 
                     if (!result.success) {
@@ -1082,6 +1360,396 @@ class ModelAPIServer {
                 return;
             }
             res.set_content(json({{"deleted", true}}).dump(), "application/json");
+        });
+
+        // ====================================================================
+        // DHATS: Real-time hardware telemetry (SSE stream + snapshot + auto-ngl)
+        // ====================================================================
+
+        // SSE stream endpoint - pushes telemetry at configurable rate
+        server_->Get("/api/v1/hardware/stream", [](const httplib::Request&, httplib::Response& res) {
+            res.set_header("Cache-Control", "no-cache");
+            res.set_header("Connection", "keep-alive");
+            res.set_header("X-Accel-Buffering", "no");
+
+            res.set_chunked_content_provider("text/event-stream", [](size_t, httplib::DataSink& sink) -> bool {
+                static const int hz = [] {
+                    const char* e = std::getenv("DELTA_TELEMETRY_HZ");
+                    int v = e ? std::atoi(e) : 0;
+                    return (v >= 1 && v <= 20) ? v : 4; // default 4 Hz
+                }();
+
+                auto m = g_hardware_monitor.get_metrics();
+                std::string frame = "data: " + build_hardware_json(m).dump() + "\n\n";
+                sink.write(frame.c_str(), frame.size());
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000 / hz));
+                return true;
+            });
+        });
+
+        // One-shot snapshot endpoint
+        server_->Get("/api/v1/hardware/snapshot", [](const httplib::Request&, httplib::Response& res) {
+            auto m = g_hardware_monitor.get_metrics();
+            res.set_content(build_hardware_json(m).dump(), "application/json");
+        });
+
+        // Auto-offload calculation endpoint
+        server_->Post("/api/v1/hardware/auto-ngl", [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                json body = json::parse(req.body);
+                long long model_size = body.value("model_size_bytes", 0LL);
+                int n_layers = body.value("n_layers", 32);
+                int ctx_size = body.value("ctx_size", 4096);
+
+                int ngl = g_hardware_monitor.calculate_auto_ngl(model_size, n_layers, ctx_size);
+
+                json result = {{"recommended_ngl", ngl},
+                               {"has_gpu", g_hardware_monitor.has_gpu()},
+                               {"primary_backend", g_hardware_monitor.get_primary_backend()},
+                               {"model_size_gb", (double)model_size / (1024.0 * 1024.0 * 1024.0)}};
+                res.set_content(result.dump(), "application/json");
+            } catch (const std::exception& e) {
+                json error = {{"error", {{"code", 400}, {"message", e.what()}}}};
+                res.status = 400;
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+
+        // ====================================================================
+        // DHATS Brain: Model Efficiency Analysis
+        // ====================================================================
+
+        // Block status endpoint for UI
+        server_->Get("/api/v1/dhats/block-status", [](const httplib::Request&, httplib::Response& res) {
+            auto b = get_model_block();
+            json result = {{"blocked", b.blocked},
+                           {"model", b.model_name},
+                           {"reason", b.reason},
+                           {"recommendation", b.recommendation},
+                           {"suggested_context", b.suggested_context}};
+            res.set_content(result.dump(), "application/json");
+        });
+
+        // Analyze all installed models against current hardware state
+        server_->Get("/api/v1/models/efficiency", [this](const httplib::Request&, httplib::Response& res) {
+            try {
+                auto models = model_mgr_.get_friendly_model_list(false);
+                json arr = json::array();
+
+                for (const auto& model : models) {
+                    if (model.size_bytes <= 0)
+                        continue;
+
+                    auto reg = model_mgr_.get_registry_entry(model.name);
+                    int ctx = reg.max_context > 0 ? reg.max_context : 4096;
+                    auto compat = g_hardware_monitor.check_model_compatibility(
+                        model.size_bytes, estimate_model_layers(model.size_bytes), ctx);
+
+                    json entry = {{"model_name", model.name},
+                                  {"display_name", model.display_name},
+                                  {"size_bytes", model.size_bytes},
+                                  {"size_gb", (double)model.size_bytes / (1024.0 * 1024.0 * 1024.0)},
+                                  {"quantization", model.quantization},
+                                  {"can_run", compat.can_run},
+                                  {"efficient", compat.efficient},
+                                  {"suggested_context", compat.suggested_context},
+                                  {"warning", compat.warning},
+                                  {"recommendation", compat.recommendation}};
+                    arr.push_back(entry);
+                }
+
+                // Sort: efficient first, then runnable, then by size
+                std::sort(arr.begin(), arr.end(), [](const json& a, const json& b) {
+                    bool a_eff = a.value("efficient", false);
+                    bool b_eff = b.value("efficient", false);
+                    if (a_eff != b_eff)
+                        return a_eff > b_eff;
+                    bool a_run = a.value("can_run", false);
+                    bool b_run = b.value("can_run", false);
+                    if (a_run != b_run)
+                        return a_run > b_run;
+                    return a.value("size_bytes", 0LL) < b.value("size_bytes", 0LL);
+                });
+
+                res.set_content(json({{"models", arr}, {"count", arr.size()}}).dump(), "application/json");
+            } catch (const std::exception& e) {
+                res.status = 500;
+                res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+            }
+        });
+
+        // Top model recommendation based on current hardware state
+        server_->Get("/api/v1/models/recommendation", [this](const httplib::Request&, httplib::Response& res) {
+            try {
+                auto models = model_mgr_.get_friendly_model_list(false);
+
+                std::string best_name;
+                std::string best_display;
+                bool best_efficient = false;
+                bool best_runnable = false;
+                double best_size_gb = 0.0;
+
+                for (const auto& model : models) {
+                    if (model.size_bytes <= 0)
+                        continue;
+
+                    auto reg = model_mgr_.get_registry_entry(model.name);
+                    int ctx = reg.max_context > 0 ? reg.max_context : 4096;
+                    auto compat = g_hardware_monitor.check_model_compatibility(
+                        model.size_bytes, estimate_model_layers(model.size_bytes), ctx);
+
+                    double size_gb = (double)model.size_bytes / (1024.0 * 1024.0 * 1024.0);
+
+                    // Prefer: efficient > runnable-with-warning > nothing
+                    if (compat.efficient && !best_efficient) {
+                        best_name = model.name;
+                        best_display = model.display_name;
+                        best_efficient = true;
+                        best_runnable = true;
+                        best_size_gb = size_gb;
+                    } else if (compat.efficient && best_efficient && size_gb > best_size_gb) {
+                        // Among efficient models, pick the largest
+                        best_name = model.name;
+                        best_display = model.display_name;
+                        best_size_gb = size_gb;
+                    } else if (!best_efficient && compat.can_run && !best_runnable) {
+                        best_name = model.name;
+                        best_display = model.display_name;
+                        best_runnable = true;
+                        best_size_gb = size_gb;
+                    }
+                }
+
+                json result;
+                if (!best_name.empty()) {
+                    result = {
+                        {"model_name", best_name},
+                        {"display_name", best_display},
+                        {"can_run", true},
+                        {"efficient", best_efficient},
+                        {"warning", best_efficient ? "" : "May run slower — close other apps for best performance"},
+                        {"recommendation", best_efficient ? "Best match for your current hardware"
+                                                          : "This is the best available option right now"}};
+                } else {
+                    result = {
+                        {"model_name", ""},
+                        {"can_run", false},
+                        {"efficient", false},
+                        {"warning", "No installed models can run efficiently with current resources"},
+                        {"recommendation", "Close resource-heavy applications or download a smaller quantized model"}};
+                }
+                res.set_content(result.dump(), "application/json");
+            } catch (const std::exception& e) {
+                res.status = 500;
+                res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+            }
+        });
+
+        // ====================================================================
+        // DHATS Brain: Resource Hog Detection & Process Management
+        // ====================================================================
+
+        server_->Get("/api/v1/system/resource-hogs", [](const httplib::Request&, httplib::Response& res) {
+            try {
+                auto hogs = g_hardware_monitor.get_resource_hogs();
+                json arr = json::array();
+                for (const auto& h : hogs) {
+                    arr.push_back({{"name", h.name},
+                                   {"pid", h.pid},
+                                   {"cpu_pct", h.cpu_pct},
+                                   {"ram_gb", h.ram_gb},
+                                   {"type", h.type},
+                                   {"suggestion", h.suggestion}});
+                }
+                res.set_content(json({{"hogs", arr}, {"count", arr.size()}}).dump(), "application/json");
+            } catch (const std::exception& e) {
+                res.status = 500;
+                res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+            }
+        });
+
+        server_->Post("/api/v1/system/kill-process", [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                json body = json::parse(req.body);
+                int pid = body.value("pid", 0);
+
+                if (pid <= 0) {
+                    res.status = 400;
+                    res.set_content(json({{"error", "Invalid PID"}}).dump(), "application/json");
+                    return;
+                }
+
+                // Refuse to kill ourselves, init, or system-critical processes
+#ifdef _WIN32
+                DWORD our_pid = GetCurrentProcessId();
+#else
+                pid_t our_pid = getpid();
+#endif
+                if (pid == (int)our_pid || pid == 0 || pid == 1) {
+                    res.status = 403;
+                    res.set_content(json({{"error", "Cannot terminate this process"}}).dump(), "application/json");
+                    return;
+                }
+
+                bool success = false;
+                std::string err_msg;
+
+#ifdef _WIN32
+                HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, (DWORD)pid);
+                if (hProcess) {
+                    success = TerminateProcess(hProcess, 1) != 0;
+                    CloseHandle(hProcess);
+                    if (!success)
+                        err_msg = "TerminateProcess failed";
+                } else {
+                    err_msg = "Access denied or process not found";
+                }
+#else
+                // Send SIGTERM first (graceful); escalate to SIGKILL if needed
+                if (kill(pid, SIGTERM) == 0) {
+                    success = true;
+                } else {
+                    err_msg = std::string("kill failed: ") + strerror(errno);
+                }
+#endif
+
+                if (success) {
+                    res.set_content(json({{"success", true}, {"message", "Process terminated"}}).dump(),
+                                    "application/json");
+                } else {
+                    res.status = 500;
+                    res.set_content(json({{"error", err_msg}}).dump(), "application/json");
+                }
+            } catch (const std::exception& e) {
+                res.status = 400;
+                res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+            }
+        });
+
+        // Check if a model can run with specific context
+        server_->Get(
+            R"(/api/v1/models/([^/]+)/compatibility)", [this](const httplib::Request& req, httplib::Response& res) {
+                try {
+                    std::string model_name = req.matches[1];
+                    int requested_ctx = req.has_param("ctx") ? std::stoi(req.get_param_value("ctx")) : 8192;
+
+                    auto registry_entry = model_mgr_.get_registry_entry(model_name);
+                    if (registry_entry.name.empty()) {
+                        res.status = 404;
+                        res.set_content(json({{"error", "Model not found"}}).dump(), "application/json");
+                        return;
+                    }
+
+                    // Use default context if not specified in registry
+                    int model_ctx = registry_entry.max_context > 0 ? registry_entry.max_context : requested_ctx;
+                    if (requested_ctx > 0)
+                        model_ctx = requested_ctx;
+
+                    auto compatibility = g_hardware_monitor.check_model_compatibility(
+                        registry_entry.size_bytes, estimate_model_layers(registry_entry.size_bytes), model_ctx);
+
+                    json result = {{"model_name", model_name},
+                                   {"display_name", registry_entry.display_name},
+                                   {"can_run", compatibility.can_run},
+                                   {"efficient", compatibility.efficient},
+                                   {"warning", compatibility.warning},
+                                   {"recommendation", compatibility.recommendation},
+                                   {"suggested_context", compatibility.suggested_context},
+                                   {"gpu_mem_needed", compatibility.gpu_mem_needed},
+                                   {"ram_needed", compatibility.ram_needed},
+                                   {"max_layers_on_gpu", compatibility.max_layers_on_gpu},
+                                   {"requested_context", model_ctx},
+                                   {"model_size_gb", (double)registry_entry.size_bytes / (1024.0 * 1024.0 * 1024.0)}};
+
+                    res.set_content(result.dump(), "application/json");
+                } catch (const std::exception& e) {
+                    res.status = 500;
+                    res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+                }
+            });
+
+        // Update model context override
+        server_->Post("/api/models/context", [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                json body = json::parse(req.body);
+                std::string model_name = body.value("model", "");
+                int ctx_size = body.value("ctx_size", 0);
+
+                if (model_name.empty() || ctx_size <= 0) {
+                    res.status = 400;
+                    res.set_content(json({{"error", "model and ctx_size are required"}}).dump(), "application/json");
+                    return;
+                }
+
+                if (!model_mgr_.is_model_installed(model_name)) {
+                    res.status = 404;
+                    res.set_content(json({{"error", "Model not found"}}).dump(), "application/json");
+                    return;
+                }
+
+                model_mgr_.set_max_context_override(model_name, ctx_size);
+
+                json result = {{"success", true}, {"model", model_name}, {"context_size", ctx_size}};
+                res.set_content(result.dump(), "application/json");
+            } catch (const std::exception& e) {
+                res.status = 400;
+                res.set_content(json({{"error", e.what()}}).dump(), "application/json");
+            }
+        });
+
+        // ====================================================================
+        // RPC Node Management
+        // ====================================================================
+        server_->Get("/api/v1/rpc/nodes", [](const httplib::Request&, httplib::Response& res) {
+            auto nodes = delta::agent::AgentDatabase::instance().list_rpc_nodes();
+            json arr = json::array();
+            for (auto& n : nodes) {
+                arr.push_back({{"id", n.id}, {"name", n.name}, {"endpoint", n.endpoint}, {"enabled", n.enabled}});
+            }
+            res.set_content(json({{"nodes", arr}, {"count", arr.size()}}).dump(), "application/json");
+        });
+
+        server_->Post("/api/v1/rpc/nodes", [](const httplib::Request& req, httplib::Response& res) {
+            json body = json::parse(req.body);
+            std::string name = body.value("name", "worker");
+            std::string endpoint = body.value("endpoint", "");
+            if (endpoint.empty()) {
+                res.status = 400;
+                res.set_content(json({{"error", "endpoint required"}}).dump(), "application/json");
+                return;
+            }
+            std::string id = delta::agent::AgentDatabase::instance().add_rpc_node(name, endpoint);
+            res.set_content(json({{"id", id}}).dump(), "application/json");
+        });
+
+        server_->Delete(R"(/api/v1/rpc/nodes/(.+))", [](const httplib::Request& req, httplib::Response& res) {
+            bool ok = delta::agent::AgentDatabase::instance().delete_rpc_node(req.matches[1]);
+            res.set_content(json({{"deleted", ok}}).dump(), "application/json");
+        });
+
+        server_->Post(R"(/api/v1/rpc/nodes/(.+)/toggle)", [](const httplib::Request& req, httplib::Response& res) {
+            json body = json::parse(req.body);
+            bool ok = delta::agent::AgentDatabase::instance().update_rpc_node_status(req.matches[1],
+                                                                                     body.value("enabled", true));
+            res.set_content(json({{"updated", ok}}).dump(), "application/json");
+        });
+
+        server_->Get(R"(/api/v1/rpc/nodes/(.+)/check)", [](const httplib::Request& req, httplib::Response& res) {
+            auto nodes = delta::agent::AgentDatabase::instance().list_rpc_nodes();
+            bool online = false;
+            std::string node_id = req.matches[1];
+            for (const auto& n : nodes) {
+                if (n.id == node_id) {
+                    size_t colon = n.endpoint.rfind(':');
+                    if (colon != std::string::npos) {
+                        std::string host = n.endpoint.substr(0, colon);
+                        int port = std::stoi(n.endpoint.substr(colon + 1));
+                        online = tcp_connect_ok(host, port);
+                    }
+                    break;
+                }
+            }
+            res.set_content(json({{"online", online}}).dump(), "application/json");
         });
 
         if (!webui_path_.empty() && tools::FileOps::dir_exists(webui_path_)) {

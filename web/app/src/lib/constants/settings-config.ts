@@ -27,6 +27,8 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> =
 	alwaysShowSidebar: false,
 	autoShowSidebarOnNewChat: true,
 	useAgentTools: true,
+	useCalendarTools: true,
+	useNotesTools: true,
 	// make sure these default values are in sync with `common.h`
 	samplers: 'top_k;typ_p;top_p;min_p;temperature',
 	temperature: 0.8,
@@ -58,6 +60,9 @@ export const SETTING_CONFIG_INFO: Record<string, string> = {
 	userName: 'How the assistant should address you. Left empty, it stays generic.',
 	replyStyle: 'How much detail the assistant puts into an answer.',
 	calendarWeekStart: 'Which day the calendar month grid starts on.',
+	useAgentTools: 'Enable agent tools that allow the AI to perform actions like managing calendar events and notes.',
+	useCalendarTools: 'Enable calendar tools. When enabled, the AI can create, list, update, and delete calendar events and tasks.',
+	useNotesTools: 'Enable notes tools. When enabled, the AI can create, list, update, and delete notes.',
 	theme:
 		'Choose the color theme for the interface. You can choose between System (follows your device settings), Light, or Dark.',
 	pasteLongTextToFileLen:

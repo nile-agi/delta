@@ -565,6 +565,55 @@
 		void settingsWindow.state.minimized;
 		untrack(clampIfFloating);
 	});
+
+	// DHATS: Block status tracking
+	interface BlockStatus {
+		blocked: boolean;
+		model: string;
+		reason: string;
+		recommendation: string;
+		suggested_context: number;
+	}
+
+	let blockStatus = $state<BlockStatus | null>(null);
+
+	async function fetchBlockStatus() {
+		try {
+			const res = await fetch('/api/v1/dhats/block-status');
+			if (!res.ok) return;
+			const data = await res.json();
+			blockStatus = data.blocked ? data : null;
+		} catch (e) {
+			console.error('Failed to fetch block status:', e);
+		}
+	}
+
+	async function applySuggestedCtx(status: BlockStatus) {
+		if (!status.suggested_context || !status.model) return;
+		try {
+			await fetch('/api/models/context', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					model: status.model,
+					ctx_size: status.suggested_context
+				})
+			});
+			// Refresh block status — should now be cleared
+			await fetchBlockStatus();
+		} catch (e) {
+			console.error('Failed to apply context:', e);
+		}
+	}
+
+	// Poll for block status every 2 seconds when dialog is open
+	$effect(() => {
+		if (settingsWindow.state.open) {
+			fetchBlockStatus();
+			const interval = setInterval(fetchBlockStatus, 2000);
+			return () => clearInterval(interval);
+		}
+	});
 </script>
 
 <svelte:window onresize={clampIfFloating} />
@@ -719,6 +768,35 @@
 						</div>
 						<ScrollArea class="min-h-0 flex-1">
 							<div class="space-y-6 p-4 md:p-6">
+								<!-- DHATS: Block status banner at the TOP of settings content -->
+								{#if blockStatus?.blocked}
+									<div class="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+										<div class="flex items-start gap-3">
+											<AlertTriangle class="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+											<div class="flex-1 min-w-0">
+												<h3 class="font-semibold text-red-700 dark:text-red-400 text-sm">
+													Model blocked: {blockStatus.model}
+												</h3>
+												<p class="text-sm text-muted-foreground mt-1">
+													{blockStatus.reason}
+												</p>
+												<p class="text-xs text-muted-foreground mt-1 italic">
+													{blockStatus.recommendation}
+												</p>
+												{#if blockStatus.suggested_context > 0}
+													<button
+														class="mt-3 inline-flex items-center gap-1.5 rounded-md bg-red-500/20 border border-red-500/40 px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-500/30 transition-colors"
+														onclick={() => applySuggestedCtx(blockStatus!)}
+													>
+														<Settings class="h-3.5 w-3.5" />
+														Use {blockStatus.suggested_context} ctx instead
+													</button>
+												{/if}
+											</div>
+										</div>
+									</div>
+								{/if}
+
 								{#if currentSection.title === 'Import/Export'}
 									<ImportExportTab />
 								{:else if currentSection.title === 'Developer'}

@@ -18,7 +18,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Ensure consistent C++ standard library linking (macOS)
 if(APPLE)
-    # Force use of libc++ (not libstdc++)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
 endif()
@@ -34,6 +33,57 @@ option(USE_CROW "Enable Crow HTTP library for server" OFF)
 option(BUILD_TESTS "Build test suite" ON)
 option(GGML_CCACHE "Enable ccache for faster compilation" OFF)
 option(GGML_OPENMP "Enable OpenMP support" OFF)
+
+# # Add DHATS Options
+# option(DELTA_BUILD_RPC "Enable Distributed RPC Support" ON)
+
+# # Ensure llama.cpp builds with RPC if enabled
+# if(DELTA_BUILD_RPC)
+#     set(GGML_RPC ON CACHE BOOL "Enable ggml RPC" FORCE)
+#     add_compile_definitions(DELTA_RPC_ENABLED)
+# endif()
+
+# Add DHATS Options
+# Default RPC to OFF. RDMA (libibverbs) is required for ggml-rpc but is not natively 
+# available on macOS or Windows, and requires rdma-core on Linux.
+option(DELTA_BUILD_RPC "Enable Distributed RPC Support (Requires libibverbs on Linux)" OFF)
+
+if(DELTA_BUILD_RPC)
+    if(APPLE OR WIN32)
+        message(WARNING "DHATS RPC is not supported on macOS or Windows (libibverbs unavailable). Disabling GGML_RPC.")
+        set(GGML_RPC OFF CACHE BOOL "Disable ggml RPC on macOS/Windows" FORCE)
+    else()
+        # Linux: Check for libibverbs to prevent _ibv_* linker errors
+        find_library(IBVERBS_LIBRARY ibverbs)
+        if(IBVERBS_LIBRARY)
+            message(STATUS "  DHATS: libibverbs found. Enabling ggml RPC.")
+            set(GGML_RPC ON CACHE BOOL "Enable ggml RPC" FORCE)
+            add_compile_definitions(DELTA_RPC_ENABLED)
+        else()
+            message(WARNING "  DHATS: libibverbs not found. Disabling ggml RPC to prevent linker errors.")
+            set(GGML_RPC OFF CACHE BOOL "Disable ggml RPC due to missing libibverbs" FORCE)
+        endif()
+    endif()
+else()
+    set(GGML_RPC OFF CACHE BOOL "Disable ggml RPC" FORCE)
+endif()
+
+option(DELTA_BUILD_CUDA "Build CUDA sidecar (Dynamic Backend Loading)" OFF)
+option(DELTA_BUILD_VULKAN "Build Vulkan sidecar (Dynamic Backend Loading)" OFF)
+
+if(DELTA_BUILD_CUDA)
+    set(GGML_CUDA ON CACHE BOOL "Enable CUDA" FORCE)
+    set(GGML_BACKEND_DL ON CACHE BOOL "Build backends as shared libraries for DTL" FORCE)
+    add_compile_definitions(DELTA_CUDA_ENABLED)
+    message(STATUS "  DHATS: CUDA sidecar enabled (libggml-cuda will be dynamically loaded)")
+endif()
+
+if(DELTA_BUILD_VULKAN)
+    set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan" FORCE)
+    set(GGML_BACKEND_DL ON CACHE BOOL "Build backends as shared libraries for DTL" FORCE)
+    add_compile_definitions(DELTA_VULKAN_ENABLED)
+    message(STATUS "  DHATS: Vulkan sidecar enabled (libggml-vulkan will be dynamically loaded)")
+endif()
 
 # Detect platform
 if(APPLE)
@@ -124,11 +174,13 @@ set(DELTA_SOURCES
     engine/commands.cpp
     engine/history.cpp
     engine/server_health.cpp
+    engine/tools/hardware_monitor.cpp
     engine/tools/file_ops.cpp
     engine/tools/dep_protocol.cpp
     engine/tools/shell.cpp
     engine/tools/browser.cpp
     engine/model_api_server.cpp
+    engine/api/note_routes.cpp
     engine/agent/agent_database.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
@@ -136,21 +188,29 @@ set(DELTA_SOURCES
     engine/agent/agent_loop.cpp
 )
 
+# Common include directories
+# Explicitly adding vendor paths to resolve <nlohmann/json.hpp> and <cpp-httplib/httplib.h> correctly
+set(DELTA_INCLUDE_DIRS
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/common
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/vendor
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/vendor/nlohmann
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/vendor/cpp-httplib
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/agent
+)
+
 # Main executable
 add_executable(delta ${DELTA_SOURCES})
 target_compile_definitions(delta PRIVATE
     DELTA_VERSION="${PROJECT_VERSION}"
 )
-
-# Include directories (with llama-cpp integration)
-target_include_directories(delta PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/engine
-    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor
-    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/common
-    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
+target_include_directories(delta PRIVATE 
+    ${DELTA_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/vendor
-    ${CMAKE_CURRENT_SOURCE_DIR}/engine/agent
 )
 
 # Link libraries (with llama-cpp integration)
@@ -158,7 +218,7 @@ target_link_libraries(delta PRIVATE
     llama
     ggml
     llama-common
-    cpp-httplib       # Correct target name for httplib
+    cpp-httplib
     sqlite3
     ${CMAKE_THREAD_LIBS_INIT}
 )
@@ -181,9 +241,10 @@ if(USE_CURL AND CURL_FOUND)
     target_link_libraries(delta PRIVATE CURL::libcurl)
 endif()
 
-# Ensure C++ standard library is linked (macOS)
+# Ensure C++ standard library and required Apple frameworks are linked (macOS)
 if(APPLE)
     target_link_libraries(delta PRIVATE c++)
+    target_link_libraries(delta PRIVATE "-framework IOKit" "-framework CoreFoundation")
 endif()
 
 # Delta Server Wrapper (customized llama-server)
@@ -192,8 +253,10 @@ add_executable(delta-server
     engine/model_api_server.cpp
     engine/models.cpp
     engine/server_health.cpp
+    engine/tools/hardware_monitor.cpp
     engine/tools/file_ops.cpp
     engine/ui.cpp
+    engine/api/note_routes.cpp
     engine/agent/agent_database.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
@@ -204,6 +267,10 @@ target_compile_definitions(delta-server PRIVATE
     DELTA_VERSION="${PROJECT_VERSION}"
 )
 
+if(APPLE)
+    target_link_libraries(delta-server PRIVATE "-framework Metal" "-framework IOKit" "-framework CoreFoundation")
+endif()
+
 # windows.h (pulled in by curl/winsock) defines min/max macros that break std::min/std::max.
 if(WIN32)
     target_compile_definitions(delta PRIVATE NOMINMAX)
@@ -211,14 +278,9 @@ if(WIN32)
 endif()
 
 # Include directories for delta-server
-target_include_directories(delta-server PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/engine
-    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor
-    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/common
-    ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/tools/server
+target_include_directories(delta-server PRIVATE 
+    ${DELTA_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/engine/vendor/llama.cpp/vendor
-    ${CMAKE_CURRENT_SOURCE_DIR}/engine/agent
 )
 
 # Link libraries for delta-server
@@ -228,11 +290,18 @@ endif()
 
 # Link the correct vendor targets to automatically inherit their include directories
 target_link_libraries(delta-server PRIVATE
+    llama
+    ggml
     llama-common
-    cpp-httplib       # Replaces vendor-cpp-httplib
+    cpp-httplib
     sqlite3
     ${CMAKE_THREAD_LIBS_INIT}
 )
+
+# Link server-context if available (used by llama-server wrappers)
+if(TARGET server-context)
+    target_link_libraries(delta-server PRIVATE server-context)
+endif()
 
 # Link curl for ModelManager (downloads from HuggingFace)
 if(USE_CURL AND CURL_FOUND)
@@ -244,14 +313,18 @@ if(WIN32)
     target_link_libraries(delta-server PRIVATE ws2_32)
 endif()
 
-# Ensure C++ standard library is linked (macOS)
+# Ensure C++ standard library and required Apple frameworks are linked (macOS)
 if(APPLE)
     target_link_libraries(delta-server PRIVATE c++)
+    target_link_libraries(delta-server PRIVATE "-framework IOKit" "-framework CoreFoundation")
 endif()
 
 # Remove duplicate library warnings and ensure C++ stdlib linking (macOS)
 if(APPLE)
     set_target_properties(delta PROPERTIES
+        LINK_FLAGS "-Wl,-no_warn_duplicate_libraries -lc++ -lc++abi"
+    )
+    set_target_properties(delta-server PROPERTIES
         LINK_FLAGS "-Wl,-no_warn_duplicate_libraries -lc++ -lc++abi"
     )
 endif()
@@ -264,13 +337,18 @@ elseif(UNIX AND NOT APPLE)
     if(UUID_LIBRARY)
         target_link_libraries(delta PRIVATE ${UUID_LIBRARY})
     endif()
+    # Link dynamic loader for Telemetry Engine / general UNIX dl support
+    target_link_libraries(delta PRIVATE dl)
+    target_link_libraries(delta-server PRIVATE dl)
 endif()
 
 # Compiler flags
 if(MSVC)
     target_compile_options(delta PRIVATE /W4 /WX-)
+    target_compile_options(delta-server PRIVATE /W4 /WX-)
 else()
     target_compile_options(delta PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(delta-server PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 # Tests

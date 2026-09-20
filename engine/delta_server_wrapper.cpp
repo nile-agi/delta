@@ -6,6 +6,8 @@
 #include "delta_cli.h"
 #include "model_api_server.h"
 #include "server_health.h"
+#include "agent/agent_database.h"
+#include "tools/hardware_monitor.h"
 #include <iostream>
 #include <iomanip>
 #include <cstdio>
@@ -48,7 +50,6 @@ namespace delta {
 class DeltaServerWrapper;
 
 #ifndef _WIN32
-// Signal handler sets this so the run loop can stop llama-server and exit
 static volatile sig_atomic_t g_wrapper_stop_requested = 0;
 static DeltaServerWrapper* g_wrapper_instance = nullptr;
 
@@ -85,7 +86,7 @@ class DeltaServerWrapper {
 
     std::string llama_server_path_;
     std::string model_path_;
-    std::string models_dir_; // Router mode: directory to scan for .gguf (no -m)
+    std::string models_dir_;
     int port_;
     int model_api_port_;
     int max_parallel_;
@@ -95,7 +96,6 @@ class DeltaServerWrapper {
     std::string draft_model_;
     std::string grammar_file_;
 
-    // Process management for delta-server
     std::thread llama_server_thread_;
     std::atomic<bool> llama_server_running_;
     std::atomic<bool> should_stop_;
@@ -107,6 +107,37 @@ class DeltaServerWrapper {
     pid_t llama_server_pid_;
 #endif
     std::mutex llama_server_mutex_;
+
+    // DHATS Brain: persistent hardware monitor (avoids re-probing NVML/ROCm every load)
+    delta::HardwareMonitor hw_monitor_;
+
+    // DHATS Brain: self-heal watchdog state
+    std::atomic<int> heal_pending_{0}; // 1 = halve GPU layers, 2 = go CPU-only
+    std::atomic<int> oom_hits_{0};     // consecutive OOM errors seen in stderr
+    int ngl_override_ = -1;            // -1 = trust planner; >=0 = forced override
+    int last_ngl_ = 0;
+    int heal_count_ = 0;
+    std::string last_heal_reason_;
+
+    void note_server_stderr(const std::string& line) {
+        static const char* kOom[] = {"Insufficient Memory",
+                                     "OutOfMemory",
+                                     "failed to fit params",
+                                     "error state from a previous command buffer",
+                                     "Compute error",
+                                     "common_fit_params: failed",
+                                     "ggml_metal_synchronize: error"};
+        for (const char* s : kOom) {
+            if (line.find(s) != std::string::npos) {
+                int hits = ++oom_hits_;
+                if (hits >= 3 && heal_pending_ == 0) {
+                    // First OOM burst: halve GPU layers. Second: force CPU-only.
+                    heal_pending_ = (heal_count_ == 0) ? 1 : 2;
+                }
+                return;
+            }
+        }
+    }
 
   public:
     DeltaServerWrapper()
@@ -187,8 +218,6 @@ class DeltaServerWrapper {
     }
 
     bool find_llama_server() {
-        // Only search for the real llama.cpp HTTP server binary ('server' or 'llama-server').
-        // Do not include delta-server: we must not run ourselves or another wrapper (avoids recursion/chains).
         std::string self_path = resolve_path(get_executable_path());
         std::string exe_dir = get_executable_dir();
         std::vector<std::string> possible_paths;
@@ -208,7 +237,6 @@ class DeltaServerWrapper {
             possible_paths.push_back(exe_dir + "/../bin/server");
             possible_paths.push_back(exe_dir + "/../bin/llama-server");
 #endif
-            // Tauri bundles sidecars with target-triple suffix (e.g. llama-server-x86_64-pc-windows-msvc.exe)
             try {
                 for (const auto& entry : std::filesystem::directory_iterator(exe_dir)) {
                     std::string fname = entry.path().filename().string();
@@ -238,7 +266,7 @@ class DeltaServerWrapper {
                 continue;
             std::string resolved = resolve_path(path);
             if (!resolved.empty() && resolved == self_path)
-                continue; // symlink/hardlink to ourselves
+                continue;
             llama_server_path_ = path;
             return true;
         }
@@ -246,30 +274,19 @@ class DeltaServerWrapper {
     }
 
     void set_model_path(const std::string& path) { model_path_ = path; }
-
     void set_models_dir(const std::string& dir) { models_dir_ = dir; }
-
     void set_port(int port) { port_ = port; }
-
     void set_max_parallel(int np) { max_parallel_ = np; }
-
     void set_model_api_port(int port) { model_api_port_ = port; }
-
     void set_max_context(int ctx) { max_context_ = ctx; }
-
     void set_embedding(bool enable) { enable_embedding_ = enable; }
-
     void set_reranking(bool enable) { enable_reranking_ = enable; }
-
     void set_draft_model(const std::string& model) { draft_model_ = model; }
-
     void set_grammar_file(const std::string& file) { grammar_file_ = file; }
 
     std::string find_webui_path() {
-        // Find the Delta web UI directory (from public/ only, not llama.cpp web UI)
         std::vector<std::string> candidates;
 
-        // CWD-based candidates first so "delta-server" from project root or build/ finds public/
 #ifndef _WIN32
         {
             char cwd[PATH_MAX];
@@ -293,7 +310,6 @@ class DeltaServerWrapper {
             }
         }
 #endif
-        // Get current executable directory
         std::string exe_path;
 #ifdef _WIN32
         char exe_buf[MAX_PATH];
@@ -321,31 +337,21 @@ class DeltaServerWrapper {
         }
 #endif
 
-        // Build candidate paths - check Homebrew share directory first, then public/ (built Delta web UI from assets/)
-        // Only use Delta web UI from public/, never fall back to llama.cpp web UI or assets/ source
-        // Homebrew installs web UI to share/delta-cli/webui relative to the prefix
         if (!exe_path.empty()) {
-            // Check Homebrew share directory (for installed packages)
             candidates.push_back(exe_path + "/../../share/delta-cli/webui");
             candidates.push_back(exe_path + "/../../../share/delta-cli/webui");
-            // Check macOS app bundle Resources directory (for DMG installs)
-            // Executable is at Contents/MacOS/delta, web UI is at Contents/Resources/webui
             candidates.push_back(exe_path + "/../Resources/webui");
             candidates.push_back(exe_path + "/../../Resources/webui");
-            // Check same directory as executable (Windows Tauri bundles)
             candidates.push_back(exe_path + "/webui");
             candidates.push_back(exe_path + "/public");
-            // Check relative to executable (Delta web UI from public/)
             candidates.push_back(exe_path + "/../public");
             candidates.push_back(exe_path + "/../../public");
             candidates.push_back(exe_path + "/../../../public");
             candidates.push_back(exe_path + "/../webui");
             candidates.push_back(exe_path + "/../../webui");
         }
-        // Check standard Homebrew locations
         candidates.push_back("/opt/homebrew/share/delta-cli/webui");
         candidates.push_back("/usr/local/share/delta-cli/webui");
-        // Check relative paths (Delta web UI from public/)
         candidates.push_back("public");
         candidates.push_back("./public");
         candidates.push_back("../public");
@@ -353,28 +359,21 @@ class DeltaServerWrapper {
         candidates.push_back("./webui");
         candidates.push_back("../webui");
 
-        // Check each candidate
         for (const auto& candidate : candidates) {
             std::filesystem::path path(candidate);
-
-            // Try to resolve to absolute path first
             std::filesystem::path abs_path;
             try {
                 if (path.is_absolute()) {
                     abs_path = path;
                 } else {
-                    // Try to resolve relative to current working directory
                     abs_path = std::filesystem::absolute(path);
                 }
-
-                // Normalize the path (resolve .. and .)
                 abs_path = std::filesystem::canonical(abs_path);
             } catch (...) {
-                // If canonical fails, try absolute
                 try {
                     abs_path = std::filesystem::absolute(path);
                 } catch (...) {
-                    continue; // Skip this candidate
+                    continue;
                 }
             }
 
@@ -387,13 +386,11 @@ class DeltaServerWrapper {
             }
         }
 
-        return ""; // Not found, server will use embedded UI
+        return "";
     }
 
     std::string build_llama_server_command(const std::string& model_path, int ctx_size,
                                            const std::string& model_alias) {
-        // On Windows, quote the executable path so CreateProcess parses it correctly when path contains spaces (e.g.
-        // "C:\Program Files\Delta\server.exe")
         std::string cmd;
 #ifdef _WIN32
         cmd = "\"" + llama_server_path_ + "\"";
@@ -430,19 +427,6 @@ class DeltaServerWrapper {
             cmd += " --flash-attn auto";
         }
 
-        // Optimize batch sizes for large prompt processing (like LlamaBarn)
-        // Larger ubatch-size significantly improves prompt processing speed for large prompts
-        // Default ubatch-size is 512, but 1024-2048 provides better throughput for 20k+ token prompts
-        if (ctx_size >= 8192) {
-            // For large contexts, use larger batch sizes to improve prompt processing speed
-            cmd += " --ubatch-size 2048"; // Physical batch size - processes more tokens per batch
-            cmd += " --batch-size 4096";  // Logical batch size - allows larger batches
-        } else if (ctx_size >= 4096) {
-            // Medium contexts get moderate batch size increase
-            cmd += " --ubatch-size 1024";
-            cmd += " --batch-size 2048";
-        }
-
         if (!model_alias.empty()) {
             cmd += " --alias \"" + model_alias + "\"";
         }
@@ -458,10 +442,131 @@ class DeltaServerWrapper {
             cmd += " --model-draft \"" + draft_model_ + "\"";
         if (!grammar_file_.empty())
             cmd += " --grammar-file \"" + grammar_file_ + "\"";
+
+        if (enable_embedding_)
+            cmd += " --embedding";
+        if (enable_reranking_)
+            cmd += " --reranking";
+
+        // ============================================================================
+        // ENHANCEMENT D: Model Context Protocol (MCP) Integration
+        // llama-server natively supports MCP via the --tools directory argument.
+        // ============================================================================
+        std::string config_dir = get_executable_dir();
+        std::string mcp_dir = config_dir + "/mcp_servers";
+        if (!std::filesystem::exists(mcp_dir)) {
+            mcp_dir = config_dir + "/tools";
+        }
+        if (std::filesystem::exists(mcp_dir) && std::filesystem::is_directory(mcp_dir)) {
+            cmd += " --tools \"" + mcp_dir + "\"";
+            std::cout << "[MCP] Injecting external tools from directory: " << mcp_dir << std::endl;
+        }
+
+        // ============================================================================
+        // ENHANCEMENT B: Speculative Decoding for Tool Loops
+        // If no draft model is explicitly provided, auto-detect a small GGUF in the models directory.
+        // ============================================================================
+        if (draft_model_.empty()) {
+            std::string models_dir_path = models_dir_.empty() ? (get_executable_dir() + "/models") : models_dir_;
+            if (std::filesystem::exists(models_dir_path) && std::filesystem::is_directory(models_dir_path)) {
+                for (const auto& entry : std::filesystem::directory_iterator(models_dir_path)) {
+                    std::string fname = entry.path().filename().string();
+                    std::string lower_fname = fname;
+                    for (auto& c : lower_fname)
+                        c = std::tolower(static_cast<unsigned char>(c));
+
+                    bool is_small = (lower_fname.find("0.5b") != std::string::npos ||
+                                     lower_fname.find("1.5b") != std::string::npos ||
+                                     lower_fname.find("tinyllama") != std::string::npos ||
+                                     lower_fname.find("smollm") != std::string::npos ||
+                                     lower_fname.find("draft") != std::string::npos);
+
+                    if (is_small && lower_fname.find(".gguf") != std::string::npos) {
+                        draft_model_ = entry.path().string();
+                        std::cout << "[Speculative] Auto-detected draft model: " << draft_model_ << std::endl;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!draft_model_.empty()) {
+            cmd += " --model-draft \"" + draft_model_ + "\"";
+            cmd += " --draft-max 16"; // Standard draft token limit for speculative decoding
+        }
+
+        if (!grammar_file_.empty())
+            cmd += " --grammar-file \"" + grammar_file_ + "\"";
+
+        // ============================================================================
+        // DHATS: Inject RPC Arguments
+        // ============================================================================
+        auto rpc_nodes = agent::AgentDatabase::instance().get_enabled_rpc_nodes();
+        if (!rpc_nodes.empty()) {
+            std::string rpc_arg = " --rpc ";
+            for (size_t i = 0; i < rpc_nodes.size(); ++i) {
+                rpc_arg += rpc_nodes[i].endpoint;
+                if (i < rpc_nodes.size() - 1)
+                    rpc_arg += ",";
+            }
+            cmd += rpc_arg;
+            std::cout << "[DHATS] Injecting " << rpc_nodes.size() << " RPC worker node(s) into llama-server context."
+                      << std::endl;
+        }
+
+        // ============================================================================
+        // DHATS Brain: Intelligent multi-tier distribution
+        // ============================================================================
+        long long model_size_bytes = 0;
+        int n_layers = 32;
+        try {
+            if (!model_path.empty() && std::filesystem::exists(model_path)) {
+                model_size_bytes = std::filesystem::file_size(model_path);
+            }
+        } catch (...) {
+        }
+
+        if (model_size_bytes > 0) {
+            auto plan = hw_monitor_.plan_tiered_offload(model_size_bytes, n_layers, ctx_size);
+
+            int ngl = plan.ngl;
+            if (ngl_override_ >= 0) {
+                ngl = std::min(ngl, ngl_override_);
+            }
+            last_ngl_ = ngl;
+
+            if (plan.cpu_only && ngl == 0) {
+                cmd += " -ngl 0";
+                std::cout << "[DHATS] CPU-only mode (no GPU available or insufficient VRAM)." << std::endl;
+            } else if (plan.all_layers) {
+                cmd += " -ngl 999";
+                cmd += " --batch-size " + std::to_string(plan.batch);
+                cmd += " --ubatch-size " + std::to_string(plan.ubatch);
+                std::cout << "[DHATS] All layers on GPU (" << plan.gpu_layers << " layers, " << std::fixed
+                          << std::setprecision(1) << plan.gpu_mem_needed << "GB)" << std::endl;
+            } else {
+                cmd += " -ngl " + std::to_string(ngl);
+                cmd += " --batch-size " + std::to_string(plan.batch);
+                cmd += " --ubatch-size " + std::to_string(plan.ubatch);
+                std::cout << "[DHATS] Split offload: " << plan.gpu_layers << " layers on GPU (" << std::fixed
+                          << std::setprecision(1) << plan.gpu_mem_needed << "GB), " << plan.cpu_layers
+                          << " layers on CPU (" << plan.cpu_mem_needed << "GB)" << std::endl;
+            }
+
+            // Log efficiency warning
+            if (!plan.efficient && !plan.efficiency_warning.empty()) {
+                std::cerr << "[DHATS] ⚠ " << plan.efficiency_warning << std::endl;
+                if (!plan.recommendation.empty()) {
+                    std::cerr << "[DHATS] Recommendation: " << plan.recommendation << std::endl;
+                }
+                delta::report_heal(heal_count_, ngl, plan.efficiency_warning);
+            } else {
+                delta::report_heal(heal_count_, ngl, "");
+            }
+        }
+
         return cmd;
     }
 
-    // Internal stop — caller must already hold llama_server_mutex_
     void stop_llama_server_locked() {
 #ifdef _WIN32
         if (llama_server_process_ != NULL) {
@@ -535,17 +640,20 @@ class DeltaServerWrapper {
 
     ServerReadyState restart_llama_server(const std::string& new_model_path, const std::string& model_name,
                                           int ctx_size, const std::string& model_alias) {
+        // Mutable local copy: DHATS self-heal below may clear or rewrite the path
+        std::string model_path_to_use = new_model_path;
+
         std::lock_guard<std::mutex> lock(llama_server_mutex_);
 
         // Skip restart if the same model is already loaded and running
-        if (llama_server_running_ && !model_path_.empty() && !new_model_path.empty() && model_path_ == new_model_path) {
+        if (llama_server_running_ && !model_path_.empty() && !model_path_to_use.empty() &&
+            model_path_ == model_path_to_use) {
             return probe_server_health(port_) ? ServerReadyState::Ready : ServerReadyState::StillLoading;
         }
 
-        // In router mode, no restart needed — router loads models on demand
-        if (llama_server_running_ && !models_dir_.empty() && !new_model_path.empty()) {
+        if (llama_server_running_ && !models_dir_.empty() && !model_path_to_use.empty()) {
             try {
-                std::filesystem::path model_parent = std::filesystem::path(new_model_path).parent_path();
+                std::filesystem::path model_parent = std::filesystem::path(model_path_to_use).parent_path();
                 std::filesystem::path models_dir_p = std::filesystem::path(models_dir_);
                 bool same_dir = false;
                 try {
@@ -559,7 +667,7 @@ class DeltaServerWrapper {
                     if (!model_name.empty()) {
                         std::cout << "Selected model: " << model_name << std::endl;
                     }
-                    model_path_ = new_model_path;
+                    model_path_ = model_path_to_use;
                     // Router mode loads on demand, so the router being up is all the readiness
                     // there is to report here; per-model status comes from /v1/models.
                     return probe_server_health(port_) ? ServerReadyState::Ready : ServerReadyState::StillLoading;
@@ -570,9 +678,9 @@ class DeltaServerWrapper {
 
         if (!model_name.empty()) {
             std::cout << "Loading model: " << model_name << std::endl;
-            if (!new_model_path.empty()) {
+            if (!model_path_to_use.empty()) {
                 try {
-                    auto fsize = std::filesystem::file_size(new_model_path);
+                    auto fsize = std::filesystem::file_size(model_path_to_use);
                     double mb = static_cast<double>(fsize) / (1024.0 * 1024.0);
                     if (mb >= 1024.0) {
                         std::cout << "  Size: " << std::fixed << std::setprecision(1) << (mb / 1024.0) << " GB"
@@ -585,7 +693,38 @@ class DeltaServerWrapper {
             }
         }
 
-        // Stop current llama-server
+        // ===== DHATS: HARD BLOCK — never launch a model that cannot run =====
+        if (!model_path_to_use.empty()) {
+            long long size_bytes = 0;
+            try {
+                size_bytes = std::filesystem::file_size(model_path_to_use);
+            } catch (...) {
+            }
+
+            if (size_bytes > 0) {
+                auto compat =
+                    hw_monitor_.check_model_compatibility(size_bytes, estimate_model_layers(size_bytes), ctx_size);
+
+                if (!compat.can_run) {
+                    delta::report_model_block(
+                        {true, model_name, compat.warning, compat.recommendation, compat.suggested_context});
+                    std::cerr << "[DHATS] ❌ BLOCKED: " << model_name << " — " << compat.warning << std::endl;
+                    std::cerr << "[DHATS] " << compat.recommendation << std::endl;
+
+                    // Keep the app usable: restart in idle/router mode (no -m)
+                    model_path_to_use = "";
+                    model_path_ = "";
+                } else {
+                    delta::report_model_block({false, "", "", "", 0});
+                    if (!compat.efficient) {
+                        std::cerr << "[DHATS] ⚠ " << compat.warning << std::endl;
+                        std::cerr << "[DHATS] Recommendation: " << compat.recommendation << std::endl;
+                    }
+                }
+            }
+        }
+        // ===== end DHATS block =====
+
 #ifdef _WIN32
         if (llama_server_running_ && llama_server_process_ != NULL) {
 #else
@@ -595,12 +734,10 @@ class DeltaServerWrapper {
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
 
-        // Update model path
-        model_path_ = new_model_path;
+        model_path_ = model_path_to_use;
         max_context_ = ctx_size;
 
-        // Build new command
-        std::string cmd = build_llama_server_command(new_model_path, ctx_size, model_alias);
+        std::string cmd = build_llama_server_command(model_path_to_use, ctx_size, model_alias);
 
 #ifdef _WIN32
         STARTUPINFOA si = {0};
@@ -680,7 +817,8 @@ class DeltaServerWrapper {
 
             if (has_pipe) {
                 int stats_fd = out_pipe[0];
-                std::thread([stats_fd]() {
+                DeltaServerWrapper* self = this;
+                std::thread([stats_fd, self]() {
                     FILE* f = fdopen(stats_fd, "r");
                     if (!f) {
                         close(stats_fd);
@@ -724,9 +862,10 @@ class DeltaServerWrapper {
                             gen_ms = 0;
                             gen_tokens = 0;
                         } else {
-                            // Forward non-timing logs (e.g., startup errors, system info) from llama-server
-                            // so they aren't silently swallowed when the server fails to start.
                             std::string s(line);
+                            // DHATS Brain: feed stderr to OOM detector
+                            self->note_server_stderr(s);
+
                             if (s.find("error") != std::string::npos || s.find("Error") != std::string::npos ||
                                 s.find("unknown") != std::string::npos || s.find("fail") != std::string::npos ||
                                 s.find("Fail") != std::string::npos || s.find("warning") != std::string::npos ||
@@ -778,9 +917,7 @@ class DeltaServerWrapper {
             return 1;
         }
 
-        // When no -m: start with --models-dir so UI opens and user picks a model
         if (model_path_.empty() && models_dir_.empty()) {
-            // Default models directory
             std::string home = delta::tools::FileOps::get_home_dir();
             models_dir_ =
                 delta::tools::FileOps::join_path(delta::tools::FileOps::join_path(home, ".delta-cli"), "models");
@@ -791,7 +928,6 @@ class DeltaServerWrapper {
                 model_path_ = abs_path;
         }
 
-        // Find and use Delta web UI
         std::string webui_path = find_webui_path();
 
         std::cout << R"(
@@ -800,7 +936,7 @@ class DeltaServerWrapper {
  ██║  ██║█████╗  ██║     ██║   ███████║    ██║     ██║     ██║
  ██║  ██║██╔══╝  ██║     ██║   ██╔══██║    ██║     ██║     ██║
  ██████╔╝███████╗███████╗██║   ██║  ██║    ╚██████╗███████╗██║
- ╚═════╝ ╚══════╝╚══════╝╚═╝   ╚═╝  ╚═╝     ╚═════╝╚══════╝╚═╝
+ ╚═════╝ ╚══════╝╚══════╝╚═╝   ╚═╝  ╚═╝     ╚═════╝╚═════╝╚═╝
 )" << std::endl;
 #ifndef DELTA_VERSION
 #define DELTA_VERSION "dev"
@@ -854,7 +990,6 @@ class DeltaServerWrapper {
         sigaction(SIGINT, &sa, nullptr);
 #endif
 
-        // Keep running until signal (llama-server may be loaded/unloaded via model API)
         while (!should_stop_) {
 #ifndef _WIN32
             if (g_wrapper_stop_requested) {
@@ -863,6 +998,26 @@ class DeltaServerWrapper {
             }
 #endif
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+            // ====================================================================
+            // DHATS Brain: self-heal watchdog
+            // ====================================================================
+            int hp = heal_pending_.exchange(0);
+            if (hp && !model_path_.empty()) {
+                heal_count_++;
+                oom_hits_ = 0;
+                if (hp == 1) {
+                    ngl_override_ = std::max(0, last_ngl_ / 2);
+                    last_heal_reason_ = "GPU out-of-memory — halved GPU layers";
+                } else {
+                    ngl_override_ = 0;
+                    last_heal_reason_ = "GPU out-of-memory — fell back to CPU";
+                }
+                std::cout << "[DHATS] Self-heal #" << heal_count_ << ": restarting llama-server with -ngl "
+                          << ngl_override_ << std::endl;
+                restart_llama_server(model_path_, "", max_context_, "");
+            }
+
 #ifdef _WIN32
             if (llama_server_process_ != NULL) {
                 DWORD exit_code;
@@ -893,7 +1048,6 @@ class DeltaServerWrapper {
 #else
         g_wrapper_instance = nullptr;
 #endif
-        // Stop model API server when delta-server exits
         delta::stop_model_api_server();
 
         return 0;

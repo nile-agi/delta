@@ -11,14 +11,18 @@ namespace agent {
 // Receives each content delta as it streams; return false to abort (client disconnected).
 using TokenCallback = std::function<bool(const std::string& delta)>;
 
+// NEW: Dedicated channel for agent lifecycle events (tool_update, reasoning).
+// These are sent as NAMED SSE events and never rendered as chat text.
+using EventCallback = std::function<void(const std::string& event_type, const nlohmann::json& data)>;
 struct AgentResponse {
     bool success;
     std::string content;
     int tool_calls_made;
     std::string error;
-    nlohmann::json tool_calls = nlohmann::json::array(); // [{name, arguments}]
-    size_t streamed_chars = 0;                           // bytes already handed to the TokenCallback
+    nlohmann::json tool_calls = nlohmann::json::array();
+    size_t streamed_chars = 0;
     bool client_aborted = false;
+    std::string reasoning_content; // ENHANCEMENT C: Stores reasoning/thinking content
 };
 
 class AgentLoop {
@@ -28,6 +32,9 @@ class AgentLoop {
 
     AgentResponse process(nlohmann::json messages, TokenCallback on_token = nullptr);
     void set_max_iterations(int max);
+    void set_tool_filters(bool use_calendar, bool use_notes);
+    void set_response_format(const nlohmann::json& fmt); // ENHANCEMENT A: For JSON Grammar Constraints
+    void set_event_callback(EventCallback cb);           // NEW
 
   private:
     std::string server_url_;
@@ -35,11 +42,13 @@ class AgentLoop {
     int max_iterations_ = 5;
     bool supports_tools_ = true;
     std::string tool_choice_ = "required";
+    bool use_calendar_tools_ = true;
+    bool use_notes_tools_ = true;
+    nlohmann::json response_format_; // ENHANCEMENT A
+    EventCallback event_cb_;         // NEW
 
-    nlohmann::json build_request_body(const nlohmann::json& messages, const nlohmann::json& tools, bool stream);
+    nlohmann::json build_request_body(const nlohmann::json& messages, nlohmann::json tools, bool stream);
     nlohmann::json call_llm(const nlohmann::json& messages, const nlohmann::json& tools);
-    // Streams the reply, forwarding content deltas through `forward` (may be null to stream but not
-    // forward). Returns the same response shape as call_llm().
     nlohmann::json call_llm_stream(const nlohmann::json& messages, const nlohmann::json& tools,
                                    const TokenCallback& forward, size_t& out_forwarded, bool& out_client_aborted);
     std::string build_system_prompt();

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Settings, Calendar, Trash2, StickyNote, ChevronDown, Wrench } from '@lucide/svelte';
+	import { Settings, Calendar, Trash2, StickyNote, ChevronDown, Wrench, Activity } from '@lucide/svelte';
+	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
+    import { dockStore } from '$lib/stores/dock.svelte';
 	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
 	import { config } from '$lib/stores/settings.svelte';
@@ -18,6 +20,27 @@
 		updateConversationName
 	} from '$lib/stores/chat.svelte';
 	import ChatSidebarActions from './ChatSidebarActions.svelte';
+	import { browser } from '$app/environment';
+	import { openHardwareWindow } from '$lib/services/hardware-window';
+	import { openCalendarWindow } from '$lib/services/calendar-window';
+	import { openNotesWindow } from '$lib/services/notes-window';
+
+	function openHardware() {
+		const isTauri = browser && '__TAURI_INTERNALS__' in window;
+		if (isTauri) void openHardwareWindow();  // native OS window — draggable anywhere
+		else hardwareWindow.open();              // browser fallback: floating panel
+		handleMobileSidebarItemClick?.();        // safe call if defined
+	}
+
+	function openCalendar() {
+		void openCalendarWindow();
+		handleMobileSidebarItemClick();
+	}
+
+	function openNotes() {
+		void openNotesWindow();
+		handleMobileSidebarItemClick();
+	}
 
 	const sidebar = Sidebar.useSidebar();
 
@@ -103,6 +126,18 @@
 		await goto(`#/chat/${id}`);
 	}
 
+	function openHardwareDashboard() {
+        // Register the window in the dock store
+		const isTauri = browser && '__TAURI_INTERNALS__' in window;
+		if (isTauri) {
+			void openHardwareWindow(); // native OS window — drag anywhere, keep using Delta
+		} else {
+			hardwareWindow.open(); // browser fallback: in-app floating panel
+			dockStore.register('hardware-telemetry', 'Hardware Telemetry');
+		}
+		handleMobileSidebarItemClick?.();
+	}
+
 	let toolsOpen = $state(false);
 </script>
 
@@ -134,19 +169,21 @@
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content side="right" align="start" class="w-48">
 							<DropdownMenu.Group>
-								<DropdownMenu.Item
-									class="flex items-center gap-2 cursor-pointer"
-									onclick={() => { calendarWindow.open(); handleMobileSidebarItemClick(); }}
-								>
+								<DropdownMenu.Item class="flex items-center gap-2 cursor-pointer" onclick={openCalendar}>
 									<Calendar class="h-4 w-4" />
 									<span>Calendar</span>
 								</DropdownMenu.Item>
-								<DropdownMenu.Item
-									class="flex items-center gap-2 cursor-pointer"
-									onclick={() => { notesWindow.open(); handleMobileSidebarItemClick(); }}
-								>
+
+								<DropdownMenu.Item class="flex items-center gap-2 cursor-pointer" onclick={openNotes}>
 									<StickyNote class="h-4 w-4" />
 									<span>Notes</span>
+								</DropdownMenu.Item>
+								<DropdownMenu.Item
+									class="flex items-center gap-2 cursor-pointer"
+									onclick={() => { openHardwareDashboard(); handleMobileSidebarItemClick(); }}
+								>
+									<Activity class="h-4 w-4" />
+									<span>Hardware</span>
 								</DropdownMenu.Item>
 							</DropdownMenu.Group>
 						</DropdownMenu.Content>
