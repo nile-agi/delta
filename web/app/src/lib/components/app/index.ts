@@ -60,3 +60,5 @@ export { default as NotesWindow } from './misc/NotesWindow.svelte';
 export { default as CalendarWindow } from './misc/CalendarWindow.svelte';
 
 export { default as WindowDock } from './misc/WindowDock.svelte';
+// export { default as DownloadProgress } from './misc/DownloadProgress.svelte';
+export { default as DownloadProgress } from './chat/ChatForm/DownloadProgress.svelte';

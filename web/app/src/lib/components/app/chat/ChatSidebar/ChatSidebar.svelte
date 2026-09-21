@@ -26,6 +26,7 @@
 	import { openNotesWindow } from '$lib/services/notes-window';
 	import { openSettingsWindow } from '$lib/services/settings-window';
 
+
 	// function openHardware() {
 	// 	const isTauri = browser && '__TAURI_INTERNALS__' in window;
 	// 	if (isTauri) void openHardwareWindow();  // native OS window — draggable anywhere

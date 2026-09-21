@@ -13,6 +13,8 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { browser } from '$app/environment';
+	import { getModelApiBaseUrl, resolveModelApiBaseUrl } from '$lib/utils/model-api-url';
 
 	type ViewMode = 'catalog' | 'installed';
 
@@ -24,6 +26,8 @@
 	let loadingInstalled = $state(false);
 	let removingModel = $state<string | null>(null);
 	let confirmDeleteModel = $state<string | null>(null);
+	let serverReady = $state(false);
+	let loadError = $state<string | null>(null);
 
 	const selectedModelName = $derived(getSelectedModelName());
 
@@ -98,14 +102,76 @@
 		}
 	}
 
-	async function loadInstalledModels() {
-		loadingInstalled = true;
+	async function waitForServer(maxAttempts = 40): Promise<boolean> {
+		console.log('[ModelManagement] Waiting for server...');
+
+		// First ensure the model API URL is resolved
 		try {
-			const response = await ModelsService.listInstalled();
-			installedModels = Array.isArray(response) ? response : response.models || [];
-		} catch (error) {
-			console.error('Error loading installed models:', error);
-			installedModels = [];
+			await resolveModelApiBaseUrl();
+		} catch (e) {
+			console.warn('[ModelManagement] URL resolution failed, continuing anyway:', e);
+		}
+
+		for (let i = 0; i < maxAttempts; i++) {
+			try {
+				const baseUrl = getModelApiBaseUrl();
+				const url = baseUrl ? `${baseUrl}/api/models/list` : '/api/models/list';
+
+				const response = await fetch(url, {
+					method: 'GET',
+					headers: { 'Content-Type': 'application/json' },
+					// Short timeout for each attempt
+					signal: AbortSignal.timeout(2000)
+				});
+
+				if (response.ok) {
+					console.log('[ModelManagement] Server is ready!');
+					return true;
+				}
+				console.log(`[ModelManagement] Attempt ${i + 1}/${maxAttempts} - Server not ready (status: ${response.status})`);
+			} catch (e) {
+				console.log(`[ModelManagement] Attempt ${i + 1}/${maxAttempts} - Server not responding`);
+			}
+			await new Promise(resolve => setTimeout(resolve, 500));
+		}
+		console.error('[ModelManagement] Server did not respond after waiting');
+		return false;
+	}
+
+	async function loadInstalledModels(maxRetries = 3) {
+		console.log('[ModelManagement] loadInstalledModels called');
+		loadingInstalled = true;
+		loadError = null;
+
+		try {
+			// Wait for server to be ready first
+			if (!serverReady) {
+				const ready = await waitForServer();
+				serverReady = ready;
+				if (!ready) {
+					loadError = 'Server not responding. Please refresh or check if Delta server is running.';
+					return;
+				}
+			}
+
+			for (let attempt = 0; attempt < maxRetries; attempt++) {
+				try {
+					console.log(`[ModelManagement] Fetching installed models (attempt ${attempt + 1}/${maxRetries})...`);
+					const response = await ModelsService.listInstalled();
+					installedModels = Array.isArray(response) ? response : response.models || [];
+					console.log(`[ModelManagement] Loaded ${installedModels.length} models`);
+					loadError = null;
+					break; // Success - exit retry loop
+				} catch (error) {
+					console.error(`[ModelManagement] Error loading installed models (attempt ${attempt + 1}/${maxRetries}):`, error);
+					loadError = error instanceof Error ? error.message : 'Failed to load models';
+					if (attempt < maxRetries - 1) {
+						await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms before retry
+					} else {
+						installedModels = [];
+					}
+				}
+			}
 		} finally {
 			loadingInstalled = false;
 		}
@@ -115,6 +181,7 @@
 		// The store owns the poll loop and the terminal toasts, so progress survives this
 		// component being unmounted when settings is closed, minimized or switched away from.
 		await downloads.start(modelName);
+		// The existing effect watching downloads.completionTick will refresh the list automatically
 	}
 
 	async function handleStopDownload(modelName: string) {
@@ -158,6 +225,7 @@
 	}
 
 	onMount(async () => {
+		console.log('[ModelManagement] Component mounted');
 		await loadSystemRAM();
 		await loadInstalledModels();
 	});
@@ -171,17 +239,12 @@
 		const tick = downloads.completionTick;
 		if (tick === lastCompletionTick) return;
 		lastCompletionTick = tick;
+		console.log('[ModelManagement] Download completed, refreshing list...');
 		void loadInstalledModels();
 	});
 </script>
 
-<!-- 
-	LlamaBarn-style Model Management Panel
-	- Deep navy background (#0a1421 / #001f3f)
-	- Clean card styling with proper spacing
-	- Pill-shaped tabs
-	- Prominent system RAM display
--->
+<!-- Rest of the template remains the same as the previous version -->
 <div class="model-management-container flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground">
 	<!-- Top Bar: Tabs, Search, RAM Display (fixed header) -->
 	<div class="mb-4 flex shrink-0 flex-col gap-4 px-6 pt-6">
@@ -237,7 +300,7 @@
 				variant="ghost"
 				size="sm"
 				class="text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-				onclick={loadInstalledModels}
+				onclick={() => void loadInstalledModels()}
 				disabled={loadingInstalled}
 			>
 				<RefreshCw class="h-4 w-4 {loadingInstalled ? 'animate-spin' : ''}" />
@@ -263,7 +326,21 @@
 	<div class="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
 		<!-- Installed Models View -->
 		{#if viewMode === 'installed'}
-			{#if loadingInstalled && installedModels.length === 0 && filteredDownloads.length === 0}
+			{#if loadError}
+				<div class="py-16 text-center">
+					<div class="mb-4 text-red-500">
+						<svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+						</svg>
+					</div>
+					<p class="text-lg font-medium text-foreground mb-2">Failed to load models</p>
+					<p class="text-sm text-muted-foreground mb-4">{loadError}</p>
+					<Button onclick={() => void loadInstalledModels()} variant="default">
+						<RefreshCw class="h-4 w-4 mr-2" />
+						Try Again
+					</Button>
+				</div>
+			{:else if loadingInstalled && installedModels.length === 0 && filteredDownloads.length === 0}
 				<div class="flex items-center justify-center py-16">
 					<Loader2 class="h-8 w-8 animate-spin text-primary" />
 				</div>
@@ -281,9 +358,8 @@
 					{/if}
 				</div>
 			{:else}
-				<!-- Installed Models List: manage context length and delete only. Load/select model via chat model selector. -->
+				<!-- Installed Models List -->
 				<div class="space-y-2">
-					<!-- In-flight downloads first: they're the thing the user is waiting on. -->
 					{#each filteredDownloads as download (download.model)}
 						<DownloadingModelRow {download} onCancel={handleStopDownload} />
 					{/each}
@@ -298,8 +374,8 @@
 					{/each}
 				</div>
 			{/if}
-			<!-- Catalog View -->
 		{:else if systemRAMGB === null && !loadingRAM}
+			<!-- Catalog View with error handling -->
 			<div class="py-16 text-center text-muted-foreground">
 				<p>Unable to detect system RAM. Hardware-aware filtering disabled.</p>
 			</div>
@@ -359,5 +435,3 @@
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
-
-<!-- Option A: uses app design tokens (background, foreground, muted, border, primary, accent) for light/dark consistency -->

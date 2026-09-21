@@ -5,7 +5,8 @@
 		ChatFormActions,
 		ChatFormFileInputInvisible,
 		ChatFormHelperText,
-		ChatFormTextarea
+		ChatFormTextarea,
+		DownloadProgress
 	} from '$lib/components/app';
 	import { INPUT_CLASSES } from '$lib/constants/input-classes';
 	import { config } from '$lib/stores/settings.svelte';
@@ -253,6 +254,9 @@
 	onsubmit={handleSubmit}
 	class="{INPUT_CLASSES} border-radius-bottom-none mx-auto max-w-[48rem] overflow-hidden rounded-3xl backdrop-blur-md {className}"
 >
+	<!-- Download Progress Indicator -->
+	<DownloadProgress />
+
 	<ChatAttachmentsList bind:uploadedFiles {onFileRemove} class="mb-3 px-5 pt-5" />
 
 	<div
