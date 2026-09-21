@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Clock, Calendar, CheckCircle, X, ChevronDown, ChevronUp } from '@lucide/svelte';
-	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
+	import { openCalendarWindow } from '$lib/services/calendar-window';
 	import { fly, fade } from 'svelte/transition';
 	import {
 		activeNotifications,
@@ -96,22 +96,9 @@
 		dismiss(n.id);
 	}
 
-	// ✅ ENHANCED: Opens the new Window OS Calendar and navigates to the event date
-	function viewInCalendar(item: { time?: string; id: string; eventId?: string }) {
-		dismiss(item.id); // ✅ FIXED: Pass item.id (string), not the whole item object
-		
-		// Open the new Window OS Calendar
-		calendarWindow.open();
-		
-		// If we have event time, navigate to that specific date
-		if (item.time) {
-			const eventDate = item.time.split('T')[0];
-			if (eventDate) {
-				// Store the date to navigate to in calendar window state
-				// This will be picked up by the Calendar component when it renders
-				(calendarWindow as any).state.selectedDate = eventDate;
-			}
-		}
+	function viewInCalendar(item: { id: string }) {
+		void openCalendarWindow();
+		dismiss(item.id);
 	}
 </script>
 
