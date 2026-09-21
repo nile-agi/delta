@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import {
 		Settings,
 		Funnel,
@@ -16,7 +17,8 @@
 		Minus,
 		X,
 		GripVertical,
-		RotateCcw
+		RotateCcw,
+		RefreshCw
 	} from '@lucide/svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { ChatSettingsFields } from '$lib/components/app';
@@ -36,13 +38,16 @@
 	import { SETTINGS_WINDOW_FULLBLEED_BREAKPOINT } from '$lib/constants/viewport';
 	import { setMode } from 'mode-watcher';
 	import { untrack, type Component } from 'svelte';
+	import { serverStore } from '$lib/stores/server.svelte';
 
 	interface Props {
 		onOpenChange?: (open: boolean) => void;
 		open?: boolean;
+		fullscreen?: boolean;
 	}
 
-	let { onOpenChange, open: _open = false }: Props = $props();
+	let { onOpenChange, open: _open = false, fullscreen = false }: Props = $props();
+	const IS_TAURI_ENV = browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 	const settingSections: Array<{
 		fields: SettingsFieldConfig[];
@@ -338,9 +343,12 @@
 	let resizeStartWidth = $state(0);
 	let resizeStartHeight = $state(0);
 
-	// Below this width the window drops its floating frame entirely. Dragging and resizing
-	// are meaningless there, so the handlers and the resize grip come off with it rather
-	// than being left as controls that silently do nothing.
+	// Model tab refresh state
+	let modelTabKey = $state(0);
+	function refreshModelTab() {
+		modelTabKey += 1;
+	}
+
 	const fullBleed = new IsMobile(SETTINGS_WINDOW_FULLBLEED_BREAKPOINT);
 
 	function handleThemeChange(newTheme: string) {
@@ -353,6 +361,12 @@
 	}
 
 	function handleClose() {
+		if (fullscreen && IS_TAURI_ENV) {
+			import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+				getCurrentWindow().close();
+			});
+			return;
+		}
 		if (localConfig.theme !== originalTheme) {
 			setMode(originalTheme as 'light' | 'dark' | 'system');
 		}
@@ -452,21 +466,14 @@
 		canScrollRight = scrollLeft < scrollWidth - clientWidth - 1;
 	}
 
-	// Drag and resize both use pointer capture rather than document-level listeners: the
-	// capturing element keeps receiving events even when the pointer leaves the viewport, so
-	// a button released outside the window still ends the gesture instead of leaving the
-	// frame stuck to the cursor.
 	function releaseCapture(e: PointerEvent) {
 		const el = e.currentTarget as HTMLElement | null;
 		if (el?.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
 	}
 
-	// Drag handlers
 	function onDragStart(e: PointerEvent) {
-		if (fullBleed.current || isResizing) return;
-		// Minimize and close sit inside the title bar; their clicks must not become drags.
+		if (fullBleed.current || isResizing || fullscreen) return;
 		if ((e.target as HTMLElement).closest('button')) return;
-		// Without this Gecko starts its own selection/native-drag session on the title bar.
 		e.preventDefault();
 		isDragging = true;
 		dragOffsetX = e.clientX - settingsWindow.state.x;
@@ -480,7 +487,6 @@
 		const maxY = window.innerHeight - SETTINGS_WINDOW_MIN_VISIBLE_Y;
 		const newX = Math.max(0, Math.min(e.clientX - dragOffsetX, maxX));
 		const newY = Math.max(0, Math.min(e.clientY - dragOffsetY, maxY));
-		// Don't persist per pointer sample — save() is a synchronous localStorage write.
 		settingsWindow.setPosition(newX, newY, false);
 	}
 
@@ -491,9 +497,8 @@
 		settingsWindow.commit();
 	}
 
-	// Resize handlers
 	function onResizeStart(e: PointerEvent) {
-		if (fullBleed.current) return;
+		if (fullBleed.current || fullscreen) return;
 		e.preventDefault();
 		isResizing = true;
 		resizeStartX = e.clientX;
@@ -523,18 +528,14 @@
 		settingsWindow.commit();
 	}
 
-	// Persisted geometry outlives the viewport it was saved in, so a frame from a wider
-	// display (or one left behind by full-bleed mode) has to be pulled back into view.
 	function clampIfFloating() {
-		if (fullBleed.current) return;
-		// if (!settingsWindow.state.open || settingsWindow.state.minimized) return;
-		// Never fight a gesture in progress — onDragMove/onResizeMove own the geometry then.
+		if (fullBleed.current || fullscreen) return;
 		if (isDragging || isResizing) return;
 		settingsWindow.clampToViewport();
 	}
 
 	$effect(() => {
-		if (settingsWindow.state.open && !settingsWindow.state.minimized) {
+		if ((settingsWindow.state.open && !settingsWindow.state.minimized) || fullscreen) {
 			localConfig = { ...config() };
 			originalTheme = config().theme as string;
 			setTimeout(updateScrollButtons, 100);
@@ -547,7 +548,6 @@
 		}
 	});
 
-	// Lets other surfaces (e.g. the download pill) open settings straight to a section.
 	$effect(() => {
 		const pending = settingsWindow.pendingSection;
 		if (!pending) return;
@@ -555,10 +555,6 @@
 		settingsWindow.pendingSection = null;
 	});
 
-	// Runs on open and whenever the window crosses back above the full-bleed breakpoint.
-	// untrack keeps clampToViewport's own reads of x/y/width/height out of the dependency
-	// set: it writes those, so tracking them would re-run this effect on every pointer
-	// sample of a drag.
 	$effect(() => {
 		void fullBleed.current;
 		void settingsWindow.state.open;
@@ -566,7 +562,6 @@
 		untrack(clampIfFloating);
 	});
 
-	// DHATS: Block status tracking
 	interface BlockStatus {
 		blocked: boolean;
 		model: string;
@@ -599,16 +594,14 @@
 					ctx_size: status.suggested_context
 				})
 			});
-			// Refresh block status — should now be cleared
 			await fetchBlockStatus();
 		} catch (e) {
 			console.error('Failed to apply context:', e);
 		}
 	}
 
-	// Poll for block status every 2 seconds when dialog is open
 	$effect(() => {
-		if (settingsWindow.state.open) {
+		if (settingsWindow.state.open || fullscreen) {
 			fetchBlockStatus();
 			const interval = setInterval(fetchBlockStatus, 2000);
 			return () => clearInterval(interval);
@@ -618,7 +611,6 @@
 
 <svelte:window onresize={clampIfFloating} />
 
-<!-- Nudge on the Model Management entry while downloads are running. -->
 {#snippet sectionBadge(title: string, extraClass: string)}
 	{#if title === 'Model Management' && downloads.activeCount > 0}
 		<span
@@ -630,47 +622,49 @@
 	{/if}
 {/snippet}
 
-{#if settingsWindow.state.open && !settingsWindow.state.minimized}
+{#if (settingsWindow.state.open && !settingsWindow.state.minimized) || fullscreen}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="settings-floating-window"
-		class:full-bleed={fullBleed.current}
-		style={fullBleed.current
+		class:full-bleed={fullBleed.current || fullscreen}
+		style={fullBleed.current || fullscreen
 			? ''
 			: `left: ${settingsWindow.state.x}px; top: ${settingsWindow.state.y}px; width: ${settingsWindow.state.width}px; height: ${settingsWindow.state.height}px;`}
 	>
-		<!-- Window Title Bar (draggable above the full-bleed breakpoint) -->
-		<div
-			class="settings-window-titlebar"
-			class:draggable={!fullBleed.current}
-			onpointerdown={fullBleed.current ? undefined : onDragStart}
-			onpointermove={fullBleed.current ? undefined : onDragMove}
-			onpointerup={fullBleed.current ? undefined : onDragEnd}
-			onpointercancel={fullBleed.current ? undefined : onDragEnd}
-		>
-			<div class="flex items-center gap-2 select-none">
-				<GripVertical class="h-4 w-4 text-muted-foreground" />
-				<span class="text-sm font-semibold">Settings</span>
+		{#if !fullscreen}
+			<!-- Window Title Bar (draggable above the full-bleed breakpoint) -->
+			<div
+				class="settings-window-titlebar"
+				class:draggable={!fullBleed.current}
+				onpointerdown={fullBleed.current ? undefined : onDragStart}
+				onpointermove={fullBleed.current ? undefined : onDragMove}
+				onpointerup={fullBleed.current ? undefined : onDragEnd}
+				onpointercancel={fullBleed.current ? undefined : onDragEnd}
+			>
+				<div class="flex items-center gap-2 select-none">
+					<GripVertical class="h-4 w-4 text-muted-foreground" />
+					<span class="text-sm font-semibold">Settings</span>
+				</div>
+				<div class="flex items-center gap-1">
+					<button
+						class="settings-window-btn"
+						onclick={handleMinimize}
+						aria-label="Minimize"
+						title="Minimize"
+					>
+						<Minus class="h-3.5 w-3.5" />
+					</button>
+					<button
+						class="settings-window-btn"
+						onclick={handleClose}
+						aria-label="Close"
+						title="Close"
+					>
+						<X class="h-3.5 w-3.5" />
+					</button>
+				</div>
 			</div>
-			<div class="flex items-center gap-1">
-				<button
-					class="settings-window-btn"
-					onclick={handleMinimize}
-					aria-label="Minimize"
-					title="Minimize"
-				>
-					<Minus class="h-3.5 w-3.5" />
-				</button>
-				<button
-					class="settings-window-btn"
-					onclick={handleClose}
-					aria-label="Close"
-					title="Close"
-				>
-					<X class="h-3.5 w-3.5" />
-				</button>
-			</div>
-		</div>
+		{/if}
 
 		<!-- Window Body -->
 		<div class="settings-window-body">
@@ -750,15 +744,28 @@
 
 				{#if currentSection.title === 'Model Management'}
 					<div class="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6">
-						<div class="mb-4 hidden shrink-0 items-center gap-2 border-b border-border/30 pb-4 md:flex">
-							<currentSection.icon class="h-5 w-5" />
-							<h3 class="text-lg font-semibold">{currentSection.title}</h3>
+						<div class="mb-4 hidden shrink-0 items-center justify-between border-b border-border/30 pb-4 md:flex">
+							<div class="flex items-center gap-2">
+								<currentSection.icon class="h-5 w-5" />
+								<h3 class="text-lg font-semibold">{currentSection.title}</h3>
+							</div>
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={refreshModelTab}
+								title="Refresh models list"
+							>
+								<RefreshCw class="h-4 w-4 mr-2" />
+								Refresh
+							</Button>
 						</div>
 						<p class="mb-4 shrink-0 text-sm text-muted-foreground">
 							Manage your installed models and download new ones. Use the model selector in the chat
 							input to choose models in the chat interface.
 						</p>
-						<ModelManagementTab />
+						{#key modelTabKey}
+							<ModelManagementTab />
+						{/key}
 					</div>
 				{:else}
 					<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -768,7 +775,6 @@
 						</div>
 						<ScrollArea class="min-h-0 flex-1">
 							<div class="space-y-6 p-4 md:p-6">
-								<!-- DHATS: Block status banner at the TOP of settings content -->
 								{#if blockStatus?.blocked}
 									<div class="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4">
 										<div class="flex items-start gap-3">
@@ -856,8 +862,8 @@
 			</Button>
 		</div>
 
-		<!-- Resize Handle -->
-		{#if !fullBleed.current}
+		{#if !fullBleed.current && !fullscreen}
+			<!-- Resize Handle -->
 			<div
 				class="settings-resize-handle"
 				onpointerdown={onResizeStart}
@@ -885,17 +891,11 @@
 		overflow: hidden;
 	}
 
-	/* Minimums apply to the floating frame only — full-bleed follows the viewport. */
 	.settings-floating-window:not(.full-bleed) {
 		min-width: 400px;
 		min-height: 300px;
 	}
 
-	/*
-	 * Below SETTINGS_WINDOW_FULLBLEED_BREAKPOINT the component stops writing inline
-	 * left/top/width/height, so this needs no !important to win — and nothing here can
-	 * silently discard a drag the way the old media query did.
-	 */
 	.settings-floating-window.full-bleed {
 		inset: 0.5rem;
 		width: auto;
@@ -915,7 +915,6 @@
 		border-top-right-radius: 0.75rem;
 	}
 
-	/* Show the grab affordance only where dragging actually does something. */
 	.settings-window-titlebar.draggable {
 		cursor: grab;
 		touch-action: none;

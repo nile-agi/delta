@@ -4,10 +4,10 @@
 	import { Settings, Calendar, Trash2, StickyNote, ChevronDown, Wrench, Activity } from '@lucide/svelte';
 	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
     import { dockStore } from '$lib/stores/dock.svelte';
-	import { notesWindow } from '$lib/stores/notes-window.svelte';
-	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
+	// import { notesWindow } from '$lib/stores/notes-window.svelte';
+	// import { calendarWindow } from '$lib/stores/calendar-window.svelte';
 	import { config } from '$lib/stores/settings.svelte';
-	import { settingsWindow } from '$lib/stores/settings-window.svelte';
+	// import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { ChatSidebarConversationItem, ConfirmationDialog } from '$lib/components/app';
 	import ScrollArea from '$lib/components/ui/scroll-area/scroll-area.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar';
@@ -24,13 +24,14 @@
 	import { openHardwareWindow } from '$lib/services/hardware-window';
 	import { openCalendarWindow } from '$lib/services/calendar-window';
 	import { openNotesWindow } from '$lib/services/notes-window';
+	import { openSettingsWindow } from '$lib/services/settings-window';
 
-	function openHardware() {
-		const isTauri = browser && '__TAURI_INTERNALS__' in window;
-		if (isTauri) void openHardwareWindow();  // native OS window — draggable anywhere
-		else hardwareWindow.open();              // browser fallback: floating panel
-		handleMobileSidebarItemClick?.();        // safe call if defined
-	}
+	// function openHardware() {
+	// 	const isTauri = browser && '__TAURI_INTERNALS__' in window;
+	// 	if (isTauri) void openHardwareWindow();  // native OS window — draggable anywhere
+	// 	else hardwareWindow.open();              // browser fallback: floating panel
+	// 	handleMobileSidebarItemClick?.();        // safe call if defined
+	// }
 
 	function openCalendar() {
 		void openCalendarWindow();
@@ -239,7 +240,7 @@
 		</span>
 		<button
 			class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-			onclick={() => settingsWindow.toggle()}
+			onclick={openSettingsWindow}
 			title="Settings"
 			aria-label="Settings"
 		>

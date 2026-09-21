@@ -22,8 +22,8 @@
 	import OnboardingDialog from '$lib/components/app/onboarding/OnboardingDialog.svelte';
 	import { goto } from '$app/navigation';
 	import { startReminderPolling, stopReminderPolling } from '$lib/services/reminders';
-	import { notesWindow } from '$lib/stores/notes-window.svelte';
-	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
+	// import { notesWindow } from '$lib/stores/notes-window.svelte';
+	// import { calendarWindow } from '$lib/stores/calendar-window.svelte';
 	import NotesWindow from '$lib/components/app/misc/NotesWindow.svelte';
 	import CalendarWindow from '$lib/components/app/misc/CalendarWindow.svelte';
 	import WindowDock from '$lib/components/app/misc/WindowDock.svelte';
@@ -31,9 +31,7 @@
 	import HardwareDashboard from '$lib/components/app/hardware/HardwareDashboard.svelte';
 	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
 	import Notes from '$lib/components/app/misc/Notes.svelte';
-	
-	// ❌ REMOVED: import { Calendar } from 'bits-ui';
-	// ❌ REMOVED: import Calendar from '$lib/components/app/misc/Calendar.svelte';
+	import SettingsWindow from '$lib/components/app/misc/SettingsWindow.svelte';
 
 	let { children } = $props();
 
@@ -42,6 +40,7 @@
 	let isHardwareWindow = $state(kind === 'hardware');
 	let isCalendarWindow = $state(kind === 'calendar');
 	let isNotesWindow = $state(kind === 'notes');
+	let isSettingsWindow = $state(kind === 'settings');
 
 	const IS_TAURI_ENV =
 		browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -54,12 +53,13 @@
 				if (label === 'hardware-telemetry') isHardwareWindow = true;
 				else if (label === 'calendar') isCalendarWindow = true;
 				else if (label === 'notes') isNotesWindow = true;
+				else if (label === 'settings') isSettingsWindow = true;
 			})
 			.catch(() => {});
 	}
 
 	// Convenience: true for any standalone auxiliary window (skip all main-app work)
-	const isAuxWindow = $derived(isHardwareWindow || isCalendarWindow || isNotesWindow);
+	const isAuxWindow = $derived(isHardwareWindow || isCalendarWindow || isNotesWindow || isSettingsWindow);
 
 	let serverReady = $state(!IS_TAURI_ENV);
 	let serverError = $state(false);
@@ -340,12 +340,15 @@
 	</div>
 {:else if isCalendarWindow}
 	<div class="h-screen w-screen overflow-hidden bg-background">
-		<!-- ✅ NEW: Only Window OS Calendar - no old DOM calendar -->
 		<CalendarWindow />
 	</div>
 {:else if isNotesWindow}
 	<div class="h-screen w-screen overflow-hidden bg-background">
 		<Notes fullscreen />
+	</div>
+{:else if isSettingsWindow}
+	<div class="h-screen w-screen overflow-hidden bg-background">
+		<SettingsWindow />
 	</div>
 {:else}
 	<!-- Main app: all the normal UI + DOM fallback for Hardware -->
@@ -379,10 +382,7 @@
 			<ModelBackendWarning error={modelBackendError} />
 		{/if}
 		<NotesWindow />
-		
-		<!-- ✅ NEW: Only Window OS Calendar - no old DOM calendar -->
 		<CalendarWindow />
-		
 		<WindowDock />
 
 		<!-- In-app fallback: only used in plain browsers or when OS window creation fails -->
