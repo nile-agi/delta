@@ -297,6 +297,22 @@ jobs:
         env:
           APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE }}
 
+      - name: Prepare pinned AppImage repacking tool
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APPIMAGETOOL_PATH="$RUNNER_TEMP/appimagetool-x86_64.AppImage"
+          gh api \
+            -H "Accept: application/octet-stream" \
+            /repos/AppImage/appimagetool/releases/assets/324406882 \
+            > "$APPIMAGETOOL_PATH"
+          echo "a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0  $APPIMAGETOOL_PATH" \
+            | sha256sum --check --strict
+          chmod +x "$APPIMAGETOOL_PATH"
+          echo "APPIMAGETOOL_PATH=$APPIMAGETOOL_PATH" >> "$GITHUB_ENV"
+
       - name: Build Tauri app (signed)
         if: steps.signing.outputs.available == 'true'
         uses: tauri-apps/tauri-action@v0
@@ -320,7 +336,8 @@ jobs:
             |------|----|-------|
             | `.dmg` | macOS | Disk image installer |
             | `.deb` | Linux (Ubuntu/Debian) | Install with `sudo dpkg -i` |
-            | `.AppImage` | Linux (any distro) | Portable, no install needed |
+            | `.rpm` | Linux (Fedora) | Installs desktop dependencies |
+            | `.AppImage` | Linux (any distro) | Portable; host desktop libraries required |
             | `.msi` or `.exe` | Windows | Standard installer |
 
             ---
@@ -328,11 +345,13 @@ jobs:
             ### Linux AppImage Setup
 
             1. Make the file executable: `chmod +x Delta_*.AppImage`
-            2. Install the host WebKitGTK 4.1, GTK3, and EGL/GL runtime libraries for your distribution.
-            3. Run it: `./Delta_*.AppImage`
-            4. If the window is blank under Wayland, retry with `GDK_BACKEND=x11`.
+            2. Prefer the `.rpm` on Fedora or the `.deb` on Ubuntu/Debian so desktop dependencies are installed automatically.
+            3. For the portable AppImage, install the host WebKitGTK 4.1, GTK3, and EGL/GL runtime libraries.
+            4. Run it: `./Delta_*.AppImage`
+            5. For a driver-specific rendering issue, retry with `WEBKIT_DISABLE_COMPOSITING_MODE=1`.
           releaseDraft: false
           prerelease: false
+          tauriScript: ${{ matrix.platform == 'ubuntu-22.04' && './scripts/tauri-release-build.sh' || '' }}
           args: ${{ matrix.args }}
 
       - name: Build Tauri app (unsigned)
@@ -352,7 +371,8 @@ jobs:
             |------|----|-------|
             | `.dmg` | macOS | Disk image installer |
             | `.deb` | Linux (Ubuntu/Debian) | Install with `sudo dpkg -i` |
-            | `.AppImage` | Linux (any distro) | Portable, no install needed |
+            | `.rpm` | Linux (Fedora) | Installs desktop dependencies |
+            | `.AppImage` | Linux (any distro) | Portable; host desktop libraries required |
             | `.msi` or `.exe` | Windows | Standard installer |
 
             ---
@@ -372,11 +392,13 @@ jobs:
             ### Linux AppImage Setup
 
             1. Make the file executable: `chmod +x Delta_*.AppImage`
-            2. Install the host WebKitGTK 4.1, GTK3, and EGL/GL runtime libraries for your distribution.
-            3. Run it: `./Delta_*.AppImage`
-            4. If the window is blank under Wayland, retry with `GDK_BACKEND=x11`.
+            2. Prefer the `.rpm` on Fedora or the `.deb` on Ubuntu/Debian so desktop dependencies are installed automatically.
+            3. For the portable AppImage, install the host WebKitGTK 4.1, GTK3, and EGL/GL runtime libraries.
+            4. Run it: `./Delta_*.AppImage`
+            5. For a driver-specific rendering issue, retry with `WEBKIT_DISABLE_COMPOSITING_MODE=1`.
           releaseDraft: false
           prerelease: false
+          tauriScript: ${{ matrix.platform == 'ubuntu-22.04' && './scripts/tauri-release-build.sh' || '' }}
           args: ${{ matrix.args }}
 
   # ---------------------------------------------------------------------------
