@@ -9,6 +9,7 @@
 	let downloadUrl = $state('');
 	let loading = $state(true);
 	let allAssets = $state<{ name: string; url: string }[]>([]);
+	let macDownloads = $state<{ label: string; url: string }[]>([]);
 
 	const labels: Record<Platform, string> = {
 		macos: 'Download for macOS',
@@ -44,7 +45,18 @@
 					url: a.browser_download_url
 				}));
 
-				const exts = extensions[platform];
+				if (platform === 'macos') {
+					for (const { arch, label } of [
+						{ arch: 'aarch64', label: 'Apple Silicon' },
+						{ arch: 'x64', label: 'Intel' }
+					]) {
+						const match = allAssets.find((a) => a.name.endsWith(`_${arch}.dmg`))
+							?? allAssets.find((a) => a.name.endsWith(`_${arch}.app.tar.gz`));
+						if (match) macDownloads.push({ label, url: match.url });
+					}
+				}
+
+				const exts = platform === 'macos' ? [] : extensions[platform];
 				for (const ext of exts) {
 					const match = allAssets.find((a) => a.name.endsWith(ext));
 					if (match) {
@@ -66,6 +78,16 @@
 	{#if loading}
 		<div class="bg-white text-delta-blue px-8 py-4 rounded-xl font-semibold text-lg opacity-50">
 			Loading...
+		</div>
+	{:else if macDownloads.length > 0}
+		<div class="flex flex-wrap justify-center gap-3">
+			{#each macDownloads as download (download.label)}
+				<a href={download.url}
+					class="bg-white text-delta-blue px-8 py-4 rounded-xl font-semibold text-lg
+						hover:bg-white/90 hover:scale-105 transition-all shadow-lg shadow-black/20">
+					macOS — {download.label}
+				</a>
+			{/each}
 		</div>
 	{:else if downloadUrl}
 		<a href={downloadUrl}
