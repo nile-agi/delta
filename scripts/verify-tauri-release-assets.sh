@@ -5,15 +5,38 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TARGET_TRIPLE="${1:-}"
 WEB_ONLY=0
 
-if [[ "$TARGET_TRIPLE" == "--web-only" ]]; then
-  WEB_ONLY=1
-  TARGET_TRIPLE=""
-fi
+# shellcheck source=appimage-graphics-libs.sh
+source "$REPO_ROOT/scripts/appimage-graphics-libs.sh"
 
 fail() {
   echo "ERROR: $*" >&2
   exit 1
 }
+
+if [[ "$TARGET_TRIPLE" == "--appimage" ]]; then
+  [[ $# -eq 2 ]] || fail "usage: $0 --appimage <AppImage>"
+  APPIMAGE="$2"
+  [[ -f "$APPIMAGE" ]] || fail "AppImage not found: $APPIMAGE"
+  [[ -x "$APPIMAGE" ]] || fail "AppImage is not executable: $APPIMAGE"
+
+  APPIMAGE_DIR="$(cd "$(dirname "$APPIMAGE")" && pwd)"
+  APPIMAGE="$APPIMAGE_DIR/$(basename "$APPIMAGE")"
+  EXTRACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/delta-appimage-verify.XXXXXX")"
+  trap 'rm -rf "$EXTRACT_DIR"' EXIT
+  (
+    cd "$EXTRACT_DIR"
+    "$APPIMAGE" --appimage-extract >/dev/null
+  )
+  assert_valid_appimage_appdir "$EXTRACT_DIR/squashfs-root" ||
+    fail "AppImage validation failed: $APPIMAGE"
+  echo "Linux AppImage verified: $APPIMAGE"
+  exit 0
+fi
+
+if [[ "$TARGET_TRIPLE" == "--web-only" ]]; then
+  WEB_ONLY=1
+  TARGET_TRIPLE=""
+fi
 
 WEB_INDEX="$REPO_ROOT/public/index.html"
 [[ -f "$WEB_INDEX" ]] || fail "public/index.html not found. Run the web UI build before building Tauri."

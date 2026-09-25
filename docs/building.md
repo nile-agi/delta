@@ -191,23 +191,27 @@ Before launching a Fedora AppImage, run the read-only runtime check:
 ./scripts/check-linux-runtime.sh
 ```
 
-Fedora installations need the host WebKitGTK 4.1, GTK3, and EGL/GL runtime libraries. AppImage
-does not install those desktop runtime dependencies for the host system. The RPM bundle declares
-the corresponding package dependencies when an RPM is used.
+Fedora installations need the host WebKitGTK 4.1, GTK3, and EGL/GL runtime libraries. Prefer the
+RPM on Fedora and the DEB on Ubuntu or Debian because those packages declare their desktop runtime
+dependencies. The AppImage remains the portable option and uses the host graphics stack so its
+Wayland and Mesa libraries stay compatible. The release build removes bundled Wayland, XKB, XCB,
+and Mesa interface libraries that can conflict with newer host drivers.
 
 **Blank screen on Ubuntu / Linux:**
-The app sets `WEBKIT_DISABLE_COMPOSITING_MODE=1` automatically to work around WebKitGTK GPU compositing issues. If you still see a blank screen, try these environment variables:
+Current AppImages remove bundled display and Mesa interface libraries before release. Delta uses
+normal WebKit GPU rendering by default. If a driver-specific rendering problem remains, software
+compositing is available as an explicit fallback:
 
 ```bash
-# Sandbox issues inside AppImage
-WEBKIT_FORCE_SANDBOX=0 ./Delta_*.AppImage
+# Driver-specific software rendering fallback
+WEBKIT_DISABLE_COMPOSITING_MODE=1 ./Delta_*.AppImage
 
 # Wayland display server issues
 GDK_BACKEND=x11 ./Delta_*.AppImage
-
-# Combine all workarounds
-GDK_BACKEND=x11 WEBKIT_FORCE_SANDBOX=0 ./Delta_*.AppImage
 ```
+
+Delta 1.0.13 and earlier AppImages can bundle display libraries that are incompatible with newer
+Fedora Mesa packages. Use the RPM or a newer AppImage on those systems.
 
 To diagnose, run the AppImage from a terminal and check stderr for WebKit errors.
 
