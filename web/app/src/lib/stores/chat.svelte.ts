@@ -453,6 +453,14 @@ class ChatStore {
 		// A regeneration reuses the message id, so drop whatever the previous run recorded.
 		agentStore.begin(assistantMessage.id);
 
+		// A model without tools cannot put anything on the calendar itself, so offer the user's
+		// message as a one-tap add. Here rather than in sendMessage so a regenerate or an edited
+		// message gets one too; a message that already has one keeps it.
+		if (!(options?.useTools ?? agentToolsActive()) && !options?.initialContent) {
+			const lastUser = [...allMessages].reverse().find((m) => m.role === 'user');
+			if (lastUser && !lastUser.quick_add && lastUser.content.trim()) void this.offerQuickAdd(lastUser);
+		}
+
 		const isContinuation = Boolean(options?.initialContent);
 		let streamedContent = options?.initialContent ?? '';
 		let streamedReasoningContent = options?.initialThinking ?? '';
@@ -898,9 +906,6 @@ class ChatStore {
 			if (!userMessage) {
 				throw new Error('Failed to add user message');
 			}
-
-			// A model without tools cannot put this on the calendar itself, so offer it instead.
-			if (!useTools && content.trim()) void this.offerQuickAdd(userMessage);
 
 			if (isNewConversation && content) {
 				const title = content.trim();
