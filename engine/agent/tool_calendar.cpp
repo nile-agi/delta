@@ -1,4 +1,5 @@
 #include "tool_calendar.h"
+#include <optional>
 #include "agent_database.h"
 #include "time_compat.h"
 #include "tool_registry.h"
@@ -18,6 +19,119 @@ static nlohmann::json strip_id(nlohmann::json obj) {
 
 // Resolve a model-provided start_time to a valid YYYY-MM-DDTHH:MM string.
 // Handles: valid ISO, past-date correction, "tomorrow", bare "HH:MM", garbage.
+std::optional<std::string> extract_clock_time(const std::string& s) {
+    std::string lower = s;
+    for (auto& c : lower)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    // Words first: in "noon 12000" the digits are a typo, and the digit rules below would read
+    // them as midnight.
+    // Whole words only: "afternoon" is not noon.
+    auto has_word = [&lower](const std::string& word) {
+        for (size_t at = lower.find(word); at != std::string::npos; at = lower.find(word, at + 1)) {
+            const bool starts = at == 0 || !std::isalpha(static_cast<unsigned char>(lower[at - 1]));
+            const size_t after = at + word.size();
+            const bool ends = after >= lower.size() || !std::isalpha(static_cast<unsigned char>(lower[after]));
+            if (starts && ends)
+                return true;
+        }
+        return false;
+    };
+    if (has_word("noon") || has_word("midday"))
+        return std::string("12:00");
+    if (has_word("midnight"))
+        return std::string("00:00");
+
+    // 1. HH:MM pattern, optionally followed by am/pm
+    for (size_t i = 0; i + 4 < lower.size(); i++) {
+        if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
+            std::isdigit(static_cast<unsigned char>(lower[i + 1])) && lower[i + 2] == ':' &&
+            std::isdigit(static_cast<unsigned char>(lower[i + 3])) &&
+            std::isdigit(static_cast<unsigned char>(lower[i + 4]))) {
+            int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
+            int m = (lower[i + 3] - '0') * 10 + (lower[i + 4] - '0');
+            if (h < 24 && m < 60) {
+                size_t after = i + 5;
+                while (after < lower.size() && lower[after] == ' ')
+                    after++;
+                if (after + 1 < lower.size()) {
+                    if (lower[after] == 'p' && lower[after + 1] == 'm' && h < 12)
+                        h += 12;
+                    if (lower[after] == 'a' && lower[after + 1] == 'm' && h == 12)
+                        h = 0;
+                }
+                char buf[6];
+                snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
+                return std::string(buf);
+            }
+        }
+    }
+
+    // 2. Digit(s) followed by am/pm: "1pm", "2am", "11pm", "12am"
+    for (size_t i = 0; i < lower.size(); i++) {
+        if (!std::isdigit(static_cast<unsigned char>(lower[i])))
+            continue;
+        int h = lower[i] - '0';
+        size_t j = i + 1;
+        if (j < lower.size() && std::isdigit(static_cast<unsigned char>(lower[j]))) {
+            h = h * 10 + (lower[j] - '0');
+            j++;
+        }
+        size_t k = j;
+        while (k < lower.size() && lower[k] == ' ')
+            k++;
+        if (k + 1 < lower.size()) {
+            bool is_pm = (lower[k] == 'p' && lower[k + 1] == 'm');
+            bool is_am = (lower[k] == 'a' && lower[k + 1] == 'm');
+            if ((is_am || is_pm) && h >= 1 && h <= 12) {
+                if (is_pm && h != 12)
+                    h += 12;
+                if (is_am && h == 12)
+                    h = 0;
+                char buf[6];
+                snprintf(buf, sizeof(buf), "%02d:00", h);
+                return std::string(buf);
+            }
+        }
+    }
+
+    // 3. 4-digit military time: "1300" -> "13:00"
+    for (size_t i = 0; i + 3 < lower.size(); i++) {
+        if (i > 0 && (std::isdigit(static_cast<unsigned char>(lower[i - 1])) || lower[i - 1] == '-'))
+            continue;
+        if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
+            std::isdigit(static_cast<unsigned char>(lower[i + 1])) &&
+            std::isdigit(static_cast<unsigned char>(lower[i + 2])) &&
+            std::isdigit(static_cast<unsigned char>(lower[i + 3]))) {
+            if (i + 4 < lower.size() && (std::isdigit(static_cast<unsigned char>(lower[i + 4])) || lower[i + 4] == '-'))
+                continue;
+            int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
+            int m = (lower[i + 2] - '0') * 10 + (lower[i + 3] - '0');
+            if (h < 24 && m < 60) {
+                char buf[6];
+                snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
+                return std::string(buf);
+            }
+        }
+    }
+
+    // 4. Bare two-digit hour: "13" -> "13:00"
+    for (size_t i = 0; i + 1 < lower.size(); i++) {
+        if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
+            std::isdigit(static_cast<unsigned char>(lower[i + 1]))) {
+            int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
+            if (h >= 0 && h <= 23 &&
+                (i + 2 >= lower.size() || !std::isdigit(static_cast<unsigned char>(lower[i + 2])))) {
+                char buf[6];
+                snprintf(buf, sizeof(buf), "%02d:00", h);
+                return std::string(buf);
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
 std::string resolve_datetime(const std::string& raw) {
     time_t now = time(nullptr);
     struct tm t_now{};
@@ -34,102 +148,7 @@ std::string resolve_datetime(const std::string& raw) {
     std::string tomorrow(tom_buf);
 
     // Extract time from anywhere in the string.
-    // Handles: HH:MM, HH:MM am/pm, Hpm/Ham, HHMM military, bare HH.
-    auto extract_time = [](const std::string& s) -> std::string {
-        std::string lower = s;
-        for (auto& c : lower)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-
-        // 1. HH:MM pattern, optionally followed by am/pm
-        for (size_t i = 0; i + 4 < lower.size(); i++) {
-            if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 1])) && lower[i + 2] == ':' &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 3])) &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 4]))) {
-                int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
-                int m = (lower[i + 3] - '0') * 10 + (lower[i + 4] - '0');
-                if (h < 24 && m < 60) {
-                    size_t after = i + 5;
-                    while (after < lower.size() && lower[after] == ' ')
-                        after++;
-                    if (after + 1 < lower.size()) {
-                        if (lower[after] == 'p' && lower[after + 1] == 'm' && h < 12)
-                            h += 12;
-                        if (lower[after] == 'a' && lower[after + 1] == 'm' && h == 12)
-                            h = 0;
-                    }
-                    char buf[6];
-                    snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
-                    return std::string(buf);
-                }
-            }
-        }
-
-        // 2. Digit(s) followed by am/pm: "1pm", "2am", "11pm", "12am"
-        for (size_t i = 0; i < lower.size(); i++) {
-            if (!std::isdigit(static_cast<unsigned char>(lower[i])))
-                continue;
-            int h = lower[i] - '0';
-            size_t j = i + 1;
-            if (j < lower.size() && std::isdigit(static_cast<unsigned char>(lower[j]))) {
-                h = h * 10 + (lower[j] - '0');
-                j++;
-            }
-            size_t k = j;
-            while (k < lower.size() && lower[k] == ' ')
-                k++;
-            if (k + 1 < lower.size()) {
-                bool is_pm = (lower[k] == 'p' && lower[k + 1] == 'm');
-                bool is_am = (lower[k] == 'a' && lower[k + 1] == 'm');
-                if ((is_am || is_pm) && h >= 1 && h <= 12) {
-                    if (is_pm && h != 12)
-                        h += 12;
-                    if (is_am && h == 12)
-                        h = 0;
-                    char buf[6];
-                    snprintf(buf, sizeof(buf), "%02d:00", h);
-                    return std::string(buf);
-                }
-            }
-        }
-
-        // 3. 4-digit military time: "1300" -> "13:00"
-        for (size_t i = 0; i + 3 < lower.size(); i++) {
-            if (i > 0 && (std::isdigit(static_cast<unsigned char>(lower[i - 1])) || lower[i - 1] == '-'))
-                continue;
-            if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 1])) &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 2])) &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 3]))) {
-                if (i + 4 < lower.size() &&
-                    (std::isdigit(static_cast<unsigned char>(lower[i + 4])) || lower[i + 4] == '-'))
-                    continue;
-                int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
-                int m = (lower[i + 2] - '0') * 10 + (lower[i + 3] - '0');
-                if (h < 24 && m < 60) {
-                    char buf[6];
-                    snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
-                    return std::string(buf);
-                }
-            }
-        }
-
-        // 4. Bare two-digit hour: "13" -> "13:00"
-        for (size_t i = 0; i + 1 < lower.size(); i++) {
-            if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 1]))) {
-                int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
-                if (h >= 0 && h <= 23 &&
-                    (i + 2 >= lower.size() || !std::isdigit(static_cast<unsigned char>(lower[i + 2])))) {
-                    char buf[6];
-                    snprintf(buf, sizeof(buf), "%02d:00", h);
-                    return std::string(buf);
-                }
-            }
-        }
-
-        return "09:00";
-    };
+    auto extract_time = [](const std::string& s) -> std::string { return extract_clock_time(s).value_or("09:00"); };
 
     // Check if it's already valid ISO YYYY-MM-DDTHH:MM
     auto is_iso = [](const std::string& s) -> bool {
