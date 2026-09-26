@@ -994,7 +994,7 @@ export class ChatService {
 		return [systemMsg, ...messages];
 	}
 
-	/** "Current date and time: Saturday, 26 September 2026, 08:55 (Africa/Nairobi)." from the local clock. */
+	/** "Today is Saturday, 26 September 2026. The time is 08:55 (Africa/Nairobi)." from the local clock. */
 	static currentDateLine(now: Date): string {
 		const date = now.toLocaleDateString('en-GB', {
 			weekday: 'long',
@@ -1004,7 +1004,8 @@ export class ChatService {
 		});
 		const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 		const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-		return `Current date and time: ${date}, ${time}${zone ? ` (${zone})` : ''}. Use it for "today", "tomorrow" and any date you mention.`;
+		// A plain statement: small models repeat instructions back to the user.
+		return `Today is ${date}. The time is ${time}${zone ? ` (${zone})` : ''}.`;
 	}
 
 	/**
