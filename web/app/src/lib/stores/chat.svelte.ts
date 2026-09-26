@@ -454,11 +454,17 @@ class ChatStore {
 		agentStore.begin(assistantMessage.id);
 
 		// A model without tools cannot put anything on the calendar itself, so offer the user's
-		// message as a one-tap add. Here rather than in sendMessage so a regenerate or an edited
-		// message gets one too; a message that already has one keeps it.
+		// message as a one-tap change. Here rather than in sendMessage so a regenerate or an edited
+		// message gets one too. One the user acted on or dismissed is kept; an untouched one is
+		// worked out again, so a better parser replaces an old guess.
 		if (!(options?.useTools ?? agentToolsActive()) && !options?.initialContent) {
 			const lastUser = [...allMessages].reverse().find((m) => m.role === 'user');
-			if (lastUser && !lastUser.quick_add && lastUser.content.trim()) void this.offerQuickAdd(lastUser);
+			if (
+				lastUser &&
+				lastUser.content.trim() &&
+				(!lastUser.quick_add || lastUser.quick_add.status === 'offered')
+			)
+				void this.offerQuickAdd(lastUser);
 		}
 
 		const isContinuation = Boolean(options?.initialContent);
@@ -854,8 +860,15 @@ class ChatStore {
 	 */
 	private async offerQuickAdd(message: DatabaseMessage): Promise<void> {
 		try {
-			const candidate = await agentService.suggestQuickAdd(message.content);
-			if (candidate) await this.setQuickAdd(message.id, { ...candidate, status: 'offered' });
+			const suggestion = await agentService.suggestQuickAction(message.content);
+			if (suggestion) {
+				await this.setQuickAdd(message.id, { ...suggestion, status: 'offered' } as QuickAddSuggestion);
+			} else if (message.quick_add?.status === 'offered') {
+				// The earlier guess no longer holds up; drop it rather than keep a wrong chip.
+				await DatabaseStore.updateMessage(message.id, { quick_add: undefined });
+				const live = this.activeMessages.find((m) => m.id === message.id);
+				if (live) live.quick_add = undefined;
+			}
 		} catch {
 			// A suggestion is optional; the chat carries on without one.
 		}

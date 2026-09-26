@@ -1,4 +1,7 @@
 import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
+import type { QuickAddSuggestion } from '$lib/types/agent';
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 // Agent API shares the model API's server, so reuse its base URL resolution.
 function apiUrl(path: string): string {
@@ -52,10 +55,8 @@ export const agentService = {
 		return data.events ?? [];
 	},
 
-	/** A calendar item the engine spotted in `text`, or null. Never creates anything itself. */
-	async suggestQuickAdd(
-		text: string
-	): Promise<Pick<CalendarEvent, 'title' | 'type' | 'start_time' | 'all_day'> | null> {
+	/** A calendar item to add, or an existing one to move, spotted in `text`, or null. Changes nothing. */
+	async suggestQuickAction(text: string): Promise<DistributiveOmit<QuickAddSuggestion, 'status'> | null> {
 		const res = await fetch(apiUrl('/v1/agent/quick-add'), {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -63,7 +64,7 @@ export const agentService = {
 		});
 		if (!res.ok) return null;
 		const data = await res.json();
-		return data.candidate ?? null;
+		return data.suggestion ?? null;
 	},
 
 	async createEvent(event: Partial<CalendarEvent>): Promise<CalendarEvent> {

@@ -130,14 +130,40 @@ export interface AgentActivity {
 	reasoning?: string;
 }
 
-/** A calendar item spotted in what the user typed, offered as a one-tap add (models without tools). */
-export interface QuickAddSuggestion {
+/** An existing calendar item a "move it to Friday" message may mean, and where it would go. */
+export interface QuickMoveOption {
+	id: string;
 	title: string;
 	type: 'event' | 'task';
-	/** YYYY-MM-DDTHH:MM:00, local time. */
 	start_time: string;
+	new_start_time: string;
+	new_end_time?: string;
 	all_day: boolean;
-	status: 'offered' | 'added' | 'dismissed';
-	/** Set once added, so the chip can link to it. */
-	event_id?: string;
+}
+
+/**
+ * A one-tap calendar change offered under a user message when the model cannot use tools: a new
+ * item to add, or an existing one to move. Nothing changes until the user taps it.
+ */
+export type QuickAddSuggestion = QuickAddItemSuggestion | QuickMoveSuggestion;
+
+export interface QuickAddItemSuggestion {
+			/** Absent on suggestions saved before moves existed. */
+			kind?: 'add';
+			title: string;
+			type: 'event' | 'task';
+			/** YYYY-MM-DDTHH:MM:00, local time. */
+			start_time: string;
+			all_day: boolean;
+			status: 'offered' | 'added' | 'dismissed';
+			/** Set once added, so the chip can link to it. */
+			event_id?: string;
+}
+
+export interface QuickMoveSuggestion {
+			kind: 'move';
+			options: QuickMoveOption[];
+			status: 'offered' | 'moved' | 'dismissed';
+			/** The option the user picked, once moved. */
+			moved?: QuickMoveOption;
 }

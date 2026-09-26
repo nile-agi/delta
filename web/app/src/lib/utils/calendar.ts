@@ -92,3 +92,20 @@ export function sortDayItems(items: CalendarEvent[]): CalendarEvent[] {
 		return (a.start_time ?? '').localeCompare(b.start_time ?? '');
 	});
 }
+
+/** "Today 14:00", "Tomorrow, all day", "Fri 2 Oct 14:00" for a local YYYY-MM-DDTHH:MM stamp. */
+export function describeWhen(stamp: string, allDay = false): string {
+	const [datePart, timePart = ''] = stamp.split('T');
+	const [y, m, d] = datePart.split('-').map(Number);
+	const date = new Date(y, m - 1, d);
+	const today = new Date();
+	today.setHours(0, 0, 0, 0);
+	const days = Math.round((date.getTime() - today.getTime()) / 86_400_000);
+	const day =
+		days === 0
+			? 'Today'
+			: days === 1
+				? 'Tomorrow'
+				: date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+	return allDay ? `${day}, all day` : `${day} ${timePart.substring(0, 5)}`;
+}

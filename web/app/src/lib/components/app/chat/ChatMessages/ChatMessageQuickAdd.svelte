@@ -4,13 +4,13 @@
 	import { agentService, type CalendarEvent } from '$lib/services/agent';
 	import { openCalendarWindow } from '$lib/services/calendar-window';
 	import { setQuickAdd } from '$lib/stores/chat.svelte';
-	import type { QuickAddSuggestion } from '$lib/types/agent';
-	import { REMINDER_NONE } from '$lib/utils/calendar';
+	import type { QuickAddItemSuggestion } from '$lib/types/agent';
+	import { REMINDER_NONE, describeWhen } from '$lib/utils/calendar';
 	import { toast } from 'svelte-sonner';
 
 	interface Props {
 		messageId: string;
-		suggestion: QuickAddSuggestion;
+		suggestion: QuickAddItemSuggestion;
 	}
 
 	let { messageId, suggestion }: Props = $props();
@@ -28,31 +28,12 @@
 		all_day: suggestion.all_day
 	});
 
-	function describeWhen(stamp: string, allDay: boolean): string {
-		const [datePart, timePart] = stamp.split('T');
-		const [y, m, d] = datePart.split('-').map(Number);
-		const date = new Date(y, m - 1, d);
-		const today = new Date();
-		today.setHours(0, 0, 0, 0);
-		const days = Math.round((date.getTime() - today.getTime()) / 86_400_000);
-		const day =
-			days === 0
-				? 'Today'
-				: days === 1
-					? 'Tomorrow'
-					: date.toLocaleDateString(undefined, {
-							weekday: 'short',
-							day: 'numeric',
-							month: 'short'
-						});
-		return allDay ? `${day}, all day` : `${day} ${timePart.substring(0, 5)}`;
-	}
-
 	async function add(data: Partial<CalendarEvent>) {
 		saving = true;
 		try {
 			const created = await agentService.createEvent(data);
 			await setQuickAdd(messageId, {
+				kind: 'add',
 				title: created.title,
 				type: created.type,
 				start_time: created.start_time,
