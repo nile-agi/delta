@@ -197,6 +197,7 @@ set(DELTA_SOURCES
     engine/agent/policy.cpp
     engine/agent/harness.cpp
     engine/agent/text_tool_call.cpp
+    engine/agent/quick_add.cpp
 )
 
 # Common include directories
@@ -284,6 +285,7 @@ add_executable(delta-server
     engine/agent/policy.cpp
     engine/agent/harness.cpp
     engine/agent/text_tool_call.cpp
+    engine/agent/quick_add.cpp
 )
 target_compile_definitions(delta-server PRIVATE
     DELTA_VERSION="${PROJECT_VERSION}"
@@ -394,6 +396,7 @@ add_executable(delta-harness-tests EXCLUDE_FROM_ALL
     engine/agent/policy.cpp
     engine/agent/harness.cpp
     engine/agent/text_tool_call.cpp
+    engine/agent/quick_add.cpp
 )
 target_include_directories(delta-harness-tests PRIVATE ${DELTA_INCLUDE_DIRS})
 target_link_libraries(delta-harness-tests PRIVATE

@@ -19,6 +19,7 @@
 #include "agent/memory_store.h"
 #include "agent/task_store.h"
 #include "agent/policy.h"
+#include "agent/quick_add.h"
 
 #include "tools/hardware_monitor.h"
 
@@ -1228,6 +1229,23 @@ class ModelAPIServer {
         });
 
         // What the agent can do, and which tools the user has already answered for.
+        // A calendar item spotted in what the user typed, for models that cannot call tools. Only a
+        // suggestion: the client shows it and the user decides whether it is created.
+        server_->Post("/v1/agent/quick-add", [](const httplib::Request& req, httplib::Response& res) {
+            json body = json::parse(req.body, nullptr, false);
+            if (!body.is_object() || !body.contains("text") || !body["text"].is_string()) {
+                res.status = 400;
+                res.set_content(json({{"error", "text is required"}}).dump(), "application/json");
+                return;
+            }
+            std::time_t now = std::time(nullptr);
+            if (body.contains("now") && body["now"].is_number_integer())
+                now = static_cast<std::time_t>(body["now"].get<long long>());
+            const auto candidate = agent::parse_quick_add(body["text"].get<std::string>(), now);
+            res.set_content(json({{"candidate", candidate ? candidate->to_json() : json(nullptr)}}).dump(),
+                            "application/json");
+        });
+
         server_->Get("/v1/agent/tools", [](const httplib::Request&, httplib::Response& res) {
             auto& registry = agent::ToolRegistry::instance();
             json tools = json::array();

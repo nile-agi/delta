@@ -13,6 +13,7 @@
 #include "agent/context_manager.h"
 #include "agent/harness.h"
 #include "agent/memory_store.h"
+#include "agent/quick_add.h"
 #include "agent/task_store.h"
 #include "agent/tool_files.h"
 #include "agent/tool_registry.h"
@@ -2526,6 +2527,52 @@ static void test_invented_names_and_quoted_values_are_accepted() {
     check(wrong.error_message.find("must be string") != std::string::npos, "the refusal names the expected type");
 }
 
+static std::time_t local_moment(int year, int month, int day, int hour, int minute) {
+    std::tm t{};
+    t.tm_year = year - 1900;
+    t.tm_mon = month - 1;
+    t.tm_mday = day;
+    t.tm_hour = hour;
+    t.tm_min = minute;
+    t.tm_isdst = -1;
+    return std::mktime(&t);
+}
+
+static void test_quick_add_reads_everyday_statements() {
+    test("quick-add turns a plain statement into a calendar item");
+
+    // Saturday 26 September 2026, 08:55.
+    const std::time_t now = local_moment(2026, 9, 26, 8, 55);
+
+    auto women = parse_quick_add("Today i will be attending women in ai event at around noon 12000", now);
+    check(women.has_value(), "the user's own sentence is recognised");
+    if (women) {
+        check_eq(women->title, std::string("Women in ai event"), "the title is the activity, not the filler");
+        check_eq(women->start_time, std::string("2026-09-26T12:00:00"), "noon today, not midnight or October");
+        check_eq(women->type, std::string("event"), "it is an event");
+        check(!women->all_day, "it has a time");
+    }
+
+    auto dentist = parse_quick_add("I have a dentist appointment tomorrow at 3pm", now);
+    check(dentist && dentist->start_time == "2026-09-27T15:00:00", "tomorrow at 3pm");
+    check(dentist && dentist->title == "Dentist appointment", "leading 'I have a' is dropped");
+
+    auto rent = parse_quick_add("remind me to pay rent on friday", now);
+    check(rent && rent->type == "task", "a reminder is a task");
+    check(rent && rent->start_time == "2026-10-02T00:00:00" && rent->all_day, "friday is next Friday, all day");
+    check(rent && rent->title == "Pay rent", "remind me to is dropped");
+
+    auto afternoon = parse_quick_add("team meeting tomorrow afternoon", now);
+    check(afternoon && afternoon->start_time == "2026-09-27T14:00:00", "afternoon is not read as noon");
+
+    auto dated = parse_quick_add("conference on 3 october at 09:30", now);
+    check(dated && dated->start_time == "2026-10-03T09:30:00", "an explicit date and time");
+
+    check(!parse_quick_add("What is on my calendar today?", now), "a question is left to the model");
+    check(!parse_quick_add("I feel great today", now), "no activity, nothing offered");
+    check(!parse_quick_add("the meeting went well", now), "an activity with no day or time is not offered");
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -2551,6 +2598,7 @@ int main() {
     test_text_written_call_is_recovered();
     test_prose_mentioning_a_function_is_not_run();
     test_invented_names_and_quoted_values_are_accepted();
+    test_quick_add_reads_everyday_statements();
     test_write_result_reaches_model();
     test_tool_failure_is_reported_to_model();
     test_chained_tools();
