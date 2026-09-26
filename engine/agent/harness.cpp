@@ -194,6 +194,21 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
     std::string prompt = "You are Delta, an AI assistant that runs entirely on the user's own machine.\n\n";
     prompt += "CURRENT TIME: " + std::string(iso_buf) + " (" + day_buf + ")\n";
     prompt += "TODAY: " + std::string(today_buf) + "\nTOMORROW: " + tom_buf + " (" + tom_day_buf + ")\n";
+    // Small models get weekday arithmetic wrong ("Friday, September 28th" on a Monday), so spell
+    // out the coming week instead of leaving them to work it out.
+    prompt += "NEXT 7 DAYS:";
+    for (int d = 2; d <= 7; d++) {
+        std::tm day{};
+        day.tm_year = t_local.tm_year;
+        day.tm_mon = t_local.tm_mon;
+        day.tm_mday = t_local.tm_mday + d;
+        day.tm_hour = 12;
+        day.tm_isdst = -1;
+        std::mktime(&day);
+        char label[32];
+        strftime(label, sizeof(label), " %A %Y-%m-%d", &day);
+        prompt += std::string(label) + (d < 7 ? "," : "\n");
+    }
 
     if (has_tools) {
         prompt += "\nHOW YOU WORK\n"
@@ -203,7 +218,8 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
                   "there, use it.\n"
                   "- If a request is ambiguous, ask. When the user says \"it\" or \"that one\" and more "
                   "than one thing fits, ask which they mean instead of picking one. A wrong guess "
-                  "costs them more than a short question.\n"
+                  "costs them more than a short question. When exactly one thing fits (\"my task\" "
+                  "and there is one task), act on it; never ask for a title or id you can look up.\n"
                   "- After a tool runs, use what it actually returned. Never say something is done "
                   "that a tool did not confirm.\n"
                   "- If a tool fails twice the same way, stop and say what is blocking you.\n"
@@ -213,8 +229,9 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
                   "say what you wanted to do and why.\n"
                   "- Answer briefly and plainly. The ids in [id:...] are for you to pass to tools; "
                   "never show them to the user, and do not name the tools you used.\n"
-                  "\nDATES: pass them naturally ('friday 2pm', 'tomorrow 1300') -- the calendar tools "
-                  "resolve them. Default to 09:00 when no time is given.\n"
+                  "\nDATES: pass them as words ('friday 2pm', 'tomorrow 1300') rather than working out a "
+                  "date yourself -- the calendar tools resolve them exactly. To move an item to another "
+                  "day at the same time, pass just the day ('friday').\n"
                   "TYPE: use type='task' for things the user has to DO, type='event' only for meetings "
                   "and appointments. STATUS: done/complete -> \"completed\", cancel -> \"cancelled\", "
                   "start/begin -> \"in_progress\".\n";
