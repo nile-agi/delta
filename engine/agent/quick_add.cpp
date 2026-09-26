@@ -1,6 +1,7 @@
 #include "quick_add.h"
 #include "time_compat.h"
 #include "tool_calendar.h"
+#include <algorithm>
 #include <cctype>
 #include <regex>
 
@@ -205,7 +206,218 @@ std::string clean_title(std::string title) {
     return title;
 }
 
+const std::string kMoveVerbs =
+    "\\b(move|moving|reschedule|push|postpone|shift|delay|put off|bring forward|change the (date|time))\\b";
+
+// What is left after cleaning must read like a name. "I think i had a task ... move it to" does not,
+// and a chip carrying it is worse than no chip.
+bool plausible_title(const std::string& title) {
+    if (title.size() < 2)
+        return false;
+    size_t words = 1;
+    for (char c : title)
+        if (c == ' ')
+            words++;
+    if (words > 8)
+        return false;
+    return !matches(lower_of(title), "\\b(i|it|think|want|wanna|maybe|something)\\b");
+}
+
+// "YYYY-MM-DDTHH:MM[:SS]" into a local tm, or nothing.
+std::optional<std::tm> parse_stamp(const std::string& stamp) {
+    std::smatch m;
+    if (!std::regex_search(stamp, m, std::regex("^(\\d{4})-(\\d{2})-(\\d{2})(?:[T ](\\d{2}):(\\d{2}))?")))
+        return std::nullopt;
+    std::tm t{};
+    t.tm_year = std::stoi(m[1]) - 1900;
+    t.tm_mon = std::stoi(m[2]) - 1;
+    t.tm_mday = std::stoi(m[3]);
+    t.tm_hour = m[4].matched ? std::stoi(m[4]) : 0;
+    t.tm_min = m[5].matched ? std::stoi(m[5]) : 0;
+    t.tm_isdst = -1;
+    std::mktime(&t);
+    return t;
+}
+
+std::string format_stamp(const std::tm& t) {
+    char buf[24];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:00", &t);
+    return buf;
+}
+
+std::string date_of(const std::tm& t) {
+    char buf[16];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d", &t);
+    return buf;
+}
+
+// Words that could name an item: not filler, not the request's own verbs.
+std::vector<std::string> content_words(const std::string& lower) {
+    static const std::regex word("[a-z0-9]{3,}");
+    static const std::string stop =
+        "|the|and|for|with|that|this|think|had|have|has|was|want|wanted|need|task|tasks|event|events|meeting|"
+        "item|one|thing|current|currently|today|tomorrow|yesterday|week|day|move|moving|reschedule|push|postpone|"
+        "shift|delay|put|off|bring|forward|change|date|time|same|from|into|onto|please|can|could|would|you|your|"
+        "just|also|then|there|here|calendar|schedule|about|around|monday|tuesday|wednesday|thursday|friday|"
+        "saturday|sunday|morning|afternoon|evening|tonight|next|coming|";
+    std::vector<std::string> out;
+    for (auto it = std::sregex_iterator(lower.begin(), lower.end(), word); it != std::sregex_iterator(); ++it) {
+        const std::string w = it->str();
+        if (stop.find("|" + w + "|") == std::string::npos)
+            out.push_back(w);
+    }
+    return out;
+}
+
 } // namespace
+
+nlohmann::json QuickMoveOption::to_json() const {
+    nlohmann::json j = {{"id", id},
+                        {"title", title},
+                        {"type", type},
+                        {"start_time", start_time},
+                        {"new_start_time", new_start_time},
+                        {"all_day", all_day}};
+    if (!new_end_time.empty())
+        j["new_end_time"] = new_end_time;
+    return j;
+}
+
+std::vector<QuickMoveOption> parse_quick_move(const std::string& text, std::time_t now,
+                                              const std::vector<nlohmann::json>& items) {
+    std::vector<QuickMoveOption> out;
+    if (text.empty() || text.size() > 300)
+        return out;
+    const std::string lower = lower_of(text);
+    std::smatch verb;
+    if (!std::regex_search(lower, verb, std::regex(kMoveVerbs, kIcase)))
+        return out;
+
+    // Up to "to"/"until" says which item ("the task I had today", "push the standup"); after it,
+    // where it goes.
+    std::string source = verb.prefix().str();
+    std::string target = verb.suffix().str();
+    std::smatch to;
+    if (std::regex_search(target, to, std::regex("\\b(to|until|till|for)\\b"))) {
+        source += " " + to.prefix().str();
+        target = to.suffix().str();
+    }
+    const auto target_day = find_day(target, now);
+    const bool same_time = matches(target, "\\bsame time\\b");
+    const auto target_time = same_time ? std::nullopt : find_time(target);
+    if (!target_day && !target_time)
+        return out;
+
+    std::optional<std::tm> source_day = find_day(source, now);
+    if (!source_day && matches(source, "\\bcurrent(ly)?\\b"))
+        source_day = day_offset(now, 0);
+    const std::string source_date = source_day ? date_of(*source_day) : std::string();
+
+    std::string type_hint;
+    if (matches(source, "\\b(task|todo|to-do|reminder)s?\\b"))
+        type_hint = "task";
+    else if (matches(source, "\\b(meeting|event|appointment|call)s?\\b"))
+        type_hint = "event";
+    const auto words = content_words(source);
+    const std::string today = date_of(day_offset(now, 0));
+
+    struct Scored {
+        const nlohmann::json* item;
+        int score;
+    };
+    std::vector<Scored> scored;
+    for (const auto& item : items) {
+        const std::string status = item.value("status", "");
+        if (status == "completed" || status == "cancelled")
+            continue;
+        const std::string start = item.value("start_time", "");
+        if (start.size() < 10)
+            continue;
+        if (!type_hint.empty() && item.value("type", "event") != type_hint)
+            continue;
+        if (!source_date.empty() && start.substr(0, 10) != source_date)
+            continue;
+        const std::string title = lower_of(item.value("title", ""));
+        int score = 0;
+        for (const auto& w : words)
+            if (title.find(w) != std::string::npos)
+                score++;
+        scored.push_back({&item, score});
+    }
+
+    int best = 0;
+    for (const auto& s : scored)
+        best = std::max(best, s.score);
+    std::vector<const nlohmann::json*> picked;
+    for (const auto& s : scored) {
+        if (best > 0 ? s.score == best
+                     // Nothing named: only what the user pinned down by day, or else today's items.
+                     : (!source_date.empty() || s.item->value("start_time", "").substr(0, 10) == today))
+            picked.push_back(s.item);
+    }
+    std::sort(picked.begin(), picked.end(), [](const nlohmann::json* a, const nlohmann::json* b) {
+        return a->value("start_time", "") < b->value("start_time", "");
+    });
+
+    for (const auto* item : picked) {
+        if (out.size() == 3)
+            break;
+        const auto start = parse_stamp(item->value("start_time", ""));
+        if (!start)
+            continue;
+        std::tm moved = *start;
+        if (target_day) {
+            moved.tm_year = target_day->tm_year;
+            moved.tm_mon = target_day->tm_mon;
+            moved.tm_mday = target_day->tm_mday;
+        }
+        if (target_time) {
+            moved.tm_hour = std::stoi(target_time->substr(0, 2));
+            moved.tm_min = std::stoi(target_time->substr(3, 2));
+        }
+        moved.tm_isdst = -1;
+        std::tm start_copy = *start;
+        const std::time_t from = std::mktime(&start_copy);
+        const std::time_t to = std::mktime(&moved);
+
+        QuickMoveOption option;
+        option.id = item->value("id", "");
+        option.title = item->value("title", "");
+        option.type = item->value("type", "event");
+        option.start_time = item->value("start_time", "");
+        option.all_day = item->value("all_day", false);
+        option.new_start_time = format_stamp(moved);
+        // Keep the item's length: its end moves by as much as its start.
+        const std::string end = item->value("end_time", "");
+        if (auto end_tm = parse_stamp(end)) {
+            std::time_t end_t = std::mktime(&*end_tm) + (to - from);
+            std::tm shifted{};
+            local_time(&end_t, &shifted);
+            option.new_end_time = format_stamp(shifted);
+        }
+        if (option.new_start_time.substr(0, 16) == option.start_time.substr(0, 16))
+            continue; // already there
+        out.push_back(option);
+    }
+    return out;
+}
+
+nlohmann::json suggest_quick_action(const std::string& text, std::time_t now,
+                                    const std::vector<nlohmann::json>& items) {
+    const auto moves = parse_quick_move(text, now, items);
+    if (!moves.empty()) {
+        nlohmann::json options = nlohmann::json::array();
+        for (const auto& m : moves)
+            options.push_back(m.to_json());
+        return {{"kind", "move"}, {"options", options}};
+    }
+    if (auto add = parse_quick_add(text, now)) {
+        nlohmann::json j = add->to_json();
+        j["kind"] = "add";
+        return j;
+    }
+    return nullptr;
+}
 
 nlohmann::json QuickAddCandidate::to_json() const {
     return {{"title", title}, {"type", type}, {"start_time", start_time}, {"all_day", all_day}};
@@ -215,6 +427,10 @@ std::optional<QuickAddCandidate> parse_quick_add(const std::string& text, std::t
     if (text.empty() || text.size() > 300)
         return std::nullopt;
     const std::string lower = lower_of(text);
+
+    // Changing an existing item is parse_quick_move's job; offering to add it would duplicate it.
+    if (matches(lower, kMoveVerbs))
+        return std::nullopt;
 
     const bool command = matches(lower, "\\b(add|schedule|book|remind me|create|set up|put)\\b");
     // Questions are for the model to answer, unless they are a request to add something.
@@ -241,7 +457,7 @@ std::optional<QuickAddCandidate> parse_quick_add(const std::string& text, std::t
     QuickAddCandidate candidate;
     candidate.type = task_cue && !event_cue ? "task" : "event";
     candidate.title = clean_title(text);
-    if (candidate.title.size() < 2)
+    if (!plausible_title(candidate.title))
         return std::nullopt;
 
     // A bare time means the next time the clock shows it: today, or tomorrow if it has passed.

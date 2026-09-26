@@ -2573,6 +2573,55 @@ static void test_quick_add_reads_everyday_statements() {
     check(!parse_quick_add("the meeting went well", now), "an activity with no day or time is not offered");
 }
 
+static void test_quick_move_finds_the_item_meant() {
+    test("a move request offers the real item at its new time, and is never offered as an add");
+
+    // Saturday 26 September 2026, 11:31.
+    const std::time_t now = local_moment(2026, 9, 26, 11, 31);
+    const std::vector<json> items = {
+        {{"id", "t1"},
+         {"title", "Submit grant report"},
+         {"type", "task"},
+         {"start_time", "2026-09-26T14:00:00"},
+         {"end_time", ""},
+         {"status", "upcoming"}},
+        {{"id", "e1"},
+         {"title", "Team standup"},
+         {"type", "event"},
+         {"start_time", "2026-09-26T09:00:00"},
+         {"end_time", "2026-09-26T09:30:00"},
+         {"status", "upcoming"}},
+        {{"id", "t2"},
+         {"title", "Old task"},
+         {"type", "task"},
+         {"start_time", "2026-09-20T10:00:00"},
+         {"end_time", ""},
+         {"status", "upcoming"}},
+    };
+
+    const std::string said =
+        "I think i had a task on current i want to move it to friday of this week at the same time";
+    auto moves = parse_quick_move(said, now, items);
+    check_eq(moves.size(), size_t(1), "only today's task is offered");
+    if (!moves.empty()) {
+        check_eq(moves[0].id, std::string("t1"), "the task, not the event");
+        check_eq(moves[0].new_start_time, std::string("2026-10-02T14:00:00"), "Friday, same time");
+    }
+    check(!parse_quick_add(said, now), "a move is never offered as a new task");
+    check_eq(suggest_quick_action(said, now, items).value("kind", ""), std::string("move"), "the route offers a move");
+
+    auto standup = parse_quick_move("push the standup to tomorrow at 10am", now, items);
+    check(standup.size() == 1 && standup[0].id == "e1", "a named item is found by its title");
+    if (!standup.empty()) {
+        check_eq(standup[0].new_start_time, std::string("2026-09-27T10:00:00"), "to the new day and time");
+        check_eq(standup[0].new_end_time, std::string("2026-09-27T10:30:00"), "keeping its length");
+    }
+
+    check(parse_quick_move("move to Berlin someday", now, items).empty(), "no day or time, nothing offered");
+    check(!parse_quick_add("I think I want to do something about my life tomorrow", now),
+          "a rambling sentence is not offered as a title");
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -2599,6 +2648,7 @@ int main() {
     test_prose_mentioning_a_function_is_not_run();
     test_invented_names_and_quoted_values_are_accepted();
     test_quick_add_reads_everyday_statements();
+    test_quick_move_finds_the_item_meant();
     test_write_result_reaches_model();
     test_tool_failure_is_reported_to_model();
     test_chained_tools();

@@ -20,6 +20,7 @@
 #include "agent/task_store.h"
 #include "agent/policy.h"
 #include "agent/quick_add.h"
+#include "agent/time_compat.h"
 
 #include "tools/hardware_monitor.h"
 
@@ -1229,8 +1230,8 @@ class ModelAPIServer {
         });
 
         // What the agent can do, and which tools the user has already answered for.
-        // A calendar item spotted in what the user typed, for models that cannot call tools. Only a
-        // suggestion: the client shows it and the user decides whether it is created.
+        // A calendar item to add, or an existing one to move, spotted in what the user typed, for
+        // models that cannot call tools. Only a suggestion: nothing changes until the user taps it.
         server_->Post("/v1/agent/quick-add", [](const httplib::Request& req, httplib::Response& res) {
             json body = json::parse(req.body, nullptr, false);
             if (!body.is_object() || !body.contains("text") || !body["text"].is_string()) {
@@ -1241,9 +1242,20 @@ class ModelAPIServer {
             std::time_t now = std::time(nullptr);
             if (body.contains("now") && body["now"].is_number_integer())
                 now = static_cast<std::time_t>(body["now"].get<long long>());
-            const auto candidate = agent::parse_quick_add(body["text"].get<std::string>(), now);
-            res.set_content(json({{"candidate", candidate ? candidate->to_json() : json(nullptr)}}).dump(),
-                            "application/json");
+            // Items around now, so "move my task to Friday" can name the real one.
+            std::vector<json> items;
+            {
+                char from[16], to[16];
+                std::time_t from_t = now - 7 * 86400, to_t = now + 60 * 86400;
+                std::tm from_tm{}, to_tm{};
+                agent::local_time(&from_t, &from_tm);
+                agent::local_time(&to_t, &to_tm);
+                std::strftime(from, sizeof(from), "%Y-%m-%d", &from_tm);
+                std::strftime(to, sizeof(to), "%Y-%m-%d", &to_tm);
+                items = agent::AgentDatabase::instance().list_events(from, to, 300);
+            }
+            const json suggestion = agent::suggest_quick_action(body["text"].get<std::string>(), now, items);
+            res.set_content(json({{"suggestion", suggestion}}).dump(), "application/json");
         });
 
         server_->Get("/v1/agent/tools", [](const httplib::Request&, httplib::Response& res) {
