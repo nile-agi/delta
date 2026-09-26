@@ -34,6 +34,11 @@ export interface ApiChatMessageData {
 	role: ChatRole;
 	content: string | ApiChatMessageContentPart[];
 	timestamp?: number;
+	/** OpenAI-style tool calls on an assistant turn, replayed from a previous harness run. */
+	tool_calls?: unknown[];
+	/** On a `tool` turn: the call this result answers, and the tool's name. */
+	tool_call_id?: string;
+	name?: string;
 }
 
 /** Per-model load state. Only router mode (`--models-dir`) reports this. */
@@ -194,6 +199,19 @@ export interface ApiChatCompletionRequest {
 	backend_sampling?: boolean;
 	// Custom parameters (JSON string)
 	custom?: Record<string, unknown>;
+	// Delta harness: which tool categories this run may use, and how many
+	// model -> tools -> model rounds it may take. Each category defaults to enabled.
+	use_tools?: boolean;
+	use_calendar_tools?: boolean;
+	use_notes_tools?: boolean;
+	use_memory_tools?: boolean;
+	use_task_tools?: boolean;
+	use_files_tools?: boolean;
+	use_shell_tools?: boolean;
+	use_web_tools?: boolean;
+	max_iterations?: number;
+	/** Keys the harness's plan scratchpad so a plan carries over between turns. */
+	conversation_id?: string;
 }
 
 export interface ApiChatCompletionStreamChunk {

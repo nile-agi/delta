@@ -16,6 +16,8 @@ export { default as ChatMessage } from './chat/ChatMessages/ChatMessage.svelte';
 export { default as ChatMessages } from './chat/ChatMessages/ChatMessages.svelte';
 export { default as ChatMessageThinkingBlock } from './chat/ChatMessages/ChatMessageThinkingBlock.svelte';
 export { default as ChatMessageStatistics } from './chat/ChatMessages/ChatMessageStatistics.svelte';
+export { default as ChatMessageAgentActivity } from './chat/ChatMessages/ChatMessageAgentActivity.svelte';
+export { default as ChatMessageApprovalPrompt } from './chat/ChatMessages/ChatMessageApprovalPrompt.svelte';
 export { default as MessageBranchingControls } from './chat/ChatMessages/ChatMessageBranchingControls.svelte';
 
 export { default as ChatProcessingInfo } from './chat/ChatProcessingInfo.svelte';

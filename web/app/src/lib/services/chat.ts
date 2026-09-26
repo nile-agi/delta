@@ -8,6 +8,46 @@ const IS_TAURI =
 	typeof window !== 'undefined' &&
 	('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 
+// True when the content array holds an attachment a plain string cannot carry.
+function hasAttachmentParts(content: unknown): boolean {
+	return (
+		Array.isArray(content) &&
+		content.some(
+			(p: Record<string, unknown>) => typeof p?.type === 'string' && p.type !== 'text'
+		)
+	);
+}
+
+// Streamed tool calls arrive as fragments keyed by index: the first carries the name, later ones
+// append to the arguments. Collecting them without merging leaves entries with no name and a
+// sliced argument string, which is what the UI ends up showing.
+function mergeToolCallDeltas(
+	collected: DatabaseMessageToolCall[],
+	fragments: DatabaseMessageToolCall[]
+): void {
+	for (const fragment of fragments) {
+		const raw = fragment as Record<string, unknown>;
+		const index = typeof raw.index === 'number' ? raw.index : collected.length;
+		while (collected.length <= index) collected.push({});
+		const slot = collected[index] as Record<string, unknown>;
+
+		if (typeof raw.id === 'string' && raw.id) slot.id = raw.id;
+		if (typeof raw.type === 'string' && raw.type) slot.type = raw.type;
+
+		const fn = raw.function as Record<string, unknown> | undefined;
+		if (!fn) continue;
+		const target = (slot.function ?? (slot.function = {})) as Record<string, unknown>;
+		if (typeof fn.name === 'string' && fn.name) {
+			target.name = ((target.name as string) ?? '') + fn.name;
+			slot.name = target.name;
+		}
+		if (typeof fn.arguments === 'string') {
+			target.arguments = ((target.arguments as string) ?? '') + fn.arguments;
+			slot.arguments = target.arguments;
+		}
+	}
+}
+
 function flattenContent(content: unknown): string {
 	if (typeof content === 'string') return content;
 	if (Array.isArray(content)) {
@@ -78,8 +118,15 @@ export class ChatService {
 			onModel,
 			onFirstValidChunk,
 			useTools,
-			useCalendarTools,      // ADD THIS
-			useNotesTools,         // ADD THIS
+			useCalendarTools,
+			useNotesTools,
+			useMemoryTools,
+			useTaskTools,
+			useFileTools,
+			useShellTools,
+			useWebTools,
+			max_iterations,
+			onAgentEvent,
 			// Generation parameters
 			temperature,
 			max_tokens,
@@ -119,12 +166,18 @@ export class ChatService {
 		this.abortControllers.set(requestId, abortController);
 
 		const normalizedMessages: ApiChatMessageData[] = messages
-			.map((msg) => {
+			.flatMap((msg): ApiChatMessageData[] => {
 				if ('id' in msg && 'convId' in msg && 'timestamp' in msg) {
 					const dbMsg = msg as DatabaseMessage & { extra?: DatabaseMessageExtra[] };
-					return ChatService.convertMessageToChatServiceData(dbMsg);
+					// An assistant turn the harness produced with tools is replayed as the full
+					// record (tool calls and results) so the model can still see what they returned.
+					const transcript = dbMsg.agent_activity?.transcript;
+					if (useTools && dbMsg.role === 'assistant' && transcript?.length) {
+						return transcript.map((m: ApiChatMessageData) => ({ ...m }));
+					}
+					return [ChatService.convertMessageToChatServiceData(dbMsg)];
 				} else {
-					return msg as ApiChatMessageData;
+					return [msg as ApiChatMessageData];
 				}
 			})
 			.filter((msg) => {
@@ -143,14 +196,28 @@ export class ChatService {
 		const requestBody: ApiChatCompletionRequest = {
 			messages: alternatingMessages.map((msg: ApiChatMessageData) => ({
 				role: msg.role,
-				content: useTools ? flattenContent(msg.content) : msg.content
+				// Flattening drops image and audio parts, so a message carrying one is sent as-is.
+				content:
+					useTools && !hasAttachmentParts(msg.content) ? flattenContent(msg.content) : msg.content,
+				...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
+				...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
+				...(msg.name ? { name: msg.name } : {})
 			})),
 			stream
 		};
 
 		if (useTools) {
+			// Each category defaults to on, so leaving these unset gives the model everything.
+			requestBody.use_tools = true;
+			if (conversationId) requestBody.conversation_id = conversationId;
 			requestBody.use_calendar_tools = useCalendarTools !== false;
 			requestBody.use_notes_tools = useNotesTools !== false;
+			requestBody.use_memory_tools = useMemoryTools !== false;
+			requestBody.use_task_tools = useTaskTools !== false;
+			requestBody.use_files_tools = useFileTools !== false;
+			requestBody.use_shell_tools = useShellTools !== false;
+			requestBody.use_web_tools = useWebTools !== false;
+			if (max_iterations !== undefined) requestBody.max_iterations = max_iterations;
 		}
 
 		const selectedOption = selectedModelOption();
@@ -221,18 +288,21 @@ export class ChatService {
 				if (IS_TAURI) {
 					try {
 						await this.handleStreamResponseTauri(
-							url, headers, body, onChunk, onComplete, onError,
+							url, headers, body, onAgentEvent, onChunk, onComplete, onError,
 							onReasoningChunk, onModel, onFirstValidChunk,
 							conversationId, abortController.signal
 						);
 						return;
 					} catch (tauriErr) {
 						if (tauriErr instanceof Error && tauriErr.name === 'AbortError') throw tauriErr;
+						// Never retry an agent turn: the harness runs tools as it goes, so a second
+						// attempt repeats every write, delete and shell command it already made.
+						if (useTools) throw tauriErr;
 						console.warn('[Delta] Tauri IPC streaming failed, falling back to XHR:', tauriErr);
 					}
 				}
 				await this.handleStreamResponseXHR(
-					url, headers, body, onChunk, onComplete, onError,
+					url, headers, body, onAgentEvent, onChunk, onComplete, onError,
 					onReasoningChunk, onModel, onFirstValidChunk,
 					conversationId, abortController.signal
 				);
@@ -293,6 +363,7 @@ export class ChatService {
 		url: string,
 		headers: Record<string, string>,
 		body: string,
+		onAgentEvent: ((event: AgentEvent) => void) | undefined,
 		onChunk?: (chunk: string) => void,
 		onComplete?: (
 			response: string,
@@ -348,7 +419,14 @@ export class ChatService {
 						if (!data.includes('"choices"')) continue; // ignore named agent events (tool_update/reasoning)
 
 						try {
-							const parsed: ApiChatCompletionStreamChunk = JSON.parse(data);
+							const raw: unknown = JSON.parse(data);
+							if (this.consumeAgentEvent(raw, onAgentEvent)) {
+								// A harness event is a real response. Treating it as silence made a
+								// tool-only turn look like a dead stream.
+								hasReceivedData = true;
+								continue;
+							}
+							const parsed = raw as ApiChatCompletionStreamChunk;
 
 							if (!firstValidChunkEmitted && parsed.object === 'chat.completion.chunk') {
 								firstValidChunkEmitted = true;
@@ -360,7 +438,7 @@ export class ChatService {
 							const content = parsed.choices[0]?.delta?.content;
 							const reasoningContent = parsed.choices[0]?.delta?.reasoning_content;
 							const deltaToolCalls = parsed.choices[0]?.delta?.tool_calls;
-							if (deltaToolCalls?.length) collectedToolCalls.push(...deltaToolCalls);
+							if (deltaToolCalls?.length) mergeToolCallDeltas(collectedToolCalls, deltaToolCalls);
 							const timings = parsed.timings;
 							const promptProgress = parsed.prompt_progress;
 
@@ -476,6 +554,7 @@ export class ChatService {
 		url: string,
 		headers: Record<string, string>,
 		body: string,
+		onAgentEvent: ((event: AgentEvent) => void) | undefined,
 		onChunk?: (chunk: string) => void,
 		onComplete?: (
 			response: string,
@@ -520,7 +599,14 @@ export class ChatService {
 			if (data === '[DONE]') return;
 
 			try {
-				const parsed: ApiChatCompletionStreamChunk = JSON.parse(data);
+				const raw: unknown = JSON.parse(data);
+				if (this.consumeAgentEvent(raw, onAgentEvent)) {
+					// See the XHR transport: an agent event counts as data, otherwise the desktop
+					// path throws, falls back to XHR, and runs every tool a second time.
+					hasReceivedData = true;
+					return;
+				}
+				const parsed = raw as ApiChatCompletionStreamChunk;
 
 				if (!firstValidChunkEmitted && parsed.object === 'chat.completion.chunk') {
 					firstValidChunkEmitted = true;
@@ -530,7 +616,7 @@ export class ChatService {
 				const content = parsed.choices[0]?.delta?.content;
 				const reasoningContent = parsed.choices[0]?.delta?.reasoning_content;
 				const deltaToolCalls = parsed.choices[0]?.delta?.tool_calls;
-				if (deltaToolCalls?.length) collectedToolCalls.push(...deltaToolCalls);
+				if (deltaToolCalls?.length) mergeToolCallDeltas(collectedToolCalls, deltaToolCalls);
 				const timings = parsed.timings;
 				const promptProgress = parsed.prompt_progress;
 
@@ -918,6 +1004,8 @@ export class ChatService {
 		}
 
 		// Merge consecutive same-role messages so we get user -> assistant -> user -> assistant...
+		// Tool turns are left alone: each tool result answers one call id, and an assistant turn
+		// carrying tool_calls must stay its own message.
 		while (i < messages.length) {
 			const msg = messages[i];
 			// Skip empty system messages in the middle (shouldn't happen after injectSystemMessage)
@@ -926,11 +1014,13 @@ export class ChatService {
 				continue;
 			}
 			const last = result[result.length - 1];
-			if (last && last.role === msg.role) {
+			const isToolTurn = msg.role === 'tool' || !!msg.tool_calls;
+			const lastIsToolTurn = !!last && (last.role === 'tool' || !!last.tool_calls);
+			if (last && last.role === msg.role && !isToolTurn && !lastIsToolTurn) {
 				// Merge content into last
 				last.content = ChatService.mergeContent(last.content, msg.content);
 			} else {
-				result.push({ role: msg.role, content: msg.content });
+				result.push({ ...msg });
 			}
 			i++;
 		}
@@ -971,6 +1061,27 @@ export class ChatService {
 			fallback.name = 'HttpError';
 			return fallback;
 		}
+	}
+
+	/**
+	 * Delta's harness frames ride the same SSE stream as the OpenAI chunks but have no `choices`,
+	 * so they must be claimed before the chunk parsing runs -- otherwise reading `choices[0]`
+	 * throws and the event is lost to the catch block.
+	 *
+	 * @returns true when the frame was a harness event and should not be parsed as a chunk.
+	 */
+	private consumeAgentEvent(parsed: unknown, onAgentEvent?: (event: AgentEvent) => void): boolean {
+		if (!parsed || typeof parsed !== 'object') return false;
+		const frame = parsed as { object?: unknown; event?: unknown; data?: unknown };
+		if (frame.object !== 'delta.agent.event') return false;
+		if (typeof frame.event !== 'string') return true;
+
+		onAgentEvent?.({
+			object: 'delta.agent.event',
+			event: frame.event as AgentEventName,
+			data: (frame.data ?? {}) as AgentEvent['data']
+		});
+		return true;
 	}
 
 	private extractModelName(data: unknown): string | undefined {

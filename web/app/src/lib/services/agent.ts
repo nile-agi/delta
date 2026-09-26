@@ -89,6 +89,20 @@ export const agentService = {
 		return data.reminders ?? [];
 	},
 
+	/** Forgets every remembered "always" / "never" approval answer, so destructive tools ask again. */
+	async resetToolPolicies(): Promise<void> {
+		const res = await fetch(apiUrl('/v1/agent/policies'), { method: 'DELETE' });
+		if (!res.ok) throw new Error(`Failed to reset tool policies: ${res.status}`);
+	},
+
+	/** The remembered approval answers, keyed by tool name. */
+	async getToolPolicies(): Promise<Record<string, string>> {
+		const res = await fetch(apiUrl('/v1/agent/tools'));
+		if (!res.ok) throw new Error(`Failed to load tool policies: ${res.status}`);
+		const data = (await res.json()) as { policies?: Record<string, string> };
+		return data.policies ?? {};
+	},
+
 	async getTools(): Promise<{ tools: unknown[]; tool_names: string[] }> {
 		const res = await fetch(apiUrl('/api/agent/tools'));
 		return res.json();

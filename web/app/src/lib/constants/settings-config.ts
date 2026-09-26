@@ -29,6 +29,11 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> =
 	useAgentTools: true,
 	useCalendarTools: true,
 	useNotesTools: true,
+	useMemoryTools: true,
+	useTaskTools: true,
+	useFileTools: true,
+	useShellTools: true,
+	useWebTools: false,
 	// make sure these default values are in sync with `common.h`
 	samplers: 'top_k;typ_p;top_p;min_p;temperature',
 	temperature: 0.8,
@@ -63,6 +68,16 @@ export const SETTING_CONFIG_INFO: Record<string, string> = {
 	useAgentTools: 'Enable agent tools that allow the AI to perform actions like managing calendar events and notes.',
 	useCalendarTools: 'Enable calendar tools. When enabled, the AI can create, list, update, and delete calendar events and tasks.',
 	useNotesTools: 'Enable notes tools. When enabled, the AI can create, list, update, and delete notes.',
+	useMemoryTools:
+		'Let the AI keep long-term memories about you across conversations, and search them before asking you something twice.',
+	useTaskTools:
+		'Let the AI write itself a plan for multi-step work and tick steps off as it goes. Helps smaller models stay on track.',
+	useFileTools:
+		'Let the AI read, write and list files. Limited to your home folder and temp directories; credential files are always off limits.',
+	useShellTools:
+		'Let the AI run shell commands on this machine. It asks for your approval the first time, and remembers your answer.',
+	useWebTools:
+		'Let the AI fetch web pages and open links. Delta is otherwise fully offline, so leaving this off keeps it that way.',
 	theme:
 		'Choose the color theme for the interface. You can choose between System (follows your device settings), Light, or Dark.',
 	pasteLongTextToFileLen:

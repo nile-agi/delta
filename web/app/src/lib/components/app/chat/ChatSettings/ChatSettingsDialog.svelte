@@ -13,12 +13,14 @@
 		Database,
 		Waypoints,
 		User,
+		Wrench,
 		Minus,
 		X,
 		GripVertical,
 		RotateCcw
 	} from '@lucide/svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
+	import { agentService } from '$lib/services/agent';
 	import { ChatSettingsFields } from '$lib/components/app';
 	import ImportExportTab from './ImportExportTab.svelte';
 	import ModelManagementTab from '../ModelManagement/ModelManagementTab.svelte';
@@ -165,6 +167,66 @@
 					key: 'autoShowSidebarOnNewChat',
 					label: 'Auto-show sidebar on new chat',
 					type: 'checkbox'
+				}
+			]
+		},
+		{
+			title: 'Agent tools',
+			icon: Wrench,
+			fields: [
+				{
+					key: 'useAgentTools',
+					label: 'Enable agent tools',
+					type: 'checkbox'
+				},
+				{
+					key: 'useCalendarTools',
+					label: 'Calendar and tasks',
+					type: 'checkbox'
+				},
+				{
+					key: 'useNotesTools',
+					label: 'Notes',
+					type: 'checkbox'
+				},
+				{
+					key: 'useMemoryTools',
+					label: 'Long-term memory',
+					type: 'checkbox'
+				},
+				{
+					key: 'useTaskTools',
+					label: 'Planning and self-tracking',
+					type: 'checkbox'
+				},
+				{
+					key: 'useFileTools',
+					label: 'Read and write files',
+					type: 'checkbox'
+				},
+				{
+					key: 'useShellTools',
+					label: 'Run shell commands',
+					type: 'checkbox'
+				},
+				{
+					key: 'useWebTools',
+					label: 'Fetch web pages',
+					type: 'checkbox'
+				},
+				{
+					key: 'resetToolPolicies',
+					label: 'Remembered approval answers',
+					type: 'action',
+					actionLabel: 'Forget all',
+					help: 'Answering "Always" or "Never" to a tool approval is remembered across conversations. Forgetting them makes destructive tools ask again.',
+					action: async () => {
+						const before = Object.keys(await agentService.getToolPolicies()).length;
+						await agentService.resetToolPolicies();
+						return before === 0
+							? 'Nothing was remembered.'
+							: `Forgot ${before} remembered answer${before === 1 ? '' : 's'}.`;
+					}
 				}
 			]
 		},
