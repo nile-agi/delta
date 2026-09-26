@@ -52,6 +52,20 @@ export const agentService = {
 		return data.events ?? [];
 	},
 
+	/** A calendar item the engine spotted in `text`, or null. Never creates anything itself. */
+	async suggestQuickAdd(
+		text: string
+	): Promise<Pick<CalendarEvent, 'title' | 'type' | 'start_time' | 'all_day'> | null> {
+		const res = await fetch(apiUrl('/v1/agent/quick-add'), {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ text, now: Math.floor(Date.now() / 1000) })
+		});
+		if (!res.ok) return null;
+		const data = await res.json();
+		return data.candidate ?? null;
+	},
+
 	async createEvent(event: Partial<CalendarEvent>): Promise<CalendarEvent> {
 		const res = await fetch(apiUrl('/api/agent/events'), {
 			method: 'POST',

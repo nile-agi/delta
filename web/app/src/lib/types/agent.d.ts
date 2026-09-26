@@ -129,3 +129,15 @@ export interface AgentActivity {
 	/** The model's thinking this turn, when it streamed it on its own channel. */
 	reasoning?: string;
 }
+
+/** A calendar item spotted in what the user typed, offered as a one-tap add (models without tools). */
+export interface QuickAddSuggestion {
+	title: string;
+	type: 'event' | 'task';
+	/** YYYY-MM-DDTHH:MM:00, local time. */
+	start_time: string;
+	all_day: boolean;
+	status: 'offered' | 'added' | 'dismissed';
+	/** Set once added, so the chip can link to it. */
+	event_id?: string;
+}

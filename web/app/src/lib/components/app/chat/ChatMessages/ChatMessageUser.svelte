@@ -6,6 +6,7 @@
 	import { INPUT_CLASSES } from '$lib/constants/input-classes';
 	import { config } from '$lib/stores/settings.svelte';
 	import ChatMessageActions from './ChatMessageActions.svelte';
+	import ChatMessageQuickAdd from './ChatMessageQuickAdd.svelte';
 
 	interface Props {
 		class?: string;
@@ -138,6 +139,10 @@
 					</span>
 				{/if}
 			</Card>
+		{/if}
+
+		{#if message.quick_add}
+			<ChatMessageQuickAdd messageId={message.id} suggestion={message.quick_add} />
 		{/if}
 
 		{#if message.timestamp}

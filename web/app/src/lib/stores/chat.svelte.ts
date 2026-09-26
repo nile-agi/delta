@@ -5,6 +5,8 @@ import { serverStore } from '$lib/stores/server.svelte';
 import { normalizeModelName } from '$lib/utils/model-names';
 import { agentToolsActive, selectedModelName, requestModelSelection } from '$lib/stores/models.svelte';
 import { agentStore } from '$lib/stores/agent.svelte';
+import { agentService } from '$lib/services/agent';
+import type { QuickAddSuggestion } from '$lib/types/agent';
 import { filterByLeafNodeId, findLeafNode, findDescendantMessages } from '$lib/utils/branching';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
@@ -842,6 +844,22 @@ class ChatStore {
 	 * @param content - The message content to send
 	 * @param extras - Optional extra data (files, attachments, etc.)
 	 */
+	private async offerQuickAdd(message: DatabaseMessage): Promise<void> {
+		try {
+			const candidate = await agentService.suggestQuickAdd(message.content);
+			if (candidate) await this.setQuickAdd(message.id, { ...candidate, status: 'offered' });
+		} catch {
+			// A suggestion is optional; the chat carries on without one.
+		}
+	}
+
+	/** Stores a message's quick-add state, in the database and on the live message. */
+	async setQuickAdd(messageId: string, quickAdd: QuickAddSuggestion): Promise<void> {
+		await DatabaseStore.updateMessage(messageId, { quick_add: quickAdd });
+		const live = this.activeMessages.find((m) => m.id === messageId);
+		if (live) live.quick_add = quickAdd;
+	}
+
 	async sendMessage(content: string, extras?: DatabaseMessageExtra[]): Promise<void> {
 		if (!content.trim() && (!extras || extras.length === 0)) return;
 		if (!this.requireModel()) return;
@@ -880,6 +898,9 @@ class ChatStore {
 			if (!userMessage) {
 				throw new Error('Failed to add user message');
 			}
+
+			// A model without tools cannot put this on the calendar itself, so offer it instead.
+			if (!useTools && content.trim()) void this.offerQuickAdd(userMessage);
 
 			if (isNewConversation && content) {
 				const title = content.trim();
@@ -1983,6 +2004,7 @@ export const exportAllConversations = chatStore.exportAllConversations.bind(chat
 export const importConversations = chatStore.importConversations.bind(chatStore);
 export const deleteConversation = chatStore.deleteConversation.bind(chatStore);
 export const sendMessage = chatStore.sendMessage.bind(chatStore);
+export const setQuickAdd = chatStore.setQuickAdd.bind(chatStore);
 export const dismissErrorDialog = chatStore.dismissErrorDialog.bind(chatStore);
 
 export const gracefulStop = chatStore.gracefulStop.bind(chatStore);
