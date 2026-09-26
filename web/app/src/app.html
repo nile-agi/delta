@@ -4,7 +4,17 @@
 		<meta charset="utf-8" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<style>html,body{margin:0}</style>
+		<style>html,body{margin:0}html.aux-window #app-loading{display:none!important}</style>
+		<script>
+		// Calendar, notes and telemetry open as their own windows and never wait for the model, so
+		// flag them before the splash is parsed and it is never painted.
+		(function() {
+			var kind = new URLSearchParams(window.location.search).get('window');
+			var meta = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.metadata;
+			var label = meta && meta.currentWindow && meta.currentWindow.label;
+			if (kind || (label && label !== 'main')) document.documentElement.classList.add('aux-window');
+		})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
@@ -23,7 +33,9 @@
 			}
 			var el = document.querySelector('#app-loading p');
 			if (!('__TAURI_INTERNALS__' in window)) return;
-			if (el) { el.textContent = 'Starting...'; el.style.opacity = '1'; }
+			var aux = document.documentElement.classList.contains('aux-window');
+			if (aux) { var splash = document.getElementById('app-loading'); if (splash) splash.remove(); }
+			else if (el) { el.textContent = 'Starting...'; el.style.opacity = '1'; }
 			function doPoll() {
 				window.__TAURI_INTERNALS__.invoke('get_server_status').then(function(r) {
 					window.__DELTA_MODEL_BACKEND_ERROR__ = r[4] || '';
