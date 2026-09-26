@@ -190,7 +190,8 @@ export class ChatService {
 				return true;
 			});
 
-		const processedMessages = this.injectSystemMessage(normalizedMessages);
+		// The agent harness states the date itself; a plain llama-server chat has no other source.
+		const processedMessages = this.injectSystemMessage(normalizedMessages, !useTools);
 		const alternatingMessages = ChatService.ensureAlternatingRoles(processedMessages);
 
 		const requestBody: ApiChatCompletionRequest = {
@@ -938,9 +939,15 @@ export class ChatService {
 	 * @returns Array of messages with system message injected at the beginning if configured
 	 * @private
 	 */
-	private injectSystemMessage(messages: ApiChatMessageData[]): ApiChatMessageData[] {
+	private injectSystemMessage(
+		messages: ApiChatMessageData[],
+		includeDate = false
+	): ApiChatMessageData[] {
 		const currentConfig = config();
 		const parts: string[] = [];
+
+		// Without this a model guesses the date from its training data and gets it wrong.
+		if (includeDate) parts.push(ChatService.currentDateLine(new Date()));
 
 		const systemMessage = currentConfig.systemMessage?.toString().trim();
 		if (systemMessage) parts.push(systemMessage);
@@ -985,6 +992,19 @@ export class ChatService {
 		};
 
 		return [systemMsg, ...messages];
+	}
+
+	/** "Current date and time: Saturday, 26 September 2026, 08:55 (Africa/Nairobi)." from the local clock. */
+	static currentDateLine(now: Date): string {
+		const date = now.toLocaleDateString('en-GB', {
+			weekday: 'long',
+			day: 'numeric',
+			month: 'long',
+			year: 'numeric'
+		});
+		const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+		const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+		return `Current date and time: ${date}, ${time}${zone ? ` (${zone})` : ''}. Use it for "today", "tomorrow" and any date you mention.`;
 	}
 
 	/**
