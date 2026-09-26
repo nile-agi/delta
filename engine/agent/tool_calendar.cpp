@@ -95,33 +95,35 @@ std::optional<std::string> extract_clock_time(const std::string& s) {
         }
     }
 
-    // 3. 4-digit military time: "1300" -> "13:00"
-    for (size_t i = 0; i + 3 < lower.size(); i++) {
-        if (i > 0 && (std::isdigit(static_cast<unsigned char>(lower[i - 1])) || lower[i - 1] == '-'))
+    // 3 and 4 read whole runs of digits, so the tail of a longer number is never taken on its own
+    // ("12000" used to yield its final "00", midnight).
+    for (size_t i = 0; i < lower.size();) {
+        if (!std::isdigit(static_cast<unsigned char>(lower[i]))) {
+            i++;
             continue;
-        if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
-            std::isdigit(static_cast<unsigned char>(lower[i + 1])) &&
-            std::isdigit(static_cast<unsigned char>(lower[i + 2])) &&
-            std::isdigit(static_cast<unsigned char>(lower[i + 3]))) {
-            if (i + 4 < lower.size() && (std::isdigit(static_cast<unsigned char>(lower[i + 4])) || lower[i + 4] == '-'))
-                continue;
-            int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
-            int m = (lower[i + 2] - '0') * 10 + (lower[i + 3] - '0');
+        }
+        size_t j = i;
+        while (j < lower.size() && std::isdigit(static_cast<unsigned char>(lower[j])))
+            j++;
+        const std::string run = lower.substr(i, j - i);
+        const bool dated = (i > 0 && lower[i - 1] == '-') || (j < lower.size() && lower[j] == '-');
+        i = j;
+        if (dated)
+            continue; // part of a date like 2026-09-26
+        // 3. Military time "1300", or the same with a stray extra zero typed ("12000").
+        if (run.size() == 4 || (run.size() == 5 && run.back() == '0')) {
+            const int h = std::stoi(run.substr(0, 2));
+            const int m = std::stoi(run.substr(2, 2));
             if (h < 24 && m < 60) {
                 char buf[6];
                 snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
                 return std::string(buf);
             }
         }
-    }
-
-    // 4. Bare two-digit hour: "13" -> "13:00"
-    for (size_t i = 0; i + 1 < lower.size(); i++) {
-        if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
-            std::isdigit(static_cast<unsigned char>(lower[i + 1]))) {
-            int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
-            if (h >= 0 && h <= 23 &&
-                (i + 2 >= lower.size() || !std::isdigit(static_cast<unsigned char>(lower[i + 2])))) {
+        // 4. Bare two-digit hour: "13" -> "13:00"
+        if (run.size() == 2) {
+            const int h = std::stoi(run);
+            if (h <= 23) {
                 char buf[6];
                 snprintf(buf, sizeof(buf), "%02d:00", h);
                 return std::string(buf);
@@ -418,7 +420,8 @@ void register_calendar_tools() {
             {"new_title", {{"type", "string"}, {"description", "New title if renaming"}}},
             {"start_time",
              {{"type", "string"},
-              {"description", "New date/time: pass naturally ('friday 2pm', 'tomorrow') or as YYYY-MM-DDTHH:MM"}}},
+              {"description", "New date/time, passed naturally: 'friday 2pm', 'tomorrow'. A day alone ('friday') keeps "
+                              "the item's current time. Prefer day words over working out a date yourself."}}},
             {"end_time", {{"type", "string"}, {"description", "New end time: same formats as start_time"}}},
             {"description", {{"type", "string"}, {"description", "Notes or description"}}},
             {"location", {{"type", "string"}, {"description", "New location"}}},
@@ -479,8 +482,26 @@ void register_calendar_tools() {
             nlohmann::json update_data;
             if (args.contains("new_title"))
                 update_data["title"] = args["new_title"];
-            if (args.contains("start_time"))
-                update_data["start_time"] = resolve_datetime(args["start_time"].get<std::string>());
+            if (args.contains("start_time")) {
+                const std::string raw = args["start_time"].get<std::string>();
+                std::string resolved = resolve_datetime(raw);
+                // "move it to friday" names a day but no time: keep the item's own time, and move its
+                // end with it, instead of snapping to resolve_datetime's 09:00 default.
+                const auto existing = db.get_event(id);
+                const bool names_time = extract_clock_time(raw).has_value() || raw.find('T') != std::string::npos;
+                if (!names_time && existing.is_object()) {
+                    const std::string old_start = existing.value("start_time", "");
+                    if (old_start.size() >= 16)
+                        resolved = resolved.substr(0, 10) + old_start.substr(10, 6);
+                    const std::string old_end = existing.value("end_time", "");
+                    if (!args.contains("end_time") && old_end.size() >= 16 && old_start.size() >= 10) {
+                        // Same-day items keep their end time on the new day.
+                        if (old_end.substr(0, 10) == old_start.substr(0, 10))
+                            update_data["end_time"] = resolved.substr(0, 10) + old_end.substr(10, 6);
+                    }
+                }
+                update_data["start_time"] = resolved;
+            }
             if (args.contains("end_time"))
                 update_data["end_time"] = resolve_datetime(args["end_time"].get<std::string>());
             if (args.contains("description"))

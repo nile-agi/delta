@@ -15,6 +15,8 @@
 #include "agent/memory_store.h"
 #include "agent/quick_add.h"
 #include "agent/task_store.h"
+#include "agent/time_compat.h"
+#include "agent/tool_calendar.h"
 #include "agent/tool_files.h"
 #include "agent/tool_registry.h"
 #include "agent/tool_shell.h"
@@ -2553,6 +2555,11 @@ static void test_quick_add_reads_everyday_statements() {
         check(!women->all_day, "it has a time");
     }
 
+    check_eq(extract_clock_time("today 12000").value_or("none"), std::string("12:00"),
+             "a stray extra zero is read as the time, not midnight");
+    check_eq(extract_clock_time("at 1300").value_or("none"), std::string("13:00"), "military time");
+    check(!extract_clock_time("2026-09-26").has_value(), "a date is not a time");
+
     auto dentist = parse_quick_add("I have a dentist appointment tomorrow at 3pm", now);
     check(dentist && dentist->start_time == "2026-09-27T15:00:00", "tomorrow at 3pm");
     check(dentist && dentist->title == "Dentist appointment", "leading 'I have a' is dropped");
@@ -2622,6 +2629,60 @@ static void test_quick_move_finds_the_item_meant() {
           "a rambling sentence is not offered as a title");
 }
 
+static void test_system_prompt_spells_out_the_week() {
+    test("the model is told which date each coming weekday falls on");
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "Noted."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    harness.run(json::array({user("move it to friday")}), log.sink());
+    server.stop();
+
+    auto requests = server.requests();
+    std::string system;
+    if (!requests.empty() && !requests[0]["messages"].empty())
+        system = requests[0]["messages"][0].value("content", "");
+    std::time_t in_three = std::time(nullptr) + 3 * 86400;
+    std::tm t{};
+    local_time(&in_three, &t);
+    char label[32];
+    std::strftime(label, sizeof(label), "%A %Y-%m-%d", &t);
+    check(system.find("NEXT 7 DAYS:") != std::string::npos, "the week is listed");
+    check(system.find(label) != std::string::npos, "with each day's real weekday and date");
+}
+
+static void test_moving_to_a_day_keeps_the_time() {
+    test("update_event given only a day keeps the item's own time and length");
+
+    auto& registry = ToolRegistry::instance();
+    auto created = registry.execute(
+        "create_event",
+        {{"title", "Keep-time probe"}, {"start_time", "tomorrow 14:30"}, {"end_time", "tomorrow 15:15"}});
+    check(created.success, "the item was created");
+    std::string id;
+    for (const auto& e : AgentDatabase::instance().list_events("", "", 500))
+        if (e.value("title", "") == "Keep-time probe")
+            id = e.value("id", "");
+    auto moved = registry.execute("update_event", {{"id", id}, {"start_time", "friday"}});
+    check(moved.success, "the move succeeded");
+
+    auto item = AgentDatabase::instance().get_event(id);
+    const std::string start = item.value("start_time", "");
+    check_eq(start.substr(11, 5), std::string("14:30"), "the time did not snap to 09:00");
+    check_eq(item.value("end_time", "").substr(11, 5), std::string("15:15"), "the end moved with it");
+    std::tm t{};
+    t.tm_year = std::stoi(start.substr(0, 4)) - 1900;
+    t.tm_mon = std::stoi(start.substr(5, 2)) - 1;
+    t.tm_mday = std::stoi(start.substr(8, 2));
+    t.tm_hour = 12;
+    t.tm_isdst = -1;
+    std::mktime(&t);
+    check_eq(t.tm_wday, 5, "it landed on a Friday");
+    AgentDatabase::instance().delete_event(id);
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -2644,6 +2705,8 @@ int main() {
     register_all_tools();
 
     test_multi_step_loop();
+    test_system_prompt_spells_out_the_week();
+    test_moving_to_a_day_keeps_the_time();
     test_text_written_call_is_recovered();
     test_prose_mentioning_a_function_is_not_run();
     test_invented_names_and_quoted_values_are_accepted();
