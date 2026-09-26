@@ -126,6 +126,12 @@ endif()
 
 add_subdirectory(engine/vendor/llama.cpp)
 
+# macOS 27 SDK deprecates MTLDevice.location and MTLGPUFamilyCommon*; upstream ggml
+# still uses them. Keep the vendored Metal backend quiet without patching the submodule.
+if(APPLE AND TARGET ggml-metal)
+    target_compile_options(ggml-metal PRIVATE -Wno-deprecated-declarations)
+endif()
+
 # SQLite amalgamation (embedded, no external dependency)
 add_library(sqlite3 STATIC engine/vendor/sqlite3/sqlite3.c)
 target_include_directories(sqlite3 PUBLIC engine/vendor/sqlite3)
