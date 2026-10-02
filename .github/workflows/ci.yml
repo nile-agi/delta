@@ -36,7 +36,8 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # Vitest 3 browser setup modules must stay within the app's Vite root.
+        run: pnpm install --frozen-lockfile --virtual-store-dir=web/app/node_modules/.pnpm
 
       - name: Check Svelte and TypeScript
         run: pnpm --filter webui check
