@@ -28,6 +28,7 @@
 	import { downloads } from '$lib/stores/downloads.svelte';
 	import { setMode } from 'mode-watcher';
 	import { onDestroy, type Component } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
 	interface Props {
 		section?: string;
@@ -393,13 +394,18 @@
 	});
 
 	function runSetupAgain() {
-		updateConfig('onboardingCompleted', false);
+		if (!updateConfig('onboardingCompleted', false)) {
+			toast.error('Could not restart setup. Please try again.');
+			return;
+		}
+		toast.success('Setup restarted.');
 		onBack();
 	}
 
 	function handleReset() {
 		localConfig = { ...config() };
 		setMode(localConfig.theme as 'light' | 'dark' | 'system');
+		toast.success('Saved settings restored. Unsaved changes discarded.');
 	}
 
 	function handleSave() {
@@ -407,8 +413,7 @@
 			try {
 				JSON.parse(localConfig.custom);
 			} catch (error) {
-				alert('Invalid JSON in custom parameters. Please check the format and try again.');
-				console.error(error);
+				toast.error('Invalid JSON in custom parameters. Please check the format and try again.');
 				return;
 			}
 		}
@@ -439,16 +444,21 @@
 		for (const field of numericFields) {
 			if (processedConfig[field] !== undefined && processedConfig[field] !== '') {
 				const numValue = Number(processedConfig[field]);
-				if (!isNaN(numValue)) {
+				if (Number.isFinite(numValue)) {
 					processedConfig[field] = numValue;
 				} else {
-					alert(`Invalid numeric value for ${field}. Please enter a valid number.`);
+					toast.error(`Invalid numeric value for ${field}. Please enter a valid number.`);
 					return;
 				}
 			}
 		}
 
-		updateMultipleConfig(processedConfig);
+		if (updateMultipleConfig(processedConfig)) {
+			localConfig = { ...config() };
+			toast.success('Settings saved.');
+		} else {
+			toast.error('Could not save settings. Your changes are still available to retry.');
+		}
 	}
 
 	function scrollToCenter(element: HTMLElement) {
@@ -514,7 +524,7 @@
 	async function applySuggestedCtx(status: BlockStatus) {
 		if (!status.suggested_context || !status.model) return;
 		try {
-			await fetch('/api/models/context', {
+			const response = await fetch('/api/models/context', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -522,10 +532,13 @@
 					ctx_size: status.suggested_context
 				})
 			});
+			if (!response.ok) throw new Error(`Context update failed: ${response.status}`);
+			toast.success(`Context updated to ${status.suggested_context}.`);
 			// Refresh block status — should now be cleared
 			await fetchBlockStatus();
 		} catch (e) {
 			console.error('Failed to apply context:', e);
+			toast.error('Could not update model context. Please try again.');
 		}
 	}
 
@@ -797,7 +810,7 @@
 	>
 		<Button variant="outline" onclick={handleReset}>
 			<RotateCcw class="mr-2 h-4 w-4" />
-			Reset to default
+			Restore saved settings
 		</Button>
 		<Button variant="default" onclick={handleSave}>Save settings</Button>
 	</footer>

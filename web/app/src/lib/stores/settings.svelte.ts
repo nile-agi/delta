@@ -112,26 +112,8 @@ class SettingsStore {
 	 * @param key - The configuration key to update
 	 * @param value - The new value for the configuration key
 	 */
-	updateConfig<K extends keyof SettingsConfigType>(key: K, value: SettingsConfigType[K]): void {
-		this.config[key] = value;
-
-		if (ParameterSyncService.canSyncParameter(key as string)) {
-			const propsDefaults = this.getServerDefaults();
-			const propsDefault = propsDefaults[key as string];
-
-			if (propsDefault !== undefined) {
-				const normalizedValue = normalizeFloatingPoint(value);
-				const normalizedDefault = normalizeFloatingPoint(propsDefault);
-
-				if (normalizedValue === normalizedDefault) {
-					this.userOverrides.delete(key as string);
-				} else {
-					this.userOverrides.add(key as string);
-				}
-			}
-		}
-
-		this.saveConfig();
+	updateConfig<K extends keyof SettingsConfigType>(key: K, value: SettingsConfigType[K]): boolean {
+		return this.updateMultipleConfig({ [key]: value });
 	}
 
 	/**
@@ -139,7 +121,8 @@ class SettingsStore {
 	 * @param updates - Object containing the configuration updates
 	 */
 	updateMultipleConfig(updates: Partial<SettingsConfigType>) {
-		Object.assign(this.config, updates);
+		const nextConfig = { ...this.config, ...updates };
+		const nextOverrides = new Set(this.userOverrides);
 
 		const propsDefaults = this.getServerDefaults();
 
@@ -152,29 +135,50 @@ class SettingsStore {
 					const normalizedDefault = normalizeFloatingPoint(propsDefault);
 
 					if (normalizedValue === normalizedDefault) {
-						this.userOverrides.delete(key);
+						nextOverrides.delete(key);
 					} else {
-						this.userOverrides.add(key);
+						nextOverrides.add(key);
 					}
 				}
 			}
 		}
 
-		this.saveConfig();
+		return this.commitConfig(nextConfig, nextOverrides);
 	}
 
 	/**
 	 * Save the current configuration to localStorage
 	 */
-	private saveConfig() {
-		if (!browser) return;
+	private commitConfig(nextConfig: SettingsConfigType, nextOverrides: Set<string>): boolean {
+		if (!this.saveConfig(nextConfig, nextOverrides)) return false;
+		this.config = nextConfig;
+		this.userOverrides = nextOverrides;
+		return true;
+	}
 
+	private saveConfig(nextConfig = this.config, nextOverrides = this.userOverrides): boolean {
+		if (!browser) return true;
+
+		let previousConfig: string | null = null;
+		let configWritten = false;
 		try {
-			localStorage.setItem('config', JSON.stringify(this.config));
-
-			localStorage.setItem('userOverrides', JSON.stringify(Array.from(this.userOverrides)));
+			previousConfig = localStorage.getItem('config');
+			localStorage.setItem('config', JSON.stringify(nextConfig));
+			configWritten = true;
+			localStorage.setItem('userOverrides', JSON.stringify(Array.from(nextOverrides)));
+			return true;
 		} catch (error) {
+			// A failed second write must not leave a new config paired with old overrides.
+			if (configWritten) {
+				try {
+					if (previousConfig === null) localStorage.removeItem('config');
+					else localStorage.setItem('config', previousConfig);
+				} catch (rollbackError) {
+					console.error('Failed to restore stored config:', rollbackError);
+				}
+			}
 			console.error('Failed to save config to localStorage:', error);
+			return false;
 		}
 	}
 
@@ -333,24 +337,26 @@ class SettingsStore {
 	/**
 	 * Reset a parameter to server default (or webui default if no server default)
 	 */
-	resetParameterToServerDefault(key: string): void {
+	resetParameterToServerDefault(key: string): boolean {
+		const nextConfig = { ...this.config };
+		const nextOverrides = new Set(this.userOverrides);
 		const serverDefaults = this.getServerDefaults();
 
 		if (serverDefaults[key] !== undefined) {
 			const value = normalizeFloatingPoint(serverDefaults[key]);
 
-			this.config[key as keyof SettingsConfigType] =
+			nextConfig[key as keyof SettingsConfigType] =
 				value as SettingsConfigType[keyof SettingsConfigType];
 		} else {
 			if (key in SETTING_CONFIG_DEFAULT) {
 				const defaultValue = getConfigValue(SETTING_CONFIG_DEFAULT, key);
 
-				setConfigValue(this.config, key, defaultValue);
+				setConfigValue(nextConfig, key, defaultValue);
 			}
 		}
 
-		this.userOverrides.delete(key);
-		this.saveConfig();
+		nextOverrides.delete(key);
+		return this.commitConfig(nextConfig, nextOverrides);
 	}
 
 	/**

@@ -6,9 +6,11 @@
 	import type { ExportedConversations } from '$lib/types/database';
 	import { createMessageCountMap } from '$lib/utils/conversation-utils';
 	import { chatStore } from '$lib/stores/chat.svelte';
+	import { toast } from 'svelte-sonner';
 
 	let exportedConversations = $state<DatabaseConversation[]>([]);
 	let importedConversations = $state<DatabaseConversation[]>([]);
+	let importResult = $state({ imported: 0, skipped: 0 });
 	let showExportSummary = $state(false);
 	let showImportSummary = $state(false);
 
@@ -33,9 +35,10 @@
 			isDeletingAll = true;
 			await DatabaseStore.deleteAllConversations();
 			await chatStore.loadConversations();
+			toast.success('All conversations deleted.');
 		} catch (err) {
 			console.error('Failed to delete all conversations:', err);
-			alert('Failed to delete all conversations');
+			toast.error('Failed to delete all conversations.');
 		} finally {
 			isDeletingAll = false;
 		}
@@ -45,7 +48,7 @@
 		try {
 			const allConversations = await DatabaseStore.getAllConversations();
 			if (allConversations.length === 0) {
-				alert('No conversations to export');
+				toast.info('No conversations to export.');
 				return;
 			}
 
@@ -61,7 +64,7 @@
 			showExportDialog = true;
 		} catch (err) {
 			console.error('Failed to load conversations:', err);
-			alert('Failed to load conversations');
+			toast.error('Failed to load conversations.');
 		}
 	}
 
@@ -86,6 +89,7 @@
 			a.click();
 			document.body.removeChild(a);
 			URL.revokeObjectURL(url);
+			toast.success('Conversation export started.');
 
 			exportedConversations = selectedConversations;
 			showExportSummary = true;
@@ -93,7 +97,7 @@
 			showExportDialog = false;
 		} catch (err) {
 			console.error('Export failed:', err);
-			alert('Failed to export conversations');
+			toast.error('Failed to export conversations.');
 		}
 	}
 
@@ -139,14 +143,14 @@
 					const message = err instanceof Error ? err.message : 'Unknown error';
 
 					console.error('Failed to parse file:', err);
-					alert(`Failed to parse file: ${message}`);
+					toast.error(`Failed to parse file: ${message}`);
 				}
 			};
 
 			input.click();
 		} catch (err) {
 			console.error('Import failed:', err);
-			alert('Failed to import conversations');
+			toast.error('Failed to import conversations.');
 		}
 	}
 
@@ -157,9 +161,12 @@
 				.snapshot(fullImportData)
 				.filter((item) => selectedIds.has(item.conv.id));
 
-			await DatabaseStore.importConversations(selectedData);
+			importResult = await DatabaseStore.importConversations(selectedData);
 
 			await chatStore.loadConversations();
+			const message = `Imported ${importResult.imported} conversation${importResult.imported === 1 ? '' : 's'}.${importResult.skipped ? ` Skipped ${importResult.skipped} existing conversation${importResult.skipped === 1 ? '' : 's'}.` : ''}`;
+			if (importResult.imported > 0) toast.success(message);
+			else toast.info(message);
 
 			importedConversations = selectedConversations;
 			showImportSummary = true;
@@ -167,7 +174,7 @@
 			showImportDialog = false;
 		} catch (err) {
 			console.error('Import failed:', err);
-			alert('Failed to import conversations. Please check the file format.');
+			toast.error('Failed to import conversations. Please check the file format.');
 		}
 	}
 </script>
@@ -235,10 +242,16 @@
 			{#if showImportSummary && importedConversations.length > 0}
 				<div class="mt-4 grid overflow-x-auto rounded-lg border border-border/50 bg-muted/30 p-4">
 					<h5 class="mb-2 text-sm font-medium">
-						Imported {importedConversations.length} conversation{importedConversations.length === 1
-							? ''
-							: 's'}
+						Imported {importResult.imported} conversation{importResult.imported === 1 ? '' : 's'}
 					</h5>
+					{#if importResult.skipped > 0}
+						<p class="mb-2 text-sm text-muted-foreground">
+							Skipped {importResult.skipped} existing conversation{importResult.skipped === 1
+								? ''
+								: 's'}.
+						</p>
+					{/if}
+					<p class="mb-1 text-xs text-muted-foreground">Selected conversations:</p>
 
 					<ul class="space-y-1 text-sm text-muted-foreground">
 						{#each importedConversations.slice(0, 10) as conv (conv.id)}

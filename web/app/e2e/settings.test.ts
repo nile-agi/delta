@@ -78,12 +78,177 @@ test('Save persists settings while Back discards the next draft', async ({ page 
 	const name = page.getByLabel('What should Delta call you?');
 	await name.fill('Saved name');
 	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	await expect(page.getByText('Settings saved.', { exact: true })).toBeVisible();
 	await expect(page).toHaveURL(/#\/settings$/);
 	await name.fill('Discard this draft');
 	await page.getByRole('button', { name: 'Back to Home', exact: true }).click();
 	await page.getByRole('button', { name: 'Settings', exact: true }).click();
 	await page.getByRole('button', { name: 'You', exact: true }).click();
 	await expect(name).toHaveValue('Saved name');
+});
+
+test('Restore saved settings discards a draft and explains the result', async ({ page }) => {
+	await page.goto('/?section=You#/settings');
+	const name = page.getByLabel('What should Delta call you?');
+	await name.fill('Unsaved name');
+	await page.getByRole('button', { name: 'Restore saved settings', exact: true }).click();
+	await expect(name).toHaveValue('Original');
+	await expect(
+		page.getByText('Saved settings restored. Unsaved changes discarded.', { exact: true })
+	).toBeVisible();
+});
+
+for (const failingKey of ['config', 'userOverrides']) {
+	test(`a failed ${failingKey} write reports an error and keeps saved settings`, async ({
+		page
+	}) => {
+		await page.goto('/?section=You#/settings');
+		const name = page.getByLabel('What should Delta call you?');
+		await name.fill('Failed save');
+		await page.evaluate((key) => {
+			const setItem = Storage.prototype.setItem;
+			let failed = false;
+			Storage.prototype.setItem = function (storageKey, value) {
+				if (storageKey === key && !failed) {
+					failed = true;
+					throw new DOMException('Storage full', 'QuotaExceededError');
+				}
+				return setItem.call(this, storageKey, value);
+			};
+		}, failingKey);
+		await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+		await expect(
+			page.getByText('Could not save settings. Your changes are still available to retry.', {
+				exact: true
+			})
+		).toBeVisible();
+		await expect(page.getByText('Settings saved.', { exact: true })).toHaveCount(0);
+		await expect(name).toHaveValue('Failed save');
+		expect(await page.evaluate(() => JSON.parse(localStorage.getItem('config')!).userName)).toBe(
+			'Original'
+		);
+		await page.getByRole('button', { name: 'Back to Home', exact: true }).click();
+		await page.getByRole('button', { name: 'Settings', exact: true }).click();
+		await page.getByRole('button', { name: 'You', exact: true }).click();
+		await expect(name).toHaveValue('Original');
+	});
+}
+
+test('invalid custom JSON reports a toast without a blocking alert', async ({ page }) => {
+	let dialogs = 0;
+	page.on('dialog', async (dialog) => {
+		dialogs++;
+		await dialog.dismiss();
+	});
+	await page.goto('/?section=Developer#/settings');
+	await page.locator('#custom').fill('{broken');
+	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	await expect(
+		page.getByText('Invalid JSON in custom parameters. Please check the format and try again.', {
+			exact: true
+		})
+	).toBeVisible();
+	expect(dialogs).toBe(0);
+	await expect(page.getByText('Settings saved.', { exact: true })).toHaveCount(0);
+});
+
+test('parameter reset reports its saved default', async ({ page }) => {
+	await page.route('**/props', (route) =>
+		route.fulfill({
+			json: {
+				total_slots: 0,
+				default_generation_settings: { params: { temperature: 0.7 } }
+			}
+		})
+	);
+	await page.goto('/?section=Sampling#/settings');
+	const temperature = page.locator('#temperature');
+	await temperature.fill('0.9');
+	await page.getByRole('button', { name: 'Reset to default', exact: true }).click();
+	await expect(temperature).toHaveValue('0.7');
+	await expect(page.getByText('Temperature reset to its default.', { exact: true })).toBeVisible();
+});
+
+test('forgetting approvals reports failure and allows a successful retry', async ({ page }) => {
+	let fail = true;
+	await page.route('**/v1/agent/tools', (route) =>
+		route.fulfill({ json: { policies: { run_command: 'allow' } } })
+	);
+	await page.route('**/v1/agent/policies', (route) =>
+		route.fulfill({ status: fail ? 503 : 200, json: {} })
+	);
+	await page.goto('/?section=Agent%20tools#/settings');
+	const forget = page.getByRole('button', { name: 'Forget all', exact: true });
+	await forget.click();
+	await expect(
+		page.locator('[data-sonner-toast]').filter({ hasText: 'Failed to reset tool policies: 503' })
+	).toBeVisible();
+	fail = false;
+	await forget.click();
+	await expect(
+		page.locator('[data-sonner-toast]').filter({ hasText: 'Forgot 1 remembered answer.' })
+	).toBeVisible();
+});
+
+test('invalid conversation import reports an error without a blocking alert', async ({ page }) => {
+	let dialogs = 0;
+	page.on('dialog', async (dialog) => {
+		dialogs++;
+		await dialog.dismiss();
+	});
+	await page.goto('/?section=Import%2FExport#/settings');
+	const chooser = page.waitForEvent('filechooser');
+	await page.getByRole('button', { name: 'Import conversations', exact: true }).click();
+	await (
+		await chooser
+	).setFiles({ name: 'broken.json', mimeType: 'application/json', buffer: Buffer.from('{broken') });
+	await expect(
+		page.locator('[data-sonner-toast]').filter({ hasText: 'Failed to parse file:' })
+	).toBeVisible();
+	expect(dialogs).toBe(0);
+});
+
+test('conversation actions report actual imports, duplicate skips, export and deletion', async ({
+	page
+}) => {
+	await page.goto('/?section=Import%2FExport#/settings');
+	const file = {
+		name: 'backup.json',
+		mimeType: 'application/json',
+		buffer: Buffer.from(
+			JSON.stringify([
+				{
+					conv: {
+						id: 'feedback-conversation',
+						name: 'Feedback conversation',
+						currNode: null,
+						lastModified: 1
+					},
+					messages: []
+				}
+			])
+		)
+	};
+	for (const message of [
+		'Imported 1 conversation.',
+		'Imported 0 conversations. Skipped 1 existing conversation.'
+	]) {
+		const chooser = page.waitForEvent('filechooser');
+		await page.getByRole('button', { name: 'Import conversations', exact: true }).click();
+		await (await chooser).setFiles(file);
+		await page.getByRole('button', { name: 'Import (1)', exact: true }).click();
+		await expect(page.locator('[data-sonner-toast]').filter({ hasText: message })).toBeVisible();
+	}
+	await page.getByRole('button', { name: 'Export conversations', exact: true }).click();
+	const download = page.waitForEvent('download');
+	await page.getByRole('button', { name: 'Export (1)', exact: true }).click();
+	expect((await download).suggestedFilename()).toMatch(/^conversations_.*\.json$/);
+	await expect(page.getByText('Conversation export started.', { exact: true })).toBeVisible();
+	page.once('dialog', (dialog) => dialog.accept());
+	await page.getByRole('button', { name: 'Delete all conversations', exact: true }).click();
+	await expect(page.getByText('All conversations deleted.', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'Export conversations', exact: true }).click();
+	await expect(page.getByText('No conversations to export.', { exact: true })).toBeVisible();
 });
 
 test('enabling agent tools selects the core tools and preserves computer access choices', async ({
