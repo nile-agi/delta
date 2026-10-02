@@ -557,9 +557,8 @@
 	class="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background"
 >
 	<header class="flex shrink-0 items-center gap-4 border-b border-border/30 px-4 py-3 md:px-6">
-		<Button variant="ghost" onclick={onBack}>
+		<Button variant="ghost" size="icon" aria-label="Back to Home" title="Back to Home" onclick={onBack}>
 			<ArrowLeft class="h-4 w-4" />
-			Back to Home
 		</Button>
 		<h1 class="text-lg font-semibold">Settings</h1>
 	</header>
