@@ -12,6 +12,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { serverStore } from '$lib/stores/server.svelte';
 	import { config, settingsStore } from '$lib/stores/settings.svelte';
+	import { downloads } from '$lib/stores/downloads.svelte';
 	import { resolveModelApiBaseUrl, resetModelApiResolution } from '$lib/utils/model-api-url';
 	import { getServerBaseUrl } from '$lib/utils/server-base-url';
 	import { ModelBackendWarning, ServerErrorSplash } from '$lib/components/app';
@@ -165,6 +166,12 @@
 			}
 			modelApiReady = true;
 		});
+	});
+
+	// Downloads belong to the app, so returning from Settings keeps their polling alive.
+	$effect(() => {
+		if (isAuxWindow || !serverReady || !modelApiReady) return;
+		void downloads.hydrate();
 	});
 
 	// Standalone windows render without waiting for the model server.
