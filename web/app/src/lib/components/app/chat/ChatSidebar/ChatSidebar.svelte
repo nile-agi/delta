@@ -7,7 +7,6 @@
 	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
 	import { config } from '$lib/stores/settings.svelte';
-	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { ChatSidebarConversationItem, ConfirmationDialog } from '$lib/components/app';
 	import ScrollArea from '$lib/components/ui/scroll-area/scroll-area.svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar';
@@ -239,7 +238,7 @@
 		</span>
 		<button
 			class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-			onclick={() => settingsWindow.toggle()}
+			onclick={() => goto('?#/settings')}
 			title="Settings"
 			aria-label="Settings"
 		>
