@@ -55,7 +55,6 @@ export interface SettingsChatServiceOptions {
 	useTaskTools?: boolean;
 	useFileTools?: boolean;
 	useShellTools?: boolean;
-	useWebTools?: boolean;
 	/** Cap on harness iterations (model call -> tools -> model call) for one turn. */
 	max_iterations?: number;
 	// Timing display

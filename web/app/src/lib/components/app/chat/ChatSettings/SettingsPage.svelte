@@ -20,6 +20,7 @@
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { agentService } from '$lib/services/agent';
 	import { ChatSettingsFields } from '$lib/components/app';
+	import { CORE_AGENT_TOOL_KEYS } from '$lib/constants/settings-config';
 	import ImportExportTab from './ImportExportTab.svelte';
 	import ModelManagementTab from '../ModelManagement/ModelManagementTab.svelte';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
@@ -183,13 +184,13 @@
 					type: 'checkbox'
 				},
 				{
-					key: 'useMemoryTools',
-					label: 'Long-term memory',
+					key: 'useTaskTools',
+					label: 'Planning and self-tracking',
 					type: 'checkbox'
 				},
 				{
-					key: 'useTaskTools',
-					label: 'Planning and self-tracking',
+					key: 'useMemoryTools',
+					label: 'Long-term memory',
 					type: 'checkbox'
 				},
 				{
@@ -200,11 +201,6 @@
 				{
 					key: 'useShellTools',
 					label: 'Run shell commands',
-					type: 'checkbox'
-				},
-				{
-					key: 'useWebTools',
-					label: 'Fetch web pages',
 					type: 'checkbox'
 				},
 				{
@@ -387,6 +383,9 @@
 
 	function handleConfigChange(key: string, value: string | boolean) {
 		localConfig[key] = value;
+		if (key === 'useAgentTools' && value === true) {
+			for (const tool of CORE_AGENT_TOOL_KEYS) localConfig[tool] = true;
+		}
 	}
 
 	onDestroy(() => {
@@ -557,7 +556,13 @@
 	class="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background"
 >
 	<header class="flex shrink-0 items-center gap-4 border-b border-border/30 px-4 py-3 md:px-6">
-		<Button variant="ghost" size="icon" aria-label="Back to Home" title="Back to Home" onclick={onBack}>
+		<Button
+			variant="ghost"
+			size="icon"
+			aria-label="Back to Home"
+			title="Back to Home"
+			onclick={onBack}
+		>
 			<ArrowLeft class="h-4 w-4" />
 		</Button>
 		<h1 class="text-lg font-semibold">Settings</h1>
@@ -701,6 +706,55 @@
 										onConfigChange={handleConfigChange}
 										onThemeChange={handleThemeChange}
 									/>
+								</div>
+							{:else if currentSection.title === 'Agent tools'}
+								<div class="max-w-3xl space-y-6">
+									<ChatSettingsFields
+										fields={currentSection.fields.filter((field) => field.key === 'useAgentTools')}
+										{localConfig}
+										onConfigChange={handleConfigChange}
+									/>
+									<fieldset
+										disabled={!localConfig.useAgentTools}
+										class="ml-2 space-y-5 border-l border-border pl-5 disabled:opacity-50 md:ml-5"
+									>
+										<legend class="mb-4 text-sm font-medium">Core tools</legend>
+										<ChatSettingsFields
+											fields={currentSection.fields.filter((field) =>
+												CORE_AGENT_TOOL_KEYS.includes(field.key)
+											)}
+											{localConfig}
+											onConfigChange={handleConfigChange}
+										/>
+									</fieldset>
+									<fieldset
+										disabled={!localConfig.useAgentTools}
+										class="space-y-5 border-t border-border pt-5 disabled:opacity-50"
+									>
+										<legend class="text-sm font-medium">Computer access</legend>
+										<p class="text-xs text-muted-foreground">
+											Choose file and shell access separately. Enabling core tools keeps these
+											choices.
+										</p>
+										<ChatSettingsFields
+											fields={currentSection.fields.filter(
+												(field) => field.key === 'useFileTools' || field.key === 'useShellTools'
+											)}
+											{localConfig}
+											onConfigChange={handleConfigChange}
+										/>
+									</fieldset>
+									<section
+										aria-label="Approval preferences"
+										class="space-y-4 border-t border-border pt-5"
+									>
+										<h3 class="text-sm font-medium">Approval preferences</h3>
+										<ChatSettingsFields
+											fields={currentSection.fields.filter((field) => field.type === 'action')}
+											{localConfig}
+											onConfigChange={handleConfigChange}
+										/>
+									</section>
 								</div>
 							{:else}
 								<div class="space-y-6">

@@ -335,7 +335,6 @@ class ChatStore {
 			apiOptions.useTaskTools = currentConfig.useTaskTools !== false;
 			apiOptions.useFileTools = currentConfig.useFileTools !== false;
 			apiOptions.useShellTools = currentConfig.useShellTools !== false;
-			apiOptions.useWebTools = currentConfig.useWebTools === true;
 		}
 
 		return apiOptions;

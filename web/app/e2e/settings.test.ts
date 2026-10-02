@@ -86,6 +86,59 @@ test('Save persists settings while Back discards the next draft', async ({ page 
 	await expect(name).toHaveValue('Saved name');
 });
 
+test('enabling agent tools selects the core tools and preserves computer access choices', async ({
+	page
+}) => {
+	await page.addInitScript(() => {
+		const config = JSON.parse(localStorage.getItem('config')!);
+		localStorage.setItem(
+			'config',
+			JSON.stringify({
+				...config,
+				useAgentTools: false,
+				useCalendarTools: false,
+				useNotesTools: false,
+				useMemoryTools: false,
+				useTaskTools: false,
+				useFileTools: false,
+				useShellTools: false,
+				useWebTools: true
+			})
+		);
+	});
+	await page.goto('/?section=Agent%20tools#/settings');
+	const master = page.getByRole('checkbox', { name: 'Enable agent tools', exact: true });
+	const calendar = page.getByRole('checkbox', { name: 'Calendar and tasks', exact: true });
+	await expect(calendar).toBeDisabled();
+	await master.check();
+	for (const name of [
+		'Calendar and tasks',
+		'Notes',
+		'Planning and self-tracking',
+		'Long-term memory'
+	]) {
+		await expect(page.getByRole('checkbox', { name, exact: true })).toBeChecked();
+	}
+	await expect(
+		page.getByRole('checkbox', { name: 'Read and write files', exact: true })
+	).not.toBeChecked();
+	await expect(
+		page.getByRole('checkbox', { name: 'Run shell commands', exact: true })
+	).not.toBeChecked();
+	await expect(page.getByRole('checkbox', { name: 'Fetch web pages', exact: true })).toHaveCount(0);
+	await calendar.uncheck();
+	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	await page.getByRole('button', { name: 'Back to Home', exact: true }).click();
+	await page.getByRole('button', { name: 'Settings', exact: true }).click();
+	await page.getByRole('button', { name: 'Agent tools', exact: true }).click();
+	await expect(master).toBeChecked();
+	await expect(calendar).not.toBeChecked();
+	await master.uncheck();
+	await expect(calendar).toBeDisabled();
+	await master.check();
+	await expect(calendar).toBeChecked();
+});
+
 test('a narrow settings page supports direct model management navigation', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 720 });
 	await page.goto('/?section=Model%20Management#/settings');

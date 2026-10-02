@@ -124,7 +124,6 @@ export class ChatService {
 			useTaskTools,
 			useFileTools,
 			useShellTools,
-			useWebTools,
 			max_iterations,
 			onAgentEvent,
 			// Generation parameters
@@ -217,7 +216,6 @@ export class ChatService {
 			requestBody.use_task_tools = useTaskTools !== false;
 			requestBody.use_files_tools = useFileTools !== false;
 			requestBody.use_shell_tools = useShellTools !== false;
-			requestBody.use_web_tools = useWebTools !== false;
 			if (max_iterations !== undefined) requestBody.max_iterations = max_iterations;
 		}
 
