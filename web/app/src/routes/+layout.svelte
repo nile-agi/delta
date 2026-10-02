@@ -3,7 +3,7 @@
 	import { onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
-	import { ChatSidebar, ChatSettingsDialog, ConversationTitleUpdateDialog } from '$lib/components/app';
+	import { ChatSidebar, ConversationTitleUpdateDialog } from '$lib/components/app';
 	import {
 		activeMessages,
 		isLoading,
@@ -12,7 +12,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { serverStore } from '$lib/stores/server.svelte';
 	import { config, settingsStore } from '$lib/stores/settings.svelte';
-	import { settingsWindow } from '$lib/stores/settings-window.svelte';
+	import { downloads } from '$lib/stores/downloads.svelte';
 	import { resolveModelApiBaseUrl, resetModelApiResolution } from '$lib/utils/model-api-url';
 	import { getServerBaseUrl } from '$lib/utils/server-base-url';
 	import { ModelBackendWarning, ServerErrorSplash } from '$lib/components/app';
@@ -31,6 +31,7 @@
 	import HardwareDashboard from '$lib/components/app/hardware/HardwareDashboard.svelte';
 	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
 	import Notes from '$lib/components/app/misc/Notes.svelte';
+	import SettingsShortcut from '$lib/components/app/chat/ChatSettings/SettingsShortcut.svelte';
 	
 	// ❌ REMOVED: import { Calendar } from 'bits-ui';
 	// ❌ REMOVED: import Calendar from '$lib/components/app/misc/Calendar.svelte';
@@ -168,6 +169,12 @@
 		});
 	});
 
+	// Downloads belong to the app, so returning from Settings keeps their polling alive.
+	$effect(() => {
+		if (isAuxWindow || !serverReady || !modelApiReady) return;
+		void downloads.hydrate();
+	});
+
 	// Standalone windows render without waiting for the model server.
 	$effect(() => {
 		if (isAuxWindow) { document.getElementById('app-loading')?.remove(); return; }
@@ -183,6 +190,7 @@
 
 	let isChatRoute = $derived(page.route.id === '/chat/[id]');
 	let isHomeRoute = $derived(page.route.id === '/');
+	let isSettingsRoute = $derived(page.route.id === '/settings');
 	let isNewChatMode = $derived(page.url.searchParams.get('new_chat') === 'true');
 	let showSidebarByDefault = $derived(activeMessages().length > 0 || isLoading());
 	let currentConfig = $derived(config());
@@ -251,13 +259,6 @@
 			sidebarOpen = true;
 		} else {
 			sidebarOpen = showSidebarByDefault;
-		}
-	});
-
-	$effect(() => {
-		if (isAuxWindow) return;
-		if (settingsWindow.state.docked === 'left' && sidebarOpen) {
-			sidebarOpen = false;
 		}
 	});
 
@@ -374,40 +375,48 @@
 			onCancel={handleTitleUpdateCancel}
 		/>
 
-		<ChatSettingsDialog />
 		{#if modelBackendError}
 			<ModelBackendWarning error={modelBackendError} />
 		{/if}
-		<NotesWindow />
+		{#if !isSettingsRoute}
+			<NotesWindow />
 		
-		<!-- ✅ NEW: Only Window OS Calendar - no old DOM calendar -->
-		<CalendarWindow />
+			<!-- ✅ NEW: Only Window OS Calendar - no old DOM calendar -->
+			<CalendarWindow />
 		
-		<WindowDock />
+			<WindowDock />
 
-		<!-- In-app fallback: only used in plain browsers or when OS window creation fails -->
-		<FloatingWindow title="Hardware Telemetry" store={hardwareWindow} minWidth={380} minHeight={520}>
-			<HardwareDashboard />
-		</FloatingWindow>
+			<!-- In-app fallback: only used in plain browsers or when OS window creation fails -->
+			<FloatingWindow title="Hardware Telemetry" store={hardwareWindow} minWidth={380} minHeight={520}>
+				<HardwareDashboard />
+			</FloatingWindow>
+		{/if}
 
-		<Sidebar.Provider bind:open={sidebarOpen}>
-			<div class="flex h-screen w-full" style:height={innerHeight}px>
-				<Sidebar.Root class="h-full">
-					<ChatSidebar bind:this={chatSidebar} />
-				</Sidebar.Root>
-
-				<Sidebar.Trigger
-					class="transition-left absolute z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
-						? 'md:left-[var(--sidebar-width)]'
-						: 'left-0'} {settingsWindow.state.docked === 'left' ? '!z-[100000] md:left-[var(--sidebar-width)]' : ''}"
-					style="translate: 1rem 1rem;"
-				/>
-
-				<Sidebar.Inset class="flex flex-1 flex-col overflow-hidden">
-					{@render children?.()}
-				</Sidebar.Inset>
+		{#if isSettingsRoute}
+			<div class="h-screen w-full overflow-hidden" style:height={innerHeight}px>
+				{@render children?.()}
 			</div>
-		</Sidebar.Provider>
+		{:else}
+			<Sidebar.Provider bind:open={sidebarOpen}>
+				<div class="flex h-screen w-full" style:height={innerHeight}px>
+					<Sidebar.Root class="h-full">
+						<ChatSidebar bind:this={chatSidebar} />
+					</Sidebar.Root>
+
+					<Sidebar.Trigger
+						class="transition-left absolute z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
+							? 'md:left-[var(--sidebar-width)]'
+							: 'left-0'}"
+						style="translate: 1rem 1rem;"
+					/>
+
+					<Sidebar.Inset class="flex flex-1 flex-col overflow-hidden">
+						{@render children?.()}
+					</Sidebar.Inset>
+					<SettingsShortcut />
+				</div>
+			</Sidebar.Provider>
+		{/if}
 	{/if}
 {/if}
 

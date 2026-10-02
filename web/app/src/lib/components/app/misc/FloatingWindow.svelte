@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Minus, X, GripVertical } from '@lucide/svelte';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
-	import { SETTINGS_WINDOW_FULLBLEED_BREAKPOINT } from '$lib/constants/viewport';
+	import { FLOATING_WINDOW_FULLBLEED_BREAKPOINT } from '$lib/constants/viewport';
 	import { untrack } from 'svelte';
 
 	interface Props {
@@ -43,7 +43,7 @@
 	let resizeStartWidth = $state(0);
 	let resizeStartHeight = $state(0);
 
-	const fullBleed = new IsMobile(SETTINGS_WINDOW_FULLBLEED_BREAKPOINT);
+	const fullBleed = new IsMobile(FLOATING_WINDOW_FULLBLEED_BREAKPOINT);
 
 	function releaseCapture(e: PointerEvent) {
 		const el = e.currentTarget as HTMLElement | null;
