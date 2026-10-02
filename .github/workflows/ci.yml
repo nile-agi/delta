@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend checks, tests, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check Svelte and TypeScript
+        run: pnpm --filter webui check
+
+      - name: Install Chromium for browser tests
+        run: pnpm --filter webui exec playwright install --with-deps --only-shell chromium
+
+      - name: Run unit tests
+        run: pnpm --filter webui exec vitest run --project=server --maxWorkers=2 --minWorkers=1
+
+      - name: Run browser component tests
+        run: pnpm --filter webui exec vitest run --project=client --browser.headless --no-file-parallelism
+
+      - name: Run UI stories
+        # Formula-heavy stories include accessibility scans that exceed 15 seconds.
+        run: pnpm --filter webui exec vitest run --project=ui --browser.headless --no-file-parallelism --testTimeout=60000
+
+      - name: Build web UI
+        run: pnpm --filter webui build
+
+      - name: Verify build output
+        run: test -s public/index.html
+
+  release-checks:
+    name: Release scripts and workflow validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test release notes
+        run: node --test scripts/release-notes.test.cjs
+
+      - name: Test Linux packaging
+        run: |
+          bash scripts/test-appimage-graphics-libs.sh
+          bash scripts/test-linux-webview-defaults.sh
+          bash scripts/test-repack-linux-appimage.sh
+          bash scripts/test-verify-linux-appimage.sh
+          bash scripts/test-tauri-release-build.sh
+
+      - name: Lint all GitHub Actions workflows
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
