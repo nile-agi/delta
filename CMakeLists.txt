@@ -197,7 +197,6 @@ set(DELTA_SOURCES
     engine/agent/tool_task.cpp
     engine/agent/tool_files.cpp
     engine/agent/tool_shell.cpp
-    engine/agent/tool_web.cpp
     engine/agent/llm_client.cpp
     engine/agent/context_manager.cpp
     engine/agent/policy.cpp
@@ -285,7 +284,6 @@ add_executable(delta-server
     engine/agent/tool_task.cpp
     engine/agent/tool_files.cpp
     engine/agent/tool_shell.cpp
-    engine/agent/tool_web.cpp
     engine/agent/llm_client.cpp
     engine/agent/context_manager.cpp
     engine/agent/policy.cpp
@@ -396,7 +394,6 @@ add_executable(delta-harness-tests EXCLUDE_FROM_ALL
     engine/agent/tool_task.cpp
     engine/agent/tool_files.cpp
     engine/agent/tool_shell.cpp
-    engine/agent/tool_web.cpp
     engine/agent/llm_client.cpp
     engine/agent/context_manager.cpp
     engine/agent/policy.cpp

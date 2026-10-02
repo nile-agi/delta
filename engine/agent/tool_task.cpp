@@ -63,7 +63,7 @@ void register_task_tools() {
                              {"properties",
                               {{"category",
                                 {{"type", "string"},
-                                 {"enum", {"notes", "files", "shell", "web"}},
+                                 {"enum", {"notes", "files", "shell"}},
                                  {"description", "The group of tools to load"}}}}},
                              {"required", {"category"}}},
                             ToolRisk::Safe,

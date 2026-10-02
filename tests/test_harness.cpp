@@ -20,7 +20,6 @@
 #include "agent/tool_files.h"
 #include "agent/tool_registry.h"
 #include "agent/tool_shell.h"
-#include "agent/tool_web.h"
 #include "vendor/llama.cpp/vendor/cpp-httplib/httplib.h"
 #include "vendor/json.hpp"
 
@@ -2405,50 +2404,21 @@ static void test_shell_does_not_wait_forever_for_a_child_that_closed_its_output(
     check(out.timed_out, "and reports the timeout");
 }
 
-static void test_fetch_url_does_not_follow_redirects_off_http() {
-    test("fetch_url refuses a redirect to a non-http scheme");
+static void test_web_tools_are_unavailable() {
+    test("web tools cannot be advertised, loaded or executed");
 
-    httplib::Server server;
-    server.Get("/go", [](const httplib::Request&, httplib::Response& res) { res.set_redirect("file:///etc/hosts"); });
-    const int port = server.bind_to_any_port("127.0.0.1");
-    std::thread thread([&server] { server.listen_after_bind(); });
-    server.wait_until_ready();
-
-    ToolResult out = ToolRegistry::instance().execute(
-        "fetch_url", {{"url", "http://127.0.0.1:" + std::to_string(port) + "/go"}, {"raw", true}});
-
-    server.stop();
-    thread.join();
-
-    check(!out.success || out.content.find("localhost") == std::string::npos,
-          "the contents of /etc/hosts were not fetched");
-}
-
-static void test_fetch_url_refuses_link_local_addresses() {
-    test("fetch_url refuses link-local addresses such as cloud metadata endpoints");
-
-    const auto started = std::chrono::steady_clock::now();
-    ToolResult direct =
-        ToolRegistry::instance().execute("fetch_url", {{"url", "http://169.254.169.254/latest/meta-data/"}});
-    const auto elapsed =
-        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - started).count();
-    check(!direct.success, "a direct request is refused");
-    check(direct.error_message.find("not allowed") != std::string::npos, "with an explanation");
-    check(elapsed < 3, "without trying to connect first");
-
-    // A redirect from an allowed host to a link-local one is refused as well.
-    httplib::Server server;
-    server.Get("/hop", [](const httplib::Request&, httplib::Response& res) {
-        res.set_redirect("http://169.254.169.254/latest/meta-data/");
-    });
-    const int port = server.bind_to_any_port("127.0.0.1");
-    std::thread thread([&server] { server.listen_after_bind(); });
-    server.wait_until_ready();
-    ToolResult hopped = ToolRegistry::instance().execute(
-        "fetch_url", {{"url", "http://127.0.0.1:" + std::to_string(port) + "/hop"}, {"raw", true}});
-    server.stop();
-    thread.join();
-    check(!hopped.success, "a redirect to a link-local address is refused");
+    auto& registry = ToolRegistry::instance();
+    check(registry.get_categories().count("web") == 0, "no web category is advertised");
+    check(!registry.has_tool("fetch_url"), "fetch_url is not registered");
+    check(!registry.has_tool("open_in_browser"), "open_in_browser is not registered");
+    begin_tool_session({});
+    std::string error;
+    check(!load_tool_category("web", error), "web cannot be loaded even with all categories enabled");
+    for (const auto& name : {"fetch_url", "open_in_browser"}) {
+        auto result = registry.execute(name, {{"url", "invalid://example"}});
+        check(!result.success && result.error_message == std::string("Unknown tool: ") + name,
+              "a stale web call is refused as an unknown tool");
+    }
 }
 
 static void test_read_file_does_not_load_more_than_it_returns() {
@@ -2786,8 +2756,7 @@ int main() {
     test_shell_refuses_credential_paths_in_the_command();
     test_shell_defaults_to_the_home_directory();
     test_shell_does_not_wait_forever_for_a_child_that_closed_its_output();
-    test_fetch_url_does_not_follow_redirects_off_http();
-    test_fetch_url_refuses_link_local_addresses();
+    test_web_tools_are_unavailable();
     test_read_file_does_not_load_more_than_it_returns();
 
     AgentDatabase::instance().close();

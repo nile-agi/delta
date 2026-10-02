@@ -5,7 +5,6 @@
 #include "tool_notes.h"
 #include "tool_shell.h"
 #include "tool_task.h"
-#include "tool_web.h"
 #include <algorithm>
 #include <map>
 
@@ -223,7 +222,7 @@ namespace {
 // Held back until the model asks. Chosen because they are powerful but occasional: a personal
 // assistant reaches for the calendar every day and for the shell once a week.
 const std::set<std::string>& deferred_categories() {
-    static const std::set<std::string> deferred = {"notes", "files", "shell", "web"};
+    static const std::set<std::string> deferred = {"notes", "files", "shell"};
     return deferred;
 }
 
@@ -251,8 +250,6 @@ std::string category_summary(const std::string& category) {
         return "read, write, list and delete files under the home directory";
     if (category == "shell")
         return "run a command on this machine and read its output";
-    if (category == "web")
-        return "fetch a web page, or open one in the user's browser";
     return "";
 }
 
@@ -311,7 +308,6 @@ void register_all_tools() {
     register_task_tools();
     register_file_tools();
     register_shell_tools();
-    register_web_tools();
 }
 
 } // namespace agent
