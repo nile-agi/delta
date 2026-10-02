@@ -4,6 +4,9 @@ import { config } from '$lib/stores/settings.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
 import { normalizeModelName } from '$lib/utils/model-names';
 import { agentToolsActive, selectedModelName, requestModelSelection } from '$lib/stores/models.svelte';
+import { agentStore } from '$lib/stores/agent.svelte';
+import { agentService } from '$lib/services/agent';
+import type { QuickAddSuggestion } from '$lib/types/agent';
 import { filterByLeafNodeId, findLeafNode, findDescendantMessages } from '$lib/utils/branching';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
@@ -156,6 +159,11 @@ class ChatStore {
 			} else {
 				// Load all messages for conversations without currNode (backward compatibility)
 				this.activeMessages = await DatabaseStore.getConversationMessages(convId);
+			}
+
+			// Bring back the tool activity recorded with each assistant message.
+			for (const message of this.activeMessages) {
+				agentStore.hydrate(message.id, message.agent_activity);
 			}
 
 			this.conversationLoadedSignal++;
@@ -319,6 +327,14 @@ class ChatStore {
 		// given -- re-reading it here would sample state from after goto()/DB writes.
 		if (useToolsOverride ?? agentToolsActive()) {
 			apiOptions.useTools = true;
+			// Which tool categories the harness may use this run. These were previously defined in
+			// settings but never sent, so every category was silently on.
+			apiOptions.useCalendarTools = currentConfig.useCalendarTools !== false;
+			apiOptions.useNotesTools = currentConfig.useNotesTools !== false;
+			apiOptions.useMemoryTools = currentConfig.useMemoryTools !== false;
+			apiOptions.useTaskTools = currentConfig.useTaskTools !== false;
+			apiOptions.useFileTools = currentConfig.useFileTools !== false;
+			apiOptions.useShellTools = currentConfig.useShellTools !== false;
 		}
 
 		return apiOptions;
@@ -433,6 +449,24 @@ class ChatStore {
 		onError?: (error: Error) => void,
 		options?: { initialContent?: string; initialThinking?: string; useTools?: boolean }
 	): Promise<void> {
+		// A regeneration reuses the message id, so drop whatever the previous run recorded.
+		agentStore.begin(assistantMessage.id);
+
+		// A model without tools cannot put anything on the calendar itself, so offer the user's
+		// message as a one-tap change. Here rather than in sendMessage so a regenerate or an edited
+		// message gets one too. One the user acted on or dismissed is kept; an untouched one is
+		// worked out again, so a better parser replaces an old guess.
+		if (!(options?.useTools ?? agentToolsActive()) && !options?.initialContent) {
+			const lastUser = [...allMessages].reverse().find((m) => m.role === 'user');
+			if (
+				lastUser &&
+				lastUser.content.trim() &&
+				(!lastUser.quick_add || lastUser.quick_add.status === 'offered')
+			)
+				void this.offerQuickAdd(lastUser);
+		}
+
+		const isContinuation = Boolean(options?.initialContent);
 		let streamedContent = options?.initialContent ?? '';
 		let streamedReasoningContent = options?.initialThinking ?? '';
 		const chunkQueue: string[] = [];
@@ -557,6 +591,10 @@ class ChatStore {
 				onFirstValidChunk: () => {
 					refreshServerPropsOnce();
 				},
+
+				onAgentEvent: (event: AgentEvent) => {
+					agentStore.handleEvent(assistantMessage.id, event);
+				},
 				onChunk: (chunk: string) => {
 					chunkQueue.push(chunk);
 					if (!isDrainingChunks) {
@@ -588,14 +626,31 @@ class ChatStore {
 							timings?: ChatMessageTimings;
 							model?: string;
 							tool_calls?: DatabaseMessageToolCall[];
+							agent_activity?: AgentActivity;
 						} = {
-							content: finalContent || streamedContent,
-							thinking: reasoningContent || streamedReasoningContent,
-							timings: timings
+							// When continuing an existing message, `finalContent` holds only the new
+							// text; `streamedContent` was seeded with what was already there. Taking
+							// the former would delete the original body in front of the user.
+							content: isContinuation ? streamedContent : finalContent || streamedContent,
+							thinking: isContinuation
+								? streamedReasoningContent
+								: reasoningContent || streamedReasoningContent,
+							...(timings ? { timings } : {})
 						};
 
 						if (toolCalls?.length) {
 							updateData.tool_calls = toolCalls;
+						}
+
+						// Keep the tool activity with the message so reopening the conversation still
+						// shows what the harness actually did.
+						const agentActivity = agentStore.finish(assistantMessage.id);
+						if (
+							agentActivity?.steps.length ||
+							agentActivity?.notices.length ||
+							agentActivity?.transcript?.length
+						) {
+							updateData.agent_activity = agentActivity;
 						}
 
 						if (resolvedModel && !modelPersisted) {
@@ -651,6 +706,8 @@ class ChatStore {
 
 				onError: (error: Error) => {
 					slotsService.stopStreaming();
+					// Nothing will answer a parked approval now that the stream is gone.
+					agentStore.finish(assistantMessage.id);
 
 					if (this.isAbortError(error)) {
 						this.setConversationLoading(assistantMessage.convId, false);
@@ -800,6 +857,29 @@ class ChatStore {
 	 * @param content - The message content to send
 	 * @param extras - Optional extra data (files, attachments, etc.)
 	 */
+	private async offerQuickAdd(message: DatabaseMessage): Promise<void> {
+		try {
+			const suggestion = await agentService.suggestQuickAction(message.content);
+			if (suggestion) {
+				await this.setQuickAdd(message.id, { ...suggestion, status: 'offered' } as QuickAddSuggestion);
+			} else if (message.quick_add?.status === 'offered') {
+				// The earlier guess no longer holds up; drop it rather than keep a wrong chip.
+				await DatabaseStore.updateMessage(message.id, { quick_add: undefined });
+				const live = this.activeMessages.find((m) => m.id === message.id);
+				if (live) live.quick_add = undefined;
+			}
+		} catch {
+			// A suggestion is optional; the chat carries on without one.
+		}
+	}
+
+	/** Stores a message's quick-add state, in the database and on the live message. */
+	async setQuickAdd(messageId: string, quickAdd: QuickAddSuggestion): Promise<void> {
+		await DatabaseStore.updateMessage(messageId, { quick_add: quickAdd });
+		const live = this.activeMessages.find((m) => m.id === messageId);
+		if (live) live.quick_add = quickAdd;
+	}
+
 	async sendMessage(content: string, extras?: DatabaseMessageExtra[]): Promise<void> {
 		if (!content.trim() && (!extras || extras.length === 0)) return;
 		if (!this.requireModel()) return;
@@ -920,9 +1000,7 @@ class ChatStore {
 		if (!conversationId) return;
 
 		const streamingState = this.conversationStreamingStates.get(conversationId);
-		if (!streamingState || !streamingState.response.trim()) {
-			return;
-		}
+		if (!streamingState) return;
 
 		const messages =
 			conversationId === this.activeConversation?.id
@@ -931,7 +1009,19 @@ class ChatStore {
 
 		if (!messages.length) return;
 
-		const lastMessage = messages[messages.length - 1];
+		// The streamed message is not always the last one in the path, so go by its id.
+		const lastMessage =
+			messages.find((m) => m.id === streamingState.messageId) ?? messages[messages.length - 1];
+
+		// A tool-only turn streams no text but still has an activity worth keeping, so an empty
+		// response is only a reason to stop when there is nothing else to save either.
+		const interruptedActivity = agentStore.finish(lastMessage?.id ?? '');
+		const hasActivity = Boolean(
+			interruptedActivity?.steps.length ||
+				interruptedActivity?.notices.length ||
+				interruptedActivity?.transcript?.length
+		);
+		if (!streamingState.response.trim() && !hasActivity) return;
 
 		if (lastMessage && lastMessage.role === 'assistant') {
 			try {
@@ -939,9 +1029,14 @@ class ChatStore {
 					content: string;
 					thinking?: string;
 					timings?: ChatMessageTimings;
+					agent_activity?: AgentActivity;
 				} = {
 					content: streamingState.response
 				};
+
+				if (hasActivity && interruptedActivity) {
+					updateData.agent_activity = interruptedActivity;
+				}
 
 				if (lastMessage.thinking?.trim()) {
 					updateData.thinking = lastMessage.thinking;
@@ -963,7 +1058,10 @@ class ChatStore {
 
 				await DatabaseStore.updateMessage(lastMessage.id, updateData);
 
-				lastMessage.content = this.currentResponse;
+				lastMessage.content = updateData.content;
+				if (updateData.agent_activity) {
+					lastMessage.agent_activity = updateData.agent_activity;
+				}
 				if (updateData.thinking !== undefined) {
 					lastMessage.thinking = updateData.thinking;
 				}
@@ -971,7 +1069,7 @@ class ChatStore {
 					lastMessage.timings = updateData.timings;
 				}
 			} catch (error) {
-				lastMessage.content = this.currentResponse;
+				lastMessage.content = streamingState.response;
 				console.error('Failed to save partial response:', error);
 			}
 		} else {
@@ -1923,6 +2021,7 @@ export const exportAllConversations = chatStore.exportAllConversations.bind(chat
 export const importConversations = chatStore.importConversations.bind(chatStore);
 export const deleteConversation = chatStore.deleteConversation.bind(chatStore);
 export const sendMessage = chatStore.sendMessage.bind(chatStore);
+export const setQuickAdd = chatStore.setQuickAdd.bind(chatStore);
 export const dismissErrorDialog = chatStore.dismissErrorDialog.bind(chatStore);
 
 export const gracefulStop = chatStore.gracefulStop.bind(chatStore);

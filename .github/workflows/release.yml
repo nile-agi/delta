@@ -4,12 +4,49 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to build or retry (for example, v1.0.14)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+      tag: ${{ steps.release.outputs.tag }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate release notes and prepare a draft
+        id: release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { prepareRelease } = require('./scripts/release-notes.cjs');
+            const tag = process.env.RELEASE_TAG;
+            const id = await prepareRelease({ github, context, tag });
+            core.setOutput('release_id', id);
+            core.setOutput('tag', tag);
+
   # ---------------------------------------------------------------------------
   # CLI release — standalone binaries (delta + delta-server + llama-server)
   # ---------------------------------------------------------------------------
   build-cli:
+    needs: prepare-release
+    env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -31,6 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
           submodules: recursive
 
       - uses: actions/setup-node@v4
@@ -67,6 +105,9 @@ jobs:
 
       - name: Build CLI binaries
         shell: bash
+        env:
+          CLI_TARGET: ${{ matrix.target }}
+          CLI_PLATFORM: ${{ matrix.platform }}
         run: |
           VERSION=$(cat version.txt)
           BUILD_DIR="build_release"
@@ -113,7 +154,7 @@ jobs:
           mkdir -p "$STAGE/bin"
 
           EXT=""
-          if [[ "${{ matrix.target }}" == *"windows"* ]]; then EXT=".exe"; fi
+          if [[ "$CLI_TARGET" == *windows* ]]; then EXT=".exe"; fi
 
           # MSVC puts binaries under Release/ subdir, others put them at root
           BIN_ROOT="$BUILD_DIR"
@@ -147,7 +188,7 @@ jobs:
           fi
 
           # Include Metal shaders on macOS
-          if [[ "${{ matrix.platform }}" == macos-* ]]; then
+          if [[ "$CLI_PLATFORM" == macos-* ]]; then
             METALLIB=$(find "$BUILD_DIR" -name "*.metallib" 2>/dev/null | head -1)
             if [[ -n "$METALLIB" ]]; then
               cp "$METALLIB" "$STAGE/bin/"
@@ -158,8 +199,8 @@ jobs:
           {
             echo "version: ${VERSION}"
             echo "target: ${{ matrix.target }}"
-            echo "commit: ${GITHUB_SHA}"
-            echo "tag: ${GITHUB_REF_NAME}"
+            echo "commit: $(git rev-parse HEAD)"
+            echo "tag: ${RELEASE_TAG}"
             echo "date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } > "$STAGE/BUILD_INFO"
 
@@ -196,6 +237,7 @@ jobs:
   # Desktop app release — Tauri bundles (dmg, deb, AppImage, exe)
   # ---------------------------------------------------------------------------
   build-tauri:
+    needs: prepare-release
     permissions:
       contents: write
     strategy:
@@ -219,6 +261,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
           submodules: recursive
 
       - uses: actions/setup-node@v4
@@ -325,32 +368,8 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Delta ${{ github.ref_name }}'
-          releaseBody: |
-            Download the installer for your platform from the assets below.
-
-            ### Which file to download
-
-            | File | OS | Notes |
-            |------|----|-------|
-            | `.dmg` | macOS | Disk image installer |
-            | `.deb` | Linux (Ubuntu/Debian) | Install with `sudo dpkg -i` |
-            | `.rpm` | Linux (Fedora) | Installs desktop dependencies |
-            | `.AppImage` | Linux (any distro) | Portable; host desktop libraries required |
-            | `.msi` or `.exe` | Windows | Standard installer |
-
-            ---
-
-            ### Linux AppImage Setup
-
-            1. Make the file executable: `chmod +x Delta_*.AppImage`
-            2. Prefer the `.rpm` on Fedora or the `.deb` on Ubuntu/Debian so desktop dependencies are installed automatically.
-            3. For the portable AppImage, install the host WebKitGTK 4.1, GTK3, and EGL/GL runtime libraries.
-            4. Run it: `./Delta_*.AppImage`
-            5. For a driver-specific rendering issue, retry with `WEBKIT_DISABLE_COMPOSITING_MODE=1`.
-          releaseDraft: false
-          prerelease: false
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          tagName: ${{ needs.prepare-release.outputs.tag }}
           tauriScript: ${{ matrix.platform == 'ubuntu-22.04' && './scripts/tauri-release-build.sh' || '' }}
           args: ${{ matrix.args }}
 
@@ -360,44 +379,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Delta ${{ github.ref_name }}'
-          releaseBody: |
-            Download the installer for your platform from the assets below.
-
-            ### Which file to download
-
-            | File | OS | Notes |
-            |------|----|-------|
-            | `.dmg` | macOS | Disk image installer |
-            | `.deb` | Linux (Ubuntu/Debian) | Install with `sudo dpkg -i` |
-            | `.rpm` | Linux (Fedora) | Installs desktop dependencies |
-            | `.AppImage` | Linux (any distro) | Portable; host desktop libraries required |
-            | `.msi` or `.exe` | Windows | Standard installer |
-
-            ---
-
-            ### macOS Setup (unsigned build)
-
-            1. Open the `.dmg` file and drag **Delta** into the **Applications** folder.
-            2. Try to open Delta from Applications. macOS will show a warning and block it. Click **Done** or **Cancel**.
-            3. Open **System Settings > Privacy & Security**. Scroll to the **bottom** of the page. You will see a message about Delta being blocked. Click **Open Anyway**.
-            4. macOS asks to confirm. Click **Open**. Delta will launch normally after this.
-
-            > Or run this in Terminal to skip the above:
-            > ```
-            > sudo xattr -d com.apple.quarantine /Applications/Delta.app
-            > ```
-
-            ### Linux AppImage Setup
-
-            1. Make the file executable: `chmod +x Delta_*.AppImage`
-            2. Prefer the `.rpm` on Fedora or the `.deb` on Ubuntu/Debian so desktop dependencies are installed automatically.
-            3. For the portable AppImage, install the host WebKitGTK 4.1, GTK3, and EGL/GL runtime libraries.
-            4. Run it: `./Delta_*.AppImage`
-            5. For a driver-specific rendering issue, retry with `WEBKIT_DISABLE_COMPOSITING_MODE=1`.
-          releaseDraft: false
-          prerelease: false
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          tagName: ${{ needs.prepare-release.outputs.tag }}
           tauriScript: ${{ matrix.platform == 'ubuntu-22.04' && './scripts/tauri-release-build.sh' || '' }}
           args: ${{ matrix.args }}
 
@@ -405,12 +388,17 @@ jobs:
   # Attach CLI binaries + checksums to the GitHub Release
   # ---------------------------------------------------------------------------
   attach-cli:
-    needs: [build-cli]
+    needs: [prepare-release, build-cli]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -421,10 +409,10 @@ jobs:
         run: |
           VERSION=$(cat version.txt)
           {
-            echo "# Delta CLI ${{ github.ref_name }} — SHA-256 Checksums"
+            echo "# Delta CLI ${RELEASE_TAG} — SHA-256 Checksums"
             echo "# Verify: sha256sum -c checksums-${VERSION}.sha256"
             echo "#"
-            echo "# Commit: ${GITHUB_SHA}"
+            echo "# Commit: $(git rev-parse HEAD)"
             echo "# Date:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo ""
             cat delta-cli-*.sha256
@@ -432,14 +420,33 @@ jobs:
           cat "checksums-${VERSION}.sha256"
           echo "CHECKSUMS_FILE=checksums-${VERSION}.sha256" >> "$GITHUB_ENV"
 
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
+      - name: Attach CLI assets without changing release notes or draft status
+        run: |
+          gh release upload "$RELEASE_TAG" --clobber \
+            delta-cli-macos-arm64.tar.gz \
+            delta-cli-macos-x86_64.tar.gz \
+            delta-cli-linux-x86_64.tar.gz \
+            delta-cli-windows-x64.zip \
+            "$CHECKSUMS_FILE"
+
+  # Default success gating keeps a new release in draft if any build or upload fails.
+  publish-release:
+    needs: [prepare-release, build-tauri, attach-cli]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+      RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish the completed release
+        uses: actions/github-script@v7
         with:
-          tag_name: ${{ github.ref_name }}
-          draft: false
-          files: |
-            delta-cli-macos-arm64.tar.gz
-            delta-cli-macos-x86_64.tar.gz
-            delta-cli-linux-x86_64.tar.gz
-            delta-cli-windows-x64.zip
-            ${{ env.CHECKSUMS_FILE }}
+          script: |
+            const { publishRelease } = require('./scripts/release-notes.cjs');
+            await publishRelease({
+              github, context,
+              tag: process.env.RELEASE_TAG,
+              releaseId: process.env.RELEASE_ID
+            });

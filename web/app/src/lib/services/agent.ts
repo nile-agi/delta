@@ -1,4 +1,7 @@
 import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
+import type { QuickAddSuggestion } from '$lib/types/agent';
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 // Agent API shares the model API's server, so reuse its base URL resolution.
 function apiUrl(path: string): string {
@@ -52,6 +55,18 @@ export const agentService = {
 		return data.events ?? [];
 	},
 
+	/** A calendar item to add, or an existing one to move, spotted in `text`, or null. Changes nothing. */
+	async suggestQuickAction(text: string): Promise<DistributiveOmit<QuickAddSuggestion, 'status'> | null> {
+		const res = await fetch(apiUrl('/v1/agent/quick-add'), {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ text, now: Math.floor(Date.now() / 1000) })
+		});
+		if (!res.ok) return null;
+		const data = await res.json();
+		return data.suggestion ?? null;
+	},
+
 	async createEvent(event: Partial<CalendarEvent>): Promise<CalendarEvent> {
 		const res = await fetch(apiUrl('/api/agent/events'), {
 			method: 'POST',
@@ -87,6 +102,20 @@ export const agentService = {
 		const res = await fetch(apiUrl('/api/agent/reminders/pending'));
 		const data = await res.json();
 		return data.reminders ?? [];
+	},
+
+	/** Forgets every remembered "always" / "never" approval answer, so destructive tools ask again. */
+	async resetToolPolicies(): Promise<void> {
+		const res = await fetch(apiUrl('/v1/agent/policies'), { method: 'DELETE' });
+		if (!res.ok) throw new Error(`Failed to reset tool policies: ${res.status}`);
+	},
+
+	/** The remembered approval answers, keyed by tool name. */
+	async getToolPolicies(): Promise<Record<string, string>> {
+		const res = await fetch(apiUrl('/v1/agent/tools'));
+		if (!res.ok) throw new Error(`Failed to load tool policies: ${res.status}`);
+		const data = (await res.json()) as { policies?: Record<string, string> };
+		return data.policies ?? {};
 	},
 
 	async getTools(): Promise<{ tools: unknown[]; tool_names: string[] }> {

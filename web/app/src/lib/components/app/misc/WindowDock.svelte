@@ -1,20 +1,18 @@
 <script lang="ts">
-	import { X, Settings, StickyNote, Calendar, Activity } from '@lucide/svelte';
+	import { X, StickyNote, Calendar, Activity } from '@lucide/svelte';
 	import { dockStore } from '$lib/stores/dock.svelte';
-	import { settingsWindow } from '$lib/stores/settings-window.svelte';
 	import { notesWindow } from '$lib/stores/notes-window.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
 	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
 
 	const windowMap = {
-		settings: { store: settingsWindow, title: 'Settings', icon: Settings },
 		notes: { store: notesWindow, title: 'Notes', icon: StickyNote },
 		calendar: { store: calendarWindow, title: 'Calendar', icon: Calendar },
 		'hardware-telemetry': { store: hardwareWindow, title: 'Hardware', icon: Activity }
 	};
 
 	// REMOVED 'calendar' from this set so it WILL appear in the footer dock
-	const ACTION_BAR_IDS = new Set(['notes', 'settings']);
+	const ACTION_BAR_IDS = new Set(['notes']);
 	let dockWindows = $derived(dockStore.windows.filter(w => !ACTION_BAR_IDS.has(w.id)));
 
 	function handleRestore(id: string) {

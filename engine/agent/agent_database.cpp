@@ -1,4 +1,6 @@
 #include "agent_database.h"
+#include "memory_store.h"
+#include "task_store.h"
 #include "time_compat.h"
 #include <nlohmann/json.hpp>
 #include <filesystem>
@@ -22,6 +24,7 @@ AgentDatabase::~AgentDatabase() {
 }
 
 bool AgentDatabase::init(const std::string& db_path) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_)
         return true;
 
@@ -51,6 +54,10 @@ bool AgentDatabase::init(const std::string& db_path) {
 }
 
 void AgentDatabase::close() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    // Tell the sharer first, or it keeps a freed pointer and still reports itself ready.
+    MemoryStore::instance().detach();
+    TaskStore::instance().detach();
     if (db_) {
         sqlite3_close(db_);
         db_ = nullptr;
@@ -183,6 +190,41 @@ bool AgentDatabase::run_migrations() {
         current = 5;
     }
 
+    // Migration v6: repair a notes table that predates the title and folder columns.
+    // Early builds created `notes` without them. Because migration v4 used CREATE TABLE IF NOT
+    // EXISTS, those databases kept the old table while the schema version was still bumped to 4,
+    // so every notes tool has been failing on "table notes has no column named title".
+    if (current < 6) {
+        std::cerr << "[delta-db] running migration v6: repairing notes columns" << std::endl;
+        bool table_exists = false, has_title = false, has_folder = false;
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, "PRAGMA table_info(notes)", -1, &stmt, nullptr) == SQLITE_OK) {
+            while (sqlite3_step(stmt) == SQLITE_ROW) {
+                table_exists = true;
+                const unsigned char* name = sqlite3_column_text(stmt, 1);
+                if (!name)
+                    continue;
+                const std::string column(reinterpret_cast<const char*>(name));
+                if (column == "title")
+                    has_title = true;
+                else if (column == "folder")
+                    has_folder = true;
+            }
+            sqlite3_finalize(stmt);
+        }
+        if (table_exists) {
+            // A default is required here: SQLite cannot add a NOT NULL column to a table with rows
+            // in it otherwise.
+            if (!has_title)
+                exec_sql("ALTER TABLE notes ADD COLUMN title TEXT NOT NULL DEFAULT 'Untitled'");
+            if (!has_folder)
+                exec_sql("ALTER TABLE notes ADD COLUMN folder TEXT DEFAULT 'General'");
+            exec_sql("CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder)");
+        }
+        set_schema_version(6);
+        current = 6;
+    }
+
     return true;
 }
 
@@ -243,6 +285,7 @@ nlohmann::json AgentDatabase::row_to_event(sqlite3_stmt* stmt) {
 }
 
 std::string AgentDatabase::create_event(const nlohmann::json& data) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::string id = generate_uuid();
     std::string now = get_current_timestamp();
     sqlite3_stmt* stmt;
@@ -276,6 +319,7 @@ std::string AgentDatabase::create_event(const nlohmann::json& data) {
 }
 
 nlohmann::json AgentDatabase::get_event(const std::string& id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     std::string sql = std::string("SELECT ") + ALL_COLS + " FROM calendar_events WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
@@ -291,6 +335,7 @@ nlohmann::json AgentDatabase::get_event(const std::string& id) {
 std::vector<nlohmann::json> AgentDatabase::list_events(const std::string& start, const std::string& end, int limit,
                                                        const std::string& type, const std::string& status,
                                                        const std::string& priority, const std::string& tags) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::string sql = std::string("SELECT ") + ALL_COLS + " FROM calendar_events";
     std::vector<std::string> conditions;
     if (!start.empty())
@@ -341,6 +386,7 @@ std::vector<nlohmann::json> AgentDatabase::list_events(const std::string& start,
 }
 
 bool AgentDatabase::update_event(const std::string& id, const nlohmann::json& data) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto existing = get_event(id);
     if (existing.is_null())
         return false;
@@ -384,6 +430,7 @@ bool AgentDatabase::update_event(const std::string& id, const nlohmann::json& da
 }
 
 bool AgentDatabase::delete_event(const std::string& id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     const char* sql = "DELETE FROM calendar_events WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -395,6 +442,7 @@ bool AgentDatabase::delete_event(const std::string& id) {
 }
 
 std::vector<nlohmann::json> AgentDatabase::get_upcoming_reminders() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::vector<nlohmann::json> results;
     const char* sql = R"(
     SELECT id, title, start_time, reminder_minutes, type FROM calendar_events
@@ -421,6 +469,7 @@ std::vector<nlohmann::json> AgentDatabase::get_upcoming_reminders() {
 }
 
 bool AgentDatabase::mark_reminded(const std::string& id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     const char* sql = "UPDATE calendar_events SET reminded = 1 WHERE id = ?";
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -434,6 +483,7 @@ bool AgentDatabase::mark_reminded(const std::string& id) {
 // --- Notes CRUD ---
 
 std::string AgentDatabase::create_note(const nlohmann::json& data) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::string id = generate_uuid();
     std::string now = get_current_timestamp();
     sqlite3_stmt* stmt;
@@ -459,6 +509,7 @@ std::string AgentDatabase::create_note(const nlohmann::json& data) {
 }
 
 nlohmann::json AgentDatabase::get_note(const std::string& id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     const char* sql = "SELECT id, title, content, folder, tags, pinned, created_at, updated_at FROM notes WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -480,6 +531,7 @@ nlohmann::json AgentDatabase::get_note(const std::string& id) {
 
 std::vector<nlohmann::json> AgentDatabase::list_notes(const std::string& folder, const std::string& search,
                                                       const std::string& tags, int limit, bool pinned_only) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::string sql = "SELECT id, title, content, folder, tags, pinned, created_at, updated_at FROM notes WHERE 1=1";
     std::vector<std::string> params;
     if (pinned_only)
@@ -525,6 +577,7 @@ std::vector<nlohmann::json> AgentDatabase::list_notes(const std::string& folder,
 }
 
 bool AgentDatabase::update_note(const std::string& id, const nlohmann::json& data) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto existing = get_note(id);
     if (existing.is_null())
         return false;
@@ -552,6 +605,7 @@ bool AgentDatabase::update_note(const std::string& id, const nlohmann::json& dat
 }
 
 bool AgentDatabase::delete_note(const std::string& id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     const char* sql = "DELETE FROM notes WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -563,7 +617,7 @@ bool AgentDatabase::delete_note(const std::string& id) {
 }
 
 std::string AgentDatabase::add_rpc_node(const std::string& name, const std::string& endpoint) {
-    std::string id = generate_uuid();
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     // Parse endpoint "host:port"
     size_t colon = endpoint.rfind(':');
@@ -591,10 +645,16 @@ std::string AgentDatabase::add_rpc_node(const std::string& name, const std::stri
 
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    return (rc == SQLITE_DONE) ? id : "";
+    if (rc != SQLITE_DONE)
+        return "";
+    // worker_nodes keys on an autoincrement column, so hand back the row that was actually
+    // written. The generated id returned before matched no row, and a follow-up toggle or delete
+    // against it silently did nothing.
+    return std::to_string(sqlite3_last_insert_rowid(db_));
 }
 
 std::vector<AgentDatabase::RpcNode> AgentDatabase::get_enabled_rpc_nodes() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::vector<RpcNode> nodes;
     sqlite3_stmt* stmt;
     const char* sql =
@@ -627,6 +687,7 @@ std::vector<AgentDatabase::RpcNode> AgentDatabase::get_enabled_rpc_nodes() {
 }
 
 std::vector<AgentDatabase::RpcNode> AgentDatabase::list_rpc_nodes() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::vector<RpcNode> nodes;
     sqlite3_stmt* stmt;
     const char* sql = "SELECT id, name, ip, port, enabled, created_at FROM worker_nodes ORDER BY created_at DESC";
@@ -655,6 +716,7 @@ std::vector<AgentDatabase::RpcNode> AgentDatabase::list_rpc_nodes() {
 }
 
 bool AgentDatabase::update_rpc_node_status(const std::string& id, bool enabled) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     const char* sql = "UPDATE worker_nodes SET enabled = ? WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -663,10 +725,11 @@ bool AgentDatabase::update_rpc_node_status(const std::string& id, bool enabled) 
     sqlite3_bind_text(stmt, 2, id.c_str(), -1, SQLITE_TRANSIENT);
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    return rc == SQLITE_DONE;
+    return rc == SQLITE_DONE && sqlite3_changes(db_) > 0;
 }
 
 bool AgentDatabase::delete_rpc_node(const std::string& id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     sqlite3_stmt* stmt;
     const char* sql = "DELETE FROM worker_nodes WHERE id = ?";
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)

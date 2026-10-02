@@ -154,6 +154,8 @@
 					`Failed to set context: ${error instanceof Error ? error.message : String(error)}`
 				);
 			}
+		} else {
+			toast.success(`Context preference saved for ${modelName}.`);
 		}
 	}
 

@@ -12,6 +12,7 @@
 		isLogoPath
 	} from '$lib/data/models_catalog';
 	import { fly } from 'svelte/transition';
+	import { toast } from 'svelte-sonner';
 
 	const STORAGE_KEY_PREFIX = 'delta_model_ctx_';
 
@@ -61,10 +62,14 @@
 	});
 
 	function setContext(ctx: number) {
-		selectedCtx = ctx;
-		if (typeof window !== 'undefined') {
+		try {
 			localStorage.setItem(STORAGE_KEY_PREFIX + model.name, String(ctx));
+		} catch (error) {
+			console.error('Failed to save model context:', error);
+			toast.error('Could not save model context. Please try again.');
+			return;
 		}
+		selectedCtx = ctx;
 		onContextChange?.(model.name, ctx);
 	}
 
@@ -96,9 +101,15 @@
 		return '32k ctx';
 	}
 
-	function copyModelPath(e: MouseEvent) {
+	async function copyModelPath(e: MouseEvent) {
 		e.stopPropagation();
-		navigator.clipboard.writeText(model.name);
+		try {
+			await navigator.clipboard.writeText(model.name);
+			toast.success('Model name copied.');
+		} catch (error) {
+			console.error('Failed to copy model name:', error);
+			toast.error('Could not copy model name. Please try again.');
+		}
 	}
 
 	function handleDelete(e: MouseEvent) {

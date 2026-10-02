@@ -7,6 +7,12 @@
 #include "update.h"
 #include "commands.h"
 #include "history.h"
+#include "agent/agent_database.h"
+#include "agent/harness.h"
+#include "agent/memory_store.h"
+#include "agent/task_store.h"
+#include "agent/policy.h"
+#include "agent/tool_registry.h"
 #include <iostream>
 #include <string>
 #include <cstring>
@@ -119,6 +125,151 @@ void print_version() {
     std::cout << "Professional offline AI assistant" << std::endl;
 }
 
+namespace {
+
+/**
+ * Renders one harness run to the terminal.
+ *
+ * The CLI is the one place where an approval prompt can simply be asked and answered inline:
+ * the harness calls this sink on the same thread it then parks on, so reading the answer from
+ * stdin here and resolving the broker unblocks the run directly.
+ */
+class CliRunPrinter {
+  public:
+    bool operator()(const delta::agent::HarnessEvent& event) {
+        using delta::agent::EventType;
+#ifndef _WIN32
+        // Ctrl-C during a reply stops the run; the prompt loop decides afterwards whether to exit.
+        if (g_exit_requested)
+            return false;
+#endif
+
+        switch (event.type) {
+        case EventType::Content: {
+            const std::string text = event.data.value("text", "");
+            if (text.empty())
+                return true;
+            std::cout << text << std::flush;
+            mid_line_ = text.back() != '\n';
+            return true;
+        }
+
+        case EventType::ToolStart:
+            break_line();
+            std::cout << "  . " << event.data.value("name", "")
+                      << describe_arguments(event.data.value("arguments", nlohmann::json::object())) << std::endl;
+            return true;
+
+        case EventType::ToolResult: {
+            break_line();
+            const bool ok = event.data.value("success", false);
+            const std::string summary = ok ? event.data.value("summary", std::string("done"))
+                                           : event.data.value("error", std::string("failed"));
+            std::cout << (ok ? "  + " : "  ! ") << summary << std::endl;
+            return true;
+        }
+
+        case EventType::ApprovalRequired:
+            break_line();
+            resolve_interactively(event.data);
+            return true;
+
+        case EventType::Compaction: {
+            const int dropped = event.data.value("dropped", 0);
+            if (dropped <= 0)
+                return true;
+            break_line();
+            std::cout << "  ~ trimmed " << dropped << " earlier message(s) to fit the context window"
+                      << (event.data.value("summarized", false) ? " (summarized)" : "") << std::endl;
+            return true;
+        }
+
+        case EventType::Status:
+        case EventType::Error: {
+            const std::string message = event.data.value("message", "");
+            if (message.empty())
+                return true;
+            break_line();
+            std::cout << "  ~ " << message << std::endl;
+            return true;
+        }
+
+        case EventType::Reasoning:
+            // The model's working, not its answer. Kept off the terminal so the reply reads cleanly.
+            return true;
+
+        case EventType::ApprovalResolved:
+            return true;
+        }
+        return true;
+    }
+
+    // Ends the current line of streamed text so activity lines never land mid-sentence.
+    void break_line() {
+        if (mid_line_) {
+            std::cout << std::endl;
+            mid_line_ = false;
+        }
+    }
+
+  private:
+    static std::string describe_arguments(const nlohmann::json& args) {
+        if (!args.is_object() || args.empty())
+            return "";
+        std::string out;
+        for (auto it = args.begin(); it != args.end(); ++it) {
+            std::string value = it.value().is_string() ? it.value().get<std::string>() : it.value().dump();
+            if (value.size() > 80)
+                value = value.substr(0, 80) + "...";
+            out += (out.empty() ? " (" : ", ") + it.key() + ": " + value;
+        }
+        return out + ")";
+    }
+
+    static void resolve_interactively(const nlohmann::json& request) {
+        const std::string id = request.value("id", "");
+        const std::string name = request.value("name", "");
+
+        std::cout << "\n  Delta wants to run: " << name
+                  << describe_arguments(request.value("arguments", nlohmann::json::object())) << std::endl;
+        std::cout << "  Allow? [y]es once / [a]lways / [n]o / ne[v]er: " << std::flush;
+
+        std::string answer;
+        if (!std::getline(std::cin, answer)) {
+            // stdin is gone (piped input, closed terminal) or the read was interrupted by Ctrl-C:
+            // refuse rather than hang, and leave the stream usable for the next prompt.
+            if (!std::cin.eof())
+                std::cin.clear();
+            delta::agent::ApprovalBroker::instance().resolve(id, "deny");
+            std::cout << "  (no input available, skipping)" << std::endl;
+            return;
+        }
+
+        std::string decision = "deny";
+        if (!answer.empty()) {
+            switch (std::tolower(static_cast<unsigned char>(answer[0]))) {
+            case 'y':
+                decision = "allow";
+                break;
+            case 'a':
+                decision = "always";
+                break;
+            case 'v':
+                decision = "never";
+                break;
+            default:
+                decision = "deny";
+                break;
+            }
+        }
+        delta::agent::ApprovalBroker::instance().resolve(id, decision);
+    }
+
+    bool mid_line_ = false;
+};
+
+} // namespace
+
 void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelManager& model_mgr,
                       const std::string& current_model) {
     // Initialize command system
@@ -138,7 +289,8 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     session.config = &config;
     session.model_mgr = &model_mgr;
     session.current_model = current_model;
-    session.max_tokens = 256;
+    // Replies are bounded by the harness's max_tokens; 256 cut answers off mid-sentence.
+    session.max_tokens = 2048;
     session.temperature = config.temperature;
     session.gpu_layers = config.n_gpu_layers;
     session.multimodal = config.multimodal;
@@ -205,6 +357,70 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     // Do not accumulate or inject prior turns into prompts; rely on clean llama context per turn
     std::vector<std::string> history;
 
+    // --- Agent harness ---
+    // interactive_mode already starts llama-server above, so the harness can drive that same
+    // process: the CLI gets the tool loop, memory and context management the desktop app has,
+    // instead of the single-shot 50-token completion it used to do.
+    std::string harness_url;
+    bool harness_supports_tools = false;
+    if (!current_model.empty()) {
+        const int server_port = Commands::get_current_port();
+        if (server_port > 0) {
+            const std::string candidate = "http://127.0.0.1:" + std::to_string(server_port);
+            agent::LlmClient probe(candidate, current_model);
+
+            // The server was only just spawned and still has to load the weights, which takes
+            // tens of seconds for a larger model. Poll instead of deciding on the first attempt,
+            // or a slow-loading model quietly falls back to in-process inference with no tools.
+            constexpr int kServerWaitSeconds = 120;
+            bool announced = false;
+            for (int attempt = 0; attempt < kServerWaitSeconds; attempt++) {
+                if (probe.probe_context_size() > 0) {
+                    harness_url = candidate;
+                    break;
+                }
+                if (!announced) {
+                    UI::print_info("Waiting for the local model server to finish loading...");
+                    announced = true;
+                }
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+
+            if (!harness_url.empty() && model_mgr.is_in_registry(current_model))
+                harness_supports_tools = model_mgr.get_registry_entry(current_model).supports_tools;
+        }
+    }
+
+    // The agent database backs /memory, /plan and /policies as well as the tools, so open it
+    // whether or not a model is loaded.
+    if (!agent::AgentDatabase::instance().init())
+        UI::print_error("Agent database unavailable - calendar, notes and memory tools are disabled.");
+    else {
+        if (!agent::MemoryStore::instance().init(agent::AgentDatabase::instance().handle()))
+            UI::print_error("Memory store unavailable - Delta will not remember anything this session.");
+        if (!agent::TaskStore::instance().init(agent::AgentDatabase::instance().handle()))
+            UI::print_error("Task store unavailable - Delta cannot resume agent work this session.");
+    }
+
+    if (!harness_url.empty()) {
+        agent::register_all_tools();
+    } else if (!current_model.empty()) {
+        // No reachable model server: fall back to in-process inference, loading the weights now
+        // rather than at startup so the harness path never pays for a second copy.
+        UI::print_info("Local model server unavailable; loading the model in-process.");
+        if (!engine.load_model(config))
+            UI::print_error("Failed to load model. Responses are unavailable this session.");
+    }
+
+    // The transcript the harness sees. It trims this to the model's context window itself.
+    nlohmann::json conversation = nlohmann::json::array();
+    // One plan scratchpad for the whole interactive session, so "keep going" resumes the plan.
+    // Includes the pid so two terminals started in the same second do not share a plan.
+    const std::string scratchpad_id = "cli_" + std::to_string(static_cast<long long>(time(nullptr))) + "_" +
+                                      std::to_string(static_cast<long long>(getpid()));
+    session.scratchpad_id = scratchpad_id;
+    session.conversation = &conversation;
+
 #ifndef _WIN32
     // Register signal handlers so closing terminal or Ctrl+C stops llama-server
     struct sigaction sa;
@@ -270,8 +486,8 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             }
         }
 
-        // Check if model is loaded before processing text input
-        if (!engine.is_loaded()) {
+        // With the harness driving llama-server there is no in-process model to check.
+        if (harness_url.empty() && !engine.is_loaded()) {
             continue;
         }
 
@@ -282,25 +498,61 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
         try {
             std::cout << "\n";
 
-            // Use clean prompt without modifications
-            std::string simple_prompt = input;
+            std::string response;
 
-            // Generate response with real-time streaming
-            // Use very short max_tokens for concise responses
-            int max_tokens = std::min(session.max_tokens, 50);
-            std::string response = engine.generate(simple_prompt, max_tokens, true);
+            if (!harness_url.empty()) {
+                conversation.push_back({{"role", "user"}, {"content", input}});
 
-            // Clean up the response
-            response.erase(0, response.find_first_not_of(" \t\n\r"));
-            response.erase(response.find_last_not_of(" \t\n\r") + 1);
+                agent::Harness harness(harness_url, session.current_model, harness_supports_tools);
+                agent::RunOptions options;
+                options.max_tokens = session.max_tokens;
+                options.tools_enabled = harness_supports_tools;
+                options.scratchpad_id = scratchpad_id;
+                // The terminal is one continuing conversation with the user, so memories saved in
+                // one session are recalled in the next; the plan and notes stay session-local.
+                options.memory_scope = "cli";
+#ifndef _WIN32
+                // Lets Ctrl-C land while the model is still thinking, before any output arrives.
+                options.abort_requested = [] { return g_exit_requested != 0; };
+#endif
+                harness.set_options(options);
 
-            // Basic cleanup - just trim whitespace
-            // Let the model's natural response come through
+                CliRunPrinter printer;
+                auto result =
+                    harness.run(conversation, [&printer](const agent::HarnessEvent& event) { return printer(event); });
+                printer.break_line();
+
+                if (result.success) {
+                    response = result.content;
+                    // Keep the tool calls and their results, not just the reply, so the next turn
+                    // can refer to what was actually read, written or run.
+                    for (const auto& msg : result.transcript_delta)
+                        conversation.push_back(msg);
+                } else if (result.client_aborted) {
+#ifndef _WIN32
+                    // Ctrl-C: stop this reply, stay in the session. Another Ctrl-C at the prompt exits.
+                    g_exit_requested = 0;
+                    if (!std::cin.eof())
+                        std::cin.clear();
+#endif
+                    UI::print_info("Stopped.");
+                    conversation.erase(conversation.size() - 1);
+                } else {
+                    UI::print_error(result.error.empty() ? "The model did not return a response." : result.error);
+                    conversation.erase(conversation.size() - 1); // drop the user turn we could not answer
+                }
+            } else {
+                // No local model server: fall back to the in-process engine, single turn.
+                int max_tokens = std::min(session.max_tokens, 50);
+                response = engine.generate(input, max_tokens, true);
+                response.erase(0, response.find_first_not_of(" \t\n\r"));
+                response.erase(response.find_last_not_of(" \t\n\r") + 1);
+            }
 
             std::cout << "\n" << std::endl;
 
-            // Save to history (no injection back into prompt state)
-            history_mgr.add_entry(input, response, session.current_model);
+            if (!response.empty())
+                history_mgr.add_entry(input, response, session.current_model);
         } catch (const std::exception& e) {
             UI::print_error(std::string("Error generating response: ") + e.what());
         }
@@ -1013,15 +1265,20 @@ int main(int argc, char** argv) {
     config.model_path = model_path;
 
     InferenceEngine engine;
-    if (!interactive && !prompt.empty()) {
+    const bool entering_interactive = interactive || prompt.empty();
+
+    // Interactive mode drives the model through the llama-server it starts, so it loads the model
+    // in-process only if that server turns out to be unreachable. Loading here as well would keep
+    // a second copy of the weights in memory for the whole session.
+    if (!entering_interactive) {
         UI::print_info("Loading model: " + model_name);
-    }
-    if (!engine.load_model(config)) {
-        UI::print_error("Failed to load model");
-        return 1;
+        if (!engine.load_model(config)) {
+            UI::print_error("Failed to load model");
+            return 1;
+        }
     }
 
-    if (interactive || prompt.empty()) {
+    if (entering_interactive) {
         if (prompt.empty())
             std::cout << std::endl;
         interactive_mode(engine, config, model_mgr, model_name);

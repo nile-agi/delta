@@ -126,6 +126,12 @@ endif()
 
 add_subdirectory(engine/vendor/llama.cpp)
 
+# macOS 27 SDK deprecates MTLDevice.location and MTLGPUFamilyCommon*; upstream ggml
+# still uses them. Keep the vendored Metal backend quiet without patching the submodule.
+if(APPLE AND TARGET ggml-metal)
+    target_compile_options(ggml-metal PRIVATE -Wno-deprecated-declarations)
+endif()
+
 # SQLite amalgamation (embedded, no external dependency)
 add_library(sqlite3 STATIC engine/vendor/sqlite3/sqlite3.c)
 target_include_directories(sqlite3 PUBLIC engine/vendor/sqlite3)
@@ -182,10 +188,21 @@ set(DELTA_SOURCES
     engine/model_api_server.cpp
     engine/api/note_routes.cpp
     engine/agent/agent_database.cpp
+    engine/agent/memory_store.cpp
+    engine/agent/task_store.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
     engine/agent/tool_notes.cpp
-    engine/agent/agent_loop.cpp
+    engine/agent/tool_memory.cpp
+    engine/agent/tool_task.cpp
+    engine/agent/tool_files.cpp
+    engine/agent/tool_shell.cpp
+    engine/agent/llm_client.cpp
+    engine/agent/context_manager.cpp
+    engine/agent/policy.cpp
+    engine/agent/harness.cpp
+    engine/agent/text_tool_call.cpp
+    engine/agent/quick_add.cpp
 )
 
 # Common include directories
@@ -258,10 +275,21 @@ add_executable(delta-server
     engine/ui.cpp
     engine/api/note_routes.cpp
     engine/agent/agent_database.cpp
+    engine/agent/memory_store.cpp
+    engine/agent/task_store.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
-    engine/agent/agent_loop.cpp
     engine/agent/tool_notes.cpp
+    engine/agent/tool_memory.cpp
+    engine/agent/tool_task.cpp
+    engine/agent/tool_files.cpp
+    engine/agent/tool_shell.cpp
+    engine/agent/llm_client.cpp
+    engine/agent/context_manager.cpp
+    engine/agent/policy.cpp
+    engine/agent/harness.cpp
+    engine/agent/text_tool_call.cpp
+    engine/agent/quick_add.cpp
 )
 target_compile_definitions(delta-server PRIVATE
     DELTA_VERSION="${PROJECT_VERSION}"
@@ -349,6 +377,45 @@ if(MSVC)
 else()
     target_compile_options(delta PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(delta-server PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# Harness tests: a standalone binary (no Catch2 dependency) that runs the agent loop against a
+# scripted stand-in for llama-server. Build and run with:
+#   cmake --build build --target delta-harness-tests && ./build/delta-harness-tests
+add_executable(delta-harness-tests EXCLUDE_FROM_ALL
+    tests/test_harness.cpp
+    engine/agent/agent_database.cpp
+    engine/agent/memory_store.cpp
+    engine/agent/task_store.cpp
+    engine/agent/tool_registry.cpp
+    engine/agent/tool_calendar.cpp
+    engine/agent/tool_notes.cpp
+    engine/agent/tool_memory.cpp
+    engine/agent/tool_task.cpp
+    engine/agent/tool_files.cpp
+    engine/agent/tool_shell.cpp
+    engine/agent/llm_client.cpp
+    engine/agent/context_manager.cpp
+    engine/agent/policy.cpp
+    engine/agent/harness.cpp
+    engine/agent/text_tool_call.cpp
+    engine/agent/quick_add.cpp
+)
+target_include_directories(delta-harness-tests PRIVATE ${DELTA_INCLUDE_DIRS})
+target_link_libraries(delta-harness-tests PRIVATE
+    cpp-httplib
+    sqlite3
+    ${CMAKE_THREAD_LIBS_INIT}
+)
+if(USE_CURL AND CURL_FOUND)
+    target_link_libraries(delta-harness-tests PRIVATE CURL::libcurl)
+endif()
+if(WIN32)
+    target_compile_definitions(delta-harness-tests PRIVATE NOMINMAX)
+    target_link_libraries(delta-harness-tests PRIVATE ws2_32)
+endif()
+if(APPLE)
+    target_link_libraries(delta-harness-tests PRIVATE c++)
 endif()
 
 # Tests

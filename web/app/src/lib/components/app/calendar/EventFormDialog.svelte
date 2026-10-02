@@ -20,10 +20,19 @@
 		mode: 'create' | 'edit';
 		item?: CalendarEvent | null;
 		defaultDate?: string;
+		/** Prefills a create form, e.g. from a chat suggestion. */
+		draft?: Partial<CalendarEvent> | null;
 		onSubmit: (data: Partial<CalendarEvent>) => Promise<void>;
 	}
 
-	let { open = $bindable(), mode, item = null, defaultDate = '', onSubmit }: Props = $props();
+	let {
+		open = $bindable(),
+		mode,
+		item = null,
+		defaultDate = '',
+		draft = null,
+		onSubmit
+	}: Props = $props();
 
 	const field =
 		'flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm dark:bg-input/30';
@@ -50,7 +59,10 @@
 		untrack(() => {
 			error = '';
 			if (mode === 'edit' && item) loadFrom(item);
-			else loadDefaults();
+			else {
+				loadDefaults();
+				if (draft) applyDraft(draft);
+			}
 		});
 	});
 
@@ -81,6 +93,17 @@
 		startTime = toLocalTimeStr(now);
 		endDate = startDate;
 		endTime = startTime;
+	}
+
+	function applyDraft(source: Partial<CalendarEvent>) {
+		if (source.type) selectType(source.type);
+		if (source.title) title = source.title;
+		allDay = !!source.all_day;
+		if (source.start_time) {
+			[startDate, startTime] = splitStamp(source.start_time);
+			endDate = startDate;
+			endTime = startTime;
+		}
 	}
 
 	function splitStamp(stamp: string): [string, string] {

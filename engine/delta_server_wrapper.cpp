@@ -94,6 +94,8 @@ class DeltaServerWrapper {
     bool enable_embedding_;
     bool enable_reranking_;
     std::string draft_model_;
+    bool used_auto_draft_ = false;     // the last command carried a draft the user did not ask for
+    bool suppress_auto_draft_ = false; // set while retrying a launch that failed with one
     std::string grammar_file_;
 
     std::thread llama_server_thread_;
@@ -389,6 +391,55 @@ class DeltaServerWrapper {
         return "";
     }
 
+    // The model family a GGUF belongs to, version included, since generations of one family can
+    // change tokenizer: "qwen2.5-0.5b..." -> "qwen2.5", "gemma-3-270m..." -> "gemma-3".
+    static std::string model_family(const std::string& path) {
+        std::string name = std::filesystem::path(path).filename().string();
+        for (auto& c : name)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        const size_t dash = name.find('-');
+        std::string family = name.substr(0, dash);
+        if (dash != std::string::npos) {
+            const size_t next = name.find('-', dash + 1);
+            const std::string segment =
+                name.substr(dash + 1, next == std::string::npos ? std::string::npos : next - dash - 1);
+            if (!segment.empty() && segment.find_first_not_of("0123456789.") == std::string::npos)
+                family += "-" + segment;
+        }
+        return family;
+    }
+
+    // A same-family GGUF in `dir` at most a third the size of `model_path`, or "" when none fits.
+    // The smallest match wins, since a draft is only worth running if it is cheap.
+    static std::string find_draft_model(const std::string& dir, const std::string& model_path) {
+        std::error_code ec;
+        if (!std::filesystem::is_directory(dir, ec))
+            return "";
+        const auto main_size = std::filesystem::file_size(model_path, ec);
+        if (ec || main_size == 0)
+            return "";
+        const std::string family = model_family(model_path);
+        if (family.empty())
+            return "";
+        std::string best;
+        std::uintmax_t best_size = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+            const std::string path = entry.path().string();
+            if (entry.path().extension() != ".gguf" || std::filesystem::equivalent(path, model_path, ec))
+                continue;
+            if (model_family(path) != family)
+                continue;
+            const auto size = entry.file_size(ec);
+            if (ec || size == 0 || size * 3 > main_size)
+                continue;
+            if (best.empty() || size < best_size) {
+                best = path;
+                best_size = size;
+            }
+        }
+        return best;
+    }
+
     std::string build_llama_server_command(const std::string& model_path, int ctx_size,
                                            const std::string& model_alias) {
         std::string cmd;
@@ -438,15 +489,6 @@ class DeltaServerWrapper {
             cmd += " --embedding";
         if (enable_reranking_)
             cmd += " --reranking";
-        if (!draft_model_.empty())
-            cmd += " --model-draft \"" + draft_model_ + "\"";
-        if (!grammar_file_.empty())
-            cmd += " --grammar-file \"" + grammar_file_ + "\"";
-
-        if (enable_embedding_)
-            cmd += " --embedding";
-        if (enable_reranking_)
-            cmd += " --reranking";
 
         // ============================================================================
         // ENHANCEMENT D: Model Context Protocol (MCP) Integration
@@ -464,34 +506,22 @@ class DeltaServerWrapper {
 
         // ============================================================================
         // ENHANCEMENT B: Speculative Decoding for Tool Loops
-        // If no draft model is explicitly provided, auto-detect a small GGUF in the models directory.
+        // A draft only helps when it shares the main model's tokenizer and is much smaller. The
+        // old scan took the first small file it found, so gemma-270m was paired with a larger qwen.
         // ============================================================================
-        if (draft_model_.empty()) {
+        std::string draft = draft_model_;
+        used_auto_draft_ = false;
+        if (draft.empty() && !model_path.empty() && !suppress_auto_draft_) {
             std::string models_dir_path = models_dir_.empty() ? (get_executable_dir() + "/models") : models_dir_;
-            if (std::filesystem::exists(models_dir_path) && std::filesystem::is_directory(models_dir_path)) {
-                for (const auto& entry : std::filesystem::directory_iterator(models_dir_path)) {
-                    std::string fname = entry.path().filename().string();
-                    std::string lower_fname = fname;
-                    for (auto& c : lower_fname)
-                        c = std::tolower(static_cast<unsigned char>(c));
-
-                    bool is_small = (lower_fname.find("0.5b") != std::string::npos ||
-                                     lower_fname.find("1.5b") != std::string::npos ||
-                                     lower_fname.find("tinyllama") != std::string::npos ||
-                                     lower_fname.find("smollm") != std::string::npos ||
-                                     lower_fname.find("draft") != std::string::npos);
-
-                    if (is_small && lower_fname.find(".gguf") != std::string::npos) {
-                        draft_model_ = entry.path().string();
-                        std::cout << "[Speculative] Auto-detected draft model: " << draft_model_ << std::endl;
-                        break;
-                    }
-                }
-            }
+            draft = find_draft_model(models_dir_path, model_path);
+            used_auto_draft_ = !draft.empty();
+            if (used_auto_draft_)
+                std::cout << "[Speculative] Auto-detected draft model: " << draft << std::endl;
         }
-        if (!draft_model_.empty()) {
-            cmd += " --model-draft \"" + draft_model_ + "\"";
-            cmd += " --draft-max 16"; // Standard draft token limit for speculative decoding
+        if (!draft.empty()) {
+            cmd += " --model-draft \"" + draft + "\"";
+            // --draft-max was removed upstream; llama-server refuses to start when it is passed.
+            cmd += " --spec-draft-n-max 16";
         }
 
         if (!grammar_file_.empty())
@@ -640,6 +670,21 @@ class DeltaServerWrapper {
 
     ServerReadyState restart_llama_server(const std::string& new_model_path, const std::string& model_name,
                                           int ctx_size, const std::string& model_alias) {
+        ServerReadyState state = launch_llama_server(new_model_path, model_name, ctx_size, model_alias);
+        // A draft picked automatically is an optimisation; if the server would not start with it,
+        // start the model without one rather than failing the load.
+        if (state == ServerReadyState::Exited && used_auto_draft_) {
+            std::cerr << "[Speculative] llama-server failed with the auto-detected draft; retrying without it"
+                      << std::endl;
+            suppress_auto_draft_ = true;
+            state = launch_llama_server(new_model_path, model_name, ctx_size, model_alias);
+            suppress_auto_draft_ = false;
+        }
+        return state;
+    }
+
+    ServerReadyState launch_llama_server(const std::string& new_model_path, const std::string& model_name, int ctx_size,
+                                         const std::string& model_alias) {
         // Mutable local copy: DHATS self-heal below may clear or rewrite the path
         std::string model_path_to_use = new_model_path;
 

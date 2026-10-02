@@ -1,4 +1,5 @@
 #include "tool_calendar.h"
+#include <optional>
 #include "agent_database.h"
 #include "time_compat.h"
 #include "tool_registry.h"
@@ -18,6 +19,121 @@ static nlohmann::json strip_id(nlohmann::json obj) {
 
 // Resolve a model-provided start_time to a valid YYYY-MM-DDTHH:MM string.
 // Handles: valid ISO, past-date correction, "tomorrow", bare "HH:MM", garbage.
+std::optional<std::string> extract_clock_time(const std::string& s) {
+    std::string lower = s;
+    for (auto& c : lower)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    // Words first: in "noon 12000" the digits are a typo, and the digit rules below would read
+    // them as midnight.
+    // Whole words only: "afternoon" is not noon.
+    auto has_word = [&lower](const std::string& word) {
+        for (size_t at = lower.find(word); at != std::string::npos; at = lower.find(word, at + 1)) {
+            const bool starts = at == 0 || !std::isalpha(static_cast<unsigned char>(lower[at - 1]));
+            const size_t after = at + word.size();
+            const bool ends = after >= lower.size() || !std::isalpha(static_cast<unsigned char>(lower[after]));
+            if (starts && ends)
+                return true;
+        }
+        return false;
+    };
+    if (has_word("noon") || has_word("midday"))
+        return std::string("12:00");
+    if (has_word("midnight"))
+        return std::string("00:00");
+
+    // 1. HH:MM pattern, optionally followed by am/pm
+    for (size_t i = 0; i + 4 < lower.size(); i++) {
+        if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
+            std::isdigit(static_cast<unsigned char>(lower[i + 1])) && lower[i + 2] == ':' &&
+            std::isdigit(static_cast<unsigned char>(lower[i + 3])) &&
+            std::isdigit(static_cast<unsigned char>(lower[i + 4]))) {
+            int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
+            int m = (lower[i + 3] - '0') * 10 + (lower[i + 4] - '0');
+            if (h < 24 && m < 60) {
+                size_t after = i + 5;
+                while (after < lower.size() && lower[after] == ' ')
+                    after++;
+                if (after + 1 < lower.size()) {
+                    if (lower[after] == 'p' && lower[after + 1] == 'm' && h < 12)
+                        h += 12;
+                    if (lower[after] == 'a' && lower[after + 1] == 'm' && h == 12)
+                        h = 0;
+                }
+                char buf[6];
+                snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
+                return std::string(buf);
+            }
+        }
+    }
+
+    // 2. Digit(s) followed by am/pm: "1pm", "2am", "11pm", "12am"
+    for (size_t i = 0; i < lower.size(); i++) {
+        if (!std::isdigit(static_cast<unsigned char>(lower[i])))
+            continue;
+        int h = lower[i] - '0';
+        size_t j = i + 1;
+        if (j < lower.size() && std::isdigit(static_cast<unsigned char>(lower[j]))) {
+            h = h * 10 + (lower[j] - '0');
+            j++;
+        }
+        size_t k = j;
+        while (k < lower.size() && lower[k] == ' ')
+            k++;
+        if (k + 1 < lower.size()) {
+            bool is_pm = (lower[k] == 'p' && lower[k + 1] == 'm');
+            bool is_am = (lower[k] == 'a' && lower[k + 1] == 'm');
+            if ((is_am || is_pm) && h >= 1 && h <= 12) {
+                if (is_pm && h != 12)
+                    h += 12;
+                if (is_am && h == 12)
+                    h = 0;
+                char buf[6];
+                snprintf(buf, sizeof(buf), "%02d:00", h);
+                return std::string(buf);
+            }
+        }
+    }
+
+    // 3 and 4 read whole runs of digits, so the tail of a longer number is never taken on its own
+    // ("12000" used to yield its final "00", midnight).
+    for (size_t i = 0; i < lower.size();) {
+        if (!std::isdigit(static_cast<unsigned char>(lower[i]))) {
+            i++;
+            continue;
+        }
+        size_t j = i;
+        while (j < lower.size() && std::isdigit(static_cast<unsigned char>(lower[j])))
+            j++;
+        const std::string run = lower.substr(i, j - i);
+        const bool dated = (i > 0 && lower[i - 1] == '-') || (j < lower.size() && lower[j] == '-');
+        i = j;
+        if (dated)
+            continue; // part of a date like 2026-09-26
+        // 3. Military time "1300", or the same with a stray extra zero typed ("12000").
+        if (run.size() == 4 || (run.size() == 5 && run.back() == '0')) {
+            const int h = std::stoi(run.substr(0, 2));
+            const int m = std::stoi(run.substr(2, 2));
+            if (h < 24 && m < 60) {
+                char buf[6];
+                snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
+                return std::string(buf);
+            }
+        }
+        // 4. Bare two-digit hour: "13" -> "13:00"
+        if (run.size() == 2) {
+            const int h = std::stoi(run);
+            if (h <= 23) {
+                char buf[6];
+                snprintf(buf, sizeof(buf), "%02d:00", h);
+                return std::string(buf);
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
 std::string resolve_datetime(const std::string& raw) {
     time_t now = time(nullptr);
     struct tm t_now{};
@@ -34,102 +150,7 @@ std::string resolve_datetime(const std::string& raw) {
     std::string tomorrow(tom_buf);
 
     // Extract time from anywhere in the string.
-    // Handles: HH:MM, HH:MM am/pm, Hpm/Ham, HHMM military, bare HH.
-    auto extract_time = [](const std::string& s) -> std::string {
-        std::string lower = s;
-        for (auto& c : lower)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-
-        // 1. HH:MM pattern, optionally followed by am/pm
-        for (size_t i = 0; i + 4 < lower.size(); i++) {
-            if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 1])) && lower[i + 2] == ':' &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 3])) &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 4]))) {
-                int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
-                int m = (lower[i + 3] - '0') * 10 + (lower[i + 4] - '0');
-                if (h < 24 && m < 60) {
-                    size_t after = i + 5;
-                    while (after < lower.size() && lower[after] == ' ')
-                        after++;
-                    if (after + 1 < lower.size()) {
-                        if (lower[after] == 'p' && lower[after + 1] == 'm' && h < 12)
-                            h += 12;
-                        if (lower[after] == 'a' && lower[after + 1] == 'm' && h == 12)
-                            h = 0;
-                    }
-                    char buf[6];
-                    snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
-                    return std::string(buf);
-                }
-            }
-        }
-
-        // 2. Digit(s) followed by am/pm: "1pm", "2am", "11pm", "12am"
-        for (size_t i = 0; i < lower.size(); i++) {
-            if (!std::isdigit(static_cast<unsigned char>(lower[i])))
-                continue;
-            int h = lower[i] - '0';
-            size_t j = i + 1;
-            if (j < lower.size() && std::isdigit(static_cast<unsigned char>(lower[j]))) {
-                h = h * 10 + (lower[j] - '0');
-                j++;
-            }
-            size_t k = j;
-            while (k < lower.size() && lower[k] == ' ')
-                k++;
-            if (k + 1 < lower.size()) {
-                bool is_pm = (lower[k] == 'p' && lower[k + 1] == 'm');
-                bool is_am = (lower[k] == 'a' && lower[k + 1] == 'm');
-                if ((is_am || is_pm) && h >= 1 && h <= 12) {
-                    if (is_pm && h != 12)
-                        h += 12;
-                    if (is_am && h == 12)
-                        h = 0;
-                    char buf[6];
-                    snprintf(buf, sizeof(buf), "%02d:00", h);
-                    return std::string(buf);
-                }
-            }
-        }
-
-        // 3. 4-digit military time: "1300" -> "13:00"
-        for (size_t i = 0; i + 3 < lower.size(); i++) {
-            if (i > 0 && (std::isdigit(static_cast<unsigned char>(lower[i - 1])) || lower[i - 1] == '-'))
-                continue;
-            if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 1])) &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 2])) &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 3]))) {
-                if (i + 4 < lower.size() &&
-                    (std::isdigit(static_cast<unsigned char>(lower[i + 4])) || lower[i + 4] == '-'))
-                    continue;
-                int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
-                int m = (lower[i + 2] - '0') * 10 + (lower[i + 3] - '0');
-                if (h < 24 && m < 60) {
-                    char buf[6];
-                    snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
-                    return std::string(buf);
-                }
-            }
-        }
-
-        // 4. Bare two-digit hour: "13" -> "13:00"
-        for (size_t i = 0; i + 1 < lower.size(); i++) {
-            if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
-                std::isdigit(static_cast<unsigned char>(lower[i + 1]))) {
-                int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
-                if (h >= 0 && h <= 23 &&
-                    (i + 2 >= lower.size() || !std::isdigit(static_cast<unsigned char>(lower[i + 2])))) {
-                    char buf[6];
-                    snprintf(buf, sizeof(buf), "%02d:00", h);
-                    return std::string(buf);
-                }
-            }
-        }
-
-        return "09:00";
-    };
+    auto extract_time = [](const std::string& s) -> std::string { return extract_clock_time(s).value_or("09:00"); };
 
     // Check if it's already valid ISO YYYY-MM-DDTHH:MM
     auto is_iso = [](const std::string& s) -> bool {
@@ -249,8 +270,11 @@ void register_calendar_tools() {
             if (resolved_args.contains("end_time") && resolved_args["end_time"].is_string())
                 resolved_args["end_time"] = resolve_datetime(resolved_args["end_time"].get<std::string>());
 
-            // Auto-detect type if not explicitly set by model
-            if (!resolved_args.contains("type") || resolved_args["type"].get<std::string>() == "event") {
+            // Guess the type from the title, but only when the model did not say. Overruling an
+            // explicit type left the model asking for an event and silently getting a task.
+            bool guessed_task = false;
+            if (!resolved_args.contains("type") || !resolved_args["type"].is_string() ||
+                resolved_args["type"].get<std::string>().empty()) {
                 static const char* task_keywords[] = {
                     "work on",  "finish",   "review", "prepare", "submit",  "fix",    "build",  "write",
                     "read",     "buy",      "clean",  "call",    "email",   "send",   "study",  "practice",
@@ -259,6 +283,7 @@ void register_calendar_tools() {
                 for (int k = 0; task_keywords[k]; k++) {
                     if (title_lower.find(task_keywords[k]) != std::string::npos) {
                         resolved_args["type"] = "task";
+                        guessed_task = true;
                         break;
                     }
                 }
@@ -269,6 +294,10 @@ void register_calendar_tools() {
                 return {false, "", "Failed to create item."};
             auto event = db.get_event(id);
             auto result = strip_id(event);
+            if (guessed_task) {
+                result["note"] = "Recorded as a task because the title reads like something to do. "
+                                 "Pass type='event' if it is really an appointment.";
+            }
             if (!overlaps.empty()) {
                 nlohmann::json overlap_list = nlohmann::json::array();
                 for (auto& t : overlaps)
@@ -281,7 +310,9 @@ void register_calendar_tools() {
 
     registry.register_tool(
         {"list_events",
-         "Show calendar events and tasks. Use for 'what's on my calendar', 'what do I have today', 'show my tasks', "
+         "Search the calendar for events and tasks. This week's events and the active tasks are already "
+         "in the context above -- only call this to look outside that window or to filter, for example "
+         "'what do I have next month' or 'show me everything that is overdue'. Use for 'show my tasks', "
          "etc.",
          {{"type", "object"},
           {"properties",
@@ -389,7 +420,8 @@ void register_calendar_tools() {
             {"new_title", {{"type", "string"}, {"description", "New title if renaming"}}},
             {"start_time",
              {{"type", "string"},
-              {"description", "New date/time: pass naturally ('friday 2pm', 'tomorrow') or as YYYY-MM-DDTHH:MM"}}},
+              {"description", "New date/time, passed naturally: 'friday 2pm', 'tomorrow'. A day alone ('friday') keeps "
+                              "the item's current time. Prefer day words over working out a date yourself."}}},
             {"end_time", {{"type", "string"}, {"description", "New end time: same formats as start_time"}}},
             {"description", {{"type", "string"}, {"description", "Notes or description"}}},
             {"location", {{"type", "string"}, {"description", "New location"}}},
@@ -450,8 +482,26 @@ void register_calendar_tools() {
             nlohmann::json update_data;
             if (args.contains("new_title"))
                 update_data["title"] = args["new_title"];
-            if (args.contains("start_time"))
-                update_data["start_time"] = resolve_datetime(args["start_time"].get<std::string>());
+            if (args.contains("start_time")) {
+                const std::string raw = args["start_time"].get<std::string>();
+                std::string resolved = resolve_datetime(raw);
+                // "move it to friday" names a day but no time: keep the item's own time, and move its
+                // end with it, instead of snapping to resolve_datetime's 09:00 default.
+                const auto existing = db.get_event(id);
+                const bool names_time = extract_clock_time(raw).has_value() || raw.find('T') != std::string::npos;
+                if (!names_time && existing.is_object()) {
+                    const std::string old_start = existing.value("start_time", "");
+                    if (old_start.size() >= 16)
+                        resolved = resolved.substr(0, 10) + old_start.substr(10, 6);
+                    const std::string old_end = existing.value("end_time", "");
+                    if (!args.contains("end_time") && old_end.size() >= 16 && old_start.size() >= 10) {
+                        // Same-day items keep their end time on the new day.
+                        if (old_end.substr(0, 10) == old_start.substr(0, 10))
+                            update_data["end_time"] = resolved.substr(0, 10) + old_end.substr(10, 6);
+                    }
+                }
+                update_data["start_time"] = resolved;
+            }
             if (args.contains("end_time"))
                 update_data["end_time"] = resolve_datetime(args["end_time"].get<std::string>());
             if (args.contains("description"))
@@ -471,35 +521,6 @@ void register_calendar_tools() {
                 return {false, "", "Item not found or update failed"};
             auto event = db.get_event(id);
             return {true, strip_id(event).dump(), ""};
-        });
-
-    registry.register_tool(
-        {"get_current_time",
-         "Get the current date and time. NOTE: CURRENT TIME, TODAY, and TOMORROW are already in the system prompt. "
-         "Only call this if you need date info beyond what is provided above.",
-         {{"type", "object"}, {"properties", nlohmann::json::object()}, {"required", nlohmann::json::array()}}},
-        [](const nlohmann::json&) -> ToolResult {
-            time_t now = time(nullptr);
-            struct tm t{};
-            local_time(&now, &t);
-            char iso_buf[32], date_buf[16], day_buf[16];
-            strftime(iso_buf, sizeof(iso_buf), "%Y-%m-%dT%H:%M:%S", &t);
-            strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &t);
-            strftime(day_buf, sizeof(day_buf), "%A", &t);
-
-            time_t tomorrow_t = now + 24 * 3600;
-            struct tm tm_tom{};
-            local_time(&tomorrow_t, &tm_tom);
-            char tom_buf[16], tom_day_buf[16];
-            strftime(tom_buf, sizeof(tom_buf), "%Y-%m-%d", &tm_tom);
-            strftime(tom_day_buf, sizeof(tom_day_buf), "%A", &tm_tom);
-
-            nlohmann::json result = {{"datetime", std::string(iso_buf)},
-                                     {"date", std::string(date_buf)},
-                                     {"day_of_week", std::string(day_buf)},
-                                     {"tomorrow", std::string(tom_buf)},
-                                     {"tomorrow_day", std::string(tom_day_buf)}};
-            return {true, result.dump(), ""};
         });
 }
 

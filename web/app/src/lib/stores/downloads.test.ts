@@ -26,6 +26,7 @@ vi.mock('$app/environment', () => ({ browser: true }));
 
 vi.mock('svelte-sonner', () => ({
 	toast: {
+		info: vi.fn(),
 		success: (...a: unknown[]) => toastSuccess(...a),
 		error: (...a: unknown[]) => toastError(...a)
 	}

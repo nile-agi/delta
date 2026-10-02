@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { RotateCcw } from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import Label from '$lib/components/ui/label/label.svelte';
@@ -11,6 +12,7 @@
 	import { ParameterSyncService } from '$lib/services/parameter-sync';
 	import ParameterSourceIndicator from './ParameterSourceIndicator.svelte';
 	import type { Component } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
 	interface Props {
 		fields: SettingsFieldConfig[];
@@ -20,6 +22,33 @@
 	}
 
 	let { fields, localConfig, onConfigChange, onThemeChange }: Props = $props();
+
+	// Status line under an action button after it has run, keyed by field.
+	let actionStatus = $state<Record<string, string>>({});
+	let actionBusy = $state<Record<string, boolean>>({});
+
+	async function runAction(field: SettingsFieldConfig) {
+		if (!field.action || actionBusy[field.key]) return;
+		actionBusy[field.key] = true;
+		try {
+			actionStatus[field.key] = await field.action();
+			toast.success(actionStatus[field.key]);
+		} catch (error) {
+			actionStatus[field.key] = error instanceof Error ? error.message : 'Something went wrong.';
+			toast.error(actionStatus[field.key]);
+		} finally {
+			actionBusy[field.key] = false;
+		}
+	}
+
+	function resetField(field: SettingsFieldConfig, defaultValue: unknown) {
+		if (!resetParameterToServerDefault(field.key)) {
+			toast.error(`Could not reset ${field.label.toLowerCase()}. Please try again.`);
+			return;
+		}
+		onConfigChange(field.key, String(defaultValue));
+		toast.success(`${field.label} reset to its default.`);
+	}
 
 	// Helper function to get parameter source info for syncable parameters
 	function getParameterSourceInfo(key: string) {
@@ -78,10 +107,8 @@
 					<button
 						type="button"
 						onclick={() => {
-							resetParameterToServerDefault(field.key);
-							// Trigger UI update by calling onConfigChange with the default value
 							const defaultValue = propsDefault ?? SETTING_CONFIG_DEFAULT[field.key];
-							onConfigChange(field.key, String(defaultValue));
+							resetField(field, defaultValue);
 						}}
 						class="absolute top-1/2 right-2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded transition-colors hover:bg-muted"
 						aria-label="Reset to default"
@@ -163,10 +190,8 @@
 						<button
 							type="button"
 							onclick={() => {
-								resetParameterToServerDefault(field.key);
-								// Trigger UI update by calling onConfigChange with the default value
 								const defaultValue = propsDefault ?? SETTING_CONFIG_DEFAULT[field.key];
-								onConfigChange(field.key, String(defaultValue));
+								resetField(field, defaultValue);
 							}}
 							class="absolute top-1/2 right-8 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded transition-colors hover:bg-muted"
 							aria-label="Reset to default"
@@ -219,6 +244,28 @@
 						<p class="text-xs text-muted-foreground">
 							For non-vision models, PDFs will be processed as text automatically.
 						</p>
+					{/if}
+				</div>
+			</div>
+		{:else if field.type === 'action'}
+			<div class="space-y-1">
+				<Label class="text-sm font-medium">{field.label}</Label>
+				{#if field.help || SETTING_CONFIG_INFO[field.key]}
+					<p class="text-xs text-muted-foreground">
+						{field.help || SETTING_CONFIG_INFO[field.key]}
+					</p>
+				{/if}
+				<div class="flex items-center gap-3 pt-1">
+					<Button
+						size="sm"
+						variant="outline"
+						disabled={actionBusy[field.key]}
+						onclick={() => runAction(field)}
+					>
+						{field.actionLabel ?? field.label}
+					</Button>
+					{#if actionStatus[field.key]}
+						<span class="text-xs text-muted-foreground">{actionStatus[field.key]}</span>
 					{/if}
 				</div>
 			</div>

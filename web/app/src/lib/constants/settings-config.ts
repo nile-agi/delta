@@ -1,3 +1,10 @@
+export const CORE_AGENT_TOOL_KEYS: readonly string[] = [
+	'useCalendarTools',
+	'useNotesTools',
+	'useTaskTools',
+	'useMemoryTools'
+];
+
 export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> = {
 	// Note: in order not to introduce breaking changes, please keep the same data type (number, string, etc) if you want to change the default value. Do not use null or undefined for default value.
 	// Do not use nested objects, keep it single level. Prefix the key if you need to group them.
@@ -29,6 +36,10 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> =
 	useAgentTools: true,
 	useCalendarTools: true,
 	useNotesTools: true,
+	useMemoryTools: true,
+	useTaskTools: true,
+	useFileTools: true,
+	useShellTools: true,
 	// make sure these default values are in sync with `common.h`
 	samplers: 'top_k;typ_p;top_p;min_p;temperature',
 	temperature: 0.8,
@@ -60,9 +71,20 @@ export const SETTING_CONFIG_INFO: Record<string, string> = {
 	userName: 'How the assistant should address you. Left empty, it stays generic.',
 	replyStyle: 'How much detail the assistant puts into an answer.',
 	calendarWeekStart: 'Which day the calendar month grid starts on.',
-	useAgentTools: 'Enable agent tools that allow the AI to perform actions like managing calendar events and notes.',
-	useCalendarTools: 'Enable calendar tools. When enabled, the AI can create, list, update, and delete calendar events and tasks.',
-	useNotesTools: 'Enable notes tools. When enabled, the AI can create, list, update, and delete notes.',
+	useAgentTools:
+		'Turning this on selects all four core tools. You can then turn individual tools off.',
+	useCalendarTools:
+		'Enable calendar tools. When enabled, the AI can create, list, update, and delete calendar events and tasks.',
+	useNotesTools:
+		'Enable notes tools. When enabled, the AI can create, list, update, and delete notes.',
+	useMemoryTools:
+		'Let the AI keep long-term memories about you across conversations, and search them before asking you something twice.',
+	useTaskTools:
+		'Let the AI write itself a plan for multi-step work and tick steps off as it goes. Helps smaller models stay on track.',
+	useFileTools:
+		'Let the AI read, write and list files. Limited to your home folder and temp directories; credential files are always off limits.',
+	useShellTools:
+		'Let the AI run shell commands on this machine. It asks for your approval the first time, and remembers your answer.',
 	theme:
 		'Choose the color theme for the interface. You can choose between System (follows your device settings), Light, or Dark.',
 	pasteLongTextToFileLen:
