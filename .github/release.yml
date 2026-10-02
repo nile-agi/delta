@@ -1,0 +1,24 @@
+# PR labels determine the sections. Unlabelled PRs remain under Other changes.
+# Use skip-changelog only for changes that should not appear in release notes.
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+  categories:
+    - title: Features
+      labels:
+        - feature
+        - feat
+    - title: Fixes
+      labels:
+        - bug
+        - fix
+    - title: Improvements
+      labels:
+        - enhancement
+        - improvement
+        - performance
+        - refactor
+    - title: Other changes
+      labels:
+        - '*'
