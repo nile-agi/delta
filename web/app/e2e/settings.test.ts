@@ -51,6 +51,27 @@ test('Settings opens as the whole app view and Back returns Home', async ({ page
 	await expect(settings).toHaveCount(0);
 });
 
+for (const width of [1280, 390]) {
+	test(`Settings is reachable with the drawer closed at ${width}px`, async ({ page }) => {
+		await page.setViewportSize({ width, height: 720 });
+		await page.addInitScript(() => {
+			const config = JSON.parse(localStorage.getItem('config')!);
+			localStorage.setItem('config', JSON.stringify({ ...config, alwaysShowSidebar: false }));
+		});
+		await page.goto('/');
+		const settings = page.getByRole('button', { name: 'Open Settings', exact: true });
+		await expect(settings).toBeInViewport();
+		await settings.click();
+		await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
+		await page.getByRole('button', { name: 'Back to Home', exact: true }).click();
+		await expect(settings).toBeInViewport();
+		await page.getByRole('button', { name: 'Toggle Sidebar', exact: true }).click();
+		await expect(settings).toHaveCount(0);
+		await page.getByRole('button', { name: 'Settings', exact: true }).click();
+		await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
+	});
+}
+
 test('Save persists settings while Back discards the next draft', async ({ page }) => {
 	await page.goto('/#/settings');
 	await page.getByRole('button', { name: 'You', exact: true }).click();

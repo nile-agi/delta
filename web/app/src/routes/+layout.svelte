@@ -31,6 +31,7 @@
 	import HardwareDashboard from '$lib/components/app/hardware/HardwareDashboard.svelte';
 	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
 	import Notes from '$lib/components/app/misc/Notes.svelte';
+	import SettingsShortcut from '$lib/components/app/chat/ChatSettings/SettingsShortcut.svelte';
 	
 	// ❌ REMOVED: import { Calendar } from 'bits-ui';
 	// ❌ REMOVED: import Calendar from '$lib/components/app/misc/Calendar.svelte';
@@ -412,6 +413,7 @@
 					<Sidebar.Inset class="flex flex-1 flex-col overflow-hidden">
 						{@render children?.()}
 					</Sidebar.Inset>
+					<SettingsShortcut />
 				</div>
 			</Sidebar.Provider>
 		{/if}
