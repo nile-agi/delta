@@ -12,6 +12,7 @@
 	import { ParameterSyncService } from '$lib/services/parameter-sync';
 	import ParameterSourceIndicator from './ParameterSourceIndicator.svelte';
 	import type { Component } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
 	interface Props {
 		fields: SettingsFieldConfig[];
@@ -31,11 +32,22 @@
 		actionBusy[field.key] = true;
 		try {
 			actionStatus[field.key] = await field.action();
+			toast.success(actionStatus[field.key]);
 		} catch (error) {
 			actionStatus[field.key] = error instanceof Error ? error.message : 'Something went wrong.';
+			toast.error(actionStatus[field.key]);
 		} finally {
 			actionBusy[field.key] = false;
 		}
+	}
+
+	function resetField(field: SettingsFieldConfig, defaultValue: unknown) {
+		if (!resetParameterToServerDefault(field.key)) {
+			toast.error(`Could not reset ${field.label.toLowerCase()}. Please try again.`);
+			return;
+		}
+		onConfigChange(field.key, String(defaultValue));
+		toast.success(`${field.label} reset to its default.`);
 	}
 
 	// Helper function to get parameter source info for syncable parameters
@@ -95,10 +107,8 @@
 					<button
 						type="button"
 						onclick={() => {
-							resetParameterToServerDefault(field.key);
-							// Trigger UI update by calling onConfigChange with the default value
 							const defaultValue = propsDefault ?? SETTING_CONFIG_DEFAULT[field.key];
-							onConfigChange(field.key, String(defaultValue));
+							resetField(field, defaultValue);
 						}}
 						class="absolute top-1/2 right-2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded transition-colors hover:bg-muted"
 						aria-label="Reset to default"
@@ -180,10 +190,8 @@
 						<button
 							type="button"
 							onclick={() => {
-								resetParameterToServerDefault(field.key);
-								// Trigger UI update by calling onConfigChange with the default value
 								const defaultValue = propsDefault ?? SETTING_CONFIG_DEFAULT[field.key];
-								onConfigChange(field.key, String(defaultValue));
+								resetField(field, defaultValue);
 							}}
 							class="absolute top-1/2 right-8 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded transition-colors hover:bg-muted"
 							aria-label="Reset to default"

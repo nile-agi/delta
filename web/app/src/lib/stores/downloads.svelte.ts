@@ -90,10 +90,14 @@ export class DownloadsStore {
 
 		try {
 			await ModelsService.download(model);
+			toast.info(`Download started for ${model}.`);
 		} catch (e) {
 			// 409 means the backend is already downloading this model — adopt it rather than
 			// erroring. That is what makes a download started before a reload recoverable.
-			if (e instanceof ModelApiError && e.status === 409) return;
+			if (e instanceof ModelApiError && e.status === 409) {
+				toast.info(`Download already running for ${model}.`);
+				return;
+			}
 
 			this.drop(model);
 			const message = e instanceof Error ? e.message : 'Failed to download model';
@@ -105,6 +109,7 @@ export class DownloadsStore {
 	async cancel(model: string): Promise<void> {
 		try {
 			await ModelsService.cancelDownload(model);
+			toast.info(`Download cancellation requested for ${model}.`);
 		} catch (e) {
 			const message = e instanceof Error ? e.message : 'Failed to cancel download';
 			toast.error(message);
