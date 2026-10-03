@@ -284,8 +284,9 @@ void register_calendar_tools() {
 
     registry.register_tool(
         {"create_event",
-         "Create a calendar event, task, meeting, appointment, or reminder. "
-         "Use type='task' for to-dos and actionable items.",
+         "Add a new appointment, reminder or task. Use type='task' for a new action the user must do. "
+         "For an existing item's completion, rescheduling or other change, use update_event. "
+         "For changes to a saved list or document, use the notes tools.",
          {{"type", "object"},
           {"properties",
            {{"title", {{"type", "string"}, {"description", "Name of the event or task"}}},
@@ -492,7 +493,8 @@ void register_calendar_tools() {
 
     registry.register_tool(
         {"update_event",
-         "Update, reschedule, or mark a calendar event or task as done. "
+         "Change an existing calendar event or task. To mark a finished task done, set status='completed'; "
+         "leave dates and other fields unchanged unless the user requested changes. "
          "Provide an id from a tool result or the current title; if both are given they must match. "
          "Use new_title only when renaming. A start-only move preserves duration.",
          {{"type", "object"},

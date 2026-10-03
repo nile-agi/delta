@@ -241,7 +241,7 @@ std::string category_summary(const std::string& category) {
     if (category == "calendar")
         return "the user's events, tasks and reminders";
     if (category == "notes")
-        return "read, write and organise the notes the user has written";
+        return "find, read and edit saved notes, lists, checklists, drafts and project decisions";
     if (category == "memory")
         return "what you remember about the user between conversations";
     if (category == "task")
