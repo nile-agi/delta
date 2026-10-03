@@ -1,9 +1,11 @@
 [package]
 name = "delta-app"
-version = "1.0.0"
+#version = "1.0.0"
+version = "1.0.14"
 description = "Delta - Offline AI Assistant"
 authors = ["Nile AGI"]
-edition = "2021"
+#edition = "2021"
+deition = "2026"
 
 [lib]
 name = "delta_app_lib"
