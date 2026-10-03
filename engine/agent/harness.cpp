@@ -235,7 +235,7 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
                   "calendar tasks. Use a plan for complex work; skip it for a few straightforward record changes. "
                   "Mark a step done only when its intended action succeeded.\n"
                   "- If a tool fails twice the same way, stop and explain the blocker. If permission is refused, "
-                  "do not retry the action. Keep replies brief; keep internal ids and tool names out of them.\n"
+                  "do not retry the action.\n"
                   "\nDATES: keep day and time together ('tomorrow 5pm'); pass date words to calendar tools. "
                   "Task deadlines belong in start_time. For a same-time move pass just the day. "
                   "Appointments include agreed start and end times; a start-only move preserves duration.\n"
@@ -252,6 +252,13 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
     } else {
         prompt += "\nAnswer from the conversation and the context below. Keep responses brief and friendly.\n";
     }
+
+    prompt += "\nUSER REPLY\n"
+              "Report the requested outcome briefly, using readable record titles and confirmed details. "
+              "Internal record ids, UUIDs and tool names are addressing metadata for tool calls; keep them "
+              "out of normal replies. Keep raw JSON and storage metadata out of confirmations. "
+              "When confirming record details, use only facts supplied by the user or returned by tools. "
+              "Omit absent record fields and describe unfinished work accurately.\n";
 
     if (!task_dossier_.empty())
         prompt += task_dossier_;
