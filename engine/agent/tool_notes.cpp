@@ -12,9 +12,9 @@ void register_note_tools() {
     // list_notes
     ToolRegistry::instance().register_tool(
         {"list_notes",
-         "List the notes the user has written, newest first, optionally filtered. A note is a "
-         "document in their own words; use read_file for files on disk and recall for facts you "
-         "saved about them.",
+         "Find saved notes, lists, checklists, drafts or project decisions, optionally filtered. "
+         "Use search to locate an existing document by its title or content. Read the selected note "
+         "with get_note before editing it. Use read_file for files on disk and recall for saved memories.",
          {{"type", "object"},
           {"properties",
            {{"folder", {{"type", "string"}, {"description", "Folder to filter by"}}},
@@ -40,9 +40,9 @@ void register_note_tools() {
     // create_note
     ToolRegistry::instance().register_tool(
         {"create_note",
-         "Write a new note for the user: minutes, a draft, a list, anything they would want to read "
-         "back later. Not for things you need to remember yourself -- use remember for a lasting "
-         "fact and note_to_self for working notes on the job in hand.",
+         "Create a new saved document for the user: a list, draft, minutes or project decisions. "
+         "Use update_note to change or append to an existing document. Use note_to_self for private "
+         "working state and remember for durable facts and preferences.",
          {{"type", "object"},
           {"properties",
            {{"title", {{"type", "string"}, {"description", "Note title"}}},
@@ -82,8 +82,9 @@ void register_note_tools() {
     // update_note
     ToolRegistry::instance().register_tool(
         {"update_note",
-         "Change a note the user already has. Replaces whatever fields you pass, so read it with "
-         "get_note first when you only mean to change part of it.",
+         "Edit or append to an existing saved note or list. Read it with get_note first. "
+         "The content field replaces the full body: include the existing text plus the requested "
+         "addition when appending. Pass only fields the user wants changed; other fields stay intact.",
          {{"type", "object"},
           {"properties",
            {{"id", {{"type", "string"}, {"description", "Note ID"}}},
