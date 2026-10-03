@@ -75,7 +75,7 @@ struct RunResult {
     int iterations = 0;
     int tool_calls = 0;
     std::string error;
-    std::string stop_reason; // stop | max_iterations | time_budget | client_aborted | error
+    std::string stop_reason; // stop | length | max_iterations | time_budget | client_aborted | error
     nlohmann::json executed_tools = nlohmann::json::array();
     // Every message this run appended after the caller's history: assistant turns with their
     // tool_calls, the tool results, and the final reply. Append it to the stored conversation so

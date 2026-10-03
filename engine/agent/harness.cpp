@@ -8,6 +8,7 @@
 #include "tool_task.h"
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <functional>
 #include <map>
 #include <ctime>
@@ -655,13 +656,15 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         bool server_rejected = false;
         if (response.is_object() && response.contains("error")) {
             const auto& err = response["error"];
-            const std::string message = err.is_string()   ? err.get<std::string>()
-                                        : err.is_object() ? err.value("message", std::string())
-                                                          : std::string();
+            std::string message = err.is_string()   ? err.get<std::string>()
+                                  : err.is_object() ? err.value("message", std::string())
+                                                    : std::string();
             const int status = response.value("http_status", 0);
+            for (auto& c : message)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             const bool about_tools =
                 message.find("tool") != std::string::npos || message.find("template") != std::string::npos;
-            server_rejected = (status >= 400 && status < 500) || (status >= 500 && about_tools);
+            server_rejected = (status == 400 || status == 422) && about_tools;
         }
         if (server_rejected && !active.empty() && !tools_disabled_by_error) {
             std::cerr << "[delta-harness] tools rejected, retrying without them: " << response["error"].dump()
@@ -732,6 +735,14 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         }
 
         if (!has_tool_calls) {
+            if (cut_off) {
+                transcript.push_back(assistant);
+                result.content = content;
+                result.stop_reason = "length";
+                result.error = "The model reply reached its token limit before finishing.";
+                emit(EventType::Error, {{"message", result.error}});
+                return finish(result);
+            }
             // Nothing at all: no answer, no action. Ending the turn here would leave the user
             // staring at an empty reply, so take one more sample before giving up.
             if (content.empty() && empty_replies == 0) {

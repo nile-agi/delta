@@ -120,6 +120,11 @@ class ScriptedServer {
                 message = responder_(body);
             else
                 message = index < script_.size() ? script_[index] : json{{"role", "assistant"}, {"content", "done"}};
+            if (message.contains("http_status")) {
+                res.status = message["http_status"].get<int>();
+                res.set_content(json{{"error", message.value("error", "server failure")}}.dump(), "application/json");
+                return;
+            }
             if (body.is_object() && !body.value("stream", false)) {
                 // A blocking request (the harness's summariser) expects a plain completion body.
                 json reply = {
@@ -198,7 +203,7 @@ class ScriptedServer {
             }
             frame(json::object(), message.value("finish_reason", "tool_calls").c_str());
         } else {
-            frame(json::object(), "stop");
+            frame(json::object(), message.value("finish_reason", "stop").c_str());
         }
 
         out += "data: [DONE]\n\n";
@@ -2785,6 +2790,71 @@ static void test_calendar_context_includes_end_and_refreshes_after_writes() {
     db.delete_event(id);
 }
 
+static void test_request_failures_do_not_disable_tools() {
+    test("server and unrelated request failures do not silently disable tools");
+    for (const auto& failure : std::vector<std::pair<int, std::string>>{{500, "failed to parse generated tool call"},
+                                                                        {401, "authentication required"},
+                                                                        {429, "rate limit exceeded"},
+                                                                        {400, "context length exceeded"}}) {
+        ScriptedServer server({{{"http_status", failure.first}, {"error", failure.second}},
+                               {{"role", "assistant"}, {"content", "fallback must not run"}}});
+        server.start();
+        Harness harness(server.url(), "test-model", true);
+        harness.set_options(test_options());
+        EventLog log;
+        const auto result = harness.run(json::array({user("hello")}), log.sink());
+        server.stop();
+        check(!result.success, "the failure is reported for HTTP " + std::to_string(failure.first));
+        check_eq(result.stop_reason, std::string("error"), "the run ends with an error");
+        check_eq(server.requests().size(), size_t(1), "no retry silently drops tools");
+        check(result.error.find(failure.second) != std::string::npos, "the original reason is retained");
+    }
+}
+
+static void test_partial_success_survives_a_model_failure() {
+    test("successful tool receipts survive a later inference failure");
+    ScriptedServer server({assistant_calling("test_write", {{"title", "Saved action"}}),
+                           {{"http_status", 500}, {"error", "generated tool call could not be parsed"}}});
+    server.start();
+    const int before = g_write_spy.calls;
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    const auto result = harness.run(json::array({user("save it")}), log.sink());
+    server.stop();
+    check(!result.success && result.stop_reason == "error", "the later model failure is explicit");
+    check_eq(g_write_spy.calls - before, 1, "the completed write is not repeated");
+    check_eq(server.requests().size(), size_t(2), "a generation failure does not start a tool-free retry");
+    check_eq(result.executed_tools.size(), size_t(1), "the completed action is retained in the summary");
+    check(result.executed_tools.size() == 1 && result.executed_tools[0].value("success", false),
+          "the action keeps its success receipt");
+    bool receipt = false;
+    for (const auto& message : result.transcript_delta)
+        if (message.value("role", "") == "tool" && message.value("name", "") == "test_write")
+            receipt = true;
+    check(receipt, "the successful tool response remains in the returned history");
+}
+
+static void test_truncated_text_is_reported_as_incomplete() {
+    test("a reply cut off by the token budget is not reported as completed");
+    ScriptedServer server({{{"role", "assistant"}, {"content", "I started explaining"}, {"finish_reason", "length"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    auto options = test_options();
+    options.scratchpad_id = "truncated-reply";
+    harness.set_options(options);
+    EventLog log;
+    const auto result = harness.run(json::array({user("explain it")}), log.sink());
+    server.stop();
+    check(!result.success, "an incomplete answer is not successful completion");
+    check_eq(result.stop_reason, std::string("length"), "the summary reports the token limit");
+    check_eq(result.content, std::string("I started explaining"), "the partial text is retained");
+    check(!result.transcript_delta.empty(), "the partial assistant turn remains in history");
+    check_eq(log.count(EventType::Error), 1, "the client receives an explicit interruption reason");
+    check_eq(TaskStore::instance().get_task(result.task_id).status, std::string("interrupted"),
+             "the durable task is resumable");
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -2812,6 +2882,9 @@ int main() {
     test_calendar_reschedule_preserves_duration_and_validates_ranges();
     test_calendar_edits_require_consistent_targets_and_return_ids();
     test_calendar_context_includes_end_and_refreshes_after_writes();
+    test_request_failures_do_not_disable_tools();
+    test_partial_success_survives_a_model_failure();
+    test_truncated_text_is_reported_as_incomplete();
     test_text_written_call_is_recovered();
     test_prose_mentioning_a_function_is_not_run();
     test_invented_names_and_quoted_values_are_accepted();
