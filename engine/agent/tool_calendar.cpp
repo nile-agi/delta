@@ -64,6 +64,25 @@ static bool valid_calendar_range(const nlohmann::json& item) {
     return end && *end > *start;
 }
 
+// A clock-only end belongs to the appointment's date. Explicit days still resolve normally.
+static std::string resolve_end_datetime(const std::string& raw, const std::string& start) {
+    if (raw.empty())
+        return "";
+    std::string lower = raw;
+    for (auto& c : lower)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    bool explicit_day = raw.size() >= 16 && raw[10] == 'T';
+    for (const char* word :
+         {"today", "tomorrow", "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"})
+        if (lower.find(word) != std::string::npos)
+            explicit_day = true;
+    if (!explicit_day && start.size() >= 10) {
+        if (const auto clock = extract_clock_time(raw))
+            return start.substr(0, 10) + "T" + *clock;
+    }
+    return resolve_datetime(raw);
+}
+
 // Resolve a model-provided start_time to a valid YYYY-MM-DDTHH:MM string.
 // Handles: valid ISO, past-date correction, "tomorrow", bare "HH:MM", garbage.
 std::optional<std::string> extract_clock_time(const std::string& s) {
@@ -89,29 +108,36 @@ std::optional<std::string> extract_clock_time(const std::string& s) {
     if (has_word("midnight"))
         return std::string("00:00");
 
-    // 1. HH:MM pattern, optionally followed by am/pm
-    for (size_t i = 0; i + 4 < lower.size(); i++) {
-        if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
-            std::isdigit(static_cast<unsigned char>(lower[i + 1])) && lower[i + 2] == ':' &&
-            std::isdigit(static_cast<unsigned char>(lower[i + 3])) &&
-            std::isdigit(static_cast<unsigned char>(lower[i + 4]))) {
-            int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
-            int m = (lower[i + 3] - '0') * 10 + (lower[i + 4] - '0');
-            if (h < 24 && m < 60) {
-                size_t after = i + 5;
-                while (after < lower.size() && lower[after] == ' ')
-                    after++;
-                if (after + 1 < lower.size()) {
-                    if (lower[after] == 'p' && lower[after + 1] == 'm' && h < 12)
-                        h += 12;
-                    if (lower[after] == 'a' && lower[after + 1] == 'm' && h == 12)
-                        h = 0;
-                }
-                char buf[6];
-                snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
-                return std::string(buf);
-            }
+    // 1. H:MM or HH:MM, optionally followed by am/pm.
+    for (size_t i = 0; i + 3 < lower.size(); i++) {
+        if (!std::isdigit(static_cast<unsigned char>(lower[i])) ||
+            (i > 0 && std::isdigit(static_cast<unsigned char>(lower[i - 1]))))
+            continue;
+        int h = lower[i] - '0';
+        size_t colon = i + 1;
+        if (std::isdigit(static_cast<unsigned char>(lower[colon]))) {
+            h = h * 10 + (lower[colon] - '0');
+            colon++;
         }
+        if (colon + 2 >= lower.size() || lower[colon] != ':' ||
+            !std::isdigit(static_cast<unsigned char>(lower[colon + 1])) ||
+            !std::isdigit(static_cast<unsigned char>(lower[colon + 2])))
+            continue;
+        const int m = (lower[colon + 1] - '0') * 10 + (lower[colon + 2] - '0');
+        if (h >= 24 || m >= 60)
+            continue;
+        size_t after = colon + 3;
+        while (after < lower.size() && lower[after] == ' ')
+            after++;
+        if (after + 1 < lower.size()) {
+            if (lower[after] == 'p' && lower[after + 1] == 'm' && h < 12)
+                h += 12;
+            if (lower[after] == 'a' && lower[after + 1] == 'm' && h == 12)
+                h = 0;
+        }
+        char buf[6];
+        snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
+        return std::string(buf);
     }
 
     // 2. Digit(s) followed by am/pm: "1pm", "2am", "11pm", "12am"
@@ -294,7 +320,8 @@ void register_calendar_tools() {
             nlohmann::json resolved_args = args;
             resolved_args["start_time"] = start_time;
             if (resolved_args.contains("end_time") && resolved_args["end_time"].is_string())
-                resolved_args["end_time"] = resolve_datetime(resolved_args["end_time"].get<std::string>());
+                resolved_args["end_time"] =
+                    resolve_end_datetime(resolved_args["end_time"].get<std::string>(), start_time);
             if (!valid_calendar_range(resolved_args))
                 return {false, "", "Provide valid times with end_time after start_time"};
 
@@ -539,7 +566,7 @@ void register_calendar_tools() {
                 }
             }
 
-            nlohmann::json update_data;
+            nlohmann::json update_data = nlohmann::json::object();
             if (args.contains("new_title"))
                 update_data["title"] = args["new_title"];
             if (args.contains("start_time")) {
@@ -569,8 +596,11 @@ void register_calendar_tools() {
                 }
                 update_data["start_time"] = resolved;
             }
-            if (args.contains("end_time"))
-                update_data["end_time"] = resolve_datetime(args["end_time"].get<std::string>());
+            if (args.contains("end_time")) {
+                const auto existing = db.get_event(id);
+                const std::string start = update_data.value("start_time", existing.value("start_time", ""));
+                update_data["end_time"] = resolve_end_datetime(args["end_time"].get<std::string>(), start);
+            }
             if (args.contains("description"))
                 update_data["description"] = args["description"];
             if (args.contains("location"))

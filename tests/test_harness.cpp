@@ -2855,6 +2855,41 @@ static void test_truncated_text_is_reported_as_incomplete() {
              "the durable task is resumable");
 }
 
+static void test_calendar_clock_formats_and_relative_end_dates() {
+    test("calendar clock formats and bare end times keep the appointment date");
+    check_eq(extract_clock_time("5:30pm").value_or("none"), std::string("17:30"),
+             "a single-digit pm clock retains its minutes");
+    check_eq(extract_clock_time("5:00am").value_or("none"), std::string("05:00"),
+             "a single-digit am clock retains its hour");
+    check_eq(extract_clock_time("at 5:30").value_or("none"), std::string("05:30"),
+             "a bare single-digit clock retains its minutes");
+    auto& registry = ToolRegistry::instance();
+    auto& db = AgentDatabase::instance();
+    const std::string day = resolve_datetime("tomorrow 14:00").substr(0, 10);
+    const auto created = registry.execute(
+        "create_event",
+        {{"title", "Clock appointment"}, {"type", "event"}, {"start_time", "tomorrow 14:00"}, {"end_time", "15:00"}});
+    check(created.success, "a bare end clock uses the requested appointment date");
+    std::string id;
+    if (created.success) {
+        const auto receipt = json::parse(created.content);
+        id = receipt.value("id", "");
+        check_eq(receipt.value("end_time", ""), day + "T15:00", "the saved end is on tomorrow's date");
+    } else {
+        id = db.create_event({{"title", "Clock appointment"},
+                              {"type", "event"},
+                              {"start_time", day + "T14:00"},
+                              {"end_time", day + "T15:00"}});
+    }
+    const auto edited = registry.execute("update_event", {{"id", id}, {"end_time", "5:30pm"}});
+    check(edited.success, "an end-only bare clock uses the existing start date");
+    check_eq(db.get_event(id).value("end_time", ""), day + "T17:30",
+             "the edited end uses the saved date and requested minutes");
+    const auto clear = registry.execute("update_event", {{"id", id}, {"end_time", ""}});
+    check(clear.success && db.get_event(id).value("end_time", "").empty(), "an optional end can be explicitly cleared");
+    db.delete_event(id);
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -2885,6 +2920,7 @@ int main() {
     test_request_failures_do_not_disable_tools();
     test_partial_success_survives_a_model_failure();
     test_truncated_text_is_reported_as_incomplete();
+    test_calendar_clock_formats_and_relative_end_dates();
     test_text_written_call_is_recovered();
     test_prose_mentioning_a_function_is_not_run();
     test_invented_names_and_quoted_values_are_accepted();
