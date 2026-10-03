@@ -2703,6 +2703,54 @@ static void test_calendar_reschedule_preserves_duration_and_validates_ranges() {
             db.delete_event(event.value("id", ""));
 }
 
+static void test_calendar_edits_require_consistent_targets_and_return_ids() {
+    test("calendar edits require consistent targets and return reusable record IDs");
+    auto& db = AgentDatabase::instance();
+    auto& registry = ToolRegistry::instance();
+    auto created = registry.execute(
+        "create_event", {{"title", "Identity appointment"}, {"start_time", "tomorrow 10:00"}, {"type", "event"}});
+    check(created.success, "an appointment was created");
+    const auto receipt = json::parse(created.content);
+    const std::string id = receipt.value("id", "");
+    check(!id.empty(), "the creation receipt contains its ID");
+    std::string actual_id = id;
+    if (actual_id.empty())
+        for (const auto& e : db.list_events("", "", 500))
+            if (e.value("title", "") == "Identity appointment")
+                actual_id = e.value("id", "");
+    const auto before = db.get_event(actual_id);
+    auto bad = registry.execute("update_event", {{"id", actual_id}, {"title", "Expenses"}, {"status", "completed"}});
+    check(!bad.success, "contradictory ID and title are rejected");
+    check(db.get_event(actual_id) == before, "the unrelated record is unchanged");
+    auto missing = registry.execute("update_event", {{"location", "Room A"}});
+    check(!missing.success, "an edit without a selector is rejected");
+    auto renamed = registry.execute("update_event",
+                                    {{"id", actual_id}, {"title", "identity"}, {"new_title", "Renamed appointment"}});
+    check(renamed.success, "a matching partial title and ID can rename a record");
+    check_eq(json::parse(renamed.content).value("id", ""), actual_id, "the edit receipt retains the ID");
+    auto listed = registry.execute("list_events", {{"start_date", resolve_datetime("tomorrow 10:00").substr(0, 10)}});
+    bool found = false;
+    const auto list_result = json::parse(listed.content);
+    for (const auto& item : list_result["items"])
+        if (item.value("id", "") == actual_id)
+            found = true;
+    check(found, "calendar search returns the ID");
+    const auto other_id =
+        db.create_event({{"title", "Renamed appointment"}, {"start_time", resolve_datetime("tomorrow 15:00")}});
+    auto ambiguous = registry.execute("update_event", {{"title", "Renamed appointment"}, {"location", "Room A"}});
+    const auto matches = json::parse(ambiguous.content).value("matches", json::array());
+    check_eq(matches.size(), size_t(2), "an ambiguous title returns candidates without changing them");
+    check(matches.size() == 2 && !matches[0].value("id", "").empty() && !matches[1].value("id", "").empty(),
+          "ambiguity candidates include IDs");
+    check(db.get_event(other_id).value("location", "").empty(), "ambiguous lookup does not mutate either candidate");
+    const auto before_delete = db.get_event(actual_id);
+    auto deleted = registry.execute("delete_event", {{"id", actual_id}, {"title", "Expenses"}});
+    check(!deleted.success, "contradictory delete selectors are rejected too");
+    check(db.get_event(actual_id) == before_delete, "the unrelated record is not deleted");
+    db.delete_event(actual_id);
+    db.delete_event(other_id);
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -2728,6 +2776,7 @@ int main() {
     test_system_prompt_spells_out_the_week();
     test_moving_to_a_day_keeps_the_time();
     test_calendar_reschedule_preserves_duration_and_validates_ranges();
+    test_calendar_edits_require_consistent_targets_and_return_ids();
     test_text_written_call_is_recovered();
     test_prose_mentioning_a_function_is_not_run();
     test_invented_names_and_quoted_values_are_accepted();

@@ -14,9 +14,26 @@
 namespace delta {
 namespace agent {
 
-static nlohmann::json strip_id(nlohmann::json obj) {
-    obj.erase("id");
-    return obj;
+static std::string selector_error(const nlohmann::json& args) {
+    const std::string id = args.value("id", "");
+    std::string title = args.value("title", "");
+    if (id.empty() && title.find_first_not_of(" \t\r\n") == std::string::npos)
+        return "Provide either id or title";
+    if (id.empty())
+        return "";
+    const auto item = AgentDatabase::instance().get_event(id);
+    if (!item.is_object())
+        return "Item not found";
+    if (!title.empty()) {
+        std::string current_title = item.value("title", "");
+        for (auto& c : title)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (auto& c : current_title)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (current_title.find(title) == std::string::npos)
+            return "The id and title refer to different items. Look up the intended item before editing it.";
+    }
+    return "";
 }
 
 static std::optional<time_t> calendar_time(const std::string& value) {
@@ -296,7 +313,7 @@ void register_calendar_tools() {
                     for (auto& c : et_lower)
                         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                     if (et_lower == title_lower) {
-                        return {true, strip_id(e).dump(), ""};
+                        return {true, e.dump(), ""};
                     }
                     overlaps.push_back(et);
                 }
@@ -325,7 +342,7 @@ void register_calendar_tools() {
             if (id.empty())
                 return {false, "", "Failed to create item."};
             auto event = db.get_event(id);
-            auto result = strip_id(event);
+            auto result = event;
             if (guessed_task) {
                 result["note"] = "Recorded as a task because the title reads like something to do. "
                                  "Pass type='event' if it is really an appointment.";
@@ -382,7 +399,7 @@ void register_calendar_tools() {
                                          args.value("status", ""), args.value("priority", ""), args.value("tags", ""));
             nlohmann::json result = {{"items", nlohmann::json::array()}, {"count", events.size()}};
             for (auto& e : events)
-                result["items"].push_back(strip_id(e));
+                result["items"].push_back(e);
             return {true, result.dump(), ""};
         });
 
@@ -397,6 +414,9 @@ void register_calendar_tools() {
         [](const nlohmann::json& args) -> ToolResult {
             auto& db = AgentDatabase::instance();
             std::string id = args.value("id", "");
+            const auto error = selector_error(args);
+            if (!error.empty())
+                return {false, "", error};
 
             if (id.empty()) {
                 std::string title = args.value("title", "");
@@ -428,8 +448,10 @@ void register_calendar_tools() {
                     nlohmann::json result = {{"message", "Multiple items match. Which one?"},
                                              {"matches", nlohmann::json::array()}};
                     for (auto& m : matches) {
-                        result["matches"].push_back({{"title", m.value("title", "")},
+                        result["matches"].push_back({{"id", m.value("id", "")},
+                                                     {"title", m.value("title", "")},
                                                      {"start_time", m.value("start_time", "")},
+                                                     {"end_time", m.value("end_time", "")},
                                                      {"type", m.value("type", "event")}});
                     }
                     return {true, result.dump(), ""};
@@ -444,7 +466,8 @@ void register_calendar_tools() {
     registry.register_tool(
         {"update_event",
          "Update, reschedule, or mark a calendar event or task as done. "
-         "Use for 'move to 3pm', 'mark as done', 'change priority', etc.",
+         "Provide an id from a tool result or the current title; if both are given they must match. "
+         "Use new_title only when renaming. A start-only move preserves duration.",
          {{"type", "object"},
           {"properties",
            {{"id", {{"type", "string"}, {"description", "Event/task ID from context (exact match)"}}},
@@ -472,6 +495,9 @@ void register_calendar_tools() {
         [](const nlohmann::json& args) -> ToolResult {
             auto& db = AgentDatabase::instance();
             std::string id = args.value("id", "");
+            const auto error = selector_error(args);
+            if (!error.empty())
+                return {false, "", error};
 
             if (id.empty()) {
                 std::string title = args.value("title", "");
@@ -503,8 +529,10 @@ void register_calendar_tools() {
                     nlohmann::json result = {{"message", "Multiple items match. Which one?"},
                                              {"matches", nlohmann::json::array()}};
                     for (auto& m : matches) {
-                        result["matches"].push_back({{"title", m.value("title", "")},
+                        result["matches"].push_back({{"id", m.value("id", "")},
+                                                     {"title", m.value("title", "")},
                                                      {"start_time", m.value("start_time", "")},
+                                                     {"end_time", m.value("end_time", "")},
                                                      {"type", m.value("type", "event")}});
                     }
                     return {true, result.dump(), ""};
@@ -568,7 +596,7 @@ void register_calendar_tools() {
             if (!db.update_event(id, update_data))
                 return {false, "", "Item not found or update failed"};
             auto event = db.get_event(id);
-            return {true, strip_id(event).dump(), ""};
+            return {true, event.dump(), ""};
         });
 }
 
