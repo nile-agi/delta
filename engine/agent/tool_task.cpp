@@ -33,10 +33,10 @@ void register_task_tools() {
 
     registry.register_tool(
         {"note_to_self",
-         "Write down something you have worked out that you will need later in this same job: a value "
-         "you read, a path you found, a decision you made, a dead end not to try again. Long "
-         "conversations get trimmed, and anything you note here stays in front of you when the "
-         "earlier messages are gone. Use remember instead for things that should outlive this job.",
+         "Keep a private working note for this job, such as a value read or a path found. "
+         "This does not create a saved note for the user or a calendar task. Use create_note/update_note "
+         "for the user's notes and lists, create_event with type='task' for their actions, and remember "
+         "for durable facts. Working notes stay available when earlier messages are trimmed.",
          {{"type", "object"},
           {"properties",
            {{"note", {{"type", "string"}, {"description", "One short line, written so it makes sense on its own"}}}}},

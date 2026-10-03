@@ -2751,6 +2751,40 @@ static void test_calendar_edits_require_consistent_targets_and_return_ids() {
     db.delete_event(other_id);
 }
 
+static void test_calendar_context_includes_end_and_refreshes_after_writes() {
+    test("calendar context includes appointment ends and refreshes after changes");
+    auto& db = AgentDatabase::instance();
+    const std::string start = resolve_datetime("tomorrow 10:00");
+    const std::string end = resolve_datetime("tomorrow 11:00");
+    const std::string moved_end = resolve_datetime("tomorrow 15:00");
+    const std::string id = db.create_event(
+        {{"title", "Context appointment"}, {"type", "event"}, {"start_time", start}, {"end_time", end}});
+    ScriptedServer server({assistant_calling("update_event", {{"id", id}, {"start_time", "tomorrow 14:00"}}),
+                           {{"role", "assistant"}, {"content", "Moved."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    auto options = test_options();
+    options.enabled_categories = {"calendar"};
+    options.n_ctx = 16384;
+    harness.set_options(options);
+    EventLog log;
+    const auto result =
+        harness.run(json::array({user("Move the context appointment to tomorrow at two.")}), log.sink());
+    server.stop();
+    const auto requests = server.requests();
+    check(result.success && requests.size() == 2, "the edit completes in two iterations");
+    if (requests.size() == 2) {
+        const std::string first = requests[0]["messages"][0].value("content", "");
+        const std::string second = requests[1]["messages"][0].value("content", "");
+        check(first.find(id) != std::string::npos, "the selected appointment is present in context");
+        check(first.find(end) != std::string::npos, "the initial context includes the appointment end");
+        check(second.find(moved_end) != std::string::npos, "the next context includes the saved new end");
+        check(second.find(resolve_datetime("tomorrow 14:00")) != std::string::npos, "the saved new start is present");
+        check(second.find(start) == std::string::npos, "the stale start is removed from context");
+    }
+    db.delete_event(id);
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -2777,6 +2811,7 @@ int main() {
     test_moving_to_a_day_keeps_the_time();
     test_calendar_reschedule_preserves_duration_and_validates_ranges();
     test_calendar_edits_require_consistent_targets_and_return_ids();
+    test_calendar_context_includes_end_and_refreshes_after_writes();
     test_text_written_call_is_recovered();
     test_prose_mentioning_a_function_is_not_run();
     test_invented_names_and_quoted_values_are_accepted();

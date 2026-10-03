@@ -41,8 +41,8 @@ void register_note_tools() {
     ToolRegistry::instance().register_tool(
         {"create_note",
          "Write a new note for the user: minutes, a draft, a list, anything they would want to read "
-         "back later. Not for things you need to remember yourself -- use remember for a lasting "
-         "fact and note_to_self for working notes on the job in hand.",
+         "back later, including project decisions. Use this for saved user notes; note_to_self only keeps "
+         "private working state. Use remember for durable facts and preferences.",
          {{"type", "object"},
           {"properties",
            {{"title", {{"type", "string"}, {"description", "Note title"}}},
