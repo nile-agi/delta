@@ -120,6 +120,11 @@ class ScriptedServer {
                 message = responder_(body);
             else
                 message = index < script_.size() ? script_[index] : json{{"role", "assistant"}, {"content", "done"}};
+            if (message.contains("http_status")) {
+                res.status = message["http_status"].get<int>();
+                res.set_content(json{{"error", message.value("error", "server failure")}}.dump(), "application/json");
+                return;
+            }
             if (body.is_object() && !body.value("stream", false)) {
                 // A blocking request (the harness's summariser) expects a plain completion body.
                 json reply = {
@@ -198,7 +203,7 @@ class ScriptedServer {
             }
             frame(json::object(), message.value("finish_reason", "tool_calls").c_str());
         } else {
-            frame(json::object(), "stop");
+            frame(json::object(), message.value("finish_reason", "stop").c_str());
         }
 
         out += "data: [DONE]\n\n";
@@ -2653,6 +2658,238 @@ static void test_moving_to_a_day_keeps_the_time() {
     AgentDatabase::instance().delete_event(id);
 }
 
+static void test_calendar_reschedule_preserves_duration_and_validates_ranges() {
+    test("calendar changes preserve duration and reject invalid ranges before writing");
+    auto& db = AgentDatabase::instance();
+    auto& registry = ToolRegistry::instance();
+    const std::string day = resolve_datetime("tomorrow 09:00").substr(0, 10);
+    auto add = [&](const std::string& start, const std::string& end) {
+        return db.create_event({{"title", "Duration appointment"},
+                                {"type", "event"},
+                                {"start_time", day + "T" + start},
+                                {"end_time", end}});
+    };
+    std::string id = add("11:00", day + "T12:00");
+    auto moved = registry.execute("update_event", {{"id", id}, {"start_time", "tomorrow 14:00"}});
+    check(moved.success, "a start-only move succeeds");
+    check_eq(db.get_event(id).value("end_time", ""), day + "T15:00", "the one-hour duration is preserved");
+    auto explicit_end = registry.execute("update_event", {{"id", id}, {"end_time", "tomorrow 15:30"}});
+    check(explicit_end.success, "an explicit valid end changes duration");
+    const auto before = db.get_event(id);
+    auto invalid =
+        registry.execute("update_event", {{"id", id}, {"end_time", "tomorrow 13:00"}, {"location", "Should not save"}});
+    check(!invalid.success, "an end before the start is rejected");
+    check(db.get_event(id) == before, "an invalid range changes no fields");
+    auto equal = registry.execute("update_event", {{"id", id}, {"end_time", "tomorrow 14:00"}});
+    check(!equal.success, "a zero-length range is rejected");
+    db.delete_event(id);
+
+    const std::string next_day = resolve_datetime("tomorrow 09:00").substr(0, 10);
+    id = add("23:30", day + "T23:59");
+    moved = registry.execute("update_event", {{"id", id}, {"start_time", "tomorrow 23:45"}});
+    check(moved.success, "a move across midnight succeeds");
+    auto item = db.get_event(id);
+    check_eq(item.value("end_time", "").substr(11), std::string("00:14"), "the end crosses midnight");
+    check(item.value("end_time", "").substr(0, 10) > next_day, "the end is on the following day");
+    db.delete_event(id);
+
+    id = db.create_event({{"title", "Deadline only"}, {"type", "task"}, {"start_time", day + "T09:00"}});
+    moved = registry.execute("update_event", {{"id", id}, {"start_time", "tomorrow 17:00"}});
+    check(moved.success, "a task without an end can move");
+    check_eq(db.get_event(id).value("end_time", ""), std::string(""), "no task end is invented");
+    db.delete_event(id);
+    auto invalid_create = registry.execute("create_event", {{"title", "Invalid appointment"},
+                                                            {"start_time", "tomorrow 14:00"},
+                                                            {"end_time", "tomorrow 13:00"},
+                                                            {"type", "event"}});
+    check(!invalid_create.success, "creation also rejects an inverted range");
+    for (const auto& event : db.list_events("", "", 500))
+        if (event.value("title", "") == "Invalid appointment")
+            db.delete_event(event.value("id", ""));
+}
+
+static void test_calendar_edits_require_consistent_targets_and_return_ids() {
+    test("calendar edits require consistent targets and return reusable record IDs");
+    auto& db = AgentDatabase::instance();
+    auto& registry = ToolRegistry::instance();
+    auto created = registry.execute(
+        "create_event", {{"title", "Identity appointment"}, {"start_time", "tomorrow 10:00"}, {"type", "event"}});
+    check(created.success, "an appointment was created");
+    const auto receipt = json::parse(created.content);
+    const std::string id = receipt.value("id", "");
+    check(!id.empty(), "the creation receipt contains its ID");
+    std::string actual_id = id;
+    if (actual_id.empty())
+        for (const auto& e : db.list_events("", "", 500))
+            if (e.value("title", "") == "Identity appointment")
+                actual_id = e.value("id", "");
+    const auto before = db.get_event(actual_id);
+    auto bad = registry.execute("update_event", {{"id", actual_id}, {"title", "Expenses"}, {"status", "completed"}});
+    check(!bad.success, "contradictory ID and title are rejected");
+    check(db.get_event(actual_id) == before, "the unrelated record is unchanged");
+    auto missing = registry.execute("update_event", {{"location", "Room A"}});
+    check(!missing.success, "an edit without a selector is rejected");
+    auto renamed = registry.execute("update_event",
+                                    {{"id", actual_id}, {"title", "identity"}, {"new_title", "Renamed appointment"}});
+    check(renamed.success, "a matching partial title and ID can rename a record");
+    check_eq(json::parse(renamed.content).value("id", ""), actual_id, "the edit receipt retains the ID");
+    auto listed = registry.execute("list_events", {{"start_date", resolve_datetime("tomorrow 10:00").substr(0, 10)}});
+    bool found = false;
+    const auto list_result = json::parse(listed.content);
+    for (const auto& item : list_result["items"])
+        if (item.value("id", "") == actual_id)
+            found = true;
+    check(found, "calendar search returns the ID");
+    const auto other_id =
+        db.create_event({{"title", "Renamed appointment"}, {"start_time", resolve_datetime("tomorrow 15:00")}});
+    auto ambiguous = registry.execute("update_event", {{"title", "Renamed appointment"}, {"location", "Room A"}});
+    const auto matches = json::parse(ambiguous.content).value("matches", json::array());
+    check_eq(matches.size(), size_t(2), "an ambiguous title returns candidates without changing them");
+    check(matches.size() == 2 && !matches[0].value("id", "").empty() && !matches[1].value("id", "").empty(),
+          "ambiguity candidates include IDs");
+    check(db.get_event(other_id).value("location", "").empty(), "ambiguous lookup does not mutate either candidate");
+    const auto before_delete = db.get_event(actual_id);
+    auto deleted = registry.execute("delete_event", {{"id", actual_id}, {"title", "Expenses"}});
+    check(!deleted.success, "contradictory delete selectors are rejected too");
+    check(db.get_event(actual_id) == before_delete, "the unrelated record is not deleted");
+    db.delete_event(actual_id);
+    db.delete_event(other_id);
+}
+
+static void test_calendar_context_includes_end_and_refreshes_after_writes() {
+    test("calendar context includes appointment ends and refreshes after changes");
+    auto& db = AgentDatabase::instance();
+    const std::string start = resolve_datetime("tomorrow 10:00");
+    const std::string end = resolve_datetime("tomorrow 11:00");
+    const std::string moved_end = resolve_datetime("tomorrow 15:00");
+    const std::string id = db.create_event(
+        {{"title", "Context appointment"}, {"type", "event"}, {"start_time", start}, {"end_time", end}});
+    ScriptedServer server({assistant_calling("update_event", {{"id", id}, {"start_time", "tomorrow 14:00"}}),
+                           {{"role", "assistant"}, {"content", "Moved."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    auto options = test_options();
+    options.enabled_categories = {"calendar"};
+    options.n_ctx = 16384;
+    harness.set_options(options);
+    EventLog log;
+    const auto result =
+        harness.run(json::array({user("Move the context appointment to tomorrow at two.")}), log.sink());
+    server.stop();
+    const auto requests = server.requests();
+    check(result.success && requests.size() == 2, "the edit completes in two iterations");
+    if (requests.size() == 2) {
+        const std::string first = requests[0]["messages"][0].value("content", "");
+        const std::string second = requests[1]["messages"][0].value("content", "");
+        check(first.find(id) != std::string::npos, "the selected appointment is present in context");
+        check(first.find(end) != std::string::npos, "the initial context includes the appointment end");
+        check(second.find(moved_end) != std::string::npos, "the next context includes the saved new end");
+        check(second.find(resolve_datetime("tomorrow 14:00")) != std::string::npos, "the saved new start is present");
+        check(second.find(start) == std::string::npos, "the stale start is removed from context");
+    }
+    db.delete_event(id);
+}
+
+static void test_request_failures_do_not_disable_tools() {
+    test("server and unrelated request failures do not silently disable tools");
+    for (const auto& failure : std::vector<std::pair<int, std::string>>{{500, "failed to parse generated tool call"},
+                                                                        {401, "authentication required"},
+                                                                        {429, "rate limit exceeded"},
+                                                                        {400, "context length exceeded"}}) {
+        ScriptedServer server({{{"http_status", failure.first}, {"error", failure.second}},
+                               {{"role", "assistant"}, {"content", "fallback must not run"}}});
+        server.start();
+        Harness harness(server.url(), "test-model", true);
+        harness.set_options(test_options());
+        EventLog log;
+        const auto result = harness.run(json::array({user("hello")}), log.sink());
+        server.stop();
+        check(!result.success, "the failure is reported for HTTP " + std::to_string(failure.first));
+        check_eq(result.stop_reason, std::string("error"), "the run ends with an error");
+        check_eq(server.requests().size(), size_t(1), "no retry silently drops tools");
+        check(result.error.find(failure.second) != std::string::npos, "the original reason is retained");
+    }
+}
+
+static void test_partial_success_survives_a_model_failure() {
+    test("successful tool receipts survive a later inference failure");
+    ScriptedServer server({assistant_calling("test_write", {{"title", "Saved action"}}),
+                           {{"http_status", 500}, {"error", "generated tool call could not be parsed"}}});
+    server.start();
+    const int before = g_write_spy.calls;
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    const auto result = harness.run(json::array({user("save it")}), log.sink());
+    server.stop();
+    check(!result.success && result.stop_reason == "error", "the later model failure is explicit");
+    check_eq(g_write_spy.calls - before, 1, "the completed write is not repeated");
+    check_eq(server.requests().size(), size_t(2), "a generation failure does not start a tool-free retry");
+    check_eq(result.executed_tools.size(), size_t(1), "the completed action is retained in the summary");
+    check(result.executed_tools.size() == 1 && result.executed_tools[0].value("success", false),
+          "the action keeps its success receipt");
+    bool receipt = false;
+    for (const auto& message : result.transcript_delta)
+        if (message.value("role", "") == "tool" && message.value("name", "") == "test_write")
+            receipt = true;
+    check(receipt, "the successful tool response remains in the returned history");
+}
+
+static void test_truncated_text_is_reported_as_incomplete() {
+    test("a reply cut off by the token budget is not reported as completed");
+    ScriptedServer server({{{"role", "assistant"}, {"content", "I started explaining"}, {"finish_reason", "length"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    auto options = test_options();
+    options.scratchpad_id = "truncated-reply";
+    harness.set_options(options);
+    EventLog log;
+    const auto result = harness.run(json::array({user("explain it")}), log.sink());
+    server.stop();
+    check(!result.success, "an incomplete answer is not successful completion");
+    check_eq(result.stop_reason, std::string("length"), "the summary reports the token limit");
+    check_eq(result.content, std::string("I started explaining"), "the partial text is retained");
+    check(!result.transcript_delta.empty(), "the partial assistant turn remains in history");
+    check_eq(log.count(EventType::Error), 1, "the client receives an explicit interruption reason");
+    check_eq(TaskStore::instance().get_task(result.task_id).status, std::string("interrupted"),
+             "the durable task is resumable");
+}
+
+static void test_calendar_clock_formats_and_relative_end_dates() {
+    test("calendar clock formats and bare end times keep the appointment date");
+    check_eq(extract_clock_time("5:30pm").value_or("none"), std::string("17:30"),
+             "a single-digit pm clock retains its minutes");
+    check_eq(extract_clock_time("5:00am").value_or("none"), std::string("05:00"),
+             "a single-digit am clock retains its hour");
+    check_eq(extract_clock_time("at 5:30").value_or("none"), std::string("05:30"),
+             "a bare single-digit clock retains its minutes");
+    auto& registry = ToolRegistry::instance();
+    auto& db = AgentDatabase::instance();
+    const std::string day = resolve_datetime("tomorrow 14:00").substr(0, 10);
+    const auto created = registry.execute(
+        "create_event",
+        {{"title", "Clock appointment"}, {"type", "event"}, {"start_time", "tomorrow 14:00"}, {"end_time", "15:00"}});
+    check(created.success, "a bare end clock uses the requested appointment date");
+    std::string id;
+    if (created.success) {
+        const auto receipt = json::parse(created.content);
+        id = receipt.value("id", "");
+        check_eq(receipt.value("end_time", ""), day + "T15:00", "the saved end is on tomorrow's date");
+    } else {
+        id = db.create_event({{"title", "Clock appointment"},
+                              {"type", "event"},
+                              {"start_time", day + "T14:00"},
+                              {"end_time", day + "T15:00"}});
+    }
+    const auto edited = registry.execute("update_event", {{"id", id}, {"end_time", "5:30pm"}});
+    check(edited.success, "an end-only bare clock uses the existing start date");
+    check_eq(db.get_event(id).value("end_time", ""), day + "T17:30",
+             "the edited end uses the saved date and requested minutes");
+    const auto clear = registry.execute("update_event", {{"id", id}, {"end_time", ""}});
+    check(clear.success && db.get_event(id).value("end_time", "").empty(), "an optional end can be explicitly cleared");
+    db.delete_event(id);
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -2677,6 +2914,13 @@ int main() {
     test_multi_step_loop();
     test_system_prompt_spells_out_the_week();
     test_moving_to_a_day_keeps_the_time();
+    test_calendar_reschedule_preserves_duration_and_validates_ranges();
+    test_calendar_edits_require_consistent_targets_and_return_ids();
+    test_calendar_context_includes_end_and_refreshes_after_writes();
+    test_request_failures_do_not_disable_tools();
+    test_partial_success_survives_a_model_failure();
+    test_truncated_text_is_reported_as_incomplete();
+    test_calendar_clock_formats_and_relative_end_dates();
     test_text_written_call_is_recovered();
     test_prose_mentioning_a_function_is_not_run();
     test_invented_names_and_quoted_values_are_accepted();

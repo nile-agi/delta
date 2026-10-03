@@ -8,6 +8,7 @@
 #include "tool_task.h"
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <functional>
 #include <map>
 #include <ctime>
@@ -212,29 +213,34 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
 
     if (has_tools) {
         prompt += "\nHOW YOU WORK\n"
-                  "You have tools. Use one when the job needs it and answer directly when it does not. "
-                  "Work a request through to the end rather than describing what you would do.\n"
-                  "- Read the context below before reaching for a tool. If what you need is already "
-                  "there, use it.\n"
-                  "- If a request is ambiguous, ask. When the user says \"it\" or \"that one\" and more "
-                  "than one thing fits, ask which they mean instead of picking one. A wrong guess "
-                  "costs them more than a short question. When exactly one thing fits (\"my task\" "
-                  "and there is one task), act on it; never ask for a title or id you can look up.\n"
-                  "- After a tool runs, use what it actually returned. Never say something is done "
-                  "that a tool did not confirm.\n"
-                  "- If a tool fails twice the same way, stop and say what is blocking you.\n"
-                  "- For work needing more than two steps, call set_plan first, then update_plan as "
-                  "you finish each one. Use note_to_self for anything you will need again later.\n"
-                  "- Some tools ask the user's permission first. If one is refused, do not retry it: "
-                  "say what you wanted to do and why.\n"
-                  "- Answer briefly and plainly. The ids in [id:...] are for you to pass to tools; "
-                  "never show them to the user, and do not name the tools you used.\n"
-                  "\nDATES: pass them as words ('friday 2pm', 'tomorrow 1300') rather than working out a "
-                  "date yourself -- the calendar tools resolve them exactly. To move an item to another "
-                  "day at the same time, pass just the day ('friday').\n"
-                  "TYPE: use type='task' for things the user has to DO, type='event' only for meetings "
-                  "and appointments. STATUS: done/complete -> \"completed\", cancel -> \"cancelled\", "
-                  "start/begin -> \"in_progress\".\n";
+                  "Use tools for requested changes and saved information; answer ordinary conversation directly. "
+                  "Complete the work instead of describing what you could do.\n"
+                  "- Use the context and prior tool results. Look up missing records before editing; reuse their "
+                  "ids. Ask one short question only when the target, date or time is genuinely unclear.\n"
+                  "- Choose the operation from the user's goal. For an existing item, update that item and "
+                  "preserve its identity. Create a record only when the user needs a new one. "
+                  "When an existing task is finished, call update_event with its id or title and "
+                  "status='completed'; preserve its dates and other fields unless asked to change them.\n"
+                  "- Confirm only changes supported by successful tool results, using the saved details. "
+                  "If a step fails, distinguish what succeeded from what remains undone.\n"
+                  "- When asked to keep work organized as the conversation continues, record the user's agreed "
+                  "actions, confirmed appointments and useful decisions as they arise. Do not turn tentative "
+                  "ideas, small talk or another person's actions into the user's commitments.\n"
+                  "- Saved lists, drafts and project decisions are notes. To change or add content to an existing "
+                  "note, load the notes group if available and not loaded, find it with list_notes if its id is "
+                  "unknown, read it with get_note, then call update_note. Retain its existing content and change "
+                  "only what the user requested. Create a note for a new document. Use remember for durable "
+                  "facts and preferences.\n"
+                  "- set_plan, update_plan and note_to_self are private working state, not saved user notes or "
+                  "calendar tasks. Use a plan for complex work; skip it for a few straightforward record changes. "
+                  "Mark a step done only when its intended action succeeded.\n"
+                  "- If a tool fails twice the same way, stop and explain the blocker. If permission is refused, "
+                  "do not retry the action.\n"
+                  "\nDATES: keep day and time together ('tomorrow 5pm'); pass date words to calendar tools. "
+                  "Task deadlines belong in start_time. For a same-time move pass just the day. "
+                  "Appointments include agreed start and end times; a start-only move preserves duration.\n"
+                  "TYPE: task = something the user must do; event = an agreed meeting or appointment. "
+                  "STATUS: done/complete = completed, cancel = cancelled, start/begin = in_progress.\n";
         // Only once the run is genuinely near its end: nagging from the first turn would just
         // make the model rush a job it has plenty of room for.
         if (steps_remaining_ >= 0 && steps_remaining_ <= 3 && steps_remaining_ * 2 <= options_.max_iterations) {
@@ -246,6 +252,13 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
     } else {
         prompt += "\nAnswer from the conversation and the context below. Keep responses brief and friendly.\n";
     }
+
+    prompt += "\nUSER REPLY\n"
+              "Report the requested outcome briefly, using readable record titles and confirmed details. "
+              "Internal record ids, UUIDs and tool names are addressing metadata for tool calls; keep them "
+              "out of normal replies. Keep raw JSON and storage metadata out of confirmations. "
+              "When confirming record details, use only facts supplied by the user or returned by tools. "
+              "Omit absent record fields and describe unfinished work accurately.\n";
 
     if (!task_dossier_.empty())
         prompt += task_dossier_;
@@ -323,6 +336,8 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
             for (auto& e : events) {
                 context_block +=
                     "- [id:" + e.value("id", "") + "] " + e.value("title", "") + " at " + e.value("start_time", "");
+                if (!e.value("end_time", "").empty())
+                    context_block += " until " + e["end_time"].get<std::string>();
                 if (!e.value("location", "").empty())
                     context_block += " (" + e["location"].get<std::string>() + ")";
                 context_block += "\n";
@@ -654,13 +669,15 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         bool server_rejected = false;
         if (response.is_object() && response.contains("error")) {
             const auto& err = response["error"];
-            const std::string message = err.is_string()   ? err.get<std::string>()
-                                        : err.is_object() ? err.value("message", std::string())
-                                                          : std::string();
+            std::string message = err.is_string()   ? err.get<std::string>()
+                                  : err.is_object() ? err.value("message", std::string())
+                                                    : std::string();
             const int status = response.value("http_status", 0);
+            for (auto& c : message)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             const bool about_tools =
                 message.find("tool") != std::string::npos || message.find("template") != std::string::npos;
-            server_rejected = (status >= 400 && status < 500) || (status >= 500 && about_tools);
+            server_rejected = (status == 400 || status == 422) && about_tools;
         }
         if (server_rejected && !active.empty() && !tools_disabled_by_error) {
             std::cerr << "[delta-harness] tools rejected, retrying without them: " << response["error"].dump()
@@ -731,6 +748,14 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         }
 
         if (!has_tool_calls) {
+            if (cut_off) {
+                transcript.push_back(assistant);
+                result.content = content;
+                result.stop_reason = "length";
+                result.error = "The model reply reached its token limit before finishing.";
+                emit(EventType::Error, {{"message", result.error}});
+                return finish(result);
+            }
             // Nothing at all: no answer, no action. Ending the turn here would leave the user
             // staring at an empty reply, so take one more sample before giving up.
             if (content.empty() && empty_replies == 0) {
@@ -908,6 +933,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             }
 
             const ToolResult tool_result = registry.execute(name, arguments);
+            if (tool_result.success && def->risk != ToolRisk::Safe)
+                context_cache_key_.clear(); // The next iteration must see the saved state.
             result.tool_calls++;
             result.executed_tools.push_back(
                 {{"name", name}, {"arguments", arguments}, {"success", tool_result.success}});

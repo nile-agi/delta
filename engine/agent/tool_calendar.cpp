@@ -7,14 +7,80 @@
 #include <cstdio>
 #include <ctime>
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 #include <vector>
 
 namespace delta {
 namespace agent {
 
-static nlohmann::json strip_id(nlohmann::json obj) {
-    obj.erase("id");
-    return obj;
+static std::string selector_error(const nlohmann::json& args) {
+    const std::string id = args.value("id", "");
+    std::string title = args.value("title", "");
+    if (id.empty() && title.find_first_not_of(" \t\r\n") == std::string::npos)
+        return "Provide either id or title";
+    if (id.empty())
+        return "";
+    const auto item = AgentDatabase::instance().get_event(id);
+    if (!item.is_object())
+        return "Item not found";
+    if (!title.empty()) {
+        std::string current_title = item.value("title", "");
+        for (auto& c : title)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (auto& c : current_title)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (current_title.find(title) == std::string::npos)
+            return "The id and title refer to different items. Look up the intended item before editing it.";
+    }
+    return "";
+}
+
+static std::optional<time_t> calendar_time(const std::string& value) {
+    if (value.size() < 16)
+        return std::nullopt;
+    std::tm parsed{};
+    std::istringstream input(value.substr(0, 16));
+    input >> std::get_time(&parsed, "%Y-%m-%dT%H:%M");
+    if (input.fail())
+        return std::nullopt;
+    parsed.tm_isdst = -1;
+    const time_t stamp = std::mktime(&parsed);
+    char normalized[32];
+    std::strftime(normalized, sizeof(normalized), "%Y-%m-%dT%H:%M", &parsed);
+    if (stamp == time_t(-1) || value.substr(0, 16) != normalized)
+        return std::nullopt;
+    return stamp;
+}
+
+static bool valid_calendar_range(const nlohmann::json& item) {
+    const auto start = calendar_time(item.value("start_time", ""));
+    const std::string end_text = item.value("end_time", "");
+    if (!start)
+        return false;
+    if (end_text.empty())
+        return true;
+    const auto end = calendar_time(end_text);
+    return end && *end > *start;
+}
+
+// A clock-only end belongs to the appointment's date. Explicit days still resolve normally.
+static std::string resolve_end_datetime(const std::string& raw, const std::string& start) {
+    if (raw.empty())
+        return "";
+    std::string lower = raw;
+    for (auto& c : lower)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    bool explicit_day = raw.size() >= 16 && raw[10] == 'T';
+    for (const char* word :
+         {"today", "tomorrow", "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"})
+        if (lower.find(word) != std::string::npos)
+            explicit_day = true;
+    if (!explicit_day && start.size() >= 10) {
+        if (const auto clock = extract_clock_time(raw))
+            return start.substr(0, 10) + "T" + *clock;
+    }
+    return resolve_datetime(raw);
 }
 
 // Resolve a model-provided start_time to a valid YYYY-MM-DDTHH:MM string.
@@ -42,29 +108,36 @@ std::optional<std::string> extract_clock_time(const std::string& s) {
     if (has_word("midnight"))
         return std::string("00:00");
 
-    // 1. HH:MM pattern, optionally followed by am/pm
-    for (size_t i = 0; i + 4 < lower.size(); i++) {
-        if (std::isdigit(static_cast<unsigned char>(lower[i])) &&
-            std::isdigit(static_cast<unsigned char>(lower[i + 1])) && lower[i + 2] == ':' &&
-            std::isdigit(static_cast<unsigned char>(lower[i + 3])) &&
-            std::isdigit(static_cast<unsigned char>(lower[i + 4]))) {
-            int h = (lower[i] - '0') * 10 + (lower[i + 1] - '0');
-            int m = (lower[i + 3] - '0') * 10 + (lower[i + 4] - '0');
-            if (h < 24 && m < 60) {
-                size_t after = i + 5;
-                while (after < lower.size() && lower[after] == ' ')
-                    after++;
-                if (after + 1 < lower.size()) {
-                    if (lower[after] == 'p' && lower[after + 1] == 'm' && h < 12)
-                        h += 12;
-                    if (lower[after] == 'a' && lower[after + 1] == 'm' && h == 12)
-                        h = 0;
-                }
-                char buf[6];
-                snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
-                return std::string(buf);
-            }
+    // 1. H:MM or HH:MM, optionally followed by am/pm.
+    for (size_t i = 0; i + 3 < lower.size(); i++) {
+        if (!std::isdigit(static_cast<unsigned char>(lower[i])) ||
+            (i > 0 && std::isdigit(static_cast<unsigned char>(lower[i - 1]))))
+            continue;
+        int h = lower[i] - '0';
+        size_t colon = i + 1;
+        if (std::isdigit(static_cast<unsigned char>(lower[colon]))) {
+            h = h * 10 + (lower[colon] - '0');
+            colon++;
         }
+        if (colon + 2 >= lower.size() || lower[colon] != ':' ||
+            !std::isdigit(static_cast<unsigned char>(lower[colon + 1])) ||
+            !std::isdigit(static_cast<unsigned char>(lower[colon + 2])))
+            continue;
+        const int m = (lower[colon + 1] - '0') * 10 + (lower[colon + 2] - '0');
+        if (h >= 24 || m >= 60)
+            continue;
+        size_t after = colon + 3;
+        while (after < lower.size() && lower[after] == ' ')
+            after++;
+        if (after + 1 < lower.size()) {
+            if (lower[after] == 'p' && lower[after + 1] == 'm' && h < 12)
+                h += 12;
+            if (lower[after] == 'a' && lower[after + 1] == 'm' && h == 12)
+                h = 0;
+        }
+        char buf[6];
+        snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
+        return std::string(buf);
     }
 
     // 2. Digit(s) followed by am/pm: "1pm", "2am", "11pm", "12am"
@@ -211,8 +284,9 @@ void register_calendar_tools() {
 
     registry.register_tool(
         {"create_event",
-         "Create a calendar event, task, meeting, appointment, or reminder. "
-         "Use type='task' for to-dos and actionable items.",
+         "Add a new appointment, reminder or task. Use type='task' for a new action the user must do. "
+         "For an existing item's completion, rescheduling or other change, use update_event. "
+         "For changes to a saved list or document, use the notes tools.",
          {{"type", "object"},
           {"properties",
            {{"title", {{"type", "string"}, {"description", "Name of the event or task"}}},
@@ -244,6 +318,14 @@ void register_calendar_tools() {
             std::string start_time = resolve_datetime(args.value("start_time", ""));
             std::string title = args.value("title", "");
 
+            nlohmann::json resolved_args = args;
+            resolved_args["start_time"] = start_time;
+            if (resolved_args.contains("end_time") && resolved_args["end_time"].is_string())
+                resolved_args["end_time"] =
+                    resolve_end_datetime(resolved_args["end_time"].get<std::string>(), start_time);
+            if (!valid_calendar_range(resolved_args))
+                return {false, "", "Provide valid times with end_time after start_time"};
+
             std::string title_lower = title;
             for (auto& c : title_lower)
                 c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -259,16 +341,11 @@ void register_calendar_tools() {
                     for (auto& c : et_lower)
                         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                     if (et_lower == title_lower) {
-                        return {true, strip_id(e).dump(), ""};
+                        return {true, e.dump(), ""};
                     }
                     overlaps.push_back(et);
                 }
             }
-
-            nlohmann::json resolved_args = args;
-            resolved_args["start_time"] = start_time;
-            if (resolved_args.contains("end_time") && resolved_args["end_time"].is_string())
-                resolved_args["end_time"] = resolve_datetime(resolved_args["end_time"].get<std::string>());
 
             // Guess the type from the title, but only when the model did not say. Overruling an
             // explicit type left the model asking for an event and silently getting a task.
@@ -293,7 +370,7 @@ void register_calendar_tools() {
             if (id.empty())
                 return {false, "", "Failed to create item."};
             auto event = db.get_event(id);
-            auto result = strip_id(event);
+            auto result = event;
             if (guessed_task) {
                 result["note"] = "Recorded as a task because the title reads like something to do. "
                                  "Pass type='event' if it is really an appointment.";
@@ -350,7 +427,7 @@ void register_calendar_tools() {
                                          args.value("status", ""), args.value("priority", ""), args.value("tags", ""));
             nlohmann::json result = {{"items", nlohmann::json::array()}, {"count", events.size()}};
             for (auto& e : events)
-                result["items"].push_back(strip_id(e));
+                result["items"].push_back(e);
             return {true, result.dump(), ""};
         });
 
@@ -365,6 +442,9 @@ void register_calendar_tools() {
         [](const nlohmann::json& args) -> ToolResult {
             auto& db = AgentDatabase::instance();
             std::string id = args.value("id", "");
+            const auto error = selector_error(args);
+            if (!error.empty())
+                return {false, "", error};
 
             if (id.empty()) {
                 std::string title = args.value("title", "");
@@ -396,8 +476,10 @@ void register_calendar_tools() {
                     nlohmann::json result = {{"message", "Multiple items match. Which one?"},
                                              {"matches", nlohmann::json::array()}};
                     for (auto& m : matches) {
-                        result["matches"].push_back({{"title", m.value("title", "")},
+                        result["matches"].push_back({{"id", m.value("id", "")},
+                                                     {"title", m.value("title", "")},
                                                      {"start_time", m.value("start_time", "")},
+                                                     {"end_time", m.value("end_time", "")},
                                                      {"type", m.value("type", "event")}});
                     }
                     return {true, result.dump(), ""};
@@ -411,8 +493,10 @@ void register_calendar_tools() {
 
     registry.register_tool(
         {"update_event",
-         "Update, reschedule, or mark a calendar event or task as done. "
-         "Use for 'move to 3pm', 'mark as done', 'change priority', etc.",
+         "Change an existing calendar event or task. To mark a finished task done, set status='completed'; "
+         "leave dates and other fields unchanged unless the user requested changes. "
+         "Provide an id from a tool result or the current title; if both are given they must match. "
+         "Use new_title only when renaming. A start-only move preserves duration.",
          {{"type", "object"},
           {"properties",
            {{"id", {{"type", "string"}, {"description", "Event/task ID from context (exact match)"}}},
@@ -440,6 +524,9 @@ void register_calendar_tools() {
         [](const nlohmann::json& args) -> ToolResult {
             auto& db = AgentDatabase::instance();
             std::string id = args.value("id", "");
+            const auto error = selector_error(args);
+            if (!error.empty())
+                return {false, "", error};
 
             if (id.empty()) {
                 std::string title = args.value("title", "");
@@ -471,39 +558,51 @@ void register_calendar_tools() {
                     nlohmann::json result = {{"message", "Multiple items match. Which one?"},
                                              {"matches", nlohmann::json::array()}};
                     for (auto& m : matches) {
-                        result["matches"].push_back({{"title", m.value("title", "")},
+                        result["matches"].push_back({{"id", m.value("id", "")},
+                                                     {"title", m.value("title", "")},
                                                      {"start_time", m.value("start_time", "")},
+                                                     {"end_time", m.value("end_time", "")},
                                                      {"type", m.value("type", "event")}});
                     }
                     return {true, result.dump(), ""};
                 }
             }
 
-            nlohmann::json update_data;
+            nlohmann::json update_data = nlohmann::json::object();
             if (args.contains("new_title"))
                 update_data["title"] = args["new_title"];
             if (args.contains("start_time")) {
                 const std::string raw = args["start_time"].get<std::string>();
                 std::string resolved = resolve_datetime(raw);
-                // "move it to friday" names a day but no time: keep the item's own time, and move its
-                // end with it, instead of snapping to resolve_datetime's 09:00 default.
+                // A day-only move keeps the existing clock time. Every start-only move keeps
+                // the duration, including appointments whose end crosses midnight.
                 const auto existing = db.get_event(id);
                 const bool names_time = extract_clock_time(raw).has_value() || raw.find('T') != std::string::npos;
                 if (!names_time && existing.is_object()) {
                     const std::string old_start = existing.value("start_time", "");
                     if (old_start.size() >= 16)
                         resolved = resolved.substr(0, 10) + old_start.substr(10, 6);
-                    const std::string old_end = existing.value("end_time", "");
-                    if (!args.contains("end_time") && old_end.size() >= 16 && old_start.size() >= 10) {
-                        // Same-day items keep their end time on the new day.
-                        if (old_end.substr(0, 10) == old_start.substr(0, 10))
-                            update_data["end_time"] = resolved.substr(0, 10) + old_end.substr(10, 6);
+                }
+                if (!args.contains("end_time") && existing.is_object()) {
+                    const auto old_start = calendar_time(existing.value("start_time", ""));
+                    const auto old_end = calendar_time(existing.value("end_time", ""));
+                    const auto new_start = calendar_time(resolved);
+                    if (old_start && old_end && new_start && *old_end > *old_start) {
+                        const time_t end = *new_start + (*old_end - *old_start);
+                        std::tm shifted{};
+                        local_time(&end, &shifted);
+                        char buf[32];
+                        std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M", &shifted);
+                        update_data["end_time"] = buf;
                     }
                 }
                 update_data["start_time"] = resolved;
             }
-            if (args.contains("end_time"))
-                update_data["end_time"] = resolve_datetime(args["end_time"].get<std::string>());
+            if (args.contains("end_time")) {
+                const auto existing = db.get_event(id);
+                const std::string start = update_data.value("start_time", existing.value("start_time", ""));
+                update_data["end_time"] = resolve_end_datetime(args["end_time"].get<std::string>(), start);
+            }
             if (args.contains("description"))
                 update_data["description"] = args["description"];
             if (args.contains("location"))
@@ -517,10 +616,19 @@ void register_calendar_tools() {
             if (args.contains("reminder_minutes"))
                 update_data["reminder_minutes"] = args["reminder_minutes"];
 
+            if (args.contains("start_time") || args.contains("end_time")) {
+                auto merged = db.get_event(id);
+                if (!merged.is_object())
+                    return {false, "", "Item not found"};
+                merged.update(update_data);
+                if (!valid_calendar_range(merged))
+                    return {false, "", "Provide valid times with end_time after start_time"};
+            }
+
             if (!db.update_event(id, update_data))
                 return {false, "", "Item not found or update failed"};
             auto event = db.get_event(id);
-            return {true, strip_id(event).dump(), ""};
+            return {true, event.dump(), ""};
         });
 }
 
