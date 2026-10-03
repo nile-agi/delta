@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <ctime>
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 #include <vector>
 
 namespace delta {
@@ -15,6 +17,34 @@ namespace agent {
 static nlohmann::json strip_id(nlohmann::json obj) {
     obj.erase("id");
     return obj;
+}
+
+static std::optional<time_t> calendar_time(const std::string& value) {
+    if (value.size() < 16)
+        return std::nullopt;
+    std::tm parsed{};
+    std::istringstream input(value.substr(0, 16));
+    input >> std::get_time(&parsed, "%Y-%m-%dT%H:%M");
+    if (input.fail())
+        return std::nullopt;
+    parsed.tm_isdst = -1;
+    const time_t stamp = std::mktime(&parsed);
+    char normalized[32];
+    std::strftime(normalized, sizeof(normalized), "%Y-%m-%dT%H:%M", &parsed);
+    if (stamp == time_t(-1) || value.substr(0, 16) != normalized)
+        return std::nullopt;
+    return stamp;
+}
+
+static bool valid_calendar_range(const nlohmann::json& item) {
+    const auto start = calendar_time(item.value("start_time", ""));
+    const std::string end_text = item.value("end_time", "");
+    if (!start)
+        return false;
+    if (end_text.empty())
+        return true;
+    const auto end = calendar_time(end_text);
+    return end && *end > *start;
 }
 
 // Resolve a model-provided start_time to a valid YYYY-MM-DDTHH:MM string.
@@ -244,6 +274,13 @@ void register_calendar_tools() {
             std::string start_time = resolve_datetime(args.value("start_time", ""));
             std::string title = args.value("title", "");
 
+            nlohmann::json resolved_args = args;
+            resolved_args["start_time"] = start_time;
+            if (resolved_args.contains("end_time") && resolved_args["end_time"].is_string())
+                resolved_args["end_time"] = resolve_datetime(resolved_args["end_time"].get<std::string>());
+            if (!valid_calendar_range(resolved_args))
+                return {false, "", "Provide valid times with end_time after start_time"};
+
             std::string title_lower = title;
             for (auto& c : title_lower)
                 c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -264,11 +301,6 @@ void register_calendar_tools() {
                     overlaps.push_back(et);
                 }
             }
-
-            nlohmann::json resolved_args = args;
-            resolved_args["start_time"] = start_time;
-            if (resolved_args.contains("end_time") && resolved_args["end_time"].is_string())
-                resolved_args["end_time"] = resolve_datetime(resolved_args["end_time"].get<std::string>());
 
             // Guess the type from the title, but only when the model did not say. Overruling an
             // explicit type left the model asking for an event and silently getting a task.
@@ -485,19 +517,26 @@ void register_calendar_tools() {
             if (args.contains("start_time")) {
                 const std::string raw = args["start_time"].get<std::string>();
                 std::string resolved = resolve_datetime(raw);
-                // "move it to friday" names a day but no time: keep the item's own time, and move its
-                // end with it, instead of snapping to resolve_datetime's 09:00 default.
+                // A day-only move keeps the existing clock time. Every start-only move keeps
+                // the duration, including appointments whose end crosses midnight.
                 const auto existing = db.get_event(id);
                 const bool names_time = extract_clock_time(raw).has_value() || raw.find('T') != std::string::npos;
                 if (!names_time && existing.is_object()) {
                     const std::string old_start = existing.value("start_time", "");
                     if (old_start.size() >= 16)
                         resolved = resolved.substr(0, 10) + old_start.substr(10, 6);
-                    const std::string old_end = existing.value("end_time", "");
-                    if (!args.contains("end_time") && old_end.size() >= 16 && old_start.size() >= 10) {
-                        // Same-day items keep their end time on the new day.
-                        if (old_end.substr(0, 10) == old_start.substr(0, 10))
-                            update_data["end_time"] = resolved.substr(0, 10) + old_end.substr(10, 6);
+                }
+                if (!args.contains("end_time") && existing.is_object()) {
+                    const auto old_start = calendar_time(existing.value("start_time", ""));
+                    const auto old_end = calendar_time(existing.value("end_time", ""));
+                    const auto new_start = calendar_time(resolved);
+                    if (old_start && old_end && new_start && *old_end > *old_start) {
+                        const time_t end = *new_start + (*old_end - *old_start);
+                        std::tm shifted{};
+                        local_time(&end, &shifted);
+                        char buf[32];
+                        std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M", &shifted);
+                        update_data["end_time"] = buf;
                     }
                 }
                 update_data["start_time"] = resolved;
@@ -516,6 +555,15 @@ void register_calendar_tools() {
                 update_data["tags"] = args["tags"];
             if (args.contains("reminder_minutes"))
                 update_data["reminder_minutes"] = args["reminder_minutes"];
+
+            if (args.contains("start_time") || args.contains("end_time")) {
+                auto merged = db.get_event(id);
+                if (!merged.is_object())
+                    return {false, "", "Item not found"};
+                merged.update(update_data);
+                if (!valid_calendar_range(merged))
+                    return {false, "", "Provide valid times with end_time after start_time"};
+            }
 
             if (!db.update_event(id, update_data))
                 return {false, "", "Item not found or update failed"};

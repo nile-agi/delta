@@ -2653,6 +2653,56 @@ static void test_moving_to_a_day_keeps_the_time() {
     AgentDatabase::instance().delete_event(id);
 }
 
+static void test_calendar_reschedule_preserves_duration_and_validates_ranges() {
+    test("calendar changes preserve duration and reject invalid ranges before writing");
+    auto& db = AgentDatabase::instance();
+    auto& registry = ToolRegistry::instance();
+    const std::string day = resolve_datetime("tomorrow 09:00").substr(0, 10);
+    auto add = [&](const std::string& start, const std::string& end) {
+        return db.create_event({{"title", "Duration appointment"},
+                                {"type", "event"},
+                                {"start_time", day + "T" + start},
+                                {"end_time", end}});
+    };
+    std::string id = add("11:00", day + "T12:00");
+    auto moved = registry.execute("update_event", {{"id", id}, {"start_time", "tomorrow 14:00"}});
+    check(moved.success, "a start-only move succeeds");
+    check_eq(db.get_event(id).value("end_time", ""), day + "T15:00", "the one-hour duration is preserved");
+    auto explicit_end = registry.execute("update_event", {{"id", id}, {"end_time", "tomorrow 15:30"}});
+    check(explicit_end.success, "an explicit valid end changes duration");
+    const auto before = db.get_event(id);
+    auto invalid =
+        registry.execute("update_event", {{"id", id}, {"end_time", "tomorrow 13:00"}, {"location", "Should not save"}});
+    check(!invalid.success, "an end before the start is rejected");
+    check(db.get_event(id) == before, "an invalid range changes no fields");
+    auto equal = registry.execute("update_event", {{"id", id}, {"end_time", "tomorrow 14:00"}});
+    check(!equal.success, "a zero-length range is rejected");
+    db.delete_event(id);
+
+    const std::string next_day = resolve_datetime("tomorrow 09:00").substr(0, 10);
+    id = add("23:30", day + "T23:59");
+    moved = registry.execute("update_event", {{"id", id}, {"start_time", "tomorrow 23:45"}});
+    check(moved.success, "a move across midnight succeeds");
+    auto item = db.get_event(id);
+    check_eq(item.value("end_time", "").substr(11), std::string("00:14"), "the end crosses midnight");
+    check(item.value("end_time", "").substr(0, 10) > next_day, "the end is on the following day");
+    db.delete_event(id);
+
+    id = db.create_event({{"title", "Deadline only"}, {"type", "task"}, {"start_time", day + "T09:00"}});
+    moved = registry.execute("update_event", {{"id", id}, {"start_time", "tomorrow 17:00"}});
+    check(moved.success, "a task without an end can move");
+    check_eq(db.get_event(id).value("end_time", ""), std::string(""), "no task end is invented");
+    db.delete_event(id);
+    auto invalid_create = registry.execute("create_event", {{"title", "Invalid appointment"},
+                                                            {"start_time", "tomorrow 14:00"},
+                                                            {"end_time", "tomorrow 13:00"},
+                                                            {"type", "event"}});
+    check(!invalid_create.success, "creation also rejects an inverted range");
+    for (const auto& event : db.list_events("", "", 500))
+        if (event.value("title", "") == "Invalid appointment")
+            db.delete_event(event.value("id", ""));
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -2677,6 +2727,7 @@ int main() {
     test_multi_step_loop();
     test_system_prompt_spells_out_the_week();
     test_moving_to_a_day_keeps_the_time();
+    test_calendar_reschedule_preserves_duration_and_validates_ranges();
     test_text_written_call_is_recovered();
     test_prose_mentioning_a_function_is_not_run();
     test_invented_names_and_quoted_values_are_accepted();
