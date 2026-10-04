@@ -17,29 +17,18 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> =
 	calendarWeekStart: 'monday',
 	onboardingCompleted: false,
 	showTokensPerSecond: false,
-	showThoughtInProgress: false,
+	showMessageStats: false,
 	disableReasoningFormat: false,
-	keepStatsVisible: false,
-	showMessageStats: true,
-	askForTitleConfirmation: false,
 	pasteLongTextToFileLen: 2500,
-	pdfAsImage: false,
-	copyTextAttachmentsAsPlainText: false,
-	enableContinueButton: false,
 	backendSampling: false,
 	showToolCallLabels: false,
-	renderUserContentAsMarkdown: false,
-	showMicrophoneOnEmptyInput: false,
-	disableAutoScroll: false,
-	alwaysShowSidebar: false,
-	autoShowSidebarOnNewChat: true,
 	useAgentTools: true,
 	useCalendarTools: true,
 	useNotesTools: true,
 	useMemoryTools: true,
 	useTaskTools: true,
-	useFileTools: true,
-	useShellTools: true,
+	useFileTools: false,
+	useShellTools: false,
 	// make sure these default values are in sync with `common.h`
 	samplers: 'top_k;typ_p;top_p;min_p;temperature',
 	temperature: 0.8,
@@ -58,7 +47,7 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> =
 	dry_multiplier: 0.0,
 	dry_base: 1.75,
 	dry_allowed_length: 2,
-	dry_penalty_last_n: -1,
+	dry_penalty_last_n: 64,
 	max_tokens: -1,
 	custom: '', // custom json-stringified object
 	// experimental features
@@ -120,33 +109,14 @@ export const SETTING_CONFIG_INFO: Record<string, string> = {
 		'DRY sampling reduces repetition in generated text even across long contexts. This parameter sets DRY penalty for the last n tokens.',
 	max_tokens: 'The maximum number of token per output. Use -1 for infinite (no limit).',
 	custom: 'Custom JSON parameters to send to the API. Must be valid JSON format.',
+	showMessageStats: 'Show reply length, time taken, and generation speed below replies.',
 	showTokensPerSecond: 'Display generation speed in tokens per second during streaming.',
-	showThoughtInProgress: 'Expand thought process by default when generating messages.',
 	disableReasoningFormat:
 		'Show raw LLM output without backend parsing and frontend Markdown rendering to inspect streaming across different models.',
-	keepStatsVisible: 'Keep processing statistics visible after generation finishes.',
-	showMessageStats:
-		'Display generation statistics (tokens/second, token count, duration) below each assistant message.',
-	askForTitleConfirmation:
-		'Ask for confirmation before automatically changing conversation title when editing the first message.',
-	pdfAsImage:
-		'Parse PDF as image instead of text. Automatically falls back to text processing for non-vision models.',
-	copyTextAttachmentsAsPlainText:
-		'When copying a message with text attachments, combine them into a single plain text string instead of a special format that can be pasted back as attachments.',
-	enableContinueButton:
-		'Enable "Continue" button for assistant messages. Currently works only with non-reasoning models.',
 	backendSampling:
 		'Enable backend-based samplers. When enabled, supported samplers run on the accelerator backend for faster sampling.',
 	showToolCallLabels:
 		'Display tool call labels and payloads from Harmony-compatible delta.tool_calls data below assistant messages.',
-	renderUserContentAsMarkdown: 'Render user messages using markdown formatting in the chat.',
-	showMicrophoneOnEmptyInput:
-		'Show microphone button instead of send when textarea is empty for models with audio modality support.',
-	disableAutoScroll:
-		'Disable automatic scrolling while messages stream so you can control the viewport position manually.',
-	alwaysShowSidebar: 'Always keep the sidebar visible on desktop instead of auto-hiding it.',
-	autoShowSidebarOnNewChat:
-		'Automatically show sidebar when starting a new chat. Disable to keep the sidebar hidden until you click on it.',
 	pyInterpreterEnabled:
 		'Enable Python interpreter using Pyodide. Allows running Python code in markdown code blocks.'
 };

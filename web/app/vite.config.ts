@@ -122,6 +122,11 @@ function deltaBuildPlugin() {
 }
 
 export default defineConfig({
+	define: {
+		__DELTA_VERSION__: JSON.stringify(
+			readFileSync(new URL('../../version.txt', import.meta.url), 'utf8').trim()
+		)
+	},
 	resolve: {
 		alias: {
 			'katex-fonts': resolve('node_modules/katex/dist/fonts')
@@ -144,7 +149,13 @@ export default defineConfig({
 			}
 		}
 	},
-	plugins: [tailwindcss(), sveltekit(), svelteTypescriptCleanupPlugin(), devtoolsJson(), deltaBuildPlugin()],
+	plugins: [
+		tailwindcss(),
+		sveltekit(),
+		svelteTypescriptCleanupPlugin(),
+		devtoolsJson(),
+		deltaBuildPlugin()
+	],
 	test: {
 		projects: [
 			{

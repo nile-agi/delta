@@ -1,3 +1,4 @@
+import { parseCustomParameters, validateGenerationSettings } from './generation-settings';
 import { config } from '$lib/stores/settings.svelte';
 import { selectedModelName, selectedModelOption } from '$lib/stores/models.svelte';
 import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
@@ -5,16 +6,13 @@ import { getServerBaseUrl } from '$lib/utils/server-base-url';
 import { slotsService } from './slots';
 
 const IS_TAURI =
-	typeof window !== 'undefined' &&
-	('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+	typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 
 // True when the content array holds an attachment a plain string cannot carry.
 function hasAttachmentParts(content: unknown): boolean {
 	return (
 		Array.isArray(content) &&
-		content.some(
-			(p: Record<string, unknown>) => typeof p?.type === 'string' && p.type !== 'text'
-		)
+		content.some((p: Record<string, unknown>) => typeof p?.type === 'string' && p.type !== 'text')
 	);
 }
 
@@ -206,19 +204,6 @@ export class ChatService {
 			stream
 		};
 
-		if (useTools) {
-			// Each category defaults to on, so leaving these unset gives the model everything.
-			requestBody.use_tools = true;
-			if (conversationId) requestBody.conversation_id = conversationId;
-			requestBody.use_calendar_tools = useCalendarTools !== false;
-			requestBody.use_notes_tools = useNotesTools !== false;
-			requestBody.use_memory_tools = useMemoryTools !== false;
-			requestBody.use_task_tools = useTaskTools !== false;
-			requestBody.use_files_tools = useFileTools !== false;
-			requestBody.use_shell_tools = useShellTools !== false;
-			if (max_iterations !== undefined) requestBody.max_iterations = max_iterations;
-		}
-
 		const selectedOption = selectedModelOption();
 		const activeModel = selectedModelName() ?? selectedOption?.model ?? null;
 		if (activeModel) {
@@ -255,22 +240,38 @@ export class ChatService {
 		if (samplers !== undefined) {
 			requestBody.samplers =
 				typeof samplers === 'string'
-					? samplers.split(';').filter((s: string) => s.trim())
+					? samplers
+							.split(';')
+							.map((s: string) => s.trim())
+							.filter(Boolean)
 					: samplers;
 		}
 
 		if (timings_per_token !== undefined) requestBody.timings_per_token = timings_per_token;
 
-		if (custom) {
-			try {
-				const customParams = typeof custom === 'string' ? JSON.parse(custom) : custom;
-				Object.assign(requestBody, customParams);
-			} catch (error) {
-				console.warn('Failed to parse custom parameters:', error);
-			}
-		}
-
 		try {
+			Object.assign(requestBody, parseCustomParameters(custom));
+			// Extra request options cannot override the user's tool permissions.
+			requestBody.use_tools = useTools;
+			if (!useTools) {
+				requestBody.use_files_tools = false;
+				requestBody.use_shell_tools = false;
+			}
+			if (useTools) {
+				// Everyday tools are enabled by default; computer access requires explicit opt-in.
+				requestBody.use_tools = true;
+				if (conversationId) requestBody.conversation_id = conversationId;
+				requestBody.use_calendar_tools = useCalendarTools !== false;
+				requestBody.use_notes_tools = useNotesTools !== false;
+				requestBody.use_memory_tools = useMemoryTools !== false;
+				requestBody.use_task_tools = useTaskTools !== false;
+				requestBody.use_files_tools = useFileTools === true;
+				requestBody.use_shell_tools = useShellTools === true;
+				if (max_iterations !== undefined) requestBody.max_iterations = max_iterations;
+			}
+
+			const validationErrors = validateGenerationSettings(requestBody);
+			if (Object.keys(validationErrors).length) throw new Error(Object.values(validationErrors)[0]);
 			const apiKey = currentConfig.apiKey?.toString().trim();
 			// Tools live in the agent loop, which only the model API server hosts. getModelApiBaseUrl()
 			// resolves it in every mode (Tauri, same-origin UI-only, and port+1 after the 8080 migration).
@@ -287,9 +288,18 @@ export class ChatService {
 				if (IS_TAURI) {
 					try {
 						await this.handleStreamResponseTauri(
-							url, headers, body, onAgentEvent, onChunk, onComplete, onError,
-							onReasoningChunk, onModel, onFirstValidChunk,
-							conversationId, abortController.signal
+							url,
+							headers,
+							body,
+							onAgentEvent,
+							onChunk,
+							onComplete,
+							onError,
+							onReasoningChunk,
+							onModel,
+							onFirstValidChunk,
+							conversationId,
+							abortController.signal
 						);
 						return;
 					} catch (tauriErr) {
@@ -301,9 +311,18 @@ export class ChatService {
 					}
 				}
 				await this.handleStreamResponseXHR(
-					url, headers, body, onAgentEvent, onChunk, onComplete, onError,
-					onReasoningChunk, onModel, onFirstValidChunk,
-					conversationId, abortController.signal
+					url,
+					headers,
+					body,
+					onAgentEvent,
+					onChunk,
+					onComplete,
+					onError,
+					onReasoningChunk,
+					onModel,
+					onFirstValidChunk,
+					conversationId,
+					abortController.signal
 				);
 				return;
 			} else {
@@ -414,7 +433,10 @@ export class ChatService {
 
 					if (line.startsWith('data: ')) {
 						const data = line.slice(6);
-						if (data === '[DONE]') { streamFinished = true; continue; }
+						if (data === '[DONE]') {
+							streamFinished = true;
+							continue;
+						}
 						if (!data.includes('"choices"')) continue; // ignore named agent events (tool_update/reasoning)
 
 						try {
@@ -514,11 +536,11 @@ export class ChatService {
 				}
 
 				onComplete?.(
-				aggregatedContent,
-				fullReasoningContent || undefined,
-				lastTimings,
-				collectedToolCalls.length > 0 ? collectedToolCalls : undefined
-			);
+					aggregatedContent,
+					fullReasoningContent || undefined,
+					lastTimings,
+					collectedToolCalls.length > 0 ? collectedToolCalls : undefined
+				);
 				resolve();
 			};
 
@@ -572,9 +594,7 @@ export class ChatService {
 
 		const { invoke, Channel } = await import('@tauri-apps/api/core');
 
-		const absoluteUrl = url.startsWith('/')
-			? `${getServerBaseUrl()}${url}`
-			: url;
+		const absoluteUrl = url.startsWith('/') ? `${getServerBaseUrl()}${url}` : url;
 		const streamId = conversationId || crypto.randomUUID();
 		let aggregatedContent = '';
 		let fullReasoningContent = '';
@@ -896,7 +916,9 @@ export class ChatService {
 			}
 			// Network/CORS error — fall back to Model API (has Access-Control-Allow-Origin: *)
 			try {
-				const mapiBase = getModelApiBaseUrl() || `http://127.0.0.1:${(window as any).__DELTA_MODEL_API_PORT__ ?? 8081}`;
+				const mapiBase =
+					getModelApiBaseUrl() ||
+					`http://127.0.0.1:${(window as any).__DELTA_MODEL_API_PORT__ ?? 8081}`;
 				const fallback = await fetch(`${mapiBase}/api/props`, { headers });
 				if (fallback.ok) {
 					return await fallback.json();
@@ -965,6 +987,29 @@ export class ChatService {
 			parts.push('Give thorough answers with the reasoning and relevant context included.');
 		}
 
+		if (messages[0]?.role === 'system' && typeof messages[0].content === 'string') {
+			const lines: string[] = messages[0].content.split('\n');
+			const isClock = (line: string) =>
+				line.startsWith('Today is ') && line.includes('The time is ');
+			const generated = lines.some(isClock);
+			const existing = lines
+				.filter((line) => {
+					if (isClock(line)) return false;
+					if (!generated) return true;
+					// A replayed ordinary-chat prompt carries these generated preferences.
+					// Refresh them from settings while retaining the caller's other lines.
+					return !(
+						line === 'Keep answers short and to the point. Skip preamble.' ||
+						line === 'Give thorough answers with the reasoning and relevant context included.' ||
+						(line.startsWith("The user's name is ") &&
+							line.endsWith('Address them by name naturally, not in every sentence.'))
+					);
+				})
+				.join('\n');
+			for (const block of existing.split('\n\n')) {
+				if (block.trim() && !parts.includes(block)) parts.push(block);
+			}
+		}
 		if (parts.length === 0) {
 			return messages;
 		}

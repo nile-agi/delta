@@ -9,6 +9,8 @@ export interface SettingsFieldConfig {
 	label: string;
 	type: 'input' | 'textarea' | 'checkbox' | 'select' | 'action';
 	help?: string;
+	numeric?: import('$lib/services/generation-settings').NumericSettingRule;
+	technicalName?: string;
 	options?: Array<{ value: string; label: string; icon?: typeof import('@lucide/svelte').Icon }>;
 	/** For `action` fields: what the button does. Resolves to a short status line to show. */
 	action?: () => Promise<string>;

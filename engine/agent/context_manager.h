@@ -57,6 +57,8 @@ class ContextManager {
     // Characters-per-token estimate used when the tokenizer endpoint is unavailable.
     static int estimate_tokens(const std::string& text);
     int token_cost(const nlohmann::json& message) const;
+    // Fits text using the real tokenizer when available, preserving both ends and UTF-8.
+    std::string fit_text(const std::string& text, int max_tokens) const;
 
     // Shortens an oversized tool result, keeping the head and tail. Public so tools that already
     // know their output is huge can pre-trim.

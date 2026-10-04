@@ -59,7 +59,10 @@
 	let fileInputRef: ChatFormFileInputInvisible | undefined = $state(undefined);
 	let isRecording = $state(false);
 	let message = $state('');
-	let pasteLongTextToFileLength = $derived(Number(currentConfig.pasteLongTextToFileLen) || 2500);
+	let pasteLongTextToFileLength = $derived.by(() => {
+		const threshold = Number(currentConfig.pasteLongTextToFileLen);
+		return Number.isFinite(threshold) ? threshold : 2500;
+	});
 	let previousIsLoading = $state(isLoading);
 	let recordingSupported = $state(false);
 	let textareaRef: ChatFormTextarea | undefined = $state(undefined);
@@ -274,7 +277,7 @@
 			{isLoading}
 			{isRecording}
 			{recordingSupported}
-			showMicrophoneOnEmptyInput={Boolean(currentConfig.showMicrophoneOnEmptyInput)}
+			showMicrophoneOnEmptyInput={true}
 			{openModelDropdownTrigger}
 			onRequestOpenModelDropdown={requestOpenModelDropdown}
 			onFileUpload={handleFileUpload}

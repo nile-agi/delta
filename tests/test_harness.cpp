@@ -910,7 +910,7 @@ static void test_context_budget_accounts_for_tool_schemas() {
     // A tool set too big for the window must not leave a negative or useless budget.
     ContextManager squeezed(4096, 2048);
     squeezed.set_tool_overhead(100000);
-    check(squeezed.budget_tokens() >= 512, "an oversized tool set cannot push the budget below the floor");
+    check_eq(squeezed.budget_tokens(), 0, "an oversized tool set leaves no fictional prompt budget");
 }
 
 static void test_harness_charges_the_conversation_for_the_tool_schemas() {
@@ -922,12 +922,12 @@ static void test_harness_charges_the_conversation_for_the_tool_schemas() {
     Harness harness(server.url(), "test-model", true);
     RunOptions options = test_options();
     options.enabled_categories = {"bulky"};
-    options.n_ctx = 2048;
+    options.n_ctx = 4096;
     options.max_tokens = 256;
     harness.set_options(options);
 
     json history = json::array();
-    for (int i = 0; i < 30; i++) {
+    for (int i = 0; i < 90; i++) {
         history.push_back({{"role", i % 2 == 0 ? "user" : "assistant"},
                            {"content", "Turn " + std::to_string(i) +
                                            ": a long message with enough words in it to take up a real number of "
@@ -944,8 +944,8 @@ static void test_harness_charges_the_conversation_for_the_tool_schemas() {
     check(compaction.is_object(), "a compaction event was emitted");
     if (compaction.is_object()) {
         check(compaction.value("tool_tokens", 0) > 0, "it reports what the tool schemas cost");
-        // Without the tool cost the budget would be 2048 - 256 - 320 = 1472.
-        check(compaction.value("budget_tokens", 0) < 1472, "and the budget is smaller because of them");
+        // Without the tool cost the budget would be 4096 - 256 - 320 = 3520.
+        check(compaction.value("budget_tokens", 0) < 3520, "and the budget is smaller because of them");
     }
 }
 
@@ -986,8 +986,8 @@ static void test_a_narrow_window_gives_up_output_room_rather_than_overflowing() 
     Harness harness(server.url(), "test-model", true);
     RunOptions options = test_options();
     options.enabled_categories = {"bulky"}; // a deliberately huge schema
-    options.n_ctx = 2048;
-    options.max_tokens = 1800; // more than the window can spare once the schemas are counted
+    options.n_ctx = 4096;
+    options.max_tokens = 3000; // more than the window can spare once the schemas are counted
     harness.set_options(options);
     EventLog log;
     harness.run(json::array({user("hello")}), log.sink());
@@ -998,7 +998,7 @@ static void test_a_narrow_window_gives_up_output_room_rather_than_overflowing() 
     if (requests.empty())
         return;
     const int asked_for = requests[0].value("max_tokens", 0);
-    check(asked_for > 0 && asked_for < 1800, "the reply budget was cut to fit the window");
+    check(asked_for > 0 && asked_for < 3000, "the reply budget was cut to fit the window");
     check(asked_for >= 256, "but not so far that the model cannot answer");
 }
 
@@ -1026,6 +1026,110 @@ static void test_context_keeps_system_prompt_and_recent_turns() {
     // The newest turn must always survive -- it is what the user just said.
     const std::string last = built[built.size() - 1].value("content", "");
     check(last.find("message number 39") != std::string::npos, "the most recent message was kept");
+}
+
+static void test_context_does_not_compact_a_fitting_conversation() {
+    test("a fitting conversation keeps all exchanges without reserving unused summary space");
+    ContextManager context(1400, 256);
+    context.set_token_counter([](const std::string& text) { return static_cast<int>(text.size()); });
+    int summaries = 0;
+    context.set_summarizer([&](const json&) {
+        summaries++;
+        return std::string("summary");
+    });
+    json history = json::array();
+    for (int i = 0; i < 7; i++)
+        history.push_back({{"role", i % 2 == 0 ? "user" : "assistant"}, {"content", std::string(100, 'a')}});
+    auto built = context.build("SYSTEM", history);
+    check_eq(built.size(), history.size() + 1, "all messages fit and survive");
+    check_eq(context.stats().dropped_messages, 0, "no artificial compaction");
+    check_eq(summaries, 0, "no summary call is needed");
+}
+
+static void test_context_keeps_complete_exchanges() {
+    test("compaction preserves the user request together with its assistant reply");
+    ContextManager context(1400, 256);
+    context.set_token_counter([](const std::string& text) { return static_cast<int>(text.size()); });
+    json history = json::array({user(std::string(500, 'a')),
+                                {{"role", "assistant"}, {"content", std::string(500, 'b')}},
+                                user("Current question")});
+    auto built = context.build("SYSTEM", history);
+    check_eq(built.size(), size_t(2), "the oversized earlier exchange is dropped as a unit");
+    check_eq(context.stats().dropped_messages, 2, "both sides were counted as dropped");
+    check(built.back().value("content", "") == "Current question", "the latest request survives");
+}
+
+static void test_context_measured_utf8_fit() {
+    test("summary excerpts preserve UTF-8 and both ends within the measured budget");
+    ContextManager context(1400, 256);
+    context.set_token_counter([](const std::string& text) { return static_cast<int>(text.size()); });
+    std::string text = "START ";
+    for (int i = 0; i < 300; i++)
+        text += "雨";
+    text += " END correction Friday";
+    auto fitted = context.fit_text(text, 180);
+    check(fitted.find("START") != std::string::npos, "the beginning survives");
+    check(fitted.find("correction Friday") != std::string::npos, "the ending correction survives");
+    check(context.token_cost({{"content", fitted}}) <= 180, "the measured cost fits");
+    check(!json{{"content", fitted}}.dump().empty(), "the excerpt remains valid UTF-8");
+}
+
+static void test_summary_keeps_late_message_details() {
+    test("summary input keeps facts beyond the old 500-character cutoff");
+    ScriptedServer server({});
+    server.set_responder([](const json& request) -> json {
+        const auto content = request["messages"][0].value("content", "");
+        return {
+            {"role", "assistant"},
+            {"content", content.find("Summarize this earlier") != std::string::npos ? "Delivery is Friday." : "Done."}};
+    });
+    server.start();
+    Harness harness(server.url(), "test-model", false);
+    auto options = test_options();
+    options.tools_enabled = false;
+    options.n_ctx = 4096;
+    harness.set_options(options);
+    json history = json::array();
+    for (int i = 0; i < 400; i++) {
+        history.push_back(user(std::string(650, 'a') + " LATE_CORRECTION_FRIDAY"));
+        history.push_back({{"role", "assistant"}, {"content", std::string(650, 'b')}});
+    }
+    history.insert(history.end() - 20, user("SHORT_CORRECTION_FRIDAY"));
+    history.push_back(user("What day?"));
+    EventLog log;
+    auto result = harness.run(history, log.sink());
+    server.stop();
+    check(result.success, "the compacted run completes");
+    bool found = false, short_found = false;
+    for (const auto& request : server.requests()) {
+        if (request["messages"][0].value("content", "").find("Summarize this earlier") != std::string::npos) {
+            found = request["messages"][1].value("content", "").find("LATE_CORRECTION_FRIDAY") != std::string::npos;
+            short_found =
+                request["messages"][1].value("content", "").find("SHORT_CORRECTION_FRIDAY") != std::string::npos;
+        }
+    }
+    check(found, "the summarizer receives the ending correction");
+    check(short_found, "short corrections survive alongside long filler");
+}
+
+static void test_oversized_current_request_is_explicit() {
+    test("an oversized latest request is rejected explicitly rather than silently cut");
+    ScriptedServer server({});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    auto options = test_options();
+    options.n_ctx = 1400;
+    harness.set_options(options);
+    EventLog log;
+    auto result = harness.run(json::array({user(std::string(12000, 'a'))}), log.sink());
+    server.stop();
+    check(!result.success, "the run reports failure");
+    check(result.error.find("context window") != std::string::npos, "the reason is clear");
+    check(server.requests().empty(), "no oversized inference is sent");
+    check(!result.task_id.empty(), "the run has a task record");
+    if (!result.task_id.empty())
+        check_eq(delta::agent::TaskStore::instance().get_task(result.task_id).status, std::string("failed"),
+                 "the task is finalized as failed");
 }
 
 static void test_context_never_orphans_tool_messages() {
@@ -1473,7 +1577,9 @@ static void test_summary_is_reused_across_iterations() {
     const std::string pinned_id = memory.remember("The user's cat is called Biscuit", "fact", "pets", 3, "test");
 
     Harness harness(server.url(), "test-model", true);
-    harness.set_options(test_options());
+    auto options = test_options();
+    options.n_ctx = 4096;
+    harness.set_options(options);
     EventLog log;
     auto result = harness.run(history, log.sink());
     server.stop();
@@ -2137,6 +2243,7 @@ static void test_the_prompt_tells_the_model_to_ask_when_it_is_unsure() {
     server.start();
     Harness harness(server.url(), "test-model", true);
     RunOptions options = test_options();
+    options.n_ctx = 8192; // This fixture includes an intentionally oversized test schema.
     options.enabled_categories.clear();
     harness.set_options(options);
     EventLog log;
@@ -2258,6 +2365,7 @@ static std::set<std::string> offered_tools(const json& request) {
 
 static RunOptions all_categories() {
     RunOptions options = test_options();
+    options.n_ctx = 8192;               // This fixture includes an intentionally oversized test schema.
     options.enabled_categories.clear(); // empty means everything the client allows
     return options;
 }
@@ -2967,6 +3075,11 @@ int main() {
     test_a_narrow_window_gives_up_output_room_rather_than_overflowing();
     test_harness_charges_the_conversation_for_the_tool_schemas();
     test_context_keeps_system_prompt_and_recent_turns();
+    test_context_does_not_compact_a_fitting_conversation();
+    test_context_keeps_complete_exchanges();
+    test_context_measured_utf8_fit();
+    test_summary_keeps_late_message_details();
+    test_oversized_current_request_is_explicit();
     test_context_never_orphans_tool_messages();
     test_context_truncates_huge_tool_results();
     test_context_emits_one_system_message_starting_on_a_user_turn();

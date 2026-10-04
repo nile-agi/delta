@@ -4,8 +4,7 @@ name = "delta-app"
 version = "1.0.14"
 description = "Delta - Offline AI Assistant"
 authors = ["Nile AGI"]
-#edition = "2021"
-deition = "2026"
+edition = "2021"
 
 [lib]
 name = "delta_app_lib"
@@ -24,3 +23,8 @@ serde_json = "1"
 log = "0.4"
 ureq = { version = "2", default-features = false }
 tokio = { version = "1", features = ["rt"] }
+
+# Keep local desktop builds small enough for machines with limited disk space.
+[profile.dev]
+debug = 0
+incremental = false
