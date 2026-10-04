@@ -104,46 +104,6 @@
 						{ value: 'light', label: 'Light', icon: Sun },
 						{ value: 'dark', label: 'Dark', icon: Moon }
 					]
-				},
-				{
-					key: 'showMessageStats',
-					label: 'Show message generation statistics',
-					type: 'checkbox'
-				},
-				{
-					key: 'showThoughtInProgress',
-					label: 'Show thought in progress',
-					type: 'checkbox'
-				},
-				{
-					key: 'keepStatsVisible',
-					label: 'Keep stats visible after generation',
-					type: 'checkbox'
-				},
-				{
-					key: 'showMicrophoneOnEmptyInput',
-					label: 'Show microphone on empty input',
-					type: 'checkbox'
-				},
-				{
-					key: 'renderUserContentAsMarkdown',
-					label: 'Render user content as Markdown',
-					type: 'checkbox'
-				},
-				{
-					key: 'disableAutoScroll',
-					label: 'Disable automatic scroll',
-					type: 'checkbox'
-				},
-				{
-					key: 'alwaysShowSidebar',
-					label: 'Always show sidebar on desktop',
-					type: 'checkbox'
-				},
-				{
-					key: 'autoShowSidebarOnNewChat',
-					label: 'Auto-show sidebar on new chat',
-					type: 'checkbox'
 				}
 			]
 		},
@@ -355,22 +315,19 @@
 		fields: [{ key: 'apiKey', label: 'API access key', type: 'input' }]
 	});
 	const developerFields = settingSections.find((group) => group.title === 'Developer')!.fields;
-	const advancedKeys = new Set([
-		'showMessageStats',
-		'keepStatsVisible',
-		'showThoughtInProgress',
-		'showMicrophoneOnEmptyInput',
-		'renderUserContentAsMarkdown'
-	]);
-	for (const group of settingSections.filter((group) => group.title === 'Display')) {
-		developerFields.push(...group.fields.filter((field) => advancedKeys.has(field.key)));
-		group.fields = group.fields.filter((field) => !advancedKeys.has(field.key));
-	}
+	developerFields.push({
+		key: 'showMessageStats',
+		label: 'Show response statistics',
+		type: 'checkbox'
+	});
 	developerFields.push({
 		key: 'pasteLongTextToFileLen',
 		label: 'Long text attachment threshold',
 		type: 'input'
 	});
+
+	const personalFields = settingSections.find((group) => group.title === 'You')!.fields;
+	personalFields.push(...settingSections.find((group) => group.title === 'Display')!.fields);
 
 	for (const group of settingSections) {
 		for (const field of group.fields) {
@@ -708,7 +665,6 @@
 										rel="noreferrer">Get help or report a problem</a
 									>
 								</div>
-								<p class="text-sm text-muted-foreground">Your settings are saved on this device.</p>
 							</section>
 						</div>
 					{:else if currentSection.title === 'Model Management'}
@@ -848,10 +804,6 @@
 											</p>
 										</div>
 									{/if}
-
-									<div class="mt-8 border-t pt-6">
-										<p class="text-xs text-muted-foreground">Settings are saved on this device.</p>
-									</div>
 								</div>
 							</ScrollArea>
 						</div>

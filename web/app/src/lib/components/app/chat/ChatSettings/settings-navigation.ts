@@ -3,7 +3,7 @@ export const SETTINGS_VIEWS = [
 	{
 		title: 'General',
 		description: 'Make Delta comfortable to use, and choose what it can do for you.',
-		groups: ['You', 'Display', 'Agent tools', 'Model Management', 'Import/Export']
+		groups: ['You', 'Agent tools', 'Model Management', 'Import/Export']
 	},
 	{
 		title: 'Developer',
@@ -13,7 +13,7 @@ export const SETTINGS_VIEWS = [
 	}
 ] as const;
 export const GROUP_LABELS: Record<string, string> = {
-	You: 'About you',
+	You: 'Personal preferences',
 	Display: 'Appearance',
 	'Agent tools': 'Assistant capabilities',
 	'Model Management': 'Models',
@@ -25,7 +25,7 @@ export const GROUP_LABELS: Record<string, string> = {
 };
 export function resolveSettingsLocation(section = 'General'): { view: string; group: string } {
 	if (section === 'Info') return { view: 'Info', group: 'You' };
-	if (section === 'General') return { view: 'General', group: 'You' };
+	if (section === 'General' || section === 'Display') return { view: 'General', group: 'You' };
 	if (section === 'Developer') return { view: 'Developer', group: 'Sampling' };
 	const view = SETTINGS_VIEWS.find((view) => (view.groups as readonly string[]).includes(section));
 	return view ? { view: view.title, group: section } : { view: 'General', group: 'You' };
@@ -37,14 +37,6 @@ export const FIELD_LABELS: Record<string, string> = {
 	systemMessage: 'How Delta should respond',
 	askForTitleConfirmation: 'Ask before renaming a chat',
 	pasteLongTextToFileLen: 'Turn long pasted text into an attachment',
-	showMessageStats: 'Show response statistics',
-	showThoughtInProgress: 'Expand reasoning while responding',
-	keepStatsVisible: 'Keep response statistics visible',
-	showMicrophoneOnEmptyInput: 'Show the microphone before typing',
-	renderUserContentAsMarkdown: 'Format my messages',
-	disableAutoScroll: 'Let me control scrolling',
-	alwaysShowSidebar: 'Keep the sidebar open on desktop',
-	autoShowSidebarOnNewChat: 'Open the sidebar for new chats',
 	useAgentTools: 'Let Delta use assistant tools',
 	useCalendarTools: 'Manage my calendar and tasks',
 	useNotesTools: 'Read and update my notes',
@@ -79,6 +71,7 @@ export const FIELD_LABELS: Record<string, string> = {
 	apiKey: 'API access key'
 };
 export const FIELD_HELP: Record<string, string> = {
+	theme: 'Choose light, dark, or follow your device.',
 	userName: 'Use any name you like, or leave this blank.',
 	replyStyle: 'Choose shorter answers or more explanation.',
 	calendarWeekStart: 'Choose the day shown first in your calendar.',
@@ -86,11 +79,6 @@ export const FIELD_HELP: Record<string, string> = {
 		'Give Delta instructions about tone, language, or how you want it to help. Leave empty to use its normal behavior.',
 	pasteLongTextToFileLen:
 		'Text longer than this number of characters becomes an attachment. Set to 0 to turn this off.',
-	renderUserContentAsMarkdown:
-		'Show formatting such as headings, lists, and bold text in your messages.',
-	showMessageStats: 'Show reply length, time taken, and generation speed below replies.',
-	showThoughtInProgress: 'Automatically expand reasoning when the model provides it.',
-	keepStatsVisible: 'Keep timing and speed information on screen after a reply finishes.',
 	useAgentTools:
 		'Allow Delta to work with your calendar, notes, memory, and plans. Choose individual capabilities below.',
 	useCalendarTools: 'Let Delta find and update your appointments, reminders, and to-do items.',

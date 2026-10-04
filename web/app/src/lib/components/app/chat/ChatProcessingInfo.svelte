@@ -1,78 +1,22 @@
 <script lang="ts">
 	import { PROCESSING_INFO_TIMEOUT } from '$lib/constants/processing-info';
 	import { useProcessingState } from '$lib/hooks/use-processing-state.svelte';
-	import { slotsService } from '$lib/services/slots';
-	import { isLoading, activeMessages, activeConversation } from '$lib/stores/chat.svelte';
+	import { isLoading, activeConversation } from '$lib/stores/chat.svelte';
 	import { config } from '$lib/stores/settings.svelte';
 
 	const processingState = useProcessingState();
 
 	let isCurrentConversationLoading = $derived(isLoading());
 	let processingDetails = $derived(processingState.getProcessingDetails());
-	let showSlotsInfo = $derived(isCurrentConversationLoading || config().keepStatsVisible);
+	let showSlotsInfo = $derived(config().showMessageStats && isCurrentConversationLoading);
 
-	// Start monitoring when viewing a conversation (so live stats work from first stream chunk)
+	// Show live processing details only while a reply is being generated.
 	$effect(() => {
-		const keepStatsVisible = config().keepStatsVisible;
-		const hasActiveConversation = !!activeConversation()?.id;
-
-		if (hasActiveConversation && (keepStatsVisible || isCurrentConversationLoading)) {
+		if (activeConversation()?.id && isCurrentConversationLoading) {
 			processingState.startMonitoring();
-		}
-
-		if (!isCurrentConversationLoading && !keepStatsVisible) {
-			setTimeout(() => {
-				if (!config().keepStatsVisible) {
-					processingState.stopMonitoring();
-				}
-			}, PROCESSING_INFO_TIMEOUT);
-		}
-	});
-
-	// Update processing state from stored timings
-	$effect(() => {
-		const conversation = activeConversation();
-		const messages = activeMessages() as DatabaseMessage[];
-		const keepStatsVisible = config().keepStatsVisible;
-
-		if (keepStatsVisible && conversation) {
-			if (messages.length === 0) {
-				slotsService.clearConversationState(conversation.id);
-				return;
-			}
-
-			// Search backwards through messages to find most recent assistant message with timing data
-			// Using reverse iteration for performance - avoids array copy and stops at first match
-			let foundTimingData = false;
-
-			for (let i = messages.length - 1; i >= 0; i--) {
-				const message = messages[i];
-				if (message.role === 'assistant' && message.timings) {
-					foundTimingData = true;
-
-					slotsService
-						.updateFromTimingData(
-							{
-								prompt_n: message.timings.prompt_n || 0,
-								predicted_n: message.timings.predicted_n || 0,
-								predicted_per_second:
-									message.timings.predicted_n && message.timings.predicted_ms
-										? (message.timings.predicted_n / message.timings.predicted_ms) * 1000
-										: 0,
-								cache_n: message.timings.cache_n || 0
-							},
-							conversation.id
-						)
-						.catch((error) => {
-							console.warn('Failed to update processing state from stored timings:', error);
-						});
-					break;
-				}
-			}
-
-			if (!foundTimingData) {
-				slotsService.clearConversationState(conversation.id);
-			}
+		} else {
+			const timeout = setTimeout(() => processingState.stopMonitoring(), PROCESSING_INFO_TIMEOUT);
+			return () => clearTimeout(timeout);
 		}
 	});
 </script>

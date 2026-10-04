@@ -30,7 +30,9 @@ function openSettings(section?: string) {
 }
 it('opens everyday preferences and puts technical controls in Developer', async () => {
 	openSettings();
-	await expect.element(page.getByRole('heading', { name: 'About you', exact: true })).toBeVisible();
+	await expect
+		.element(page.getByRole('heading', { name: 'Personal preferences', exact: true }))
+		.toBeVisible();
 	await expect
 		.element(page.getByRole('button', { name: 'Developer', exact: true }).first())
 		.toBeVisible();
@@ -138,4 +140,23 @@ it('keeps reply preferences optional and guides them by the selected detail leve
 	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
 	expect(settingsStore.config.systemMessage).toBe('Reply in Kiswahili.');
 	expect(settingsStore.config.replyStyle).toBe('concise');
+});
+
+it('includes theme in personal preferences without an Appearance tab', async () => {
+	openSettings('Display');
+	await expect.element(page.getByLabelText('Theme', { exact: true })).toBeVisible();
+	await expect
+		.element(page.getByRole('button', { name: 'Appearance', exact: true }))
+		.not.toBeInTheDocument();
+	await expect.element(page.getByRole('checkbox')).not.toBeInTheDocument();
+});
+
+it('keeps response statistics optional and disabled by default', async () => {
+	openSettings('Developer');
+	await page.getByRole('button', { name: 'Diagnostics & extra settings', exact: true }).click();
+	const statistics = page.getByRole('checkbox', { name: 'Show response statistics', exact: true });
+	await expect.element(statistics).not.toBeChecked();
+	await statistics.click();
+	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	expect(settingsStore.config.showMessageStats).toBe(true);
 });

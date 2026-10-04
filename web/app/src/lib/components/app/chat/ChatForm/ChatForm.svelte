@@ -274,7 +274,7 @@
 			{isLoading}
 			{isRecording}
 			{recordingSupported}
-			showMicrophoneOnEmptyInput={Boolean(currentConfig.showMicrophoneOnEmptyInput)}
+			showMicrophoneOnEmptyInput={true}
 			{openModelDropdownTrigger}
 			onRequestOpenModelDropdown={requestOpenModelDropdown}
 			onFileUpload={handleFileUpload}
