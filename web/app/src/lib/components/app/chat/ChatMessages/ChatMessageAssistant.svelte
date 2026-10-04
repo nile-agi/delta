@@ -1,11 +1,7 @@
 <script lang="ts">
 	import { ChatMessageThinkingBlock, MarkdownContent } from '$lib/components/app';
 	import { useProcessingState } from '$lib/hooks/use-processing-state.svelte';
-	import {
-		activeConversation,
-		getConversationStreaming,
-		isLoading
-	} from '$lib/stores/chat.svelte';
+	import { activeConversation, getConversationStreaming, isLoading } from '$lib/stores/chat.svelte';
 	import { fade } from 'svelte/transition';
 	import { Check, X, Box, ChevronDown, Wrench } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -86,9 +82,7 @@
 	const processingState = useProcessingState();
 	let currentConfig = $derived(config());
 	let options = $derived(modelOptions());
-	const streamingState = $derived(
-		getConversationStreaming(activeConversation()?.id ?? '')
-	);
+	const streamingState = $derived(getConversationStreaming(activeConversation()?.id ?? ''));
 	/** Id of the assistant message currently being streamed (so we can show live stats on it) */
 	const streamingMessageId = $derived(streamingState?.messageId ?? null);
 	const displayContent = $derived(
@@ -116,15 +110,13 @@
 					}),
 					...(streamingState.estimatedTotalPromptTokens != null &&
 						streamingState.estimatedTotalPromptTokens > 0 && {
-						estimatedTotalPromptTokens: streamingState.estimatedTotalPromptTokens
-					})
+							estimatedTotalPromptTokens: streamingState.estimatedTotalPromptTokens
+						})
 				}
 			: null
 	);
 	/** True when we're streaming but no content yet (e.g. PDF/image prompt processing) */
-	const isReadingFallback = $derived(
-		!!(streamFallback && streamFallback.contentLength === 0)
-	);
+	const isReadingFallback = $derived(!!(streamFallback && streamFallback.contentLength === 0));
 	/** Server sent progress (X% / ETA) during prompt processing — show "Processing X% (ETA: Ys)" */
 	const hasServerProgress = $derived(
 		message.id === streamingMessageId &&
@@ -226,9 +218,7 @@
 	let t = $derived(message.timings);
 
 	// Live during a run, then falls back to whatever was persisted with the message.
-	let agentActivity = $derived(
-		agentStore.activities.get(message.id) ?? message.agent_activity
-	);
+	let agentActivity = $derived(agentStore.activities.get(message.id) ?? message.agent_activity);
 </script>
 
 <div
@@ -384,7 +374,7 @@
 			{onCopy}
 			{onEdit}
 			{onRegenerate}
-			onContinue={currentConfig.enableContinueButton && !thinkingContent ? onContinue : undefined}
+			onContinue={!thinkingContent ? onContinue : undefined}
 			{onDelete}
 			{onConfirmDelete}
 			{onNavigateToSibling}
@@ -460,7 +450,11 @@
 	}
 
 	@keyframes cursorBlink {
-		0% { opacity: 1; }
-		50% { opacity: 0; }
+		0% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0;
+		}
 	}
 </style>

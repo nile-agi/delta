@@ -56,7 +56,7 @@
 		return hour < 18 ? 'Good afternoon' : 'Good evening';
 	});
 	let autoScrollEnabled = $state(true);
-	let effectiveAutoScroll = $derived(!currentConfig.disableAutoScroll && autoScrollEnabled);
+	let effectiveAutoScroll = $derived(autoScrollEnabled);
 	let chatScrollContainer: HTMLDivElement | undefined = $state();
 	let dragCounter = $state(0);
 	let isDragOver = $state(false);
@@ -202,7 +202,7 @@
 		userScrolledUp = false;
 		autoScrollEnabled = true;
 		await sendMessage(message, extras);
-		if (!currentConfig.disableAutoScroll) scrollChatToBottom();
+		scrollChatToBottom();
 
 		return true;
 	}
@@ -267,21 +267,17 @@
 
 	$effect(() => {
 		const _signal = conversationLoadedSignal();
-		if (_signal > 0 && !currentConfig.disableAutoScroll) {
+		if (_signal > 0) {
 			forceScrollToBottom();
 		}
 	});
 
 	afterNavigate(() => {
-		if (!currentConfig.disableAutoScroll) {
-			forceScrollToBottom();
-		}
+		forceScrollToBottom();
 	});
 
 	onMount(() => {
-		if (!currentConfig.disableAutoScroll) {
-			forceScrollToBottom();
-		}
+		forceScrollToBottom();
 	});
 
 	$effect(() => {
@@ -320,7 +316,7 @@
 			onUserAction={() => {
 				userScrolledUp = false;
 				autoScrollEnabled = true;
-				if (!currentConfig.disableAutoScroll) scrollChatToBottom();
+				scrollChatToBottom();
 			}}
 		/>
 
@@ -439,7 +435,8 @@
 				</div>
 			</div>
 			<AlertDialog.Footer>
-				<AlertDialog.Action onclick={() => (showFileErrorDialog = false)}>Got it</AlertDialog.Action>
+				<AlertDialog.Action onclick={() => (showFileErrorDialog = false)}>Got it</AlertDialog.Action
+				>
 			</AlertDialog.Footer>
 		</AlertDialog.Content>
 	</AlertDialog.Portal>

@@ -7,19 +7,19 @@
 	const STYLES = [
 		{
 			value: 'concise',
-			label: 'Concise',
+			label: 'Short',
 			sample: 'About 384,400 km.'
 		},
 		{
 			value: 'balanced',
 			label: 'Balanced',
-			sample: 'About 384,400 km on average — the orbit is elliptical, so it varies.'
+			sample: 'About 384,400 km on average. The distance changes as the Moon moves around Earth.'
 		},
 		{
 			value: 'detailed',
-			label: 'Detailed',
+			label: 'More detail',
 			sample:
-				'About 384,400 km on average. The orbit is elliptical, so it ranges from roughly 363,300 km at perigee to 405,500 km at apogee…'
+				'About 384,400 km on average. The distance changes because the Moon’s path around Earth is not a perfect circle. It is closer at some points and farther away at others.'
 		}
 	];
 
@@ -33,13 +33,14 @@
 	const previewWeek = $derived(weekdayNames(weekStart));
 
 	const heading = $derived.by(() => {
-		if (step === 0) return trimmedName ? `Hey, ${trimmedName}.` : 'What should I call you?';
+		if (step === 0) return 'What should I call you?';
 		if (step === 1) return 'How should I answer?';
-		return trimmedName ? `Last one, ${trimmedName}.` : 'Last one.';
+		return 'When does your week start?';
 	});
 
 	const subheading = $derived.by(() => {
-		if (step === 0) return 'Delta will use this when it talks to you. Change it any time in settings.';
+		if (step === 0)
+			return 'Delta will use this when it talks to you. Change it any time in settings.';
 		if (step === 1) return 'Same question, three lengths. Pick the one you would rather read.';
 		return 'This sets the first column of your calendar.';
 	});
@@ -60,7 +61,7 @@
 	}
 
 	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
+		if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
 			event.preventDefault();
 			next();
 		}
@@ -69,7 +70,7 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content
-		class="onboarding-card border-white/10 p-0 sm:max-w-md"
+		class="onboarding-card max-h-[90dvh] overflow-y-auto rounded-2xl border-border/60 p-0 sm:max-w-lg"
 		showCloseButton={false}
 		interactOutsideBehavior="ignore"
 		escapeKeydownBehavior="ignore"
@@ -79,7 +80,7 @@
 			<div class="onboarding-edge" aria-hidden="true"></div>
 
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="relative p-6" onkeydown={onKeydown}>
+			<div class="relative p-5 sm:p-7" onkeydown={onKeydown}>
 				<div class="mb-5 flex items-center gap-3">
 					<span class="delta-orb" aria-hidden="true">
 						<svg viewBox="0 0 430 580" class="h-[18px] w-[18px]" role="presentation">
@@ -94,37 +95,51 @@
 						</svg>
 					</span>
 
-					<div class="flex flex-1 gap-1.5" aria-hidden="true">
-						{#each [0, 1, 2] as index (index)}
-							<span
-								class="progress-seg {index < step ? 'is-done' : ''} {index === step ? 'is-active' : ''}"
-							></span>
-						{/each}
+					<div class="flex-1 space-y-2">
+						<div class="flex items-center justify-between text-xs text-muted-foreground">
+							<span>Make Delta yours</span><span>Step {step + 1} of 3</span>
+						</div>
+						<div class="flex gap-1.5" aria-hidden="true">
+							{#each [0, 1, 2] as index (index)}
+								<span
+									class="progress-seg {index < step ? 'is-done' : ''} {index === step
+										? 'is-active'
+										: ''}"
+								></span>
+							{/each}
+						</div>
 					</div>
 				</div>
 
 				<Dialog.Header class="mb-5 space-y-1 text-left">
-					<Dialog.Title class="text-xl tracking-tight">{heading}</Dialog.Title>
+					<Dialog.Title class="text-2xl font-semibold tracking-tight">{heading}</Dialog.Title>
 					<Dialog.Description>{subheading}</Dialog.Description>
 				</Dialog.Header>
 
 				{#if step === 0}
+					<label for="onboarding-name" class="mb-2 block text-sm font-medium"
+						>Your name <span class="font-normal text-muted-foreground">(optional)</span></label
+					>
 					<!-- svelte-ignore a11y_autofocus -->
 					<input
 						autofocus
+						id="onboarding-name"
+						autocomplete="given-name"
 						bind:value={name}
 						maxlength={40}
 						placeholder="Your name"
 						aria-label="Your name"
-						class="name-input w-full border-b border-input bg-transparent pb-2 text-2xl outline-none transition-colors placeholder:text-muted-foreground/40 focus:border-foreground"
+						class="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none transition-shadow placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
 					/>
 				{:else if step === 1}
+					<p class="mb-3 text-xs text-muted-foreground">Example: How far away is the Moon?</p>
 					<div class="space-y-2">
 						{#each STYLES as style (style.value)}
 							<button
 								class="option w-full rounded-lg border p-3 text-left {replyStyle === style.value
 									? 'is-selected'
 									: ''}"
+								aria-pressed={replyStyle === style.value}
 								onclick={() => (replyStyle = style.value)}
 							>
 								<span class="text-sm font-medium">{style.label}</span>
@@ -142,6 +157,7 @@
 									class="option flex-1 rounded-lg border py-2 text-sm {weekStart === value
 										? 'is-selected'
 										: ''}"
+									aria-pressed={weekStart === value}
 									onclick={() => (weekStart = value)}
 								>
 									{label}
@@ -162,7 +178,9 @@
 					</div>
 				{/if}
 
-				<div class="mt-6 flex items-center justify-between">
+				<div
+					class="mt-7 flex flex-wrap items-center justify-between gap-3 border-t border-border/50 pt-5"
+				>
 					<Button variant="ghost" size="sm" onclick={skip}>Skip for now</Button>
 					<Button size="sm" onclick={next}>
 						{step === 2 ? 'Start using Delta' : 'Continue'}
@@ -176,8 +194,16 @@
 <style>
 	:global(.onboarding-card) {
 		background:
-			radial-gradient(120% 90% at 50% -10%, color-mix(in oklch, var(--foreground) 6%, transparent), transparent 55%),
-			linear-gradient(180deg, color-mix(in oklch, var(--foreground) 3%, var(--background)), var(--background));
+			radial-gradient(
+				120% 90% at 50% -10%,
+				color-mix(in oklch, var(--foreground) 6%, transparent),
+				transparent 55%
+			),
+			linear-gradient(
+				180deg,
+				color-mix(in oklch, var(--foreground) 3%, var(--background)),
+				var(--background)
+			);
 		box-shadow:
 			0 1px 0 0 color-mix(in oklch, var(--foreground) 8%, transparent) inset,
 			0 24px 60px -20px rgb(0 0 0 / 0.6);
@@ -223,30 +249,8 @@
 		flex-shrink: 0;
 		border-radius: 9999px;
 		color: var(--foreground);
-		background:
-			radial-gradient(80% 80% at 30% 25%, color-mix(in oklch, var(--foreground) 12%, transparent), transparent 70%),
-			color-mix(in oklch, var(--foreground) 6%, var(--background));
-		border: 1px solid color-mix(in oklch, var(--foreground) 14%, transparent);
-		box-shadow:
-			0 0 0 4px color-mix(in oklch, var(--foreground) 4%, transparent),
-			0 0 18px -2px color-mix(in oklch, var(--foreground) 20%, transparent);
-		animation: orb-breathe 4.5s ease-in-out infinite;
-	}
-
-	@keyframes orb-breathe {
-		0%,
-		100% {
-			transform: translateY(0);
-			box-shadow:
-				0 0 0 4px color-mix(in oklch, var(--foreground) 4%, transparent),
-				0 0 18px -2px color-mix(in oklch, var(--foreground) 18%, transparent);
-		}
-		50% {
-			transform: translateY(-1px);
-			box-shadow:
-				0 0 0 5px color-mix(in oklch, var(--foreground) 5%, transparent),
-				0 0 26px 0 color-mix(in oklch, var(--foreground) 30%, transparent);
-		}
+		background: color-mix(in oklch, var(--foreground) 4%, var(--background));
+		border: 1px solid color-mix(in oklch, var(--foreground) 10%, transparent);
 	}
 
 	.progress-seg {
@@ -286,10 +290,6 @@
 		100% {
 			transform: translateX(100%);
 		}
-	}
-
-	.name-input:focus {
-		box-shadow: 0 1px 0 0 var(--foreground);
 	}
 
 	.option {

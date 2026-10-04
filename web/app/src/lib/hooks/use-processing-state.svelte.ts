@@ -68,15 +68,7 @@ export function useProcessingState(): UseProcessingStateReturn {
 
 		isMonitoring = false;
 
-		// Only clear processing state if keepStatsVisible is disabled
-		// This preserves the last known state for display when stats should remain visible
-		const currentConfig = config();
-		if (!currentConfig.keepStatsVisible) {
-			processingState = null;
-		} else if (lastKnownState) {
-			// Keep the last known state visible when keepStatsVisible is enabled
-			processingState = lastKnownState;
-		}
+		processingState = null;
 
 		if (unsubscribe) {
 			unsubscribe();
@@ -95,12 +87,9 @@ export function useProcessingState(): UseProcessingStateReturn {
 			case 'preparing': {
 				// Always use "Processing X% (ETA: Ys)" for consistency (normal chat, PDF, image, text upload, etc.)
 				const percent =
-					processingState.progressPercent !== undefined
-						? processingState.progressPercent
-						: 0;
+					processingState.progressPercent !== undefined ? processingState.progressPercent : 0;
 				const etaSeconds = calculateETA(processingState);
-				const etaStr =
-					etaSeconds !== null && etaSeconds > 0 ? `${Math.round(etaSeconds)}s` : '—s';
+				const etaStr = etaSeconds !== null && etaSeconds > 0 ? `${Math.round(etaSeconds)}s` : '—s';
 				return `Processing ${percent}% (ETA: ${etaStr})`;
 			}
 			case 'generating':
@@ -167,10 +156,7 @@ export function useProcessingState(): UseProcessingStateReturn {
 			}
 
 			// Show prompt processing speed (tokens per second)
-			if (
-				stateToUse.promptTokensPerSecond !== undefined &&
-				stateToUse.promptTokensPerSecond > 0
-			) {
+			if (stateToUse.promptTokensPerSecond !== undefined && stateToUse.promptTokensPerSecond > 0) {
 				details.push(`${stateToUse.promptTokensPerSecond.toFixed(2)} tokens/s`);
 			}
 		}

@@ -32,20 +32,19 @@
 	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
 	import Notes from '$lib/components/app/misc/Notes.svelte';
 	import SettingsShortcut from '$lib/components/app/chat/ChatSettings/SettingsShortcut.svelte';
-	
+
 	// ❌ REMOVED: import { Calendar } from 'bits-ui';
 	// ❌ REMOVED: import Calendar from '$lib/components/app/misc/Calendar.svelte';
 
 	let { children } = $props();
 
 	// Synchronous detection of standalone OS windows
-	const kind = browser ? new URLSearchParams(window.location.search).get('window') ?? '' : '';
+	const kind = browser ? (new URLSearchParams(window.location.search).get('window') ?? '') : '';
 	let isHardwareWindow = $state(kind === 'hardware');
 	let isCalendarWindow = $state(kind === 'calendar');
 	let isNotesWindow = $state(kind === 'notes');
 
-	const IS_TAURI_ENV =
-		browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+	const IS_TAURI_ENV = browser && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 	// Authoritative Tauri label check (survives URL normalization)
 	if (browser && IS_TAURI_ENV) {
@@ -91,7 +90,8 @@
 		}
 		if ((window as any).__DELTA_SERVER_ERROR__) {
 			serverError = true;
-			serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
+			serverErrorMessage =
+				'Server failed to start. Check that no other instance is running and restart the app.';
 			return;
 		}
 		const onReady = () => {
@@ -102,7 +102,8 @@
 		const onError = () => {
 			resetModelApiResolution();
 			serverError = true;
-			serverErrorMessage = 'Server failed to start. Check that no other instance is running and restart the app.';
+			serverErrorMessage =
+				'Server failed to start. Check that no other instance is running and restart the app.';
 		};
 		window.addEventListener('delta-server-ready', onReady);
 		window.addEventListener('delta-server-error', onError);
@@ -111,9 +112,8 @@
 		const poll = setInterval(async () => {
 			try {
 				const { invoke } = await import('@tauri-apps/api/core');
-				const [port, mapiPort, ready, error, backendError] = await invoke<
-					[number, number, boolean, boolean, string]
-				>('get_server_status');
+				const [port, mapiPort, ready, error, backendError] =
+					await invoke<[number, number, boolean, boolean, string]>('get_server_status');
 				pollFailures = 0;
 				modelBackendError = backendError || '';
 				(window as any).__DELTA_MODEL_BACKEND_ERROR__ = modelBackendError;
@@ -177,7 +177,10 @@
 
 	// Standalone windows render without waiting for the model server.
 	$effect(() => {
-		if (isAuxWindow) { document.getElementById('app-loading')?.remove(); return; }
+		if (isAuxWindow) {
+			document.getElementById('app-loading')?.remove();
+			return;
+		}
 		if ((serverReady && modelApiReady) || serverError) {
 			const el = document.getElementById('app-loading');
 			if (el) {
@@ -196,8 +199,9 @@
 	let currentConfig = $derived(config());
 	let sidebarOpen = $state(false);
 	let innerHeight = $state<number | undefined>();
-	let chatSidebar: { activateSearchMode?: () => void; editActiveConversation?: () => void } | undefined =
-		$state();
+	let chatSidebar:
+		| { activateSearchMode?: () => void; editActiveConversation?: () => void }
+		| undefined = $state();
 
 	let titleUpdateDialogOpen = $state(false);
 	let titleUpdateCurrentTitle = $state('');
@@ -247,14 +251,10 @@
 	// Sidebar auto-open logic — skip in auxiliary webviews
 	$effect(() => {
 		if (isAuxWindow) return;
-		const alwaysShow = currentConfig.alwaysShowSidebar === true;
-		const autoShowOnNewChat = currentConfig.autoShowSidebarOnNewChat !== false;
-		if (alwaysShow) {
-			sidebarOpen = true;
-		} else if (isHomeRoute && !isNewChatMode) {
+		if (isHomeRoute && !isNewChatMode) {
 			sidebarOpen = false;
 		} else if (isHomeRoute && isNewChatMode) {
-			sidebarOpen = autoShowOnNewChat;
+			sidebarOpen = true;
 		} else if (isChatRoute) {
 			sidebarOpen = true;
 		} else {
@@ -380,25 +380,30 @@
 		{/if}
 		{#if !isSettingsRoute}
 			<NotesWindow />
-		
+
 			<!-- ✅ NEW: Only Window OS Calendar - no old DOM calendar -->
 			<CalendarWindow />
-		
+
 			<WindowDock />
 
 			<!-- In-app fallback: only used in plain browsers or when OS window creation fails -->
-			<FloatingWindow title="Hardware Telemetry" store={hardwareWindow} minWidth={380} minHeight={520}>
+			<FloatingWindow
+				title="Hardware Telemetry"
+				store={hardwareWindow}
+				minWidth={380}
+				minHeight={520}
+			>
 				<HardwareDashboard />
 			</FloatingWindow>
 		{/if}
 
 		{#if isSettingsRoute}
-			<div class="h-screen w-full overflow-hidden" style:height={innerHeight}px>
+			<div class="h-screen w-full overflow-hidden" style:height="{innerHeight}px">
 				{@render children?.()}
 			</div>
 		{:else}
 			<Sidebar.Provider bind:open={sidebarOpen}>
-				<div class="flex h-screen w-full" style:height={innerHeight}px>
+				<div class="flex h-screen w-full" style:height="{innerHeight}px">
 					<Sidebar.Root class="h-full">
 						<ChatSidebar bind:this={chatSidebar} />
 					</Sidebar.Root>

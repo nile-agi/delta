@@ -5,6 +5,7 @@
 	import ChatFormActionFileAttachments from './ChatFormActionFileAttachments.svelte';
 	import ChatFormActionRecord from './ChatFormActionRecord.svelte';
 	import ChatFormModelSelector from './ChatFormModelSelector.svelte';
+	import { supportsAudio } from '$lib/stores/server.svelte';
 	import { config, updateConfig } from '$lib/stores/settings.svelte';
 	import { agentToolsActive, selectedModelSupportsTools } from '$lib/stores/models.svelte';
 	import { calendarWindow } from '$lib/stores/calendar-window.svelte';
@@ -54,7 +55,7 @@
 	}: Props = $props();
 
 	let showSendButton = $derived(
-		canSend || !(isEmpty && showMicrophoneOnEmptyInput && recordingSupported)
+		canSend || !(isEmpty && showMicrophoneOnEmptyInput && recordingSupported && supportsAudio())
 	);
 	let sendDisabled = $derived(!canSend || disabled || isLoading);
 	let sendBlockedNoModel = $derived(canSend && !hasModel);
