@@ -966,7 +966,7 @@ export class ChatService {
 		}
 
 		if (messages[0]?.role === 'system' && typeof messages[0].content === 'string') {
-			const lines = messages[0].content.split('\n');
+			const lines: string[] = messages[0].content.split('\n');
 			const isClock = (line: string) =>
 				line.startsWith('Today is ') && line.includes('The time is ');
 			const generated = lines.some(isClock);
