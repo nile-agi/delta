@@ -107,7 +107,7 @@ class Harness {
     // The one-line summary of every tool group the model could load but has not, so it always
     // knows the full extent of what it can do without paying for the schemas.
     std::string deferred_manifest() const;
-    std::string summarize(const nlohmann::json& dropped);
+    std::string summarize(const nlohmann::json& dropped, int n_ctx);
     // The key the plan scratchpad lives under: the caller's conversation id when given, else this run.
     std::string scratchpad_key() const { return options_.scratchpad_id.empty() ? run_id_ : options_.scratchpad_id; }
     // The key memories are saved against and recalled by.

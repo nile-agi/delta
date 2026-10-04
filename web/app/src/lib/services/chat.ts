@@ -965,6 +965,29 @@ export class ChatService {
 			parts.push('Give thorough answers with the reasoning and relevant context included.');
 		}
 
+		if (messages[0]?.role === 'system' && typeof messages[0].content === 'string') {
+			const lines: string[] = messages[0].content.split('\n');
+			const isClock = (line: string) =>
+				line.startsWith('Today is ') && line.includes('The time is ');
+			const generated = lines.some(isClock);
+			const existing = lines
+				.filter((line) => {
+					if (isClock(line)) return false;
+					if (!generated) return true;
+					// A replayed ordinary-chat prompt carries these generated preferences.
+					// Refresh them from settings while retaining the caller's other lines.
+					return !(
+						line === 'Keep answers short and to the point. Skip preamble.' ||
+						line === 'Give thorough answers with the reasoning and relevant context included.' ||
+						(line.startsWith("The user's name is ") &&
+							line.endsWith('Address them by name naturally, not in every sentence.'))
+					);
+				})
+				.join('\n');
+			for (const block of existing.split('\n\n')) {
+				if (block.trim() && !parts.includes(block)) parts.push(block);
+			}
+		}
 		if (parts.length === 0) {
 			return messages;
 		}
