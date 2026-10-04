@@ -8,6 +8,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { SETTING_CONFIG_DEFAULT, SETTING_CONFIG_INFO } from '$lib/constants/settings-config';
+	import { FIELD_PLACEHOLDERS } from './settings-navigation';
 	import { getParameterInfo } from '$lib/stores/settings.svelte';
 	import { ParameterSyncService } from '$lib/services/parameter-sync';
 	import ParameterSourceIndicator from './ParameterSourceIndicator.svelte';
@@ -136,9 +137,8 @@
 							// Update local config immediately for real-time badge feedback
 							onConfigChange(field.key, e.currentTarget.value);
 						}}
-						placeholder={field.key === 'userName'
-							? 'Your name (optional)'
-							: `Default: ${SETTING_CONFIG_DEFAULT[field.key] ?? 'none'}`}
+						placeholder={FIELD_PLACEHOLDERS[field.key] ??
+							`Default: ${SETTING_CONFIG_DEFAULT[field.key] ?? 'none'}`}
 						class="w-full {paramInfo ? 'pr-10' : ''}"
 					/>
 					{#if paramInfo}
@@ -198,9 +198,8 @@
 				oninput={(e) => onConfigChange(field.key, e.currentTarget.value)}
 				aria-invalid={customError ? true : undefined}
 				aria-describedby={customError ? `${field.key}-error` : undefined}
-				placeholder={field.key === 'userName'
-					? 'Your name (optional)'
-					: `Default: ${SETTING_CONFIG_DEFAULT[field.key] ?? 'none'}`}
+				placeholder={FIELD_PLACEHOLDERS[field.key] ??
+					`Default: ${SETTING_CONFIG_DEFAULT[field.key] ?? 'none'}`}
 				class="min-h-[100px] max-h-[360px] w-full resize-none overflow-y-auto md:max-w-2xl"
 			/>
 			{#if customError}<p id="{field.key}-error" role="alert" class="text-xs text-destructive">

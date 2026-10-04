@@ -139,9 +139,18 @@ export const FIELD_HELP: Record<string, string> = {
 		'How many recent tokens the repeated-phrase control checks. Set to 0 to disable it. Negative values are not supported.',
 	max_tokens:
 		'Limit each reply by token count. No fixed limit still respects model context and agent runtime limits.',
-	apiKey: 'Only needed if your server requires an access key.',
+	apiKey:
+		'Leave blank unless your server requires an access key.',
 	custom:
-		'Add request options as a JSON object. These override matching response controls and are checked before a request is sent.',
+		'Optional. Leave blank to use the response controls. Enter a JSON object to override specific request options.',
 	showToolCallLabels: 'Show tool names and their data below replies for troubleshooting.',
 	disableReasoningFormat: 'Show the model response without normal formatting, for troubleshooting.'
+};
+
+export const FIELD_PLACEHOLDERS: Record<string, string> = {
+	userName: 'e.g. Asha',
+	systemMessage: 'e.g. Use simple language, keep replies short, and explain unfamiliar words.',
+	apiKey: 'Paste the access key provided by your server',
+	samplers: 'e.g. top_k;typ_p;top_p;min_p;temperature',
+	custom: '{\n  "temperature": 0.7,\n  "max_tokens": 512\n}'
 };
