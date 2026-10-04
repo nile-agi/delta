@@ -356,15 +356,11 @@ jobs:
       - name: Prepare pinned AppImage repacking tool
         if: matrix.platform == 'ubuntu-22.04'
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           APPIMAGETOOL_PATH="$RUNNER_TEMP/appimagetool-x86_64.AppImage"
-          gh api \
-            -H "Accept: application/octet-stream" \
-            /repos/AppImage/appimagetool/releases/assets/324406882 \
-            > "$APPIMAGETOOL_PATH"
-          echo "a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0  $APPIMAGETOOL_PATH" \
+          curl -fsSL --retry 3 -o "$APPIMAGETOOL_PATH" \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  $APPIMAGETOOL_PATH" \
             | sha256sum --check --strict
           chmod +x "$APPIMAGETOOL_PATH"
           echo "APPIMAGETOOL_PATH=$APPIMAGETOOL_PATH" >> "$GITHUB_ENV"
