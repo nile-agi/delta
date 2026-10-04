@@ -34,9 +34,15 @@ fi
 
 # src-tauri/Cargo.toml
 if [[ -f "$REPO_ROOT/src-tauri/Cargo.toml" ]]; then
-    sed -i.bak -E "0,/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"/s//version = \"$VERSION\"/" \
-        "$REPO_ROOT/src-tauri/Cargo.toml"
-    rm -f "$REPO_ROOT/src-tauri/Cargo.toml.bak"
+    awk -v version="$VERSION" '
+        /^\[/ { in_package = ($0 ~ /^\[package\][[:space:]]*$/) }
+        in_package && /^version[[:space:]]*=/ {
+            ending = ($0 ~ /\r$/) ? "\r" : ""
+            $0 = "version = \"" version "\"" ending
+        }
+        { print }
+    ' "$REPO_ROOT/src-tauri/Cargo.toml" > "$REPO_ROOT/src-tauri/Cargo.toml.tmp"
+    mv "$REPO_ROOT/src-tauri/Cargo.toml.tmp" "$REPO_ROOT/src-tauri/Cargo.toml"
     echo "  Updated src-tauri/Cargo.toml"
 fi
 

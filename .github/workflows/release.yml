@@ -283,6 +283,19 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Validate Tauri Rust edition
+        shell: bash
+        run: |
+          cargo metadata --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1 > "$RUNNER_TEMP/tauri-metadata.json"
+          node - "$RUNNER_TEMP/tauri-metadata.json" <<'NODE'
+          const fs = require('node:fs');
+          const metadata = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const app = metadata.packages.find(pkg => pkg.name === 'delta-app');
+          if (!app || app.targets.some(target => !['2021', '2024'].includes(target.edition))) {
+            throw new Error('delta-app requires an explicit Rust edition of 2021 or 2024 in Cargo.toml');
+          }
+          NODE
+
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
