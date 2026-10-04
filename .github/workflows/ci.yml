@@ -77,6 +77,9 @@ jobs:
       - name: Test release notes
         run: node --test scripts/release-notes.test.cjs
 
+      - name: Test version syncing
+        run: node --test scripts/bump-version.test.cjs
+
       - name: Test Linux packaging
         run: |
           bash scripts/test-appimage-graphics-libs.sh

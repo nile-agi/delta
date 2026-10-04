@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <set>
 #include <sstream>
-#include <dirent.h>
 #include <csignal>
 
 #ifdef _WIN32
