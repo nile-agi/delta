@@ -38,9 +38,6 @@ export const FIELD_LABELS: Record<string, string> = {
 	systemMessage: 'How Delta should respond',
 	askForTitleConfirmation: 'Ask before renaming a chat',
 	pasteLongTextToFileLen: 'Turn long pasted text into an attachment',
-	copyTextAttachmentsAsPlainText: 'Copy text attachments as plain text',
-	enableContinueButton: 'Show a button to continue a reply',
-	pdfAsImage: 'Read PDFs as images',
 	showMessageStats: 'Show response statistics',
 	showThoughtInProgress: 'Expand reasoning while responding',
 	keepStatsVisible: 'Keep response statistics visible',
@@ -90,7 +87,6 @@ export const FIELD_HELP: Record<string, string> = {
 		'Give Delta instructions about tone, language, or how you want it to help. Leave empty to use its normal behavior.',
 	pasteLongTextToFileLen:
 		'Text longer than this number of characters becomes an attachment. Set to 0 to turn this off.',
-	pdfAsImage: 'Send each PDF page as an image. Requires a model that can read images.',
 	renderUserContentAsMarkdown:
 		'Show formatting such as headings, lists, and bold text in your messages.',
 	showMessageStats: 'Show reply length, time taken, and generation speed below replies.',

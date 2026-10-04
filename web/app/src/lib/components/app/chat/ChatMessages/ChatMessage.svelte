@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { getDeletionInfo } from '$lib/stores/chat.svelte';
-	import { config } from '$lib/stores/settings.svelte';
 	import { copyToClipboard } from '$lib/utils/copy';
 	import { isIMEComposing } from '$lib/utils/is-ime-composing';
 	import ChatMessageAssistant from './ChatMessageAssistant.svelte';
@@ -64,8 +63,7 @@
 
 	async function handleCopy() {
 		let text = message.content;
-		const currentConfig = config();
-		if (currentConfig.copyTextAttachmentsAsPlainText && message.extra?.length) {
+		if (message.extra?.length) {
 			const textParts: string[] = [message.content].filter(Boolean);
 			for (const item of message.extra) {
 				if (item.type === 'textFile' && 'content' in item) {

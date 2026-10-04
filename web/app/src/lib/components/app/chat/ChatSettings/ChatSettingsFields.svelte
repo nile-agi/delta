@@ -8,7 +8,6 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { SETTING_CONFIG_DEFAULT, SETTING_CONFIG_INFO } from '$lib/constants/settings-config';
-	import { supportsVision } from '$lib/stores/server.svelte';
 	import { getParameterInfo } from '$lib/stores/settings.svelte';
 	import { ParameterSyncService } from '$lib/services/parameter-sync';
 	import ParameterSourceIndicator from './ParameterSourceIndicator.svelte';
@@ -312,10 +311,6 @@
 					{#if field.help || SETTING_CONFIG_INFO[field.key]}
 						<p class="text-xs text-muted-foreground">
 							{field.help || SETTING_CONFIG_INFO[field.key]}
-						</p>
-					{:else if field.key === 'pdfAsImage' && !supportsVision()}
-						<p class="text-xs text-muted-foreground">
-							For non-vision models, PDFs will be processed as text automatically.
 						</p>
 					{/if}
 				</div>

@@ -119,21 +119,6 @@
 					key: 'pasteLongTextToFileLen',
 					label: 'Paste long text to file length',
 					type: 'input'
-				},
-				{
-					key: 'copyTextAttachmentsAsPlainText',
-					label: 'Copy text attachments as plain text',
-					type: 'checkbox'
-				},
-				{
-					key: 'enableContinueButton',
-					label: 'Enable "Continue" button',
-					type: 'checkbox'
-				},
-				{
-					key: 'pdfAsImage',
-					label: 'Parse PDF as image',
-					type: 'checkbox'
 				}
 			]
 		},
@@ -390,6 +375,28 @@
 		icon: Code,
 		fields: [{ key: 'apiKey', label: 'API access key', type: 'input' }]
 	});
+	const developerFields = settingSections.find((group) => group.title === 'Developer')!.fields;
+	const advancedKeys = new Set([
+		'pasteLongTextToFileLen',
+		'showMessageStats',
+		'keepStatsVisible',
+		'showThoughtInProgress',
+		'showMicrophoneOnEmptyInput',
+		'renderUserContentAsMarkdown'
+	]);
+	for (const group of settingSections.filter((group) =>
+		['General', 'Display'].includes(group.title)
+	)) {
+		developerFields.push(...group.fields.filter((field) => advancedKeys.has(field.key)));
+		group.fields = group.fields.filter((field) => !advancedKeys.has(field.key));
+	}
+	const chatFields = settingSections.find((group) => group.title === 'General')!.fields;
+	const appearanceFields = settingSections.find((group) => group.title === 'Display')!.fields;
+	appearanceFields.unshift(...chatFields.filter((field) => field.key === 'theme'));
+	settingSections.find((group) => group.title === 'General')!.fields = chatFields.filter(
+		(field) => field.key !== 'theme'
+	);
+
 	for (const group of settingSections) {
 		for (const field of group.fields) {
 			field.label = FIELD_LABELS[field.key] ?? field.label;
