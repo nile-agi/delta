@@ -37,8 +37,7 @@ ContextManager::ContextManager(int n_ctx, int reserve_output_tokens)
 
 void ContextManager::recompute_budget() {
     budget_ = n_ctx_ - reserve_output_ - kSafetyMargin - tool_overhead_;
-    if (budget_ < 512)
-        budget_ = 512; // a tiny window still has to carry the system prompt and one turn
+    budget_ = std::max(0, budget_); // impossible windows are rejected before inference
 }
 
 void ContextManager::set_reserve_output(int tokens) {
@@ -95,6 +94,25 @@ int ContextManager::token_cost(const nlohmann::json& message) const {
     return tokens + kMessageOverhead;
 }
 
+std::string ContextManager::fit_text(const std::string& text, int max_tokens) const {
+    auto cost = [&](const std::string& value) { return token_cost(nlohmann::json{{"content", value}}); };
+    if (max_tokens <= kMessageOverhead)
+        return "";
+    if (cost(text) <= max_tokens)
+        return text;
+    // Count each candidate, including the omission marker. Character estimates alone can
+    // badly undercount non-English text. Progress is guaranteed even without a tokenizer.
+    size_t chars = text.size();
+    while (chars > 0) {
+        std::string candidate = truncate_middle(text, chars);
+        const int tokens = cost(candidate);
+        if (tokens <= max_tokens)
+            return candidate;
+        chars = std::min(chars - 1, chars * static_cast<size_t>(max_tokens) / std::max(1, tokens));
+    }
+    return "";
+}
+
 nlohmann::json ContextManager::build(const std::string& system_prompt, const nlohmann::json& history) {
     stats_ = ContextStats{};
     stats_.budget_tokens = budget_;
@@ -139,78 +157,63 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
     }
 
     nlohmann::json system_msg = {{"role", "system"}, {"content", full_system}};
-    const int system_cost = token_cost(system_msg);
-    int remaining = budget_ - system_cost;
-    // Hold back room for the summary before deciding what fits, so appending it later cannot
-    // push the request over the window.
-    const bool summary_possible = static_cast<bool>(summarize_);
-    if (summary_possible)
-        remaining -= kSummaryAllowance;
-    if (remaining < 256)
-        remaining = 256; // an enormous system prompt still leaves room for the live turn
+    const int remaining = std::max(0, budget_ - token_cost(system_msg));
 
-    // Group into atomic blocks so an assistant's tool_calls never gets separated from its results.
-    std::vector<std::pair<size_t, size_t>> blocks; // [begin, end)
+    // Keep a complete exchange together, including every assistant/tool step responding to
+    // that user. A retained reply without its question is misleading context.
+    std::vector<std::pair<size_t, size_t>> blocks;
     for (size_t i = 0; i < turns.size();) {
         size_t end = i + 1;
-        if (carries_tool_calls(turns[i])) {
-            while (end < turns.size() && is_tool_message(turns[end]))
-                end++;
-        }
+        while (end < turns.size() && turns[end].value("role", "") != "user")
+            end++;
         blocks.emplace_back(i, end);
         i = end;
     }
-
-    auto block_cost = [&](const std::pair<size_t, size_t>& b) {
+    std::vector<int> costs;
+    int total = 0;
+    for (const auto& block : blocks) {
         int cost = 0;
-        for (size_t i = b.first; i < b.second; i++)
+        for (size_t i = block.first; i < block.second; i++)
             cost += token_cost(turns[i]);
-        return cost;
-    };
+        costs.push_back(cost);
+        total += cost;
+    }
 
+    // Reserve summary space only when the history really needs compaction. The live
+    // exchange has priority; it is never silently shortened to pay for a summary.
+    const int latest_cost = costs.empty() ? 0 : costs.back();
+    const int summary_allowance =
+        total > remaining ? std::min(kSummaryAllowance, std::max(0, remaining - latest_cost)) : 0;
     size_t keep_from = blocks.size();
     int used = 0;
     for (size_t n = blocks.size(); n-- > 0;) {
-        const int cost = block_cost(blocks[n]);
-        if (used + cost > remaining && keep_from != blocks.size())
+        if (used + costs[n] > remaining - summary_allowance && keep_from != blocks.size())
             break;
-        if (used + cost > remaining && keep_from == blocks.size()) {
-            // The most recent block alone overflows the window. Keep it anyway -- dropping the live
-            // turn would make the request meaningless -- and let the per-result truncation above plus
-            // the server's own handling absorb it.
-            keep_from = n;
-            used += cost;
-            break;
-        }
-        used += cost;
+        used += costs[n];
         keep_from = n;
+        if (used > remaining - summary_allowance)
+            break;
+    }
+    while (keep_from < blocks.size() && turns[blocks[keep_from].first].value("role", "") != "user") {
+        used -= costs[keep_from];
+        keep_from++;
     }
 
-    // Several chat templates (Gemma's among them) reject anything but a single leading system
-    // message followed by strictly alternating user/assistant turns. So the summary of what was
-    // dropped is appended to the system prompt rather than added as a second system message, and
-    // the kept window is advanced to start on a user turn.
     std::string summary_note;
     if (keep_from > 0) {
         nlohmann::json dropped = nlohmann::json::array();
-        for (size_t n = 0; n < keep_from; n++) {
+        for (size_t n = 0; n < keep_from; n++)
             for (size_t i = blocks[n].first; i < blocks[n].second; i++)
                 dropped.push_back(turns[i]);
-        }
         stats_.dropped_messages = static_cast<int>(dropped.size());
-
         std::string summary;
-        if (summarize_ && stats_.dropped_messages >= kMinDroppedForSummary) {
-            // Within one run the dropped prefix only ever grows by a message or two per
-            // iteration, so a summary that already covers all but a few of them is still good.
+        if (summarize_ && summary_allowance > 0 && stats_.dropped_messages >= kMinDroppedForSummary) {
             auto hash_prefix = [&](size_t count) {
                 std::string text;
                 for (size_t i = 0; i < count && i < dropped.size(); i++)
-                    text += message_text(dropped[i]) + '\x1f';
+                    text += dropped[i].dump() + '\x1f';
                 return std::hash<std::string>{}(text);
             };
-            // Messages dropped since the cached summary was made are appended to it verbatim
-            // (shortened) until enough pile up to be worth folding into a fresh summary.
             constexpr size_t kMaxAppendedToSummary = 2 * kMinDroppedForSummary;
             const bool reusable = !cached_summary_.empty() && dropped.size() >= cached_summary_count_ &&
                                   dropped.size() - cached_summary_count_ < kMaxAppendedToSummary &&
@@ -218,12 +221,9 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
             if (reusable) {
                 summary = cached_summary_;
                 for (size_t i = cached_summary_count_; i < dropped.size(); i++) {
-                    std::string text = message_text(dropped[i]);
-                    if (text.empty())
-                        continue;
-                    if (text.size() > 200)
-                        text = text.substr(0, 200) + "...";
-                    summary += "\n" + dropped[i].value("role", "") + ": " + text;
+                    const std::string text = message_text(dropped[i]);
+                    if (!text.empty())
+                        summary += "\n" + dropped[i].value("role", "") + ": " + text;
                 }
             } else {
                 summary = summarize_(dropped);
@@ -236,43 +236,31 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
         }
         if (!summary.empty()) {
             stats_.summarized = true;
-            summary_note = "\n\nSummary of the earlier part of this conversation, which no longer fits in "
-                           "context:\n" +
+            summary_note = "\n\nEarlier conversation notes (assistant claims are unverified; later user "
+                           "corrections take precedence):\n" +
                            summary;
-        } else if (stats_.dropped_messages > 0) {
+        } else {
             summary_note = "\n\n[" + std::to_string(stats_.dropped_messages) +
-                           " earlier messages were dropped to fit the context window. Ask the user if you "
-                           "need something from them.]";
+                           " earlier messages no longer fit. Ask for missing details rather than guessing.]";
         }
+        summary_note = fit_text(summary_note, summary_allowance);
     }
 
-    // Skip leading blocks until the window opens on a user turn. Whole blocks are skipped so a
-    // tool result never loses the assistant turn that asked for it.
-    while (keep_from < blocks.size() && turns[blocks[keep_from].first].value("role", "") != "user") {
-        for (size_t i = blocks[keep_from].first; i < blocks[keep_from].second; i++) {
-            stats_.dropped_messages++;
-            // Refund what this block was costing, or the reported usage counts messages that
-            // were never sent.
-            used -= token_cost(turns[i]);
-        }
-        keep_from++;
-    }
-    if (used < 0)
-        used = 0;
-
-    // A summariser that ignores its brief must not be allowed to spend the whole window, so the
-    // note is trimmed to the room set aside for it.
+    // Check the assembled prompt too: tokenisation of concatenated strings is not additive.
+    // A tokenizer-heavy language or oversized summary must not spill past the real budget.
     int summary_tokens = 0;
-    if (!summary_note.empty()) {
-        int summary_cost = token_cost(nlohmann::json{{"role", "system"}, {"content", summary_note}});
-        if (summary_cost > kSummaryAllowance) {
-            const size_t allowed_chars = static_cast<size_t>(kSummaryAllowance) * 36 / 10;
-            summary_note = truncate_middle(summary_note, allowed_chars);
-            summary_cost = token_cost(nlohmann::json{{"role", "system"}, {"content", summary_note}});
-        }
-        system_msg["content"] = system_msg["content"].get<std::string>() + summary_note;
-        summary_tokens = summary_cost;
+    while (!summary_note.empty()) {
+        system_msg["content"] = full_system + summary_note;
+        const int excess = token_cost(system_msg) + used - budget_;
+        if (excess <= 0)
+            break;
+        const int allowance = token_cost(nlohmann::json{{"content", summary_note}}) - excess - 8;
+        summary_note = fit_text(summary_note, allowance);
     }
+    system_msg["content"] = full_system + summary_note;
+    if (!summary_note.empty())
+        summary_tokens = token_cost(nlohmann::json{{"content", summary_note}});
+    stats_.summarized = stats_.summarized && !summary_note.empty();
 
     nlohmann::json out = nlohmann::json::array();
     out.push_back(system_msg);
