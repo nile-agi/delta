@@ -17,6 +17,14 @@
 #include <cstdint>
 
 #ifdef _WIN32
+// Lean windows.h skips the legacy winsock.h, which would otherwise clash with
+// the <winsock2.h>/<ws2tcpip.h> that httplib pulls in after this header.
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #endif
 
