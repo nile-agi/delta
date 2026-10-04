@@ -28,6 +28,24 @@ afterEach(() => {
 });
 
 describe('chat request guidance and history', () => {
+	for (const enabled of [undefined, false, true]) {
+		it(`requires explicit computer access opt-in: ${enabled}`, async () => {
+			const fetch = vi
+				.fn()
+				.mockResolvedValue(
+					new Response(JSON.stringify({ choices: [{ message: { content: 'Done.' } }] }))
+				);
+			vi.stubGlobal('fetch', fetch);
+			await new ChatService().sendMessage([{ role: 'user', content: 'Hello' }], {
+				useTools: true,
+				useFileTools: enabled,
+				useShellTools: enabled
+			});
+			const body = JSON.parse(fetch.mock.calls[0][1].body);
+			expect(body.use_files_tools).toBe(enabled === true);
+			expect(body.use_shell_tools).toBe(enabled === true);
+		});
+	}
 	for (const useTools of [false, true]) {
 		it(`rejects invalid DRY lookback before sending with tools=${useTools}`, async () => {
 			const fetch = vi.fn();

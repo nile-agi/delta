@@ -205,15 +205,15 @@ export class ChatService {
 		};
 
 		if (useTools) {
-			// Each category defaults to on, so leaving these unset gives the model everything.
+			// Everyday tools are enabled by default; computer access requires explicit opt-in.
 			requestBody.use_tools = true;
 			if (conversationId) requestBody.conversation_id = conversationId;
 			requestBody.use_calendar_tools = useCalendarTools !== false;
 			requestBody.use_notes_tools = useNotesTools !== false;
 			requestBody.use_memory_tools = useMemoryTools !== false;
 			requestBody.use_task_tools = useTaskTools !== false;
-			requestBody.use_files_tools = useFileTools !== false;
-			requestBody.use_shell_tools = useShellTools !== false;
+			requestBody.use_files_tools = useFileTools === true;
+			requestBody.use_shell_tools = useShellTools === true;
 			if (max_iterations !== undefined) requestBody.max_iterations = max_iterations;
 		}
 

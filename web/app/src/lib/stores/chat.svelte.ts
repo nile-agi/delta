@@ -337,8 +337,8 @@ class ChatStore {
 			apiOptions.useNotesTools = currentConfig.useNotesTools !== false;
 			apiOptions.useMemoryTools = currentConfig.useMemoryTools !== false;
 			apiOptions.useTaskTools = currentConfig.useTaskTools !== false;
-			apiOptions.useFileTools = currentConfig.useFileTools !== false;
-			apiOptions.useShellTools = currentConfig.useShellTools !== false;
+			apiOptions.useFileTools = currentConfig.useFileTools === true;
+			apiOptions.useShellTools = currentConfig.useShellTools === true;
 		}
 
 		return apiOptions;
