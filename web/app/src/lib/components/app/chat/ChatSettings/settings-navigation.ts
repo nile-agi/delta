@@ -3,7 +3,7 @@ export const SETTINGS_VIEWS = [
 	{
 		title: 'General',
 		description: 'Make Delta comfortable to use, and choose what it can do for you.',
-		groups: ['You', 'General', 'Display', 'Agent tools', 'Model Management', 'Import/Export']
+		groups: ['You', 'Display', 'Agent tools', 'Model Management', 'Import/Export']
 	},
 	{
 		title: 'Developer',
@@ -14,7 +14,6 @@ export const SETTINGS_VIEWS = [
 ] as const;
 export const GROUP_LABELS: Record<string, string> = {
 	You: 'About you',
-	General: 'Chat preferences',
 	Display: 'Appearance',
 	'Agent tools': 'Assistant capabilities',
 	'Model Management': 'Models',
@@ -139,8 +138,7 @@ export const FIELD_HELP: Record<string, string> = {
 		'How many recent tokens the repeated-phrase control checks. Set to 0 to disable it. Negative values are not supported.',
 	max_tokens:
 		'Limit each reply by token count. No fixed limit still respects model context and agent runtime limits.',
-	apiKey:
-		'Leave blank unless your server requires an access key.',
+	apiKey: 'Leave blank unless your server requires an access key.',
 	custom:
 		'Optional. Leave blank to use the response controls. Enter a JSON object to override specific request options.',
 	showToolCallLabels: 'Show tool names and their data below replies for troubleshooting.',
@@ -153,4 +151,19 @@ export const FIELD_PLACEHOLDERS: Record<string, string> = {
 	apiKey: 'Paste the access key provided by your server',
 	samplers: 'e.g. top_k;typ_p;top_p;min_p;temperature',
 	custom: '{\n  "temperature": 0.7,\n  "max_tokens": 512\n}'
+};
+
+export const REPLY_STYLE_GUIDANCE: Record<string, { description: string; example: string }> = {
+	concise: {
+		description: 'Short answers that get straight to the point.',
+		example: 'e.g. Keep replies to a few sentences and use simple words.'
+	},
+	balanced: {
+		description: 'A clear answer with enough explanation to help you understand.',
+		example: 'e.g. Start with the answer, then add a brief explanation. Reply in Kiswahili.'
+	},
+	detailed: {
+		description: 'Full explanations with useful steps, context, and examples.',
+		example: 'e.g. Explain each step and include practical examples.'
+	}
 };

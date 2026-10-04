@@ -3,7 +3,11 @@ import { chatService, slotsService } from '$lib/services';
 import { config } from '$lib/stores/settings.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
 import { normalizeModelName } from '$lib/utils/model-names';
-import { agentToolsActive, selectedModelName, requestModelSelection } from '$lib/stores/models.svelte';
+import {
+	agentToolsActive,
+	selectedModelName,
+	requestModelSelection
+} from '$lib/stores/models.svelte';
 import { agentStore } from '$lib/stores/agent.svelte';
 import { agentService } from '$lib/services/agent';
 import type { QuickAddSuggestion } from '$lib/types/agent';
@@ -374,8 +378,7 @@ class ChatStore {
 		const hasContentNow = response.length > 0;
 		const generationStartTimeMs =
 			hadNoContent && hasContentNow ? Date.now() : existing?.generationStartTimeMs;
-		const totalTokens =
-			estimatedTotalPromptTokens ?? existing?.estimatedTotalPromptTokens;
+		const totalTokens = estimatedTotalPromptTokens ?? existing?.estimatedTotalPromptTokens;
 		this.conversationStreamingStates.set(convId, {
 			response,
 			messageId,
@@ -405,7 +408,10 @@ class ChatStore {
 					} else if ('base64Data' in e && typeof e.base64Data === 'string') {
 						chars += e.base64Data.length;
 					} else if ('images' in e && Array.isArray(e.images)) {
-						chars += e.images.reduce((s: number, img: unknown) => s + (typeof img === 'string' ? img.length : 0), 0);
+						chars += e.images.reduce(
+							(s: number, img: unknown) => s + (typeof img === 'string' ? img.length : 0),
+							0
+						);
 					} else {
 						chars += 2000;
 					}
@@ -422,15 +428,15 @@ class ChatStore {
 		}
 	}
 
-	private getConversationStreaming(
-		convId: string
-	): {
-		response: string;
-		messageId: string;
-		startTimeMs: number;
-		generationStartTimeMs?: number;
-		estimatedTotalPromptTokens?: number;
-	} | undefined {
+	private getConversationStreaming(convId: string):
+		| {
+				response: string;
+				messageId: string;
+				startTimeMs: number;
+				generationStartTimeMs?: number;
+				estimatedTotalPromptTokens?: number;
+		  }
+		| undefined {
 		return this.conversationStreamingStates.get(convId);
 	}
 
@@ -485,11 +491,7 @@ class ChatStore {
 			}
 			const batchSize = Math.max(1, Math.ceil(chunkQueue.length / 15));
 			streamedContent += chunkQueue.splice(0, batchSize).join('');
-			this.setConversationStreaming(
-				assistantMessage.convId,
-				streamedContent,
-				assistantMessage.id
-			);
+			this.setConversationStreaming(assistantMessage.convId, streamedContent, assistantMessage.id);
 			const messageIndex = this.findMessageIndex(assistantMessage.id);
 			this.updateMessageAtIndex(messageIndex, {
 				content: streamedContent,
@@ -734,7 +736,9 @@ class ChatStore {
 								console.error('Failed to remove assistant message after error:', cleanupError);
 							});
 							if (this.activeConversation) {
-								DatabaseStore.updateCurrentNode(this.activeConversation.id, parentId).catch(() => {});
+								DatabaseStore.updateCurrentNode(this.activeConversation.id, parentId).catch(
+									() => {}
+								);
 								this.activeConversation.currNode = parentId;
 							}
 						}
@@ -861,7 +865,10 @@ class ChatStore {
 		try {
 			const suggestion = await agentService.suggestQuickAction(message.content);
 			if (suggestion) {
-				await this.setQuickAdd(message.id, { ...suggestion, status: 'offered' } as QuickAddSuggestion);
+				await this.setQuickAdd(message.id, {
+					...suggestion,
+					status: 'offered'
+				} as QuickAddSuggestion);
 			} else if (message.quick_add?.status === 'offered') {
 				// The earlier guess no longer holds up; drop it rather than keep a wrong chip.
 				await DatabaseStore.updateMessage(message.id, { quick_add: undefined });
@@ -1018,8 +1025,8 @@ class ChatStore {
 		const interruptedActivity = agentStore.finish(lastMessage?.id ?? '');
 		const hasActivity = Boolean(
 			interruptedActivity?.steps.length ||
-				interruptedActivity?.notices.length ||
-				interruptedActivity?.transcript?.length
+			interruptedActivity?.notices.length ||
+			interruptedActivity?.transcript?.length
 		);
 		if (!streamingState.response.trim() && !hasActivity) return;
 
@@ -1302,28 +1309,17 @@ class ChatStore {
 	}
 
 	/**
-	 * Updates conversation title with optional confirmation dialog based on settings
+	 * Updates conversation title automatically after an edit
 	 * @param convId - The conversation ID to update
 	 * @param newTitle - The new title content
-	 * @param onConfirmationNeeded - Callback when user confirmation is needed
-	 * @returns Promise<boolean> - True if title was updated, false if cancelled
+	 * @returns Promise<boolean> - True if title was updated, false if the update failed
 	 */
 	async updateConversationTitleWithConfirmation(
 		convId: string,
 		newTitle: string,
-		onConfirmationNeeded?: (currentTitle: string, newTitle: string) => Promise<boolean>
+		_onConfirmationNeeded?: (currentTitle: string, newTitle: string) => Promise<boolean>
 	): Promise<boolean> {
 		try {
-			const currentConfig = config();
-
-			if (currentConfig.askForTitleConfirmation && onConfirmationNeeded) {
-				const conversation = await DatabaseStore.getConversation(convId);
-				if (!conversation) return false;
-
-				const shouldUpdate = await onConfirmationNeeded(conversation.name, newTitle);
-				if (!shouldUpdate) return false;
-			}
-
 			await this.updateConversationName(convId, newTitle);
 			return true;
 		} catch (error) {
@@ -1921,7 +1917,9 @@ class ChatStore {
 			console.error('Failed to regenerate message with branching:', error);
 			if (newAssistantMessage && this.activeConversation) {
 				await DatabaseStore.deleteMessage(newAssistantMessage.id).catch(() => {});
-				await DatabaseStore.updateCurrentNode(this.activeConversation.id, previousNode).catch(() => {});
+				await DatabaseStore.updateCurrentNode(this.activeConversation.id, previousNode).catch(
+					() => {}
+				);
 				this.activeConversation.currNode = previousNode;
 				await this.refreshActiveMessages();
 			}
@@ -1983,15 +1981,15 @@ class ChatStore {
 		return this.isConversationLoading(convId);
 	}
 
-	public getConversationStreamingPublic(
-		convId: string
-	): {
-		response: string;
-		messageId: string;
-		startTimeMs: number;
-		generationStartTimeMs?: number;
-		estimatedTotalPromptTokens?: number;
-	} | undefined {
+	public getConversationStreamingPublic(convId: string):
+		| {
+				response: string;
+				messageId: string;
+				startTimeMs: number;
+				generationStartTimeMs?: number;
+				estimatedTotalPromptTokens?: number;
+		  }
+		| undefined {
 		return this.getConversationStreaming(convId);
 	}
 

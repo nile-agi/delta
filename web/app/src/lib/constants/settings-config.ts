@@ -21,7 +21,6 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> =
 	disableReasoningFormat: false,
 	keepStatsVisible: false,
 	showMessageStats: true,
-	askForTitleConfirmation: false,
 	pasteLongTextToFileLen: 2500,
 	backendSampling: false,
 	showToolCallLabels: false,
@@ -124,8 +123,6 @@ export const SETTING_CONFIG_INFO: Record<string, string> = {
 	keepStatsVisible: 'Keep processing statistics visible after generation finishes.',
 	showMessageStats:
 		'Display generation statistics (tokens/second, token count, duration) below each assistant message.',
-	askForTitleConfirmation:
-		'Ask for confirmation before automatically changing conversation title when editing the first message.',
 	backendSampling:
 		'Enable backend-based samplers. When enabled, supported samplers run on the accelerator backend for faster sampling.',
 	showToolCallLabels:

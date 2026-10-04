@@ -8,11 +8,11 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { SETTING_CONFIG_DEFAULT, SETTING_CONFIG_INFO } from '$lib/constants/settings-config';
-	import { FIELD_PLACEHOLDERS } from './settings-navigation';
+	import { FIELD_PLACEHOLDERS, REPLY_STYLE_GUIDANCE } from './settings-navigation';
 	import { getParameterInfo } from '$lib/stores/settings.svelte';
 	import { ParameterSyncService } from '$lib/services/parameter-sync';
 	import ParameterSourceIndicator from './ParameterSourceIndicator.svelte';
-	import type { Component } from 'svelte';
+	import { onMount, type Component } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	interface Props {
@@ -23,6 +23,11 @@
 	}
 
 	let { fields, localConfig, onConfigChange, onThemeChange }: Props = $props();
+
+	let replyPreferencesOpen = $state(false);
+	onMount(() => {
+		replyPreferencesOpen = Boolean(localConfig.systemMessage);
+	});
 
 	// Status line under an action button after it has run, keyed by field.
 	let actionStatus = $state<Record<string, string>>({});
@@ -247,7 +252,7 @@
 				}}
 			>
 				<div class="relative w-full md:w-auto md:max-w-md">
-					<Select.Trigger class="w-full">
+					<Select.Trigger id={field.key} class="w-full">
 						<div class="flex flex-wrap items-center gap-2">
 							{#if selectedOption?.icon}
 								{@const IconComponent = selectedOption.icon}
@@ -288,10 +293,38 @@
 					{/if}
 				</Select.Content>
 			</Select.Root>
-			{#if field.help || SETTING_CONFIG_INFO[field.key]}
+			{#if field.key !== 'replyStyle' && (field.help || SETTING_CONFIG_INFO[field.key])}
 				<p class="mt-1 text-xs text-muted-foreground">
 					{field.help || SETTING_CONFIG_INFO[field.key]}
 				</p>
+			{/if}
+			{#if field.key === 'replyStyle'}
+				{@const guidance =
+					REPLY_STYLE_GUIDANCE[String(currentValue)] ?? REPLY_STYLE_GUIDANCE.balanced}
+				<p class="text-xs text-muted-foreground">{guidance.description}</p>
+				<details
+					bind:open={replyPreferencesOpen}
+					class="mt-3 rounded-lg border border-border/50 p-3 md:max-w-2xl"
+				>
+					<summary class="cursor-pointer text-sm font-medium"
+						>Add reply preferences (optional)</summary
+					>
+					<div class="mt-3 space-y-2">
+						<Label for="systemMessage">Anything else about replies?</Label>
+						<Textarea
+							id="systemMessage"
+							value={String(localConfig.systemMessage ?? '')}
+							oninput={(e) => onConfigChange('systemMessage', e.currentTarget.value)}
+							placeholder={guidance.example}
+							aria-describedby="reply-preferences-help"
+							class="min-h-[100px] w-full"
+						/>
+						<p id="reply-preferences-help" class="text-xs text-muted-foreground">
+							Add a preferred language, tone, or focus. Leave blank to use your selected detail
+							level.
+						</p>
+					</div>
+				</details>
 			{/if}
 		{:else if field.type === 'checkbox'}
 			<div class="flex items-start space-x-3">

@@ -114,3 +114,28 @@ it('keeps settings usable on narrow screens and uses a vertical section list on 
 	document.documentElement.classList.remove('dark');
 	await page.viewport(1280, 800);
 });
+
+it('keeps reply preferences optional and guides them by the selected detail level', async () => {
+	openSettings();
+	await expect
+		.element(page.getByRole('button', { name: 'Chat preferences', exact: true }))
+		.not.toBeInTheDocument();
+	await expect
+		.element(page.getByLabelText('Anything else about replies?', { exact: true }))
+		.not.toBeVisible();
+	await page.getByText('Add reply preferences (optional)', { exact: true }).click();
+	const input = page.getByLabelText('Anything else about replies?', { exact: true });
+	await expect
+		.element(input)
+		.toHaveAttribute('placeholder', expect.stringContaining('brief explanation'));
+	await input.fill('Reply in Kiswahili.');
+	await page.getByLabelText('How much detail should replies include?', { exact: true }).click();
+	await page.getByRole('option', { name: 'Short', exact: true }).click();
+	await expect
+		.element(input)
+		.toHaveAttribute('placeholder', expect.stringContaining('few sentences'));
+	await expect.element(input).toHaveValue('Reply in Kiswahili.');
+	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+	expect(settingsStore.config.systemMessage).toBe('Reply in Kiswahili.');
+	expect(settingsStore.config.replyStyle).toBe('concise');
+});
