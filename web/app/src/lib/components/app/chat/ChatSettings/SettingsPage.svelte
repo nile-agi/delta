@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		Settings,
+		Info,
 		Funnel,
 		AlertTriangle,
 		Code,
@@ -8,8 +9,6 @@
 		Sun,
 		Moon,
 		Layout,
-		ChevronLeft,
-		ChevronRight,
 		Database,
 		Waypoints,
 		User,
@@ -19,12 +18,32 @@
 	} from '@lucide/svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { agentService } from '$lib/services/agent';
-	import { ChatSettingsFields } from '$lib/components/app';
+	import ChatSettingsFields from './ChatSettingsFields.svelte';
+	import { ParameterSyncService } from '$lib/services/parameter-sync';
+	import { APP_VERSION } from '$lib/constants/app-version';
+	import {
+		SETTINGS_VIEWS,
+		GROUP_LABELS,
+		FIELD_LABELS,
+		FIELD_HELP,
+		resolveSettingsLocation
+	} from './settings-navigation';
+	import {
+		NUMERIC_SETTING_RULES,
+		parseCustomParameters,
+		validateGenerationSettings
+	} from '$lib/services/generation-settings';
 	import { CORE_AGENT_TOOL_KEYS } from '$lib/constants/settings-config';
 	import ImportExportTab from './ImportExportTab.svelte';
 	import ModelManagementTab from '../ModelManagement/ModelManagementTab.svelte';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
-	import { config, updateConfig, updateMultipleConfig } from '$lib/stores/settings.svelte';
+	import {
+		config,
+		updateConfig,
+		updateMultipleConfig,
+		settingsStore,
+		forceSyncWithServerDefaults
+	} from '$lib/stores/settings.svelte';
 	import { downloads } from '$lib/stores/downloads.svelte';
 	import { setMode } from 'mode-watcher';
 	import { onDestroy, type Component } from 'svelte';
@@ -76,7 +95,6 @@
 			title: 'General',
 			icon: Settings,
 			fields: [
-				{ key: 'apiKey', label: 'API Key', type: 'input' },
 				{
 					key: 'systemMessage',
 					label: 'System Message (will be disabled if left empty)',
@@ -206,7 +224,7 @@
 				},
 				{
 					key: 'resetToolPolicies',
-					label: 'Remembered approval answers',
+					label: 'Saved permission choices',
 					type: 'action',
 					actionLabel: 'Forget all',
 					help: 'Answering "Always" or "Never" to a tool approval is remembered across conversations. Forgetting them makes destructive tools ask again.',
@@ -367,15 +385,68 @@
 		}
 	];
 
-	let activeSection = $state('General');
+	settingSections.push({
+		title: 'Connection',
+		icon: Code,
+		fields: [{ key: 'apiKey', label: 'API access key', type: 'input' }]
+	});
+	for (const group of settingSections) {
+		for (const field of group.fields) {
+			field.label = FIELD_LABELS[field.key] ?? field.label;
+			field.help = FIELD_HELP[field.key] ?? field.help;
+			field.numeric = NUMERIC_SETTING_RULES[field.key];
+			if (
+				['Sampling', 'Penalties', 'Connection', 'Developer'].includes(group.title) &&
+				(field.numeric || field.key === 'samplers' || field.key === 'custom')
+			)
+				field.technicalName = field.key;
+		}
+	}
+	const views = SETTINGS_VIEWS.map((view) => ({
+		...view,
+		icon: view.title === 'Info' ? Info : view.title === 'General' ? Settings : Code
+	}));
+	let activeView = $state('General');
+	let activeSection = $state('You');
+	const visibleGroups = $derived(
+		((views.find((view) => view.title === activeView)?.groups as readonly string[]) ?? []).map(
+			(title) => settingSections.find((group) => group.title === title)!
+		)
+	);
+	function selectView(title: string) {
+		activeView = title;
+		activeSection = title === 'Developer' ? 'Sampling' : 'You';
+	}
+	function resetGenerationDefaults() {
+		if (forceSyncWithServerDefaults()) {
+			for (const key of ParameterSyncService.getSyncableParameterKeys())
+				localConfig[key] = config()[key];
+			toast.success('Response controls reset to model defaults.');
+		} else toast.error('Could not save the reset. Please try again.');
+	}
+	const appVersion = APP_VERSION;
+
 	let currentSection = $derived(
 		settingSections.find((section) => section.title === activeSection) || settingSections[0]
 	);
 	let localConfig: SettingsConfigType = $state({ ...config() });
-
-	let canScrollLeft = $state(false);
-	let canScrollRight = $state(false);
-	let scrollContainer: HTMLDivElement | undefined = $state();
+	const hasChanges = $derived(
+		Object.entries(localConfig).some(([key, value]) => {
+			const saved = config()[key];
+			return NUMERIC_SETTING_RULES[key] && value !== ''
+				? Number(value) !== Number(saved)
+				: value !== saved;
+		})
+	);
+	const validationErrors = $derived.by(() => {
+		const errors = validateGenerationSettings(localConfig);
+		try {
+			parseCustomParameters(localConfig.custom);
+		} catch (error) {
+			errors.custom = error instanceof Error ? error.message : 'Check extra request settings.';
+		}
+		return errors;
+	});
 
 	function handleThemeChange(newTheme: string) {
 		localConfig.theme = newTheme;
@@ -419,6 +490,17 @@
 		}
 
 		const processedConfig = { ...localConfig };
+		const errors = validateGenerationSettings(processedConfig);
+		if (Object.keys(errors).length) {
+			toast.error(Object.values(errors)[0]);
+			return;
+		}
+		try {
+			parseCustomParameters(processedConfig.custom);
+		} catch (error) {
+			toast.error(String(error));
+			return;
+		}
 		const numericFields = [
 			'temperature',
 			'top_k',
@@ -453,7 +535,10 @@
 			}
 		}
 
-		if (updateMultipleConfig(processedConfig)) {
+		const changes = Object.fromEntries(
+			Object.entries(processedConfig).filter(([key, value]) => value !== config()[key])
+		);
+		if (updateMultipleConfig(changes)) {
 			localConfig = { ...config() };
 			toast.success('Settings saved.');
 		} else {
@@ -461,42 +546,11 @@
 		}
 	}
 
-	function scrollToCenter(element: HTMLElement) {
-		if (!scrollContainer) return;
-		const containerRect = scrollContainer.getBoundingClientRect();
-		const elementRect = element.getBoundingClientRect();
-		const elementCenter = elementRect.left + elementRect.width / 2;
-		const containerCenter = containerRect.left + containerRect.width / 2;
-		const scrollOffset = elementCenter - containerCenter;
-		scrollContainer.scrollBy({ left: scrollOffset, behavior: 'smooth' });
-	}
-
-	function scrollLeft() {
-		if (!scrollContainer) return;
-		scrollContainer.scrollBy({ left: -250, behavior: 'smooth' });
-	}
-
-	function scrollRight() {
-		if (!scrollContainer) return;
-		scrollContainer.scrollBy({ left: 250, behavior: 'smooth' });
-	}
-
-	function updateScrollButtons() {
-		if (!scrollContainer) return;
-		const { scrollLeft, scrollWidth, clientWidth } = scrollContainer;
-		canScrollLeft = scrollLeft > 0;
-		canScrollRight = scrollLeft < scrollWidth - clientWidth - 1;
-	}
-
-	$effect(() => {
-		if (scrollContainer) {
-			updateScrollButtons();
-		}
-	});
-
 	// Route links can open directly to a category; ignore unknown section names.
 	$effect(() => {
-		activeSection = settingSections.some((item) => item.title === section) ? section : 'General';
+		const location = resolveSettingsLocation(section);
+		activeView = location.view;
+		activeSection = location.group;
 	});
 
 	// DHATS: Block status tracking
@@ -584,234 +638,267 @@
 	<!-- Settings content -->
 	<div class="min-h-0 flex-1 overflow-hidden">
 		<div class="flex h-full flex-col overflow-hidden md:flex-row">
-			<!-- Desktop Sidebar -->
-			<div class="hidden w-56 shrink-0 border-r border-border/30 p-4 md:block overflow-y-auto">
-				<nav aria-label="Settings categories" class="space-y-1 py-2">
-					{#each settingSections as section (section.title)}
-						<button
-							class="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-accent {activeSection ===
-							section.title
-								? 'bg-accent text-accent-foreground'
-								: 'text-muted-foreground'}"
-							aria-current={activeSection === section.title ? 'page' : undefined}
-							onclick={() => (activeSection = section.title)}
+			<nav
+				aria-label="Settings views"
+				class="flex shrink-0 gap-1 border-b border-border/30 p-3 md:w-56 md:flex-col md:border-r md:border-b-0 md:p-4"
+			>
+				{#each views as view}
+					<button
+						class="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-3 py-3 text-sm font-medium transition-colors hover:bg-accent md:flex-none md:justify-start {activeView ===
+						view.title
+							? 'bg-accent text-accent-foreground'
+							: 'text-muted-foreground'}"
+						aria-current={activeView === view.title ? 'page' : undefined}
+						onclick={() => selectView(view.title)}
+					>
+						<view.icon class="h-4 w-4 shrink-0" /><span>{view.title}</span>
+					</button>
+				{/each}
+			</nav>
+			<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row">
+				{#if activeView !== 'Info'}
+					<div
+						class="shrink-0 border-b border-border/30 px-4 py-3 md:w-56 md:overflow-y-auto md:border-r md:border-b-0 md:p-4"
+					>
+						<p class="mb-3 text-sm text-muted-foreground">
+							{activeView === 'General' ? 'Your preferences' : 'Advanced controls'}
+						</p>
+						<nav aria-label="Settings groups" class="hidden flex-col gap-1 md:flex">
+							{#each visibleGroups as group}
+								<button
+									class="flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent {activeSection ===
+									group.title
+										? 'bg-accent font-medium text-accent-foreground'
+										: 'text-muted-foreground'}"
+									aria-current={activeSection === group.title ? 'page' : undefined}
+									onclick={() => (activeSection = group.title)}
+								>
+									<group.icon class="h-4 w-4 shrink-0" /><span class="min-w-0"
+										>{GROUP_LABELS[group.title]}</span
+									>{@render sectionBadge(group.title, '')}
+								</button>
+							{/each}
+						</nav>
+						<select
+							aria-label="Settings group"
+							bind:value={activeSection}
+							class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm md:hidden"
 						>
-							<section.icon class="h-4 w-4" />
-							<span class="ml-2">{section.title}</span>
-							{@render sectionBadge(section.title, 'ml-auto')}
-						</button>
-					{/each}
-				</nav>
-			</div>
-
-			<!-- Mobile Header with Horizontal Scrollable Menu -->
-			<div class="flex flex-col md:hidden">
-				<div class="border-b border-border/30 py-4">
-					<div class="relative flex items-center" style="scroll-padding: 1rem;">
-						<button
-							class="absolute left-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-muted shadow-md backdrop-blur-sm transition-opacity hover:bg-accent {canScrollLeft
-								? 'opacity-100'
-								: 'pointer-events-none opacity-0'}"
-							onclick={scrollLeft}
-							aria-label="Scroll left"
-						>
-							<ChevronLeft class="h-4 w-4" />
-						</button>
-
-						<div
-							class="scrollbar-hide overflow-x-auto py-2"
-							bind:this={scrollContainer}
-							onscroll={updateScrollButtons}
-						>
-							<div class="flex min-w-max gap-2">
-								{#each settingSections as section (section.title)}
-									<button
-										class="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm whitespace-nowrap transition-colors first:ml-4 last:mr-4 hover:bg-accent {activeSection ===
-										section.title
-											? 'bg-accent text-accent-foreground'
-											: 'text-muted-foreground'}"
-										onclick={(e: MouseEvent) => {
-											activeSection = section.title;
-											scrollToCenter(e.currentTarget as HTMLElement);
-										}}
-									>
-										<section.icon class="h-4 w-4 flex-shrink-0" />
-										<span>{section.title}</span>
-										{@render sectionBadge(section.title, '')}
-									</button>
-								{/each}
-							</div>
+							{#each visibleGroups as group}<option value={group.title}
+									>{GROUP_LABELS[group.title]}</option
+								>{/each}
+						</select>
+					</div>
+				{/if}
+				<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+					{#if settingsStore.repairedSettings.length}
+						<div role="status" class="shrink-0 border-b bg-muted/50 px-4 py-3 text-sm md:px-6">
+							Fixed saved values that this model cannot use: {settingsStore.repairedSettings
+								.map((key) => FIELD_LABELS[key] ?? key)
+								.join(', ')}. Valid preferences were kept.
+							<button class="ml-2 underline" onclick={() => (settingsStore.repairedSettings = [])}
+								>Dismiss</button
+							>
 						</div>
-
-						<button
-							class="absolute right-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-muted shadow-md backdrop-blur-sm transition-opacity hover:bg-accent {canScrollRight
-								? 'opacity-100'
-								: 'pointer-events-none opacity-0'}"
-							onclick={scrollRight}
-							aria-label="Scroll right"
-						>
-							<ChevronRight class="h-4 w-4" />
-						</button>
-					</div>
-				</div>
-			</div>
-
-			{#if currentSection.title === 'Model Management'}
-				<div class="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6">
-					<div
-						class="mb-4 hidden shrink-0 items-center gap-2 border-b border-border/30 pb-4 md:flex"
-					>
-						<currentSection.icon class="h-5 w-5" />
-						<h3 class="text-lg font-semibold">{currentSection.title}</h3>
-					</div>
-					<p class="mb-4 shrink-0 text-sm text-muted-foreground">
-						Manage your installed models and download new ones. Use the model selector in the chat
-						input to choose models in the chat interface.
-					</p>
-					<ModelManagementTab />
-				</div>
-			{:else}
-				<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-					<div
-						class="hidden shrink-0 items-center gap-2 border-b border-border/30 px-4 pt-4 pb-4 md:flex md:px-6 md:pt-6"
-					>
-						<currentSection.icon class="h-5 w-5" />
-						<h3 class="text-lg font-semibold">{currentSection.title}</h3>
-					</div>
-					<ScrollArea class="min-h-0 flex-1">
-						<div class="space-y-6 p-4 md:p-6">
-							<!-- DHATS: Block status banner at the TOP of settings content -->
-							{#if blockStatus?.blocked}
-								<div class="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4">
-									<div class="flex items-start gap-3">
-										<AlertTriangle class="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
-										<div class="flex-1 min-w-0">
-											<h3 class="font-semibold text-red-700 dark:text-red-400 text-sm">
-												Model blocked: {blockStatus.model}
-											</h3>
-											<p class="text-sm text-muted-foreground mt-1">
-												{blockStatus.reason}
-											</p>
-											<p class="text-xs text-muted-foreground mt-1 italic">
-												{blockStatus.recommendation}
-											</p>
-											{#if blockStatus.suggested_context > 0}
-												<button
-													class="mt-3 inline-flex items-center gap-1.5 rounded-md bg-red-500/20 border border-red-500/40 px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-500/30 transition-colors"
-													onclick={() => applySuggestedCtx(blockStatus!)}
-												>
-													<Settings class="h-3.5 w-3.5" />
-													Use {blockStatus.suggested_context} ctx instead
-												</button>
-											{/if}
-										</div>
-									</div>
-								</div>
-							{/if}
-
-							{#if currentSection.title === 'Import/Export'}
-								<ImportExportTab />
-							{:else if currentSection.title === 'Developer'}
-								<div class="space-y-6">
-									<ChatSettingsFields
-										fields={currentSection.fields}
-										{localConfig}
-										onConfigChange={handleConfigChange}
-										onThemeChange={handleThemeChange}
-									/>
-								</div>
-							{:else if currentSection.title === 'Agent tools'}
-								<div class="max-w-3xl space-y-6">
-									<ChatSettingsFields
-										fields={currentSection.fields.filter((field) => field.key === 'useAgentTools')}
-										{localConfig}
-										onConfigChange={handleConfigChange}
-									/>
-									<fieldset
-										disabled={!localConfig.useAgentTools}
-										class="ml-2 space-y-5 border-l border-border pl-5 disabled:opacity-50 md:ml-5"
-									>
-										<legend class="mb-4 text-sm font-medium">Core tools</legend>
-										<ChatSettingsFields
-											fields={currentSection.fields.filter((field) =>
-												CORE_AGENT_TOOL_KEYS.includes(field.key)
-											)}
-											{localConfig}
-											onConfigChange={handleConfigChange}
-										/>
-									</fieldset>
-									<fieldset
-										disabled={!localConfig.useAgentTools}
-										class="space-y-5 border-t border-border pt-5 disabled:opacity-50"
-									>
-										<legend class="text-sm font-medium">Computer access</legend>
-										<p class="text-xs text-muted-foreground">
-											Choose file and shell access separately. Enabling core tools keeps these
-											choices.
-										</p>
-										<ChatSettingsFields
-											fields={currentSection.fields.filter(
-												(field) => field.key === 'useFileTools' || field.key === 'useShellTools'
-											)}
-											{localConfig}
-											onConfigChange={handleConfigChange}
-										/>
-									</fieldset>
-									<section
-										aria-label="Approval preferences"
-										class="space-y-4 border-t border-border pt-5"
-									>
-										<h3 class="text-sm font-medium">Approval preferences</h3>
-										<ChatSettingsFields
-											fields={currentSection.fields.filter((field) => field.type === 'action')}
-											{localConfig}
-											onConfigChange={handleConfigChange}
-										/>
-									</section>
-								</div>
-							{:else}
-								<div class="space-y-6">
-									<ChatSettingsFields
-										fields={currentSection.fields}
-										{localConfig}
-										onConfigChange={handleConfigChange}
-										onThemeChange={handleThemeChange}
-									/>
-								</div>
-							{/if}
-
-							{#if currentSection.title === 'You'}
-								<div class="border-t pt-6">
-									<button
-										class="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-										onclick={runSetupAgain}
-									>
-										Run setup again
-									</button>
-									<p class="mt-1 text-xs text-muted-foreground">
-										Walks you back through the questions from your first launch.
+					{/if}
+					{#if activeView === 'Info'}
+						<div class="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
+							<section class="max-w-2xl space-y-6 rounded-xl border border-border/50 p-5 md:p-8">
+								<div>
+									<h2 class="text-2xl font-semibold">About Delta</h2>
+									<p class="mt-2 text-sm text-muted-foreground">
+										Your assistant for conversations, notes, and everyday work.
 									</p>
 								</div>
-							{/if}
-
-							<div class="mt-8 border-t pt-6">
-								<p class="text-xs text-muted-foreground">Settings are saved on this device.</p>
-							</div>
+								<dl class="text-sm">
+									<dt class="text-muted-foreground">App version</dt>
+									<dd class="mt-1 font-medium">{appVersion}</dd>
+								</dl>
+								<div class="flex flex-wrap gap-3">
+									<a
+										class="rounded-md border px-4 py-2 text-sm hover:bg-accent"
+										href="https://github.com/nile-agi/delta"
+										target="_blank"
+										rel="noreferrer">Project & documentation</a
+									><a
+										class="rounded-md border px-4 py-2 text-sm hover:bg-accent"
+										href="https://github.com/nile-agi/delta/issues/new/choose"
+										target="_blank"
+										rel="noreferrer">Get help or report a problem</a
+									>
+								</div>
+								<p class="text-sm text-muted-foreground">Your settings are saved on this device.</p>
+							</section>
 						</div>
-					</ScrollArea>
+					{:else if currentSection.title === 'Model Management'}
+						<div class="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6">
+							<div class="mb-4 shrink-0 items-center gap-2 border-b border-border/30 pb-4 md:flex">
+								<currentSection.icon class="h-5 w-5" />
+								<h2 class="text-lg font-semibold">{GROUP_LABELS[currentSection.title]}</h2>
+							</div>
+							<p class="mb-4 shrink-0 text-sm text-muted-foreground">
+								Manage your installed models and download new ones. Use the model selector in the
+								chat input to choose models in the chat interface.
+							</p>
+							<ModelManagementTab />
+						</div>
+					{:else}
+						<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+							<div
+								class="flex shrink-0 items-center gap-2 border-b border-border/30 px-4 pt-4 pb-4 md:flex md:px-6 md:pt-6"
+							>
+								<currentSection.icon class="h-5 w-5" />
+								<h2 class="text-lg font-semibold">{GROUP_LABELS[currentSection.title]}</h2>
+							</div>
+							<ScrollArea class="min-h-0 flex-1">
+								<div class="max-w-3xl space-y-6 p-4 md:p-6">
+									<!-- DHATS: Block status banner at the TOP of settings content -->
+									{#if blockStatus?.blocked}
+										<div class="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+											<div class="flex items-start gap-3">
+												<AlertTriangle class="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+												<div class="flex-1 min-w-0">
+													<h2 class="font-semibold text-red-700 dark:text-red-400 text-sm">
+														Model blocked: {blockStatus.model}
+													</h2>
+													<p class="text-sm text-muted-foreground mt-1">
+														{blockStatus.reason}
+													</p>
+													<p class="text-xs text-muted-foreground mt-1 italic">
+														{blockStatus.recommendation}
+													</p>
+													{#if blockStatus.suggested_context > 0}
+														<button
+															class="mt-3 inline-flex items-center gap-1.5 rounded-md bg-red-500/20 border border-red-500/40 px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-300 hover:bg-red-500/30 transition-colors"
+															onclick={() => applySuggestedCtx(blockStatus!)}
+														>
+															<Settings class="h-3.5 w-3.5" />
+															Use a {blockStatus.suggested_context}-token context
+														</button>
+													{/if}
+												</div>
+											</div>
+										</div>
+									{/if}
+
+									{#if currentSection.title === 'Import/Export'}
+										<ImportExportTab />
+									{:else if currentSection.title === 'Developer'}
+										<div class="space-y-6">
+											<ChatSettingsFields
+												fields={currentSection.fields}
+												{localConfig}
+												onConfigChange={handleConfigChange}
+												onThemeChange={handleThemeChange}
+											/>
+										</div>
+									{:else if currentSection.title === 'Agent tools'}
+										<div class="max-w-3xl space-y-6">
+											<ChatSettingsFields
+												fields={currentSection.fields.filter(
+													(field) => field.key === 'useAgentTools'
+												)}
+												{localConfig}
+												onConfigChange={handleConfigChange}
+											/>
+											<fieldset
+												disabled={!localConfig.useAgentTools}
+												class="ml-2 space-y-5 border-l border-border pl-5 disabled:opacity-50 md:ml-5"
+											>
+												<legend class="mb-4 text-sm font-medium">Everyday assistance</legend>
+												<ChatSettingsFields
+													fields={currentSection.fields.filter((field) =>
+														CORE_AGENT_TOOL_KEYS.includes(field.key)
+													)}
+													{localConfig}
+													onConfigChange={handleConfigChange}
+												/>
+											</fieldset>
+											<fieldset
+												disabled={!localConfig.useAgentTools}
+												class="space-y-5 border-t border-border pt-5 disabled:opacity-50"
+											>
+												<legend class="text-sm font-medium">Computer access</legend>
+												<p class="text-xs text-muted-foreground">
+													Choose file access and command execution separately. Turning on everyday
+													tools keeps these choices.
+												</p>
+												<ChatSettingsFields
+													fields={currentSection.fields.filter(
+														(field) => field.key === 'useFileTools' || field.key === 'useShellTools'
+													)}
+													{localConfig}
+													onConfigChange={handleConfigChange}
+												/>
+											</fieldset>
+											<section
+												aria-label="Approval preferences"
+												class="space-y-4 border-t border-border pt-5"
+											>
+												<h2 class="text-sm font-medium">Approval preferences</h2>
+												<ChatSettingsFields
+													fields={currentSection.fields.filter((field) => field.type === 'action')}
+													{localConfig}
+													onConfigChange={handleConfigChange}
+												/>
+											</section>
+										</div>
+									{:else}
+										<div class="space-y-6">
+											<ChatSettingsFields
+												fields={currentSection.fields}
+												{localConfig}
+												onConfigChange={handleConfigChange}
+												onThemeChange={handleThemeChange}
+											/>
+										</div>
+									{/if}
+
+									{#if currentSection.title === 'You'}
+										<div class="border-t pt-6">
+											<button
+												class="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+												onclick={runSetupAgain}
+											>
+												Run setup again
+											</button>
+											<p class="mt-1 text-xs text-muted-foreground">
+												Walks you back through the questions from your first launch.
+											</p>
+										</div>
+									{/if}
+
+									<div class="mt-8 border-t pt-6">
+										<p class="text-xs text-muted-foreground">Settings are saved on this device.</p>
+									</div>
+								</div>
+							</ScrollArea>
+						</div>
+					{/if}
 				</div>
-			{/if}
+			</div>
 		</div>
 	</div>
 
 	<!-- Footer -->
-	<footer
-		class="flex shrink-0 items-center justify-between gap-3 border-t border-border/30 bg-background px-4 py-3 md:px-6"
-	>
-		<Button variant="outline" onclick={handleReset}>
-			<RotateCcw class="mr-2 h-4 w-4" />
-			Restore saved settings
-		</Button>
-		<Button variant="default" onclick={handleSave}>Save settings</Button>
-	</footer>
+	{#if activeView !== 'Info'}
+		<footer
+			class="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-border/30 bg-background px-4 py-3 md:px-6"
+		>
+			<div class="flex flex-wrap gap-2">
+				{#if hasChanges}<Button variant="outline" onclick={handleReset}>
+						<RotateCcw class="mr-2 h-4 w-4" />
+						Discard changes
+					</Button>{/if}
+				{#if activeView === 'Developer'}<Button variant="ghost" onclick={resetGenerationDefaults}
+						>Reset to model defaults</Button
+					>{/if}
+			</div>
+			<Button
+				variant="default"
+				disabled={!hasChanges || Object.keys(validationErrors).length > 0}
+				onclick={handleSave}>Save settings</Button
+			>
+		</footer>
+	{/if}
 </main>
