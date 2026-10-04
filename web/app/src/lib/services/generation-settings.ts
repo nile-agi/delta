@@ -113,7 +113,11 @@ export function parseCustomParameters(raw: unknown): Record<string, unknown> {
 		throw new Error('Extra request settings: use a JSON object.');
 	const errors = validateGenerationSettings(value as Record<string, unknown>);
 	if (Object.keys(errors).length) throw new Error(Object.values(errors)[0]);
-	return value as Record<string, unknown>;
+	const normalized = { ...(value as Record<string, unknown>) };
+	for (const [key, option] of Object.entries(normalized)) {
+		if (NUMERIC_SETTING_RULES[ALIASES[key] ?? key]) normalized[key] = Number(option);
+	}
+	return normalized;
 }
 
 export function repairGenerationSettings<T extends Record<string, unknown>>(

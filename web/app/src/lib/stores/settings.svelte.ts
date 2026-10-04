@@ -55,8 +55,15 @@ class SettingsStore {
 	 * Centralizes the pattern of getting and extracting server defaults
 	 */
 	private getServerDefaults(): Record<string, string | number | boolean> {
-		const serverParams = serverStore.serverDefaultParams;
-		return serverParams ? ParameterSyncService.extractServerDefaults(serverParams) : {};
+		// Settings and the server store can initialize through a circular import.
+		// Keep saved preferences and use app defaults until the server is ready.
+		try {
+			const serverParams = serverStore.serverDefaultParams;
+			return serverParams ? ParameterSyncService.extractServerDefaults(serverParams) : {};
+		} catch (error) {
+			if (error instanceof ReferenceError) return {};
+			throw error;
+		}
 	}
 
 	constructor() {

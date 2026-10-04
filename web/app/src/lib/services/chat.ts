@@ -253,7 +253,10 @@ export class ChatService {
 		if (samplers !== undefined) {
 			requestBody.samplers =
 				typeof samplers === 'string'
-					? samplers.split(';').filter((s: string) => s.trim())
+					? samplers
+							.split(';')
+							.map((s: string) => s.trim())
+							.filter(Boolean)
 					: samplers;
 		}
 

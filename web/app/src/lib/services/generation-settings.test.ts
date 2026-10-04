@@ -49,4 +49,11 @@ describe('generation settings', () => {
 			max_tokens: -1
 		});
 	});
+	it('normalizes known numeric JSON strings while preserving extension fields', () => {
+		expect(parseCustomParameters('{"temperature":"0.7","n_predict":"32","seed":123}')).toEqual({
+			temperature: 0.7,
+			n_predict: 32,
+			seed: 123
+		});
+	});
 });

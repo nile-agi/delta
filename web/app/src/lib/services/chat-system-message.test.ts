@@ -125,4 +125,21 @@ describe('chat request guidance and history', () => {
 			expect(history).toHaveLength(4);
 		});
 	}
+	it('accepts spaces around sampler names and sends clean names', async () => {
+		const fetch = vi
+			.fn()
+			.mockResolvedValue(
+				new Response(JSON.stringify({ choices: [{ message: { content: 'Done.' } }] }))
+			);
+		vi.stubGlobal('fetch', fetch);
+		await new ChatService().sendMessage([{ role: 'user', content: 'Hello' }], {
+			stream: false,
+			samplers: 'top_k; top_p; temperature'
+		});
+		expect(JSON.parse(fetch.mock.calls[0][1].body).samplers).toEqual([
+			'top_k',
+			'top_p',
+			'temperature'
+		]);
+	});
 });

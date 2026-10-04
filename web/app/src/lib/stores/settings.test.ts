@@ -1,11 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const server = vi.hoisted(() => ({ serverDefaultParams: null as Record<string, unknown> | null }));
+const server = vi.hoisted(() => ({
+	serverDefaultParams: null as Record<string, unknown> | null,
+	unavailable: false
+}));
 vi.mock('$app/environment', () => ({ browser: true }));
-vi.mock('$lib/stores/server.svelte', () => ({ serverStore: server }));
+vi.mock('$lib/stores/server.svelte', () => ({
+	serverStore: new Proxy(server, {
+		get(target, key) {
+			if (key === 'serverDefaultParams' && target.unavailable)
+				throw new ReferenceError("Cannot access 'serverStore' before initialization");
+			return Reflect.get(target, key);
+		}
+	})
+}));
 let storage: Map<string, string>;
 beforeEach(() => {
 	vi.resetModules();
 	server.serverDefaultParams = null;
+	server.unavailable = false;
 	storage = new Map();
 	vi.stubGlobal('localStorage', {
 		getItem: (key: string) => storage.get(key) ?? null,
@@ -67,5 +79,13 @@ describe('settings recovery and overrides', () => {
 		expect(store.updateConfig('top_p', 0.6)).toBe(false);
 		expect(store.config.top_p).toBe(0.7);
 		expect(storage.get('config')).toBe(previous);
+	});
+	it('keeps valid preferences when model defaults are unavailable during module initialization', async () => {
+		server.unavailable = true;
+		storage.set('config', JSON.stringify({ userName: 'Alex', top_p: 0.6, dry_penalty_last_n: -1 }));
+		const { settingsStore: store } = await import('./settings.svelte');
+		expect(store.config.userName).toBe('Alex');
+		expect(store.config.top_p).toBe(0.6);
+		expect(store.config.dry_penalty_last_n).toBe(64);
 	});
 });
