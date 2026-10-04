@@ -299,10 +299,10 @@ if(APPLE)
     target_link_libraries(delta-server PRIVATE "-framework Metal" "-framework IOKit" "-framework CoreFoundation")
 endif()
 
-# windows.h (pulled in by curl/winsock) defines min/max macros that break std::min/std::max.
+# Keep Windows headers from importing legacy Winsock or defining min/max macros.
 if(WIN32)
-    target_compile_definitions(delta PRIVATE NOMINMAX)
-    target_compile_definitions(delta-server PRIVATE NOMINMAX)
+    target_compile_definitions(delta PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_compile_definitions(delta-server PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 endif()
 
 # Include directories for delta-server
@@ -411,7 +411,7 @@ if(USE_CURL AND CURL_FOUND)
     target_link_libraries(delta-harness-tests PRIVATE CURL::libcurl)
 endif()
 if(WIN32)
-    target_compile_definitions(delta-harness-tests PRIVATE NOMINMAX)
+    target_compile_definitions(delta-harness-tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_link_libraries(delta-harness-tests PRIVATE ws2_32)
 endif()
 if(APPLE)
