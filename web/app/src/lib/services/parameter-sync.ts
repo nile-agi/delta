@@ -13,6 +13,7 @@
  */
 
 import type { ApiLlamaCppServerProps } from '$lib/types/api';
+import { validateGenerationSettings } from './generation-settings';
 import { normalizeFloatingPoint } from '$lib/utils/precision';
 
 export type ParameterSource = 'default' | 'custom';
@@ -80,16 +81,23 @@ export class ParameterSyncService {
 		for (const param of SYNCABLE_PARAMETERS) {
 			if (param.canSync && param.serverKey in serverParams) {
 				const value = (serverParams as unknown as Record<string, ParameterValue>)[param.serverKey];
-				if (value !== undefined) {
+				if (value !== undefined && !validateGenerationSettings({ [param.key]: value })[param.key]) {
 					// Apply precision rounding to avoid JavaScript floating-point issues
 					extracted[param.key] = this.roundFloatingPoint(value);
 				}
 			}
 		}
 
+		if (extracted.max_tokens === undefined && 'n_predict' in serverParams) {
+			const value = serverParams.n_predict;
+			if (!validateGenerationSettings({ max_tokens: value }).max_tokens)
+				extracted.max_tokens = value;
+		}
+
 		// Handle samplers array conversion to string
 		if (serverParams.samplers && Array.isArray(serverParams.samplers)) {
-			extracted.samplers = serverParams.samplers.join(';');
+			if (!validateGenerationSettings({ samplers: serverParams.samplers }).samplers)
+				extracted.samplers = serverParams.samplers.join(';');
 		}
 
 		return extracted;

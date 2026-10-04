@@ -31,6 +31,11 @@
  * - Advanced options (seed, penalties, context handling)
  */
 
+import {
+	parseCustomParameters,
+	repairGenerationSettings,
+	validateGenerationSettings
+} from '$lib/services/generation-settings';
 import { browser } from '$app/environment';
 import { SETTING_CONFIG_DEFAULT } from '$lib/constants/settings-config';
 import { normalizeFloatingPoint } from '$lib/utils/precision';
@@ -43,6 +48,7 @@ class SettingsStore {
 	theme = $state<string>('auto');
 	isInitialized = $state(false);
 	userOverrides = $state<Set<string>>(new Set());
+	repairedSettings = $state<string[]>([]);
 
 	/**
 	 * Helper method to get server defaults with null safety
@@ -82,6 +88,8 @@ class SettingsStore {
 		try {
 			const storedConfigRaw = localStorage.getItem('config');
 			const savedVal = JSON.parse(storedConfigRaw || '{}');
+			if (!savedVal || typeof savedVal !== 'object' || Array.isArray(savedVal))
+				throw new Error('Invalid settings object');
 
 			// Merge with defaults to prevent breaking changes
 			this.config = {
@@ -91,7 +99,14 @@ class SettingsStore {
 
 			// Load user overrides
 			const savedOverrides = JSON.parse(localStorage.getItem('userOverrides') || '[]');
-			this.userOverrides = new Set(savedOverrides);
+			this.userOverrides = new Set(
+				Array.isArray(savedOverrides) ? savedOverrides.filter((key) => typeof key === 'string') : []
+			);
+			const repaired = repairGenerationSettings(this.config, this.getServerDefaults());
+			this.config = repaired.values;
+			this.repairedSettings = repaired.repaired;
+			for (const key of repaired.repaired) this.userOverrides.delete(key);
+			if (repaired.repaired.length) this.saveConfig();
 		} catch (error) {
 			console.warn('Failed to parse config from localStorage, using defaults:', error);
 			this.config = { ...SETTING_CONFIG_DEFAULT };
@@ -123,6 +138,12 @@ class SettingsStore {
 	updateMultipleConfig(updates: Partial<SettingsConfigType>) {
 		const nextConfig = { ...this.config, ...updates };
 		const nextOverrides = new Set(this.userOverrides);
+		if (Object.keys(validateGenerationSettings(nextConfig)).length) return false;
+		try {
+			parseCustomParameters(nextConfig.custom);
+		} catch {
+			return false;
+		}
 
 		const propsDefaults = this.getServerDefaults();
 
@@ -130,6 +151,7 @@ class SettingsStore {
 			if (ParameterSyncService.canSyncParameter(key)) {
 				const propsDefault = propsDefaults[key];
 
+				if (value === this.config[key]) continue;
 				if (propsDefault !== undefined) {
 					const normalizedValue = normalizeFloatingPoint(value);
 					const normalizedDefault = normalizeFloatingPoint(propsDefault);
@@ -139,6 +161,8 @@ class SettingsStore {
 					} else {
 						nextOverrides.add(key);
 					}
+				} else {
+					nextOverrides.add(key);
 				}
 			}
 		}
@@ -262,24 +286,12 @@ class SettingsStore {
 		}
 
 		const propsDefaults = this.getServerDefaults();
-
-		for (const [key, propsValue] of Object.entries(propsDefaults)) {
-			const currentValue = getConfigValue(this.config, key);
-
-			const normalizedCurrent = normalizeFloatingPoint(currentValue);
-			const normalizedDefault = normalizeFloatingPoint(propsValue);
-
-			if (normalizedCurrent === normalizedDefault) {
-				this.userOverrides.delete(key);
-				setConfigValue(this.config, key, propsValue);
-			} else if (!this.userOverrides.has(key)) {
-				setConfigValue(this.config, key, propsValue);
-			}
+		const nextConfig = { ...this.config };
+		const nextOverrides = new Set(this.userOverrides);
+		for (const [key, value] of Object.entries(propsDefaults)) {
+			if (!nextOverrides.has(key)) setConfigValue(nextConfig, key, value);
 		}
-
-		this.saveConfig();
-		console.log('Settings initialized with props defaults:', propsDefaults);
-		console.log('Current user overrides after sync:', Array.from(this.userOverrides));
+		this.commitConfig(nextConfig, nextOverrides);
 	}
 
 	/**
@@ -296,27 +308,19 @@ class SettingsStore {
 	 * This is used by the "Reset to Default" functionality
 	 * Prioritizes server defaults from /props, falls back to webui defaults
 	 */
-	forceSyncWithServerDefaults(): void {
+	forceSyncWithServerDefaults(): boolean {
 		const propsDefaults = this.getServerDefaults();
-		const syncableKeys = ParameterSyncService.getSyncableParameterKeys();
-
-		for (const key of syncableKeys) {
-			if (propsDefaults[key] !== undefined) {
-				const normalizedValue = normalizeFloatingPoint(propsDefaults[key]);
-
-				setConfigValue(this.config, key, normalizedValue);
-			} else {
-				if (key in SETTING_CONFIG_DEFAULT) {
-					const defaultValue = getConfigValue(SETTING_CONFIG_DEFAULT, key);
-
-					setConfigValue(this.config, key, defaultValue);
-				}
-			}
-
-			this.userOverrides.delete(key);
+		const nextConfig = { ...this.config };
+		const nextOverrides = new Set(this.userOverrides);
+		for (const key of ParameterSyncService.getSyncableParameterKeys()) {
+			setConfigValue(
+				nextConfig,
+				key,
+				propsDefaults[key] ?? getConfigValue(SETTING_CONFIG_DEFAULT, key)
+			);
+			nextOverrides.delete(key);
 		}
-
-		this.saveConfig();
+		return this.commitConfig(nextConfig, nextOverrides);
 	}
 
 	/**

@@ -28,6 +28,32 @@ afterEach(() => {
 });
 
 describe('chat request guidance and history', () => {
+	for (const useTools of [false, true]) {
+		it(`rejects invalid DRY lookback before sending with tools=${useTools}`, async () => {
+			const fetch = vi.fn();
+			vi.stubGlobal('fetch', fetch);
+			const onError = vi.fn();
+			await expect(
+				new ChatService().sendMessage([{ role: 'user', content: 'Hello' }], {
+					useTools,
+					dry_penalty_last_n: -1,
+					onError
+				})
+			).rejects.toThrow(/lookback/i);
+			expect(fetch).not.toHaveBeenCalled();
+			expect(onError).toHaveBeenCalledOnce();
+		});
+	}
+	it('rejects invalid custom sampling aliases before sending', async () => {
+		const fetch = vi.fn();
+		vi.stubGlobal('fetch', fetch);
+		await expect(
+			new ChatService().sendMessage([{ role: 'user', content: 'Hello' }], {
+				custom: '{"typical_p":2}'
+			})
+		).rejects.toThrow(/probability/i);
+		expect(fetch).not.toHaveBeenCalled();
+	});
 	it('retains caller instructions on the agent path with empty settings', async () => {
 		configState.current = {};
 		const fetch = vi

@@ -58,7 +58,7 @@ export const SETTING_CONFIG_DEFAULT: Record<string, string | number | boolean> =
 	dry_multiplier: 0.0,
 	dry_base: 1.75,
 	dry_allowed_length: 2,
-	dry_penalty_last_n: -1,
+	dry_penalty_last_n: 64,
 	max_tokens: -1,
 	custom: '', // custom json-stringified object
 	// experimental features

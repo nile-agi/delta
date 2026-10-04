@@ -1,3 +1,4 @@
+import { parseCustomParameters, validateGenerationSettings } from './generation-settings';
 import { config } from '$lib/stores/settings.svelte';
 import { selectedModelName, selectedModelOption } from '$lib/stores/models.svelte';
 import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
@@ -5,16 +6,13 @@ import { getServerBaseUrl } from '$lib/utils/server-base-url';
 import { slotsService } from './slots';
 
 const IS_TAURI =
-	typeof window !== 'undefined' &&
-	('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+	typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 
 // True when the content array holds an attachment a plain string cannot carry.
 function hasAttachmentParts(content: unknown): boolean {
 	return (
 		Array.isArray(content) &&
-		content.some(
-			(p: Record<string, unknown>) => typeof p?.type === 'string' && p.type !== 'text'
-		)
+		content.some((p: Record<string, unknown>) => typeof p?.type === 'string' && p.type !== 'text')
 	);
 }
 
@@ -261,16 +259,10 @@ export class ChatService {
 
 		if (timings_per_token !== undefined) requestBody.timings_per_token = timings_per_token;
 
-		if (custom) {
-			try {
-				const customParams = typeof custom === 'string' ? JSON.parse(custom) : custom;
-				Object.assign(requestBody, customParams);
-			} catch (error) {
-				console.warn('Failed to parse custom parameters:', error);
-			}
-		}
-
 		try {
+			Object.assign(requestBody, parseCustomParameters(custom));
+			const validationErrors = validateGenerationSettings(requestBody);
+			if (Object.keys(validationErrors).length) throw new Error(Object.values(validationErrors)[0]);
 			const apiKey = currentConfig.apiKey?.toString().trim();
 			// Tools live in the agent loop, which only the model API server hosts. getModelApiBaseUrl()
 			// resolves it in every mode (Tauri, same-origin UI-only, and port+1 after the 8080 migration).
@@ -287,9 +279,18 @@ export class ChatService {
 				if (IS_TAURI) {
 					try {
 						await this.handleStreamResponseTauri(
-							url, headers, body, onAgentEvent, onChunk, onComplete, onError,
-							onReasoningChunk, onModel, onFirstValidChunk,
-							conversationId, abortController.signal
+							url,
+							headers,
+							body,
+							onAgentEvent,
+							onChunk,
+							onComplete,
+							onError,
+							onReasoningChunk,
+							onModel,
+							onFirstValidChunk,
+							conversationId,
+							abortController.signal
 						);
 						return;
 					} catch (tauriErr) {
@@ -301,9 +302,18 @@ export class ChatService {
 					}
 				}
 				await this.handleStreamResponseXHR(
-					url, headers, body, onAgentEvent, onChunk, onComplete, onError,
-					onReasoningChunk, onModel, onFirstValidChunk,
-					conversationId, abortController.signal
+					url,
+					headers,
+					body,
+					onAgentEvent,
+					onChunk,
+					onComplete,
+					onError,
+					onReasoningChunk,
+					onModel,
+					onFirstValidChunk,
+					conversationId,
+					abortController.signal
 				);
 				return;
 			} else {
@@ -414,7 +424,10 @@ export class ChatService {
 
 					if (line.startsWith('data: ')) {
 						const data = line.slice(6);
-						if (data === '[DONE]') { streamFinished = true; continue; }
+						if (data === '[DONE]') {
+							streamFinished = true;
+							continue;
+						}
 						if (!data.includes('"choices"')) continue; // ignore named agent events (tool_update/reasoning)
 
 						try {
@@ -514,11 +527,11 @@ export class ChatService {
 				}
 
 				onComplete?.(
-				aggregatedContent,
-				fullReasoningContent || undefined,
-				lastTimings,
-				collectedToolCalls.length > 0 ? collectedToolCalls : undefined
-			);
+					aggregatedContent,
+					fullReasoningContent || undefined,
+					lastTimings,
+					collectedToolCalls.length > 0 ? collectedToolCalls : undefined
+				);
 				resolve();
 			};
 
@@ -572,9 +585,7 @@ export class ChatService {
 
 		const { invoke, Channel } = await import('@tauri-apps/api/core');
 
-		const absoluteUrl = url.startsWith('/')
-			? `${getServerBaseUrl()}${url}`
-			: url;
+		const absoluteUrl = url.startsWith('/') ? `${getServerBaseUrl()}${url}` : url;
 		const streamId = conversationId || crypto.randomUUID();
 		let aggregatedContent = '';
 		let fullReasoningContent = '';
@@ -896,7 +907,9 @@ export class ChatService {
 			}
 			// Network/CORS error — fall back to Model API (has Access-Control-Allow-Origin: *)
 			try {
-				const mapiBase = getModelApiBaseUrl() || `http://127.0.0.1:${(window as any).__DELTA_MODEL_API_PORT__ ?? 8081}`;
+				const mapiBase =
+					getModelApiBaseUrl() ||
+					`http://127.0.0.1:${(window as any).__DELTA_MODEL_API_PORT__ ?? 8081}`;
 				const fallback = await fetch(`${mapiBase}/api/props`, { headers });
 				if (fallback.ok) {
 					return await fallback.json();
