@@ -26,6 +26,38 @@ beforeEach(() => {
 	});
 });
 describe('settings recovery and overrides', () => {
+	it('starts with computer access and response statistics disabled', async () => {
+		const { settingsStore: store } = await import('./settings.svelte');
+		expect(store.config.useFileTools).toBe(false);
+		expect(store.config.useShellTools).toBe(false);
+		expect(store.config.showMessageStats).toBe(false);
+	});
+	it('preserves saved personal preferences and explicitly enabled capabilities', async () => {
+		storage.set(
+			'config',
+			JSON.stringify({
+				theme: 'dark',
+				userName: 'Asha',
+				replyStyle: 'concise',
+				systemMessage: 'Use Kiswahili.',
+				useFileTools: true,
+				useShellTools: false,
+				showMessageStats: true,
+				pasteLongTextToFileLen: 0
+			})
+		);
+		const { settingsStore: store } = await import('./settings.svelte');
+		expect(store.config).toMatchObject({
+			theme: 'dark',
+			userName: 'Asha',
+			replyStyle: 'concise',
+			systemMessage: 'Use Kiswahili.',
+			useFileTools: true,
+			useShellTools: false,
+			showMessageStats: true,
+			pasteLongTextToFileLen: 0
+		});
+	});
 	it('repairs saved invalid DRY values and clears only their overrides', async () => {
 		storage.set(
 			'config',

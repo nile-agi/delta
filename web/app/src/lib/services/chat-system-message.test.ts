@@ -28,6 +28,39 @@ afterEach(() => {
 });
 
 describe('chat request guidance and history', () => {
+	it('does not allow custom JSON to turn on the disabled agent loop', async () => {
+		const fetch = vi
+			.fn()
+			.mockResolvedValue(
+				new Response(JSON.stringify({ choices: [{ message: { content: 'Done.' } }] }))
+			);
+		vi.stubGlobal('fetch', fetch);
+		await new ChatService().sendMessage([{ role: 'user', content: 'Hello' }], {
+			useTools: false,
+			custom: '{"use_tools":true,"use_files_tools":true,"use_shell_tools":true}'
+		});
+		const body = JSON.parse(fetch.mock.calls[0][1].body);
+		expect(body.use_tools).toBe(false);
+		expect(body.use_files_tools).not.toBe(true);
+		expect(body.use_shell_tools).not.toBe(true);
+	});
+	it('does not allow custom JSON to enable disabled computer tools', async () => {
+		const fetch = vi
+			.fn()
+			.mockResolvedValue(
+				new Response(JSON.stringify({ choices: [{ message: { content: 'Done.' } }] }))
+			);
+		vi.stubGlobal('fetch', fetch);
+		await new ChatService().sendMessage([{ role: 'user', content: 'Hello' }], {
+			useTools: true,
+			useFileTools: false,
+			useShellTools: false,
+			custom: '{"use_files_tools":true,"use_shell_tools":true}'
+		});
+		const body = JSON.parse(fetch.mock.calls[0][1].body);
+		expect(body.use_files_tools).toBe(false);
+		expect(body.use_shell_tools).toBe(false);
+	});
 	for (const enabled of [undefined, false, true]) {
 		it(`requires explicit computer access opt-in: ${enabled}`, async () => {
 			const fetch = vi
