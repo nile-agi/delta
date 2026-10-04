@@ -246,7 +246,7 @@ class HardwareMonitor {
 
     // CPU delta tracking state
 #ifdef _WIN32
-    FILETIME prev_idle_time_, prev_kernel_time_, prev_user_time_;
+    ULARGE_INTEGER prev_idle_time_{}, prev_kernel_time_{}, prev_user_time_{};
 #elif defined(__APPLE__)
     uint64_t prev_cpu_used_ = 0;
     uint64_t prev_cpu_total_ = 0;

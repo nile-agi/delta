@@ -13,6 +13,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <tlhelp32.h>
+#include <psapi.h>
 #define DELTA_DLOPEN(lib) LoadLibraryA(lib)
 #define DELTA_DLSYM(h, sym) GetProcAddress((HMODULE)h, sym)
 #define DELTA_DLCLOSE(h) FreeLibrary((HMODULE)h)
@@ -20,6 +21,7 @@
 #include <comdef.h>
 #pragma comment(lib, "wbemuuid.lib")
 #pragma comment(lib, "oleaut32.lib")
+#pragma comment(lib, "psapi.lib")
 #else
 #include <dlfcn.h>
 #define DELTA_DLOPEN(lib) dlopen(lib, RTLD_LAZY)
@@ -1262,9 +1264,9 @@ std::vector<ResourceHog> HardwareMonitor::get_resource_hogs() const {
         if (hog.type == "browser") {
             ss << " (close unused tabs first)";
         } else if (hog.type == "virtualization") {
-            ss = "Stop VM/container to free " + std::to_string((int)ram_gb) + "GB";
+            ss.str("Stop VM/container to free " + std::to_string((int)ram_gb) + "GB");
         } else if (hog.type == "creative") {
-            ss = "Close creative app when not actively editing to free " + std::to_string((int)ram_gb) + "GB";
+            ss.str("Close creative app when not actively editing to free " + std::to_string((int)ram_gb) + "GB");
         }
         hog.suggestion = ss.str();
         hogs.push_back(hog);
