@@ -295,10 +295,14 @@ class SettingsStore {
 		const propsDefaults = this.getServerDefaults();
 		const nextConfig = { ...this.config };
 		const nextOverrides = new Set(this.userOverrides);
+		let changed = false;
 		for (const [key, value] of Object.entries(propsDefaults)) {
-			if (!nextOverrides.has(key)) setConfigValue(nextConfig, key, value);
+			if (!nextOverrides.has(key) && !Object.is(getConfigValue(nextConfig, key), value)) {
+				setConfigValue(nextConfig, key, value);
+				changed = true;
+			}
 		}
-		this.commitConfig(nextConfig, nextOverrides);
+		if (changed) this.commitConfig(nextConfig, nextOverrides);
 	}
 
 	/**

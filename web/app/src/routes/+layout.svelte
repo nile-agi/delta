@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { ChatSidebar, ConversationTitleUpdateDialog } from '$lib/components/app';
@@ -265,7 +265,9 @@
 	$effect(() => {
 		if (isAuxWindow) return;
 		if (!serverReady) return;
-		serverStore.fetchServerProps();
+		// Fetching reads cached props and settings before its first await. Those
+		// reads must not subscribe this effect to the state the response updates.
+		untrack(() => serverStore.fetchServerProps());
 	});
 
 	$effect(() => {
@@ -283,7 +285,9 @@
 		if (isAuxWindow) return;
 		const serverProps = serverStore.serverProps;
 		if (serverProps?.default_generation_settings?.params) {
-			settingsStore.syncWithServerDefaults();
+			// React to new server defaults, without subscribing to the settings
+			// that synchronization itself writes.
+			untrack(() => settingsStore.syncWithServerDefaults());
 		}
 	});
 
