@@ -1,0 +1,161 @@
+import { expect, test } from '@playwright/test';
+
+// Exercise the production root layout, including the settings/server effects.
+// Component tests alone do not mount this startup path.
+for (const desktop of [false, true]) {
+	test(`starts with model defaults in ${desktop ? 'desktop' : 'browser'} mode`, async ({
+		page
+	}) => {
+		const errors: string[] = [];
+		page.on('pageerror', (error) => errors.push(error.message));
+		await page.addInitScript((desktop) => {
+			localStorage.setItem(
+				'config',
+				JSON.stringify({
+					onboardingCompleted: true,
+					userName: 'Asha',
+					top_p: 0.7
+				})
+			);
+			localStorage.setItem('userOverrides', JSON.stringify(['top_p']));
+			if (desktop) {
+				Object.assign(window, {
+					__TAURI_INTERNALS__: {
+						metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
+						invoke: async (command: string) =>
+							command === 'get_server_status' ? [8080, 8081, true, false, ''] : null,
+						transformCallback: () => 1
+					}
+				});
+			}
+		}, desktop);
+		await page.route('**/api/**', (route) =>
+			route.fulfill({
+				json: { models: [], downloads: [], events: [], reminders: [] }
+			})
+		);
+		await page.route('**/api/v1/hardware/stream', (route) =>
+			route.fulfill({ status: 204, contentType: 'text/event-stream', body: '' })
+		);
+		await page.route('**/slots', (route) => route.fulfill({ json: [] }));
+		await page.route('**/props', (route) =>
+			route.fulfill({
+				json: {
+					total_slots: 1,
+					model_path: 'test.gguf',
+					modalities: { vision: false, audio: false },
+					default_generation_settings: { n_ctx: 4096, params: { top_p: 0.95, temperature: 0.4 } }
+				}
+			})
+		);
+		await page.goto('/');
+		await expect(page.getByText('What are we working on?', { exact: true })).toBeVisible();
+		await expect(page.locator('#app-loading')).toHaveCount(0);
+		// Verify the app remains interactive after the backend has supplied defaults.
+		await page.getByRole('button', { name: 'Open Settings', exact: true }).click();
+		await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
+		await expect
+			.poll(() =>
+				page.evaluate(() => JSON.parse(localStorage.getItem('config') || '{}').temperature)
+			)
+			.toBe(0.4);
+		const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('config')!));
+		expect(saved.userName).toBe('Asha');
+		expect(saved.top_p).toBe(0.7);
+		expect(saved.temperature).toBe(0.4);
+		expect(errors).toEqual([]);
+	});
+}
+
+async function prepareOnboarding(page: import('@playwright/test').Page) {
+	const errors: string[] = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	await page.addInitScript(() => {
+		localStorage.setItem(
+			'DeltaWebui.serverProps',
+			JSON.stringify({
+				total_slots: 1,
+				model_path: 'test.gguf',
+				modalities: { vision: false, audio: false },
+				default_generation_settings: { n_ctx: 4096, params: { temperature: 0.6 } }
+			})
+		);
+		Object.assign(window, {
+			__TAURI_INTERNALS__: {
+				metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
+				invoke: async (command: string) =>
+					command === 'get_server_status' ? [8080, 8081, true, false, ''] : null,
+				transformCallback: () => 1
+			}
+		});
+	});
+	await page.route('**/api/**', (route) =>
+		route.fulfill({
+			json: { models: [], downloads: [], events: [], reminders: [] }
+		})
+	);
+	await page.route('**/api/v1/hardware/stream', (route) =>
+		route.fulfill({ status: 204, contentType: 'text/event-stream', body: '' })
+	);
+	await page.route('**/slots', (route) => route.fulfill({ json: [] }));
+	await page.route('**/props', (route) =>
+		route.fulfill({
+			json: {
+				total_slots: 1,
+				model_path: 'test.gguf',
+				modalities: { vision: false, audio: false },
+				default_generation_settings: { n_ctx: 4096, params: { temperature: 0.4 } }
+			}
+		})
+	);
+	await page.goto('/');
+	await expect
+		.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('config') || '{}').temperature))
+		.toBe(0.4);
+	return errors;
+}
+
+test('Skip for now dismisses onboarding after cached model defaults are refreshed', async ({
+	page
+}) => {
+	const errors = await prepareOnboarding(page);
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'Skip for now', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect
+		.poll(() =>
+			page.evaluate(() => JSON.parse(localStorage.getItem('config')!).onboardingCompleted)
+		)
+		.toBe(true);
+	await expect(page.getByText('How can I help you today?', { exact: true })).toBeVisible();
+	expect(errors).toEqual([]);
+});
+
+test('Continue advances onboarding and finishing saves the selected preferences', async ({
+	page
+}) => {
+	const errors = await prepareOnboarding(page);
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('Your name', { exact: true }).fill('Asha');
+	await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+	await expect(dialog.getByText('Step 2 of 3', { exact: true })).toBeVisible();
+	await dialog.getByRole('button', { name: /^Short/ }).click();
+	await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+	await expect(dialog.getByText('Step 3 of 3', { exact: true })).toBeVisible();
+	await dialog.getByRole('button', { name: 'Sunday', exact: true }).click();
+	await dialog.getByRole('button', { name: 'Start using Delta', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect
+		.poll(() =>
+			page.evaluate(() => JSON.parse(localStorage.getItem('config')!).onboardingCompleted)
+		)
+		.toBe(true);
+	const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('config')!));
+	expect(saved).toMatchObject({
+		userName: 'Asha',
+		replyStyle: 'concise',
+		calendarWeekStart: 'sunday'
+	});
+	await expect(page.getByText('What are we working on?', { exact: true })).toBeVisible();
+	expect(errors).toEqual([]);
+});

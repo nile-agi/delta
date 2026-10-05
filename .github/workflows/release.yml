@@ -103,6 +103,14 @@ jobs:
         run: |
           test -f public/index.html || { echo "ERROR: public/index.html not found"; exit 1; }
 
+      - name: Test production startup before packaging
+        shell: bash
+        env:
+          DELTA_TEST_PREBUILT: '1'
+        run: |
+          pnpm --filter webui exec playwright install --with-deps --only-shell chromium
+          pnpm --filter webui exec playwright test e2e/startup.test.ts --workers=1
+
       - name: Build CLI binaries
         shell: bash
         env:
@@ -333,6 +341,14 @@ jobs:
           test -f public/index.html || { echo "ERROR: public/index.html not found"; exit 1; }
           chmod +x scripts/verify-tauri-release-assets.sh
           scripts/verify-tauri-release-assets.sh --web-only
+
+      - name: Test production startup before packaging
+        shell: bash
+        env:
+          DELTA_TEST_PREBUILT: '1'
+        run: |
+          pnpm --filter webui exec playwright install --with-deps --only-shell chromium
+          pnpm --filter webui exec playwright test e2e/startup.test.ts --workers=1
 
       - name: Build C++ sidecars
         shell: bash
