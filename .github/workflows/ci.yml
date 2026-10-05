@@ -61,6 +61,18 @@ jobs:
       - name: Verify build output
         run: test -s public/index.html
 
+      - name: Test production startup
+        env:
+          DELTA_TEST_PREBUILT: '1'
+        run: pnpm --filter webui exec playwright test e2e/startup.test.ts --workers=1
+
+      - name: Test production startup in WebKit
+        env:
+          DELTA_TEST_PREBUILT: '1'
+        run: |
+          pnpm --filter webui exec playwright install --with-deps webkit
+          pnpm --filter webui exec playwright test e2e/startup.test.ts --browser=webkit --workers=1
+
   release-checks:
     name: Release scripts and workflow validation
     runs-on: ubuntu-latest
