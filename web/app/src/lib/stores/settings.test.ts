@@ -26,6 +26,16 @@ beforeEach(() => {
 	});
 });
 describe('settings recovery and overrides', () => {
+	it('does not publish another settings update when model defaults are unchanged', async () => {
+		const { settingsStore: store } = await import('./settings.svelte');
+		server.serverDefaultParams = { temperature: 0.8, top_p: 0.95 };
+		store.syncWithServerDefaults();
+		const config = store.config;
+		const overrides = store.userOverrides;
+		store.syncWithServerDefaults();
+		expect(store.config).toBe(config);
+		expect(store.userOverrides).toBe(overrides);
+	});
 	it('starts with computer access and response statistics disabled', async () => {
 		const { settingsStore: store } = await import('./settings.svelte');
 		expect(store.config.useFileTools).toBe(false);
