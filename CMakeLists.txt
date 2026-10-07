@@ -188,10 +188,13 @@ set(DELTA_SOURCES
     engine/tools/shell.cpp
     engine/tools/browser.cpp
     engine/model_api_server.cpp
+    engine/api/document_routes.cpp
     engine/api/note_routes.cpp
     engine/agent/agent_database.cpp
     engine/agent/memory_store.cpp
     engine/agent/task_store.cpp
+    engine/agent/document_store.cpp
+    engine/agent/tool_documents.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
     engine/agent/tool_notes.cpp
@@ -270,6 +273,7 @@ endif()
 add_executable(delta-server
     engine/delta_server_wrapper.cpp
     engine/model_api_server.cpp
+    engine/api/document_routes.cpp
     engine/models.cpp
     engine/server_health.cpp
     engine/tools/hardware_monitor.cpp
@@ -279,6 +283,8 @@ add_executable(delta-server
     engine/agent/agent_database.cpp
     engine/agent/memory_store.cpp
     engine/agent/task_store.cpp
+    engine/agent/document_store.cpp
+    engine/agent/tool_documents.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
     engine/agent/tool_notes.cpp
@@ -389,6 +395,8 @@ add_executable(delta-harness-tests EXCLUDE_FROM_ALL
     engine/agent/agent_database.cpp
     engine/agent/memory_store.cpp
     engine/agent/task_store.cpp
+    engine/agent/document_store.cpp
+    engine/agent/tool_documents.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
     engine/agent/tool_notes.cpp

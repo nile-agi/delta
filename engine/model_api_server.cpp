@@ -18,6 +18,7 @@
 #include "agent/harness.h"
 #include "agent/memory_store.h"
 #include "agent/task_store.h"
+#include "agent/document_store.h"
 #include "agent/policy.h"
 #include "agent/quick_add.h"
 #include "agent/time_compat.h"
@@ -27,6 +28,7 @@
 // Updated includes to point to the local vendor directory structure
 #include "vendor/llama.cpp/vendor/cpp-httplib/httplib.h"
 #include "api/note_routes.h"
+#include "api/document_routes.h"
 #include "vendor/json.hpp"
 
 #include <iostream>
@@ -417,6 +419,8 @@ class ModelAPIServer {
         server_->Options(".*", [](const httplib::Request&, httplib::Response&) { return; });
 
         server_->Get("/props", [this](const httplib::Request&, httplib::Response& res) { write_props_fallback(res); });
+
+        api::register_document_routes(*server_);
 
         server_->Get("/api/props", [this](const httplib::Request&, httplib::Response& res) {
             try {
@@ -1951,6 +1955,10 @@ class ModelAPIServer {
         }
         if (!agent::TaskStore::instance().init(agent::AgentDatabase::instance().handle())) {
             std::cerr << "[WARNING] Failed to initialize agent tasks — task recovery is disabled" << std::endl;
+        }
+        if (!agent::DocumentStore::instance().init(agent::AgentDatabase::instance().handle(),
+                                                   &agent::AgentDatabase::instance().connection_mutex())) {
+            std::cerr << "[WARNING] Failed to initialize document search — attached files are sent whole" << std::endl;
         }
         agent::register_all_tools();
         setup_routes();
