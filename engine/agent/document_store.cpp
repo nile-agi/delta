@@ -804,6 +804,7 @@ std::vector<DocumentExcerpt> DocumentStore::search(const std::string& query, con
     struct Range {
         std::string doc_id, doc_name;
         int from, to;
+        int hit; // the chunk that matched best, kept when the budget cannot fit the whole range
         double score;
     };
     std::vector<Range> ranges;
@@ -814,7 +815,7 @@ std::vector<DocumentExcerpt> DocumentStore::search(const std::string& query, con
         double score = sqlite3_column_double(st, 4);
         // A short hit (a heading, a table row) means little without what surrounds it.
         int pad = len < 900 ? 1 : 0;
-        Range r{did, col_text(st, 1), std::max(0, ord - pad), ord + pad, score};
+        Range r{did, col_text(st, 1), std::max(0, ord - pad), ord + pad, ord, score};
         // Merge with an earlier range of the same document that touches it; the earlier one ranks
         // higher, so it keeps its place and score.
         bool merged = false;
@@ -839,6 +840,13 @@ std::vector<DocumentExcerpt> DocumentStore::search(const std::string& query, con
         if (rows.empty())
             continue;
         DocumentExcerpt ex = stitch(r.doc_id, r.doc_name, rows);
+        // Too long for what is left: fall back to the matching chunk alone rather than cut the
+        // range from its end, which can drop the very sentence that matched.
+        if (ex.text.size() > max_chars - used && r.from != r.to) {
+            auto hit_rows = fetch_chunks(db_, r.doc_id, "ordinal BETWEEN ? AND ?", r.hit, r.hit);
+            if (!hit_rows.empty())
+                ex = stitch(r.doc_id, r.doc_name, hit_rows);
+        }
         ex.score = r.score;
         ex.text = cut_to(ex.text, max_chars - used);
         used += ex.text.size();
