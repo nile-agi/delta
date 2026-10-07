@@ -259,6 +259,9 @@ std::vector<DocumentChunk> chunk_segments(const std::vector<DocumentSegment>& se
                 flush();
             current_heading = heading_text(b.text);
         }
+        // Prefer to end a reasonably full chunk where a page ends, so citations name few pages.
+        if (has_new() && b.page != page_end && buf.size() - carried >= target * 3 / 5)
+            flush();
         const char* sep = b.records ? "\n" : "\n\n";
         if (has_new() && buf.size() + strlen(sep) + b.text.size() > target)
             flush();
