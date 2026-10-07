@@ -211,6 +211,8 @@ export interface ApiChatCompletionRequest {
 	max_iterations?: number;
 	/** Keys the harness's plan scratchpad so a plan carries over between turns. */
 	conversation_id?: string;
+	/** Add passages from this conversation's indexed files (agent server only). */
+	use_documents?: boolean;
 }
 
 export interface ApiChatCompletionStreamChunk {

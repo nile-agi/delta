@@ -1,16 +1,16 @@
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 const pdf = vi.hoisted(() => ({ text: vi.fn(), images: vi.fn(), vision: false }));
-vi.mock('./pdf-processing', () => ({ convertPDFToText: pdf.text, convertPDFToImage: pdf.images }));
+vi.mock('./pdf-processing', () => ({ extractPDFPages: pdf.text, convertPDFToImage: pdf.images }));
 vi.mock('$lib/stores/server.svelte', () => ({ supportsVision: () => pdf.vision }));
-vi.mock('$lib/stores/settings.svelte', () => ({
-	config: () => ({ pdfAsImage: false }),
-	settingsStore: { updateConfig: vi.fn() }
+vi.mock('./text-files', async (importActual) => ({
+	...(await importActual<typeof import('./text-files')>()),
+	readFileAsText: (f: File) => f.text()
 }));
 vi.mock('svelte-sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() } }));
 import { parseFilesToMessageExtras } from './convert-files-to-extra';
 beforeEach(() => {
 	pdf.vision = false;
-	pdf.text.mockReset().mockResolvedValue('Document text');
+	pdf.text.mockReset().mockResolvedValue(['Document text', '', 'Page three']);
 	pdf.images.mockReset().mockResolvedValue(['data:image/png;base64,page']);
 	vi.stubGlobal(
 		'FileReader',
@@ -32,20 +32,29 @@ const file = {
 it('uses extracted text even when the model can read images', async () => {
 	pdf.vision = true;
 	const result = await parseFilesToMessageExtras([file]);
-	expect(result.extras[0]).toMatchObject({ content: 'Document text', processedAsImages: false });
+	expect(result.extras[0]).toMatchObject({
+		type: 'documentFile',
+		mimeType: 'application/pdf',
+		pages: 3,
+		segments: [
+			{ page: 1, text: 'Document text' },
+			{ page: 3, text: 'Page three' }
+		]
+	});
 	expect(pdf.images).not.toHaveBeenCalled();
 });
-it('automatically reads a scanned PDF as images with a capable model', async () => {
-	pdf.vision = true;
-	pdf.text.mockResolvedValue('');
-	const result = await parseFilesToMessageExtras([file]);
-	expect(result.extras[0]).toMatchObject({
-		processedAsImages: true,
-		images: ['data:image/png;base64,page']
-	});
+it('keeps a long text file for indexing and a short one inline', async () => {
+	const textFile = (name: string, text: string) =>
+		({ name, type: 'text/plain', file: new File([text], name, { type: 'text/plain' }) }) as ChatUploadedFile;
+	const result = await parseFilesToMessageExtras([
+		textFile('long.txt', 'word '.repeat(2000)),
+		textFile('short.txt', 'a short note')
+	]);
+	expect(result.extras[0]).toMatchObject({ type: 'documentFile', name: 'long.txt' });
+	expect(result.extras[1]).toMatchObject({ type: 'textFile', content: 'a short note' });
 });
 it('explains why a scanned PDF cannot be read by a text-only model', async () => {
-	pdf.text.mockResolvedValue('');
+	pdf.text.mockResolvedValue(['']);
 	const result = await parseFilesToMessageExtras([file]);
 	expect(result.extras).toEqual([]);
 	expect(pdf.images).not.toHaveBeenCalled();
@@ -61,7 +70,7 @@ it('uses page images if text extraction fails on a capable model', async () => {
 });
 it('reports a processing failure instead of sending an empty attachment', async () => {
 	pdf.vision = true;
-	pdf.text.mockResolvedValue('');
+	pdf.text.mockResolvedValue(['']);
 	pdf.images.mockRejectedValue(new Error('Invalid PDF'));
 	const result = await parseFilesToMessageExtras([file]);
 	expect(result.extras).toEqual([]);

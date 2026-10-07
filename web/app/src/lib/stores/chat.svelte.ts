@@ -10,6 +10,7 @@ import {
 } from '$lib/stores/models.svelte';
 import { agentStore } from '$lib/stores/agent.svelte';
 import { agentService } from '$lib/services/agent';
+import { indexDocumentExtras } from '$lib/utils/index-document-extras';
 import type { QuickAddSuggestion } from '$lib/types/agent';
 import { filterByLeafNodeId, findLeafNode, findDescendantMessages } from '$lib/utils/branching';
 import { browser } from '$app/environment';
@@ -920,6 +921,15 @@ class ChatStore {
 		let userMessage: DatabaseMessage | null = null;
 
 		try {
+			// Large files are indexed now that the conversation has an id; small ones go inline.
+			if (extras?.some((e) => e.type === 'documentFile' && e.segments)) {
+				extras = await indexDocumentExtras(
+					extras,
+					this.activeConversation.id,
+					serverStore.serverProps?.default_generation_settings?.n_ctx
+				);
+			}
+
 			userMessage = await this.addMessage('user', content, 'text', '-1', extras);
 
 			if (!userMessage) {

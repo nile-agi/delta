@@ -187,8 +187,18 @@ export class ChatService {
 				return true;
 			});
 
+		// Indexed files are searched by the engine's agent server, so a chat holding one goes there
+		// even with tools off; it then runs as a plain chat plus the matching passages.
+		const hasIndexedDocuments = messages.some(
+			(msg) =>
+				'extra' in msg &&
+				Array.isArray(msg.extra) &&
+				msg.extra.some((e: DatabaseMessageExtra) => e.type === 'documentFile' && !!e.docId)
+		);
+		const useAgentServer = !!useTools || hasIndexedDocuments;
+
 		// The agent harness states the date itself; a plain llama-server chat has no other source.
-		const processedMessages = this.injectSystemMessage(normalizedMessages, !useTools);
+		const processedMessages = this.injectSystemMessage(normalizedMessages, !useAgentServer);
 		const alternatingMessages = ChatService.ensureAlternatingRoles(processedMessages);
 
 		const requestBody: ApiChatCompletionRequest = {
@@ -275,7 +285,11 @@ export class ChatService {
 			const apiKey = currentConfig.apiKey?.toString().trim();
 			// Tools live in the agent loop, which only the model API server hosts. getModelApiBaseUrl()
 			// resolves it in every mode (Tauri, same-origin UI-only, and port+1 after the 8080 migration).
-			const baseUrl = useTools ? getModelApiBaseUrl() : getServerBaseUrl();
+			if (!useTools && hasIndexedDocuments && conversationId) {
+				requestBody.conversation_id = conversationId;
+			}
+			if (useAgentServer) requestBody.use_documents = true;
+			const baseUrl = useAgentServer ? getModelApiBaseUrl() : getServerBaseUrl();
 			const url = `${baseUrl}/v1/chat/completions`;
 			const headers: Record<string, string> = {
 				'Content-Type': 'application/json',
@@ -877,6 +891,23 @@ export class ChatService {
 					text: `\n\n--- PDF File: ${pdfFile.name} ---\n${pdfFile.content}`
 				});
 			}
+		}
+
+		const documentFiles = message.extra.filter(
+			(extra: DatabaseMessageExtra): extra is DatabaseMessageExtraDocumentFile =>
+				extra.type === 'documentFile'
+		);
+
+		for (const doc of documentFiles) {
+			// An indexed file stays out of the request: the engine adds the passages that match
+			// each question, so a 300-page PDF costs a few thousand tokens instead of the window.
+			const size = doc.pages > 0 ? `${doc.pages} pages` : `${doc.chars.toLocaleString()} characters`;
+			contentParts.push({
+				type: 'text',
+				text: doc.docId
+					? `\n\n--- Attached file: ${doc.name} (${size}; the passages relevant to each question are provided) ---`
+					: `\n\n--- File: ${doc.name} ---\n${doc.content ?? ''}`
+			});
 		}
 
 		return {
