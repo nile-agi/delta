@@ -437,6 +437,15 @@ add_executable(delta-document-tests EXCLUDE_FROM_ALL
 target_include_directories(delta-document-tests PRIVATE ${DELTA_INCLUDE_DIRS})
 target_link_libraries(delta-document-tests PRIVATE sqlite3 ${CMAKE_THREAD_LIBS_INIT})
 
+# Retrieval eval: hit rate, MRR and context budget over a frozen corpus (no model needed).
+#   cmake --build build --target delta-retrieval-eval && ./build/delta-retrieval-eval
+add_executable(delta-retrieval-eval EXCLUDE_FROM_ALL
+    tests/eval_retrieval.cpp
+    engine/agent/document_store.cpp
+)
+target_include_directories(delta-retrieval-eval PRIVATE ${DELTA_INCLUDE_DIRS})
+target_link_libraries(delta-retrieval-eval PRIVATE sqlite3 ${CMAKE_THREAD_LIBS_INIT})
+
 # Tests
 if(BUILD_TESTS)
     find_package(Catch2 3 QUIET)
