@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { IndexedDocument } from '$lib/services/documents';
 	import { afterNavigate } from '$app/navigation';
 	import {
 		ChatAttachmentsList,
@@ -20,10 +21,12 @@
 	import { onMount } from 'svelte';
 	import {
 		FileExtensionAudio,
+		FileExtensionDocument,
 		FileExtensionImage,
 		FileExtensionPdf,
 		FileExtensionText,
 		MimeTypeAudio,
+		MimeTypeDocument,
 		MimeTypeImage,
 		MimeTypeText
 	} from '$lib/enums/files';
@@ -80,14 +83,36 @@
 			case FileTypeCategory.AUDIO:
 				return [...Object.values(FileExtensionAudio), ...Object.values(MimeTypeAudio)].join(',');
 			case FileTypeCategory.PDF:
-				return [...Object.values(FileExtensionPdf), ...Object.values(MimeTypeApplication)].join(
-					','
-				);
+			case FileTypeCategory.DOCUMENT:
+				// One "Documents" entry covers PDF, Word and spreadsheets.
+				return [
+					...Object.values(FileExtensionPdf),
+					...Object.values(MimeTypeApplication),
+					...Object.values(FileExtensionDocument),
+					...Object.values(MimeTypeDocument),
+					'.csv'
+				].join(',');
 			case FileTypeCategory.TEXT:
 				return [...Object.values(FileExtensionText), MimeTypeText.PLAIN].join(',');
 			default:
 				return '';
 		}
+	}
+
+	// A kept file is already indexed: attach it as-is instead of reading it again.
+	function handleAttachKept(doc: IndexedDocument) {
+		if (uploadedFiles.some((f) => f.keptDocument?.id === doc.id)) return;
+		uploadedFiles = [
+			...uploadedFiles,
+			{
+				id: `kept-${doc.id}`,
+				name: doc.name,
+				size: doc.chars,
+				type: doc.mime,
+				file: new File([], doc.name, { type: doc.mime }),
+				keptDocument: doc
+			}
+		];
 	}
 
 	function handleFileSelect(files: File[]) {
@@ -281,6 +306,7 @@
 			{openModelDropdownTrigger}
 			onRequestOpenModelDropdown={requestOpenModelDropdown}
 			onFileUpload={handleFileUpload}
+			onAttachKept={handleAttachKept}
 			onMicClick={handleMicClick}
 			onStop={handleStop}
 		/>

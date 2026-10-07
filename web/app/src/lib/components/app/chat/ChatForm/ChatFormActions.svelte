@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { IndexedDocument } from '$lib/services/documents';
 	import { Square, ArrowUp, Wrench, Calendar, StickyNote, X } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Tooltip from '$lib/components/ui/tooltip';
@@ -33,6 +34,7 @@
 		openModelDropdownTrigger?: number;
 		onRequestOpenModelDropdown?: () => void;
 		onFileUpload?: (fileType?: FileTypeCategory) => void;
+		onAttachKept?: (doc: IndexedDocument) => void;
 		onMicClick?: () => void;
 		onStop?: () => void;
 	}
@@ -50,6 +52,7 @@
 		openModelDropdownTrigger = 0,
 		onRequestOpenModelDropdown,
 		onFileUpload,
+		onAttachKept,
 		onMicClick,
 		onStop
 	}: Props = $props();
@@ -62,7 +65,7 @@
 </script>
 
 <div class="flex w-full items-center gap-2 {className}">
-	<ChatFormActionFileAttachments class="mr-auto" {disabled} {onFileUpload} />
+	<ChatFormActionFileAttachments class="mr-auto" {disabled} {onFileUpload} {onAttachKept} />
 
 	{#if calendarMinimized}
 		<div class="group relative">

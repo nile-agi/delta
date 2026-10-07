@@ -187,8 +187,18 @@ export class ChatService {
 				return true;
 			});
 
+		// Indexed files are searched by the engine's agent server, so a chat holding one goes there
+		// even with tools off; it then runs as a plain chat plus the matching passages.
+		const hasIndexedDocuments = messages.some(
+			(msg) =>
+				'extra' in msg &&
+				Array.isArray(msg.extra) &&
+				msg.extra.some((e: DatabaseMessageExtra) => e.type === 'documentFile' && !!e.docId)
+		);
+		const useAgentServer = !!useTools || hasIndexedDocuments;
+
 		// The agent harness states the date itself; a plain llama-server chat has no other source.
-		const processedMessages = this.injectSystemMessage(normalizedMessages, !useTools);
+		const processedMessages = this.injectSystemMessage(normalizedMessages, !useAgentServer);
 		const alternatingMessages = ChatService.ensureAlternatingRoles(processedMessages);
 
 		const requestBody: ApiChatCompletionRequest = {
@@ -275,7 +285,11 @@ export class ChatService {
 			const apiKey = currentConfig.apiKey?.toString().trim();
 			// Tools live in the agent loop, which only the model API server hosts. getModelApiBaseUrl()
 			// resolves it in every mode (Tauri, same-origin UI-only, and port+1 after the 8080 migration).
-			const baseUrl = useTools ? getModelApiBaseUrl() : getServerBaseUrl();
+			if (!useTools && hasIndexedDocuments && conversationId) {
+				requestBody.conversation_id = conversationId;
+			}
+			if (useAgentServer) requestBody.use_documents = true;
+			const baseUrl = useAgentServer ? getModelApiBaseUrl() : getServerBaseUrl();
 			const url = `${baseUrl}/v1/chat/completions`;
 			const headers: Record<string, string> = {
 				'Content-Type': 'application/json',
@@ -413,7 +427,6 @@ export class ChatService {
 			const collectedToolCalls: DatabaseMessageToolCall[] = [];
 			let hasReceivedData = false;
 			let lastTimings: ChatMessageTimings | undefined;
-			let streamFinished = false;
 			let modelEmitted = false;
 			let firstValidChunkEmitted = false;
 			let lastProcessedIndex = 0;
@@ -433,10 +446,7 @@ export class ChatService {
 
 					if (line.startsWith('data: ')) {
 						const data = line.slice(6);
-						if (data === '[DONE]') {
-							streamFinished = true;
-							continue;
-						}
+						if (data === '[DONE]') continue;
 						if (!data.includes('"choices"')) continue; // ignore named agent events (tool_update/reasoning)
 
 						try {
@@ -879,6 +889,23 @@ export class ChatService {
 			}
 		}
 
+		const documentFiles = message.extra.filter(
+			(extra: DatabaseMessageExtra): extra is DatabaseMessageExtraDocumentFile =>
+				extra.type === 'documentFile'
+		);
+
+		for (const doc of documentFiles) {
+			// An indexed file stays out of the request: the engine adds the passages that match
+			// each question, so a 300-page PDF costs a few thousand tokens instead of the window.
+			const size = doc.pages > 0 ? `${doc.pages} pages` : `${doc.chars.toLocaleString()} characters`;
+			contentParts.push({
+				type: 'text',
+				text: doc.docId
+					? `\n\n--- Attached file: ${doc.name} (${size}; the passages relevant to each question are provided) ---`
+					: `\n\n--- File: ${doc.name} ---\n${doc.content ?? ''}`
+			});
+		}
+
 		return {
 			role: message.role as 'user' | 'assistant' | 'system',
 			content: contentParts
@@ -918,12 +945,14 @@ export class ChatService {
 			try {
 				const mapiBase =
 					getModelApiBaseUrl() ||
-					`http://127.0.0.1:${(window as any).__DELTA_MODEL_API_PORT__ ?? 8081}`;
+					`http://127.0.0.1:${(window as Window & { __DELTA_MODEL_API_PORT__?: number }).__DELTA_MODEL_API_PORT__ ?? 8081}`;
 				const fallback = await fetch(`${mapiBase}/api/props`, { headers });
 				if (fallback.ok) {
 					return await fallback.json();
 				}
-			} catch {}
+			} catch {
+				// The fallback failed too; report the original error below.
+			}
 			console.error('Error fetching server props:', error);
 			throw error;
 		}

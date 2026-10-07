@@ -1,5 +1,6 @@
 #include "tool_registry.h"
 #include "tool_calendar.h"
+#include "tool_documents.h"
 #include "tool_files.h"
 #include "tool_memory.h"
 #include "tool_notes.h"
@@ -246,6 +247,8 @@ std::string category_summary(const std::string& category) {
         return "what you remember about the user between conversations";
     if (category == "task")
         return "your plan and working notes for the job in hand";
+    if (category == "documents")
+        return "search and read the files the user attached to the chat";
     if (category == "files")
         return "read, write, list and delete files under the home directory";
     if (category == "shell")
@@ -308,6 +311,7 @@ void register_all_tools() {
     register_task_tools();
     register_file_tools();
     register_shell_tools();
+    register_document_tools();
 }
 
 } // namespace agent

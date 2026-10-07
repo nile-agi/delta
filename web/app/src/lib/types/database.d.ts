@@ -37,6 +37,29 @@ export interface DatabaseMessageExtraPdfFile {
 }
 
 /**
+ * A PDF, Word, spreadsheet or long text file. Small ones are sent whole, like a text file. Large
+ * ones are indexed by the engine (`docId`), and the model is given only the passages that match
+ * each question.
+ */
+export interface DatabaseMessageExtraDocumentFile {
+	type: 'documentFile';
+	name: string;
+	mimeType: string;
+	/** Engine document id once indexed. Absent means `content` is sent whole. */
+	docId?: string;
+	/** Whole text, kept only while the file is small enough to send whole. */
+	content?: string;
+	pages: number;
+	chars: number;
+	/** Kept for all chats (the shared library). */
+	library?: boolean;
+	/** Original PDF bytes, for the preview dialog. */
+	base64Data?: string;
+	/** Extracted text awaiting indexing; dropped before the message is saved. */
+	segments?: import('$lib/utils/document-extraction').DocumentSegment[];
+}
+
+/**
  * Legacy format from old webui - pasted content was stored as "context" type
  * @deprecated Use DatabaseMessageExtraTextFile instead
  */
@@ -51,6 +74,7 @@ export type DatabaseMessageExtra =
 	| DatabaseMessageExtraTextFile
 	| DatabaseMessageExtraAudioFile
 	| DatabaseMessageExtraPdfFile
+	| DatabaseMessageExtraDocumentFile
 	| DatabaseMessageExtraLegacyContext;
 
 /** Harmony-compatible tool call (delta.tool_calls) */

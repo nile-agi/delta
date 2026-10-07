@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import { filterByLeafNodeId, findDescendantMessages } from '$lib/utils/branching';
+import { documentsService } from '$lib/services/documents';
 
 class DeltaDatabase extends Dexie {
 	conversations!: EntityTable<DatabaseConversation, string>;
@@ -171,16 +172,20 @@ export class DatabaseStore {
 			await db.conversations.delete(id);
 			await db.messages.where('convId').equals(id).delete();
 		});
+		// The engine's copy of the chat's files goes too, except any kept for all chats.
+		void documentsService.removeConversation(id);
 	}
 
 	/**
 	 * Permanently deletes all conversations and their messages. This action cannot be undone.
 	 */
 	static async deleteAllConversations(): Promise<void> {
+		const ids = (await db.conversations.toCollection().primaryKeys()) as string[];
 		await db.transaction('rw', [db.conversations, db.messages], async () => {
 			await db.messages.clear();
 			await db.conversations.clear();
 		});
+		for (const id of ids) void documentsService.removeConversation(id);
 	}
 
 	/**

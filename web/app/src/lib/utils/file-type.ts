@@ -1,5 +1,6 @@
 import {
 	AUDIO_FILE_TYPES,
+	DOCUMENT_FILE_TYPES,
 	IMAGE_FILE_TYPES,
 	PDF_FILE_TYPES,
 	TEXT_FILE_TYPES
@@ -32,6 +33,14 @@ export function getFileTypeCategory(mimeType: string): FileTypeCategory | null {
 	}
 
 	if (
+		Object.values(DOCUMENT_FILE_TYPES).some((type) =>
+			(type.mimeTypes as readonly string[]).includes(mimeType)
+		)
+	) {
+		return FileTypeCategory.DOCUMENT;
+	}
+
+	if (
 		Object.values(TEXT_FILE_TYPES).some((type) =>
 			(type.mimeTypes as readonly string[]).includes(mimeType)
 		)
@@ -60,6 +69,12 @@ export function getFileTypeByExtension(filename: string): string | null {
 	for (const [key, type] of Object.entries(PDF_FILE_TYPES)) {
 		if ((type.extensions as readonly string[]).includes(extension)) {
 			return `${FileTypeCategory.PDF}:${key}`;
+		}
+	}
+
+	for (const [key, type] of Object.entries(DOCUMENT_FILE_TYPES)) {
+		if ((type.extensions as readonly string[]).includes(extension)) {
+			return `${FileTypeCategory.DOCUMENT}:${key}`;
 		}
 	}
 

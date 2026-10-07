@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { X } from '@lucide/svelte';
+	import { Pin, PinOff, X } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { formatFileSize, getFileTypeLabel, getPreviewText } from '$lib/utils/file-preview';
 	import { FileTypeCategory, MimeTypeText } from '$lib/enums/files';
@@ -14,6 +14,11 @@
 		size?: number;
 		textContent?: string;
 		type: string;
+		/** Replaces the size line, e.g. "42 pages · searchable". */
+		detail?: string;
+		/** Shown with a pin when set: the file is kept for all chats. */
+		kept?: boolean;
+		onToggleKeep?: () => void;
 	}
 
 	let {
@@ -25,8 +30,16 @@
 		readonly = false,
 		size,
 		textContent,
-		type
+		type,
+		detail,
+		kept = false,
+		onToggleKeep
 	}: Props = $props();
+
+	function toggleKeep(event: Event) {
+		event.stopPropagation();
+		onToggleKeep?.();
+	}
 </script>
 
 {#if type === MimeTypeText.PLAIN || type === FileTypeCategory.TEXT}
@@ -116,10 +129,30 @@
 				{name}
 			</span>
 
-			{#if size}
+			{#if detail}
+				<span class="text-left text-xs text-muted-foreground">{detail}</span>
+			{:else if size}
 				<span class="text-left text-xs text-muted-foreground">{formatFileSize(size)}</span>
 			{/if}
 		</div>
+
+		{#if onToggleKeep}
+			<!-- Not a <button>: the whole chip already is one. -->
+			<span
+				role="button"
+				tabindex="0"
+				class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-foreground/10 hover:text-foreground {kept
+					? 'text-primary'
+					: ''}"
+				title={kept ? 'Kept for all chats. Click to keep it in this chat only.' : 'Keep for all chats'}
+				aria-label={kept ? 'Keep in this chat only' : 'Keep for all chats'}
+				aria-pressed={kept}
+				onclick={toggleKeep}
+				onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleKeep(e)}
+			>
+				{#if kept}<Pin class="h-3.5 w-3.5" />{:else}<PinOff class="h-3.5 w-3.5" />{/if}
+			</span>
+		{/if}
 
 		{#if !readonly}
 			<Button

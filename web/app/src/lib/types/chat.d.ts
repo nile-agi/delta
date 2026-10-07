@@ -9,6 +9,8 @@ export interface ChatUploadedFile {
 	file: File;
 	preview?: string;
 	textContent?: string;
+	/** A file already indexed and kept for all chats, attached again without re-reading it. */
+	keptDocument?: import('$lib/services/documents').IndexedDocument;
 }
 
 export interface ChatMessageSiblingInfo {

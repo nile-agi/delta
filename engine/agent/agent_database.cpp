@@ -1,6 +1,7 @@
 #include "agent_database.h"
 #include "memory_store.h"
 #include "task_store.h"
+#include "document_store.h"
 #include "time_compat.h"
 #include <nlohmann/json.hpp>
 #include <filesystem>
@@ -58,6 +59,7 @@ void AgentDatabase::close() {
     // Tell the sharer first, or it keeps a freed pointer and still reports itself ready.
     MemoryStore::instance().detach();
     TaskStore::instance().detach();
+    DocumentStore::instance().detach();
     if (db_) {
         sqlite3_close(db_);
         db_ = nullptr;
