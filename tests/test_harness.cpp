@@ -11,6 +11,7 @@
 
 #include "agent/agent_database.h"
 #include "agent/context_manager.h"
+#include "agent/document_store.h"
 #include "agent/harness.h"
 #include "agent/memory_store.h"
 #include "agent/quick_add.h"
@@ -28,6 +29,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -2998,6 +3000,74 @@ static void test_calendar_clock_formats_and_relative_end_dates() {
     db.delete_event(id);
 }
 
+static std::string system_text(const json& request) {
+    if (!request.contains("messages") || request["messages"].empty())
+        return "";
+    const auto& first = request["messages"][0];
+    return first.value("role", "") == "system" && first["content"].is_string() ? first["content"].get<std::string>()
+                                                                               : "";
+}
+
+static void test_attached_files_reach_the_model_as_passages() {
+    test("passages from a chat's attached files are put in front of the model, and only in that chat");
+
+    std::vector<DocumentSegment> pages;
+    for (int p = 1; p <= 60; p++) {
+        std::string text = "Routine maintenance notes for page " + std::to_string(p) +
+                           ". Inspect the belts and record the readings in the log.\n\n";
+        if (p == 42)
+            text += "The hydraulic pump warranty expires after 36 months unless the seals are replaced.\n\n";
+        pages.push_back({p, "", text, false});
+    }
+    const std::string doc = DocumentStore::instance().add("manual.pdf", "application/pdf", "conv-docs", pages);
+    check(!doc.empty(), "the manual was indexed");
+
+    auto run_in = [](const std::string& conversation, bool use_documents, const std::string& question) {
+        ScriptedServer server({{{"role", "assistant"}, {"content", "Answered."}}});
+        server.start();
+        Harness harness(server.url(), "test-model", false);
+        RunOptions options = test_options();
+        options.tools_enabled = false;
+        options.memory_scope = conversation;
+        options.use_documents = use_documents;
+        harness.set_options(options);
+        EventLog log;
+        harness.run(json::array({user(question)}), log.sink());
+        server.stop();
+        auto requests = server.requests();
+        return requests.empty() ? std::string() : system_text(requests[0]);
+    };
+
+    const std::string prompt = run_in("conv-docs", true, "When does the hydraulic pump warranty expire?");
+    check(prompt.find("36 months") != std::string::npos, "the passage with the answer is in the prompt");
+    {
+        // "[manual.pdf, p.A-B]" with A <= 42 <= B.
+        const size_t at = prompt.find("[manual.pdf, p.");
+        int first = 0, last = 0;
+        if (at != std::string::npos) {
+            const char* range = prompt.c_str() + at + std::string("[manual.pdf, p.").size();
+            first = std::atoi(range);
+            const char* dash = std::strchr(range, '-');
+            const char* close = std::strchr(range, ']');
+            last = dash && close && dash < close ? std::atoi(dash + 1) : first;
+        }
+        check(first > 0 && first <= 42 && last >= 42, "it is cited by file and a page range holding page 42");
+    }
+    check(prompt.find("page 7.") == std::string::npos, "unrelated pages are left out");
+
+    const std::string followup = run_in("conv-docs", true, "and the seals?");
+    check(followup.find("seals") != std::string::npos, "a short follow-up still finds passages");
+
+    check(run_in("conv-elsewhere", true, "When does the hydraulic pump warranty expire?").find("36 months") ==
+              std::string::npos,
+          "another chat does not see the file");
+    check(run_in("conv-docs", false, "When does the hydraulic pump warranty expire?").find("36 months") ==
+              std::string::npos,
+          "use_documents=false keeps the passages out");
+
+    DocumentStore::instance().remove_conversation("conv-docs");
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -3014,6 +3084,11 @@ int main() {
     }
     if (!TaskStore::instance().init(AgentDatabase::instance().handle())) {
         std::cerr << "could not initialise the task store\n";
+        return 1;
+    }
+    if (!DocumentStore::instance().init(AgentDatabase::instance().handle(),
+                                        &AgentDatabase::instance().connection_mutex())) {
+        std::cerr << "could not initialise the document store\n";
         return 1;
     }
     register_test_tools();
@@ -3115,6 +3190,7 @@ int main() {
     test_shell_does_not_wait_forever_for_a_child_that_closed_its_output();
     test_web_tools_are_unavailable();
     test_read_file_does_not_load_more_than_it_returns();
+    test_attached_files_reach_the_model_as_passages();
 
     AgentDatabase::instance().close();
     std::remove(db_path.c_str());

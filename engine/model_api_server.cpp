@@ -1049,6 +1049,9 @@ class ModelAPIServer {
                     run_options.scratchpad_id = cid;
                     run_options.memory_scope = cid;
                 }
+                // On by default: a chat with large files attached gets the matching passages.
+                if (body.contains("use_documents") && body["use_documents"].is_boolean())
+                    run_options.use_documents = body["use_documents"].get<bool>();
                 if (body.contains("task_id") && body["task_id"].is_string()) {
                     run_options.task_id = body["task_id"].get<std::string>();
                     if (run_options.task_id.size() > 128)
