@@ -62,7 +62,18 @@ export async function parseFilesToMessageExtras(
 	const emptyFiles: string[] = [];
 
 	for (const file of files) {
-		if (getFileTypeCategory(file.type) === FileTypeCategory.IMAGE) {
+		if (file.keptDocument) {
+			const doc = file.keptDocument;
+			extras.push({
+				type: 'documentFile',
+				name: doc.name,
+				mimeType: doc.mime,
+				docId: doc.id,
+				pages: doc.pages,
+				chars: doc.chars,
+				library: true
+			});
+		} else if (getFileTypeCategory(file.type) === FileTypeCategory.IMAGE) {
 			if (file.preview) {
 				let base64Url = file.preview;
 

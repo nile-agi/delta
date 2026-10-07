@@ -3,11 +3,16 @@
 	import { FileTypeCategory } from '$lib/enums/files';
 	import { getFileTypeCategory } from '$lib/utils/file-type';
 	import ChatAttachmentPreviewDialog from './ChatAttachmentPreviewDialog.svelte';
+	import { documentsService } from '$lib/services/documents';
+	import { DatabaseStore } from '$lib/stores/database';
+	import { toast } from 'svelte-sonner';
 
 	interface Props {
 		class?: string;
 		// For ChatMessage - stored attachments
 		attachments?: DatabaseMessageExtra[];
+		/** The message the stored attachments belong to, so a change to them can be saved. */
+		messageId?: string;
 		readonly?: boolean;
 		// For ChatForm - pending uploads
 		onFileRemove?: (fileId: string) => void;
@@ -21,6 +26,7 @@
 	let {
 		class: className = '',
 		attachments = [],
+		messageId,
 		readonly = false,
 		onFileRemove,
 		uploadedFiles = $bindable([]),
@@ -31,6 +37,32 @@
 	}: Props = $props();
 
 	let displayItems = $derived(getDisplayItems());
+
+	// Local view of "kept for all chats" so the pin answers at once, before the save lands.
+	let keptOverride = $state<Record<number, boolean>>({});
+
+	async function toggleKeep(index: number) {
+		const attachment = attachments[index];
+		if (attachment?.type !== 'documentFile' || !attachment.docId) return;
+		const next = !(keptOverride[index] ?? attachment.library ?? false);
+		try {
+			await documentsService.setLibrary(attachment.docId, next);
+			keptOverride[index] = next;
+			if (messageId) {
+				const saved: DatabaseMessageExtra[] = $state.snapshot(attachments);
+				const extra = saved.map((a, i) => (i === index ? { ...a, library: next } : a));
+				await DatabaseStore.updateMessage(messageId, { extra });
+			}
+			toast.success(
+				next
+					? `"${attachment.name}" can now be attached to any chat`
+					: `"${attachment.name}" is kept in this chat only`
+			);
+		} catch (error) {
+			console.error('Could not change where the file is kept:', error);
+			toast.error(`Could not update "${attachment.name}".`);
+		}
+	}
 
 	// Preview dialog state
 	let previewDialogOpen = $state(false);
@@ -56,6 +88,8 @@
 			attachment?: DatabaseMessageExtra;
 			attachmentIndex?: number;
 			textContent?: string;
+			detail?: string;
+			keepable?: boolean;
 		}> = [];
 
 		// Add uploaded files (ChatForm)
@@ -113,6 +147,21 @@
 					isImage: false,
 					attachment,
 					attachmentIndex: index
+				});
+			} else if (attachment.type === 'documentFile') {
+				const size =
+					attachment.pages > 0
+						? `${attachment.pages} ${attachment.pages === 1 ? 'page' : 'pages'}`
+						: `${Math.max(1, Math.round(attachment.chars / 1000))}k characters`;
+				items.push({
+					id: `attachment-${index}`,
+					name: attachment.name,
+					type: attachment.mimeType,
+					isImage: false,
+					attachment,
+					attachmentIndex: index,
+					detail: attachment.docId ? `${size} · searchable` : size,
+					keepable: !!attachment.docId
 				});
 			} else if (attachment.type === 'pdfFile') {
 				items.push({
@@ -177,6 +226,13 @@
 					{readonly}
 					onRemove={onFileRemove}
 					textContent={item.textContent}
+					detail={item.detail}
+					kept={item.attachmentIndex !== undefined &&
+						(keptOverride[item.attachmentIndex] ??
+							(item.attachment?.type === 'documentFile' && !!item.attachment.library))}
+					onToggleKeep={item.keepable && readonly && item.attachmentIndex !== undefined
+						? () => toggleKeep(item.attachmentIndex!)
+						: undefined}
 					onClick={(event) => openPreview(item, event)}
 				/>
 			{/if}

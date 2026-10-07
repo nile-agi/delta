@@ -39,6 +39,12 @@ export async function indexDocumentExtras(
 	const out: DatabaseMessageExtra[] = [];
 	for (const extra of extras) {
 		if (extra.type !== 'documentFile' || !extra.segments) {
+			// A kept file attached from the menu is already indexed; link it to this chat.
+			if (extra.type === 'documentFile' && extra.docId && extra.library) {
+				await documentsService.attach(extra.docId, conversationId).catch((error) => {
+					console.warn(`Could not attach "${extra.name}":`, error);
+				});
+			}
 			out.push(extra);
 			continue;
 		}

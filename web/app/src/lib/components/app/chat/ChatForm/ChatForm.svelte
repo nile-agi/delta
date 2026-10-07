@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { IndexedDocument } from '$lib/services/documents';
 	import { afterNavigate } from '$app/navigation';
 	import {
 		ChatAttachmentsList,
@@ -96,6 +97,22 @@
 			default:
 				return '';
 		}
+	}
+
+	// A kept file is already indexed: attach it as-is instead of reading it again.
+	function handleAttachKept(doc: IndexedDocument) {
+		if (uploadedFiles.some((f) => f.keptDocument?.id === doc.id)) return;
+		uploadedFiles = [
+			...uploadedFiles,
+			{
+				id: `kept-${doc.id}`,
+				name: doc.name,
+				size: doc.chars,
+				type: doc.mime,
+				file: new File([], doc.name, { type: doc.mime }),
+				keptDocument: doc
+			}
+		];
 	}
 
 	function handleFileSelect(files: File[]) {
@@ -289,6 +306,7 @@
 			{openModelDropdownTrigger}
 			onRequestOpenModelDropdown={requestOpenModelDropdown}
 			onFileUpload={handleFileUpload}
+			onAttachKept={handleAttachKept}
 			onMicClick={handleMicClick}
 			onStop={handleStop}
 		/>

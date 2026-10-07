@@ -1,12 +1,13 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 
-const service = vi.hoisted(() => ({ upload: vi.fn() }));
+const service = vi.hoisted(() => ({ upload: vi.fn(), attach: vi.fn() }));
 vi.mock('$lib/services/documents', () => ({ documentsService: service }));
 
 import { indexDocumentExtras, inlineLimitChars } from './index-document-extras';
 
 beforeEach(() => {
 	service.upload.mockReset().mockResolvedValue({ id: 'doc-9', pages: 120, chars: 400000 });
+	service.attach.mockReset().mockResolvedValue(undefined);
 });
 
 function doc(chars: number, mimeType = 'application/pdf'): DatabaseMessageExtraDocumentFile {
@@ -56,6 +57,21 @@ it('falls back to sending the file whole when indexing fails', async () => {
 	const [out] = await indexDocumentExtras([doc(40000)], 'conv-1', 8192);
 	expect(out).toMatchObject({ type: 'pdfFile' });
 	expect((out as DatabaseMessageExtraPdfFile).content.length).toBeGreaterThan(39000);
+});
+
+it('links a kept file to the conversation it is attached in', async () => {
+	const kept: DatabaseMessageExtraDocumentFile = {
+		type: 'documentFile',
+		name: 'handbook.pdf',
+		mimeType: 'application/pdf',
+		docId: 'doc-1',
+		pages: 80,
+		chars: 200000,
+		library: true
+	};
+	const out = await indexDocumentExtras([kept], 'conv-2', 8192);
+	expect(service.attach).toHaveBeenCalledWith('doc-1', 'conv-2');
+	expect(out).toEqual([kept]);
 });
 
 it('leaves other attachments untouched', async () => {

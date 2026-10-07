@@ -922,7 +922,7 @@ class ChatStore {
 
 		try {
 			// Large files are indexed now that the conversation has an id; small ones go inline.
-			if (extras?.some((e) => e.type === 'documentFile' && e.segments)) {
+			if (extras?.some((e) => e.type === 'documentFile' && (e.segments || e.library))) {
 				extras = await indexDocumentExtras(
 					extras,
 					this.activeConversation.id,

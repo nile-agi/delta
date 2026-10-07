@@ -57,6 +57,17 @@ export const documentsService = {
 		);
 	},
 
+	/** Make an indexed document part of another conversation. */
+	async attach(id: string, conversationId: string): Promise<void> {
+		await ok(
+			await fetch(apiUrl(`/api/documents/${encodeURIComponent(id)}`), {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ attach: conversationId })
+			})
+		);
+	},
+
 	/** Documents kept for all chats. */
 	async library(): Promise<IndexedDocument[]> {
 		const res = await ok(await fetch(apiUrl('/api/documents?library=1')));

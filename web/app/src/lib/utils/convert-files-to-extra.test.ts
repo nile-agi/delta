@@ -53,6 +53,40 @@ it('keeps a long text file for indexing and a short one inline', async () => {
 	expect(result.extras[0]).toMatchObject({ type: 'documentFile', name: 'long.txt' });
 	expect(result.extras[1]).toMatchObject({ type: 'textFile', content: 'a short note' });
 });
+it('attaches a kept file by reference without reading it', async () => {
+	const kept = {
+		id: 'doc-1',
+		name: 'handbook.pdf',
+		mime: 'application/pdf',
+		scope: 'library',
+		pages: 80,
+		chars: 200000,
+		chunks: 120,
+		created_at: ''
+	} as const;
+	const result = await parseFilesToMessageExtras([
+		{ ...file, name: 'handbook.pdf', keptDocument: kept } as ChatUploadedFile
+	]);
+	expect(result.extras[0]).toEqual({
+		type: 'documentFile',
+		name: 'handbook.pdf',
+		mimeType: 'application/pdf',
+		docId: 'doc-1',
+		pages: 80,
+		chars: 200000,
+		library: true
+	});
+	expect(pdf.text).not.toHaveBeenCalled();
+});
+it('automatically reads a scanned PDF as images with a capable model', async () => {
+	pdf.vision = true;
+	pdf.text.mockResolvedValue(['']);
+	const result = await parseFilesToMessageExtras([file]);
+	expect(result.extras[0]).toMatchObject({
+		processedAsImages: true,
+		images: ['data:image/png;base64,page']
+	});
+});
 it('explains why a scanned PDF cannot be read by a text-only model', async () => {
 	pdf.text.mockResolvedValue(['']);
 	const result = await parseFilesToMessageExtras([file]);
