@@ -5,16 +5,19 @@
 
 import {
 	FileExtensionAudio,
+	FileExtensionDocument,
 	FileExtensionImage,
 	FileExtensionPdf,
 	FileExtensionText,
 	FileTypeAudio,
+	FileTypeDocument,
 	FileTypeImage,
 	FileTypePdf,
 	FileTypeText,
 	MimeTypeAudio,
 	MimeTypeImage,
 	MimeTypeApplication,
+	MimeTypeDocument,
 	MimeTypeText
 } from '$lib/enums/files';
 
@@ -57,6 +60,25 @@ export const PDF_FILE_TYPES = {
 	[FileTypePdf.PDF]: {
 		extensions: [FileExtensionPdf.PDF],
 		mimeTypes: [MimeTypeApplication.PDF]
+	}
+} as const;
+
+export const DOCUMENT_FILE_TYPES = {
+	[FileTypeDocument.DOCX]: {
+		extensions: [FileExtensionDocument.DOCX],
+		mimeTypes: [MimeTypeDocument.DOCX]
+	},
+	[FileTypeDocument.XLSX]: {
+		extensions: [FileExtensionDocument.XLSX],
+		mimeTypes: [MimeTypeDocument.XLSX]
+	},
+	[FileTypeDocument.XLS]: {
+		extensions: [FileExtensionDocument.XLS],
+		mimeTypes: [MimeTypeDocument.XLS]
+	},
+	[FileTypeDocument.ODS]: {
+		extensions: [FileExtensionDocument.ODS],
+		mimeTypes: [MimeTypeDocument.ODS]
 	}
 } as const;
 

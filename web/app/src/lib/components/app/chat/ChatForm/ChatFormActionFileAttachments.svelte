@@ -106,13 +106,13 @@
 					>
 						<File class="h-4 w-4" />
 
-						<span>PDF Files</span>
+						<span>Documents</span>
 					</DropdownMenu.Item>
 				</Tooltip.Trigger>
 
 				{#if !supportsVision()}
 					<Tooltip.Content>
-						<p>PDFs will be converted to text. Image-based PDFs may not work properly.</p>
+						<p>PDF, Word and Excel files are read as text. Scanned PDFs need a model that reads images.</p>
 					</Tooltip.Content>
 				{/if}
 			</Tooltip.Root>

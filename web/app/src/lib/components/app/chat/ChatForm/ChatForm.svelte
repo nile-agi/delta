@@ -20,10 +20,12 @@
 	import { onMount } from 'svelte';
 	import {
 		FileExtensionAudio,
+		FileExtensionDocument,
 		FileExtensionImage,
 		FileExtensionPdf,
 		FileExtensionText,
 		MimeTypeAudio,
+		MimeTypeDocument,
 		MimeTypeImage,
 		MimeTypeText
 	} from '$lib/enums/files';
@@ -80,9 +82,15 @@
 			case FileTypeCategory.AUDIO:
 				return [...Object.values(FileExtensionAudio), ...Object.values(MimeTypeAudio)].join(',');
 			case FileTypeCategory.PDF:
-				return [...Object.values(FileExtensionPdf), ...Object.values(MimeTypeApplication)].join(
-					','
-				);
+			case FileTypeCategory.DOCUMENT:
+				// One "Documents" entry covers PDF, Word and spreadsheets.
+				return [
+					...Object.values(FileExtensionPdf),
+					...Object.values(MimeTypeApplication),
+					...Object.values(FileExtensionDocument),
+					...Object.values(MimeTypeDocument),
+					'.csv'
+				].join(',');
 			case FileTypeCategory.TEXT:
 				return [...Object.values(FileExtensionText), MimeTypeText.PLAIN].join(',');
 			default:
