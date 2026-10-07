@@ -3068,6 +3068,67 @@ static void test_attached_files_reach_the_model_as_passages() {
     DocumentStore::instance().remove_conversation("conv-docs");
 }
 
+static void test_passages_fit_a_small_window_with_a_long_history() {
+    test("a large file and a long chat still fit a 4K window: passages stay in budget, history compacts");
+
+    // 200 pages that all share vocabulary, so the search has many candidates to over-fill with.
+    std::vector<DocumentSegment> pages;
+    for (int p = 1; p <= 200; p++) {
+        std::string text;
+        for (int k = 0; k < 6; k++)
+            text += "Pump maintenance schedule item " + std::to_string(p * 10 + k) +
+                    ": inspect the pump seals, log the pressure and replace worn parts.\n\n";
+        if (p == 150)
+            text += "The pump pressure limit for the north site is 340 kPa.\n\n";
+        pages.push_back({p, "", text, false});
+    }
+    DocumentStore::instance().add("schedule.pdf", "application/pdf", "conv-window", pages);
+
+    json history = json::array();
+    for (int turn = 0; turn < 40; turn++) {
+        history.push_back(user("Earlier question " + std::to_string(turn) + ": " + std::string(300, 'q')));
+        history.push_back({{"role", "assistant"},
+                           {"content", "Earlier answer " + std::to_string(turn) + ": " + std::string(300, 'a')}});
+    }
+    history.push_back(user("What is the pump pressure limit for the north site?"));
+
+    ScriptedServer server({{{"role", "assistant"}, {"content", "340 kPa."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", false);
+    RunOptions options = test_options();
+    options.tools_enabled = false;
+    options.memory_scope = "conv-window";
+    harness.set_options(options);
+    EventLog log;
+    auto result = harness.run(history, log.sink());
+    server.stop();
+
+    check(result.success, "the run succeeded instead of overflowing the window");
+    auto requests = server.requests();
+    check(!requests.empty(), "the model was called");
+    if (requests.empty())
+        return;
+    // Compaction asks the model for a summary first; the answering request is the last one.
+    const json& answering = requests.back();
+    const std::string system = system_text(answering);
+    const size_t start = system.find("Passages from the files");
+    const size_t passages = start == std::string::npos ? 0 : system.size() - start;
+    check(system.find("340 kPa") != std::string::npos, "the passage with the answer made it in");
+    check(passages > 0 && passages <= 4096 * 3 / 4 + 400,
+          "the passages stay within a quarter of the window (" + std::to_string(passages) + " chars)");
+    // The stand-in counts a token per 4 characters, as the harness's budget does here.
+    const size_t request_tokens = answering["messages"].dump().size() / 4;
+    check(request_tokens < 4096,
+          "the whole request fits the 4K window (~" + std::to_string(request_tokens) + " tokens)");
+    check(log.count(EventType::Compaction) > 0, "older turns were compacted to make room");
+    const auto& sent = answering["messages"];
+    check(sent.back().value("role", "") == "user" &&
+              sent.back()["content"].dump().find("pressure limit") != std::string::npos,
+          "the latest question is kept whole");
+
+    DocumentStore::instance().remove_conversation("conv-window");
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -3191,6 +3252,7 @@ int main() {
     test_web_tools_are_unavailable();
     test_read_file_does_not_load_more_than_it_returns();
     test_attached_files_reach_the_model_as_passages();
+    test_passages_fit_a_small_window_with_a_long_history();
 
     AgentDatabase::instance().close();
     std::remove(db_path.c_str());
