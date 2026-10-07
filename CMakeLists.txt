@@ -138,6 +138,8 @@ target_include_directories(sqlite3 PUBLIC engine/vendor/sqlite3)
 target_compile_definitions(sqlite3 PRIVATE
     SQLITE_THREADSAFE=1
     SQLITE_ENABLE_JSON1=1
+    # Full-text search backs document retrieval (engine/agent/document_store.cpp).
+    SQLITE_ENABLE_FTS5=1
     SQLITE_OMIT_LOAD_EXTENSION=1
 )
 if(UNIX AND NOT APPLE)
@@ -417,6 +419,15 @@ endif()
 if(APPLE)
     target_link_libraries(delta-harness-tests PRIVATE c++)
 endif()
+
+# Document store tests: chunking, FTS5 retrieval and scoping, against an in-memory database.
+#   cmake --build build --target delta-document-tests && ./build/delta-document-tests
+add_executable(delta-document-tests EXCLUDE_FROM_ALL
+    tests/test_document_store.cpp
+    engine/agent/document_store.cpp
+)
+target_include_directories(delta-document-tests PRIVATE ${DELTA_INCLUDE_DIRS})
+target_link_libraries(delta-document-tests PRIVATE sqlite3 ${CMAKE_THREAD_LIBS_INIT})
 
 # Tests
 if(BUILD_TESTS)
