@@ -8,11 +8,13 @@ import { supportsVision, supportsAudio } from '$lib/stores/server.svelte';
 import {
 	FileExtensionAudio,
 	FileExtensionImage,
+	FileExtensionDocument,
 	FileExtensionPdf,
 	FileExtensionText,
 	MimeTypeAudio,
 	MimeTypeImage,
 	MimeTypeApplication,
+	MimeTypeDocument,
 	MimeTypeText,
 	FileTypeCategory
 } from '$lib/enums/files';
@@ -39,7 +41,8 @@ export function isFileTypeSupportedByModel(filename: string, mimeType?: string):
 			return true;
 
 		case FileTypeCategory.PDF:
-			// PDFs are always supported (will be processed as text for non-vision models)
+		case FileTypeCategory.DOCUMENT:
+			// PDFs, Word and spreadsheets are read as text, so any model can use them
 			return true;
 
 		case FileTypeCategory.IMAGE:
@@ -95,6 +98,7 @@ export function filterFilesByModalities(files: File[]): {
 
 			case FileTypeCategory.TEXT:
 			case FileTypeCategory.PDF:
+			case FileTypeCategory.DOCUMENT:
 				// Always supported
 				break;
 
@@ -167,6 +171,8 @@ export function generateModalityAwareAcceptString(): string {
 	acceptedMimeTypes.push(...Object.values(MimeTypeText));
 	acceptedExtensions.push(...Object.values(FileExtensionPdf));
 	acceptedMimeTypes.push(...Object.values(MimeTypeApplication));
+	acceptedExtensions.push(...Object.values(FileExtensionDocument));
+	acceptedMimeTypes.push(...Object.values(MimeTypeDocument));
 
 	// Include images only if vision is supported
 	if (hasVision) {

@@ -64,6 +64,9 @@ struct RunOptions {
     // Empty starts a new durable task for a tool-capable run. A supplied id resumes only a task
     // scoped to this conversation.
     std::string task_id;
+    // Search the files attached to this conversation and put the best passages in the prompt.
+    // Needs memory_scope, which is the conversation id.
+    bool use_documents = true;
     // Polled while the model is generating and before each tool, so a caller can stop a run
     // (Ctrl-C, a closed connection) even when no event is flowing. Empty means never.
     std::function<bool()> abort_requested;
@@ -103,6 +106,8 @@ class Harness {
 
   private:
     std::string build_system_prompt(const nlohmann::json& messages) const;
+    // Passages from this conversation's attached files that match the latest message.
+    std::string document_context(const nlohmann::json& messages, bool has_tools) const;
     nlohmann::json active_tools() const;
     // The one-line summary of every tool group the model could load but has not, so it always
     // knows the full extent of what it can do without paying for the schemas.
@@ -123,6 +128,9 @@ class Harness {
     // How many iterations are left, so the prompt can warn a model that is nearly out of room.
     // -1 before a run starts.
     int steps_remaining_ = -1;
+
+    // How much attached-file text the prompt may carry this run, from the probed context window.
+    size_t document_budget_chars_ = 0;
 
     mutable std::string context_cache_;
     mutable std::string context_cache_key_;

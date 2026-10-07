@@ -138,6 +138,8 @@ target_include_directories(sqlite3 PUBLIC engine/vendor/sqlite3)
 target_compile_definitions(sqlite3 PRIVATE
     SQLITE_THREADSAFE=1
     SQLITE_ENABLE_JSON1=1
+    # Full-text search backs document retrieval (engine/agent/document_store.cpp).
+    SQLITE_ENABLE_FTS5=1
     SQLITE_OMIT_LOAD_EXTENSION=1
 )
 if(UNIX AND NOT APPLE)
@@ -186,10 +188,13 @@ set(DELTA_SOURCES
     engine/tools/shell.cpp
     engine/tools/browser.cpp
     engine/model_api_server.cpp
+    engine/api/document_routes.cpp
     engine/api/note_routes.cpp
     engine/agent/agent_database.cpp
     engine/agent/memory_store.cpp
     engine/agent/task_store.cpp
+    engine/agent/document_store.cpp
+    engine/agent/tool_documents.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
     engine/agent/tool_notes.cpp
@@ -268,6 +273,7 @@ endif()
 add_executable(delta-server
     engine/delta_server_wrapper.cpp
     engine/model_api_server.cpp
+    engine/api/document_routes.cpp
     engine/models.cpp
     engine/server_health.cpp
     engine/tools/hardware_monitor.cpp
@@ -277,6 +283,8 @@ add_executable(delta-server
     engine/agent/agent_database.cpp
     engine/agent/memory_store.cpp
     engine/agent/task_store.cpp
+    engine/agent/document_store.cpp
+    engine/agent/tool_documents.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
     engine/agent/tool_notes.cpp
@@ -387,6 +395,8 @@ add_executable(delta-harness-tests EXCLUDE_FROM_ALL
     engine/agent/agent_database.cpp
     engine/agent/memory_store.cpp
     engine/agent/task_store.cpp
+    engine/agent/document_store.cpp
+    engine/agent/tool_documents.cpp
     engine/agent/tool_registry.cpp
     engine/agent/tool_calendar.cpp
     engine/agent/tool_notes.cpp
@@ -417,6 +427,24 @@ endif()
 if(APPLE)
     target_link_libraries(delta-harness-tests PRIVATE c++)
 endif()
+
+# Document store tests: chunking, FTS5 retrieval and scoping, against an in-memory database.
+#   cmake --build build --target delta-document-tests && ./build/delta-document-tests
+add_executable(delta-document-tests EXCLUDE_FROM_ALL
+    tests/test_document_store.cpp
+    engine/agent/document_store.cpp
+)
+target_include_directories(delta-document-tests PRIVATE ${DELTA_INCLUDE_DIRS})
+target_link_libraries(delta-document-tests PRIVATE sqlite3 ${CMAKE_THREAD_LIBS_INIT})
+
+# Retrieval eval: hit rate, MRR and context budget over a frozen corpus (no model needed).
+#   cmake --build build --target delta-retrieval-eval && ./build/delta-retrieval-eval
+add_executable(delta-retrieval-eval EXCLUDE_FROM_ALL
+    tests/eval_retrieval.cpp
+    engine/agent/document_store.cpp
+)
+target_include_directories(delta-retrieval-eval PRIVATE ${DELTA_INCLUDE_DIRS})
+target_link_libraries(delta-retrieval-eval PRIVATE sqlite3 ${CMAKE_THREAD_LIBS_INIT})
 
 # Tests
 if(BUILD_TESTS)

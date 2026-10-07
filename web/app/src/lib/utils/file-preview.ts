@@ -1,3 +1,5 @@
+import { MimeTypeDocument } from '$lib/enums/files';
+
 /**
  * Formats file size in bytes to human readable format
  * @param bytes - File size in bytes
@@ -18,8 +20,16 @@ export function formatFileSize(bytes: number): string {
  * @param fileType - The file type/mime type
  * @returns Formatted file type label
  */
+const SHORT_LABELS: Record<string, string> = {
+	[MimeTypeDocument.DOCX]: 'DOCX',
+	[MimeTypeDocument.XLSX]: 'XLSX',
+	[MimeTypeDocument.XLS]: 'XLS',
+	[MimeTypeDocument.ODS]: 'ODS',
+	'application/octet-stream': 'FILE'
+};
+
 export function getFileTypeLabel(fileType: string): string {
-	return fileType.split('/').pop()?.toUpperCase() || 'FILE';
+	return SHORT_LABELS[fileType] ?? (fileType.split('/').pop()?.toUpperCase() || 'FILE');
 }
 
 /**

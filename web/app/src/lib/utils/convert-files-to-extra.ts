@@ -1,7 +1,13 @@
-import { convertPDFToImage, convertPDFToText } from './pdf-processing';
+import { convertPDFToImage, extractPDFPages } from './pdf-processing';
+import {
+	documentKind,
+	extractDocxSegments,
+	extractSheetSegments,
+	type DocumentSegment
+} from './document-extraction';
 import { isSvgMimeType, svgBase64UrlToPngDataURL } from './svg-to-png';
 import { isWebpMimeType, webpBase64UrlToPngDataURL } from './webp-to-png';
-import { FileTypeCategory } from '$lib/enums/files';
+import { FileTypeCategory, MimeTypeApplication } from '$lib/enums/files';
 import { supportsVision } from '$lib/stores/server.svelte';
 import { getFileTypeCategory } from '$lib/utils/file-type';
 import { readFileAsText, isLikelyTextFile } from './text-files';
@@ -24,6 +30,26 @@ function readFileAsBase64(file: File): Promise<string> {
 	});
 }
 
+// Text files shorter than this are always sent whole; longer ones may be indexed when sent.
+const TEXT_DOCUMENT_MIN_CHARS = 4000;
+
+function documentExtra(
+	name: string,
+	mimeType: string,
+	segments: DocumentSegment[],
+	base64Data?: string
+): DatabaseMessageExtraDocumentFile {
+	return {
+		type: 'documentFile',
+		name,
+		mimeType,
+		segments,
+		chars: segments.reduce((n, s) => n + s.text.length, 0),
+		pages: segments.reduce((n, s) => Math.max(n, s.page ?? 0), 0),
+		...(base64Data ? { base64Data } : {})
+	};
+}
+
 export interface FileProcessingResult {
 	extras: DatabaseMessageExtra[];
 	emptyFiles: string[];
@@ -36,7 +62,18 @@ export async function parseFilesToMessageExtras(
 	const emptyFiles: string[] = [];
 
 	for (const file of files) {
-		if (getFileTypeCategory(file.type) === FileTypeCategory.IMAGE) {
+		if (file.keptDocument) {
+			const doc = file.keptDocument;
+			extras.push({
+				type: 'documentFile',
+				name: doc.name,
+				mimeType: doc.mime,
+				docId: doc.id,
+				pages: doc.pages,
+				chars: doc.chars,
+				library: true
+			});
+		} else if (getFileTypeCategory(file.type) === FileTypeCategory.IMAGE) {
 			if (file.preview) {
 				let base64Url = file.preview;
 
@@ -79,20 +116,20 @@ export async function parseFilesToMessageExtras(
 				// Always get base64 data for preview functionality
 				const base64Data = await readFileAsBase64(file.file);
 				const hasVisionSupport = supportsVision();
-				let content = '';
+				let pages: string[] = [];
 				try {
-					content = await convertPDFToText(file.file);
+					pages = await extractPDFPages(file.file);
 				} catch (error) {
 					if (!hasVisionSupport) throw error;
 				}
-				if (content.trim()) {
-					extras.push({
-						type: 'pdfFile',
-						name: file.name,
-						content,
-						processedAsImages: false,
-						base64Data
-					});
+				const segments = pages
+					.map((text, i) => ({ page: i + 1, text }))
+					.filter((segment) => segment.text.trim());
+				if (segments.length) {
+					const doc = documentExtra(file.name, MimeTypeApplication.PDF, segments, base64Data);
+					// The real page count, even where some pages had no text.
+					doc.pages = pages.length;
+					extras.push(doc);
 				} else if (hasVisionSupport) {
 					const images = await convertPDFToImage(file.file);
 					extras.push({
@@ -114,6 +151,22 @@ export async function parseFilesToMessageExtras(
 					`Could not read "${file.name}". Try another PDF or a model that can read images.`
 				);
 			}
+		} else if (documentKind(file.name, file.type)) {
+			const kind = documentKind(file.name, file.type);
+			try {
+				const segments =
+					kind === 'docx'
+						? await extractDocxSegments(file.file)
+						: await extractSheetSegments(file.file, kind === 'csv');
+				if (segments.length === 0) {
+					emptyFiles.push(file.name);
+				} else {
+					extras.push(documentExtra(file.name, file.type || 'application/octet-stream', segments));
+				}
+			} catch (error) {
+				console.error(`Failed to read document ${file.name}:`, error);
+				toast.error(`Could not read "${file.name}". The file may be damaged or password-protected.`);
+			}
 		} else {
 			try {
 				const content = await readFileAsText(file.file);
@@ -122,6 +175,8 @@ export async function parseFilesToMessageExtras(
 				if (content.trim() === '') {
 					console.warn(`File ${file.name} is empty and will be skipped`);
 					emptyFiles.push(file.name);
+				} else if (isLikelyTextFile(content) && content.length > TEXT_DOCUMENT_MIN_CHARS) {
+					extras.push(documentExtra(file.name, file.type || 'text/plain', [{ text: content }]));
 				} else if (isLikelyTextFile(content)) {
 					extras.push({
 						type: 'textFile',

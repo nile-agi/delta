@@ -110,6 +110,7 @@
 		"@tiptap/extensions": "^3.31.3",
 		"@tiptap/pm": "^3.31.3",
 		"highlight.js": "^11.11.1",
+		"mammoth": "^1.13.0",
 		"mode-watcher": "^1.1.0",
 		"pdfjs-dist": "^5.4.54",
 		"rehype-highlight": "^7.0.2",
@@ -120,6 +121,7 @@
 		"remark-html": "^16.0.1",
 		"remark-rehype": "^11.1.2",
 		"svelte-sonner": "^1.0.5",
-		"unist-util-visit": "^5.0.0"
+		"unist-util-visit": "^5.0.0",
+		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
 	}
 }

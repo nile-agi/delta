@@ -48,6 +48,7 @@ import type {
 	DatabaseMessageExtraImageFile,
 	DatabaseMessageExtraTextFile,
 	DatabaseMessageExtraPdfFile,
+	DatabaseMessageExtraDocumentFile,
 	DatabaseMessageExtraLegacyContext
 } from '$lib/types/database';
 
@@ -91,6 +92,7 @@ declare global {
 		DatabaseMessageExtraImageFile,
 		DatabaseMessageExtraTextFile,
 		DatabaseMessageExtraPdfFile,
+		DatabaseMessageExtraDocumentFile,
 		DatabaseMessageExtraLegacyContext,
 		SettingsConfigValue,
 		SettingsFieldConfig,

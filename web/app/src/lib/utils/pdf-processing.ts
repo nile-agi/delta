@@ -7,8 +7,11 @@ import { browser } from '$app/environment';
 import { MimeTypeApplication, MimeTypeImage } from '$lib/enums/files';
 import * as pdfjs from 'pdfjs-dist';
 
-type TextContent = {
-	items: Array<{ str: string }>;
+type TextItem = {
+	str?: string;
+	hasEOL?: boolean;
+	height?: number;
+	transform?: number[];
 };
 
 if (browser) {
@@ -46,11 +49,38 @@ async function getFileAsBuffer(file: File): Promise<ArrayBuffer> {
 }
 
 /**
- * Extract text content from a PDF file
- * @param file - The PDF file to process
- * @returns Promise resolving to the extracted text content
+ * Rebuild a page's text from PDF.js items. Items are runs of glyphs, not lines, so joining them
+ * with newlines (as this used to) split sentences mid-way. A new line starts where the baseline
+ * moves; a gap of more than about one and a half lines is a paragraph break.
  */
-export async function convertPDFToText(file: File): Promise<string> {
+export function pageItemsToText(items: TextItem[]): string {
+	let text = '';
+	let lastY: number | null = null;
+	let lastHeight = 0;
+	for (const item of items) {
+		if (typeof item.str !== 'string') continue;
+		const y = item.transform?.[5];
+		if (lastY !== null && y !== undefined && Math.abs(y - lastY) > 1 && !text.endsWith('\n')) {
+			const gap = Math.abs(y - lastY);
+			text += gap > Math.max(lastHeight, item.height ?? 0) * 1.6 ? '\n\n' : '\n';
+		}
+		text += item.str;
+		if (item.hasEOL) text += '\n';
+		if (y !== undefined) lastY = y;
+		if (item.height) lastHeight = item.height;
+	}
+	return text
+		.replace(/[ \t]+\n/g, '\n')
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
+}
+
+/**
+ * Extract the text of every page of a PDF, in order
+ * @param file - The PDF file to process
+ * @returns Promise resolving to one string per page
+ */
+export async function extractPDFPages(file: File): Promise<string[]> {
 	if (!browser) {
 		throw new Error('PDF processing is only available in the browser');
 	}
@@ -58,27 +88,32 @@ export async function convertPDFToText(file: File): Promise<string> {
 	try {
 		const buffer = await getFileAsBuffer(file);
 		const pdf = await pdfjs.getDocument(buffer).promise;
-		const numPages = pdf.numPages;
-
-		const textContentPromises: Promise<TextContent>[] = [];
-
-		for (let i = 1; i <= numPages; i++) {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			textContentPromises.push(pdf.getPage(i).then((page: any) => page.getTextContent()));
+		const pages: Promise<string>[] = [];
+		for (let i = 1; i <= pdf.numPages; i++) {
+			pages.push(
+				pdf
+					.getPage(i)
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					.then((page: any) => page.getTextContent())
+					.then((content: { items: TextItem[] }) => pageItemsToText(content.items))
+			);
 		}
-
-		const textContents = await Promise.all(textContentPromises);
-		const textItems = textContents.flatMap((textContent: TextContent) =>
-			textContent.items.map((item) => item.str ?? '')
-		);
-
-		return textItems.join('\n');
+		return await Promise.all(pages);
 	} catch (error) {
 		console.error('Error converting PDF to text:', error);
 		throw new Error(
 			`Failed to convert PDF to text: ${error instanceof Error ? error.message : 'Unknown error'}`
 		);
 	}
+}
+
+/**
+ * Extract text content from a PDF file
+ * @param file - The PDF file to process
+ * @returns Promise resolving to the extracted text content
+ */
+export async function convertPDFToText(file: File): Promise<string> {
+	return (await extractPDFPages(file)).join('\n\n');
 }
 
 /**

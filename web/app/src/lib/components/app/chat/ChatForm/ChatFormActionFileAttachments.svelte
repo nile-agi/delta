@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Paperclip, Image, FileText, File, Volume2 } from '@lucide/svelte';
+	import { Paperclip, Image, FileText, File, Pin, Volume2 } from '@lucide/svelte';
+	import { documentsService, type IndexedDocument } from '$lib/services/documents';
 	import { Button } from '$lib/components/ui/button';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
@@ -11,9 +12,23 @@
 		class?: string;
 		disabled?: boolean;
 		onFileUpload?: (fileType?: FileTypeCategory) => void;
+		onAttachKept?: (doc: IndexedDocument) => void;
 	}
 
-	let { class: className = '', disabled = false, onFileUpload }: Props = $props();
+	let { class: className = '', disabled = false, onFileUpload, onAttachKept }: Props = $props();
+
+	// Files the user kept for all chats, fetched each time the menu opens. Absent until the user
+	// has kept one, so the menu looks exactly as before for everyone else.
+	let keptDocuments = $state<IndexedDocument[]>([]);
+
+	async function refreshKept(open: boolean) {
+		if (!open || !onAttachKept) return;
+		try {
+			keptDocuments = await documentsService.library();
+		} catch {
+			keptDocuments = [];
+		}
+	}
 
 	const fileUploadTooltipText = $derived.by(() => {
 		return !supportsVision()
@@ -27,7 +42,7 @@
 </script>
 
 <div class="flex items-center gap-1 {className}">
-	<DropdownMenu.Root>
+	<DropdownMenu.Root onOpenChange={refreshKept}>
 		<DropdownMenu.Trigger name="Attach files">
 			<Tooltip.Root delayDuration={TOOLTIP_DELAY_DURATION}>
 				<Tooltip.Trigger>
@@ -106,16 +121,29 @@
 					>
 						<File class="h-4 w-4" />
 
-						<span>PDF Files</span>
+						<span>Documents</span>
 					</DropdownMenu.Item>
 				</Tooltip.Trigger>
 
 				{#if !supportsVision()}
 					<Tooltip.Content>
-						<p>PDFs will be converted to text. Image-based PDFs may not work properly.</p>
+						<p>PDF, Word and Excel files are read as text. Scanned PDFs need a model that reads images.</p>
 					</Tooltip.Content>
 				{/if}
 			</Tooltip.Root>
+			{#if keptDocuments.length > 0}
+				<DropdownMenu.Separator />
+				<DropdownMenu.Label class="text-xs text-muted-foreground">Kept files</DropdownMenu.Label>
+				{#each keptDocuments as doc (doc.id)}
+					<DropdownMenu.Item
+						class="flex cursor-pointer items-center gap-2"
+						onclick={() => onAttachKept?.(doc)}
+					>
+						<Pin class="h-4 w-4 shrink-0" />
+						<span class="truncate">{doc.name}</span>
+					</DropdownMenu.Item>
+				{/each}
+			{/if}
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 </div>

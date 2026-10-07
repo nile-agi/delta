@@ -1,5 +1,6 @@
 #include "harness.h"
 #include "agent_database.h"
+#include "document_store.h"
 #include "memory_store.h"
 #include "task_store.h"
 #include "text_tool_call.h"
@@ -39,6 +40,31 @@ std::string last_user_text(const nlohmann::json& messages) {
             return message_text(messages[i]);
     }
     return "";
+}
+
+// The user message before the latest one, for follow-ups like "and on page 3?" that name nothing.
+std::string previous_user_text(const nlohmann::json& messages) {
+    bool skipped_last = false;
+    for (int i = static_cast<int>(messages.size()) - 1; i >= 0; i--) {
+        if (messages[i].is_object() && messages[i].value("role", "") == "user") {
+            if (skipped_last)
+                return message_text(messages[i]);
+            skipped_last = true;
+        }
+    }
+    return "";
+}
+
+size_t word_count(const std::string& text) {
+    size_t words = 0;
+    bool in_word = false;
+    for (char c : text) {
+        bool space = std::isspace(static_cast<unsigned char>(c)) != 0;
+        if (!space && !in_word)
+            words++;
+        in_word = !space;
+    }
+    return words;
 }
 
 // One line describing what a tool returned, for the activity feed in the UI. The model always
@@ -355,6 +381,8 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
         }
     }
 
+    context_block += document_context(messages, has_tools);
+
     context_cache_ = context_block;
     context_cache_key_ = cache_key;
 
@@ -440,6 +468,43 @@ std::string Harness::summarize(const nlohmann::json& dropped, int n_ctx) {
     return message_text(choice["message"]);
 }
 
+std::string Harness::document_context(const nlohmann::json& messages, bool has_tools) const {
+    auto& docs = DocumentStore::instance();
+    const std::string& conversation = options_.memory_scope;
+    if (!options_.use_documents || conversation.empty() || document_budget_chars_ == 0 || !docs.ready() ||
+        !docs.has_documents(conversation))
+        return "";
+
+    // A short follow-up ("and the deadline?") names nothing to search for on its own.
+    std::string query = last_user_text(messages);
+    if (word_count(query) < 6)
+        query = previous_user_text(messages) + "\n" + query;
+
+    auto excerpts = docs.search(query, conversation, false, document_budget_chars_);
+    const std::string more = has_tools ? " Call search_documents with other keywords, or read_document for a page "
+                                         "range, when they do not hold the answer."
+                                       : " If they do not hold the answer, say what you could not find.";
+    std::string block;
+    if (excerpts.empty()) {
+        std::string names;
+        for (const auto& d : docs.list(conversation, false))
+            names += (names.empty() ? "" : ", ") + d.name;
+        block = "\nFiles attached to this chat: " + names + ". Nothing in them matched the latest message." +
+                (has_tools ? " Use search_documents or read_document to look inside them.\n" : "\n");
+        return block;
+    }
+    block = "\nPassages from the files attached to this chat that match the latest message. Answer from them and "
+            "cite the source in brackets, like [report.pdf, p.12]." +
+            more + "\n";
+    for (const auto& ex : excerpts) {
+        block += "\n[" + ex.citation() + "]";
+        if (!ex.heading.empty())
+            block += " " + ex.heading;
+        block += "\n" + ex.text + "\n";
+    }
+    return block;
+}
+
 RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
     RunResult result;
     task_dossier_.clear();
@@ -497,6 +562,9 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         n_ctx = client_.probe_context_size();
     if (n_ctx <= 0)
         n_ctx = 4096;
+    // A quarter of the window for passages from attached files, at a cautious 3 characters a
+    // token, and never so much that a huge window turns retrieval back into pasting the file.
+    document_budget_chars_ = std::min<size_t>(24000, static_cast<size_t>(n_ctx) * 3 / 4);
 
     ContextManager context(n_ctx, options_.max_tokens);
     context.set_token_counter([this](const std::string& text) { return client_.count_tokens(text); });

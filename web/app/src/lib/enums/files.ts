@@ -8,6 +8,7 @@ export enum FileTypeCategory {
 	IMAGE = 'image',
 	AUDIO = 'audio',
 	PDF = 'pdf',
+	DOCUMENT = 'document',
 	TEXT = 'text'
 }
 
@@ -28,6 +29,14 @@ export enum FileTypeAudio {
 
 export enum FileTypePdf {
 	PDF = 'pdf'
+}
+
+// Word and spreadsheet files, read as text in the browser
+export enum FileTypeDocument {
+	DOCX = 'docx',
+	XLSX = 'xlsx',
+	XLS = 'xls',
+	ODS = 'ods'
 }
 
 export enum FileTypeText {
@@ -84,6 +93,13 @@ export enum FileExtensionPdf {
 	PDF = '.pdf'
 }
 
+export enum FileExtensionDocument {
+	DOCX = '.docx',
+	XLSX = '.xlsx',
+	XLS = '.xls',
+	ODS = '.ods'
+}
+
 export enum FileExtensionText {
 	TXT = '.txt',
 	MD = '.md',
@@ -127,6 +143,13 @@ export enum FileExtensionText {
 // MIME type enums
 export enum MimeTypeApplication {
 	PDF = 'application/pdf'
+}
+
+export enum MimeTypeDocument {
+	DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+	XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+	XLS = 'application/vnd.ms-excel',
+	ODS = 'application/vnd.oasis.opendocument.spreadsheet'
 }
 
 export enum MimeTypeAudio {

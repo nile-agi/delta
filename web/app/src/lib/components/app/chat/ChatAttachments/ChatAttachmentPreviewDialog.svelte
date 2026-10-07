@@ -47,7 +47,9 @@
 						? attachment.mimeType || 'audio'
 						: attachment?.type === 'pdfFile'
 							? MimeTypeApplication.PDF
-							: type || 'unknown')
+							: attachment?.type === 'documentFile'
+								? attachment.mimeType
+								: type || 'unknown')
 	);
 
 	let displaySize = $derived(uploadedFile?.size || size);
@@ -108,10 +110,14 @@
 					pdfImages = attachment.images;
 					return;
 				}
-
+			}
+			const base64Data =
+				attachment?.type === 'pdfFile' || attachment?.type === 'documentFile'
+					? attachment.base64Data
+					: undefined;
+			if (!file) {
 				// Convert base64 back to File for processing
-				if (attachment.base64Data) {
-					const base64Data = attachment.base64Data;
+				if (base64Data) {
 					const byteCharacters = atob(base64Data);
 					const byteNumbers = new Array(byteCharacters.length);
 					for (let i = 0; i < byteCharacters.length; i++) {
