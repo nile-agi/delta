@@ -15,6 +15,7 @@ import type { QuickAddSuggestion } from '$lib/types/agent';
 import { filterByLeafNodeId, findLeafNode, findDescendantMessages } from '$lib/utils/branching';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
+import { resolve } from '$app/paths';
 import { toast } from 'svelte-sonner';
 import { SvelteMap } from 'svelte/reactivity';
 import type { ExportedConversations } from '$lib/types/database';
@@ -126,7 +127,7 @@ class ChatStore {
 
 		this.currentResponse = '';
 
-		await goto(`#/chat/${conversation.id}`);
+		await goto(resolve('/chat/[id]', { id: conversation.id }));
 
 		return conversation.id;
 	}
@@ -1132,8 +1133,7 @@ class ChatStore {
 			if (isFirstUserMessage && newContent.trim()) {
 				await this.updateConversationTitleWithConfirmation(
 					this.activeConversation.id,
-					newContent.trim(),
-					this.titleUpdateConfirmationCallback
+					newContent.trim()
 				);
 			}
 
@@ -1326,8 +1326,7 @@ class ChatStore {
 	 */
 	async updateConversationTitleWithConfirmation(
 		convId: string,
-		newTitle: string,
-		_onConfirmationNeeded?: (currentTitle: string, newTitle: string) => Promise<boolean>
+		newTitle: string
 	): Promise<boolean> {
 		try {
 			await this.updateConversationName(convId, newTitle);
@@ -1516,6 +1515,8 @@ class ChatStore {
 			if (this.activeConversation?.id === convId) {
 				this.activeConversation = null;
 				this.activeMessages = [];
+				// resolve() cannot express the query string the layout reads before the hash.
+				// eslint-disable-next-line svelte/no-navigation-without-resolve
 				await goto(`?new_chat=true#/`);
 			}
 		} catch (error) {
@@ -1706,8 +1707,7 @@ class ChatStore {
 			) {
 				await this.updateConversationTitleWithConfirmation(
 					this.activeConversation.id,
-					newFirstUserMessage.content.trim(),
-					this.titleUpdateConfirmationCallback
+					newFirstUserMessage.content.trim()
 				);
 			}
 		}
@@ -1840,8 +1840,7 @@ class ChatStore {
 			if (isFirstUserMessage && newContent.trim()) {
 				await this.updateConversationTitleWithConfirmation(
 					this.activeConversation.id,
-					newContent.trim(),
-					this.titleUpdateConfirmationCallback
+					newContent.trim()
 				);
 			}
 

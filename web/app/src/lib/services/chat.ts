@@ -427,7 +427,6 @@ export class ChatService {
 			const collectedToolCalls: DatabaseMessageToolCall[] = [];
 			let hasReceivedData = false;
 			let lastTimings: ChatMessageTimings | undefined;
-			let streamFinished = false;
 			let modelEmitted = false;
 			let firstValidChunkEmitted = false;
 			let lastProcessedIndex = 0;
@@ -447,10 +446,7 @@ export class ChatService {
 
 					if (line.startsWith('data: ')) {
 						const data = line.slice(6);
-						if (data === '[DONE]') {
-							streamFinished = true;
-							continue;
-						}
+						if (data === '[DONE]') continue;
 						if (!data.includes('"choices"')) continue; // ignore named agent events (tool_update/reasoning)
 
 						try {
@@ -949,12 +945,14 @@ export class ChatService {
 			try {
 				const mapiBase =
 					getModelApiBaseUrl() ||
-					`http://127.0.0.1:${(window as any).__DELTA_MODEL_API_PORT__ ?? 8081}`;
+					`http://127.0.0.1:${(window as Window & { __DELTA_MODEL_API_PORT__?: number }).__DELTA_MODEL_API_PORT__ ?? 8081}`;
 				const fallback = await fetch(`${mapiBase}/api/props`, { headers });
 				if (fallback.ok) {
 					return await fallback.json();
 				}
-			} catch {}
+			} catch {
+				// The fallback failed too; report the original error below.
+			}
 			console.error('Error fetching server props:', error);
 			throw error;
 		}
