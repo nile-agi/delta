@@ -24,7 +24,7 @@ Delta is an offline-first AI assistant that runs large language models directly 
 
 ### Desktop App
 
-The Delta desktop app is a single native application with a built-in web UI. Download the `.dmg` (macOS), `.deb`/`.AppImage` (Linux), or `.exe` (Windows) from [Releases](https://github.com/nile-agi/delta/releases).
+The Delta desktop app is a single native application with a built-in web UI. Download the `.dmg` (macOS), `.deb`/`.AppImage` (Linux), or `.exe` (Windows) from [Releases](https://github.com/nile-agi/delta-release/releases).
 
 ### CLI
 
@@ -74,7 +74,7 @@ delta server -m model.gguf  # Start with a specific model
 
 ### Download
 
-Grab the latest release for your platform from [Releases](https://github.com/nile-agi/delta/releases):
+Grab the latest release for your platform from [Releases](https://github.com/nile-agi/delta-release/releases):
 
 | Platform | Desktop App | CLI |
 |----------|-------------|-----|
@@ -133,6 +133,6 @@ MIT License. See [LICENSE](LICENSE).
 
 **Made by [Nile AGI](https://nileagi.com)**
 
-[Releases](https://github.com/nile-agi/delta/releases) | [Report Issues](https://github.com/nile-agi/delta/issues)
+[Releases](https://github.com/nile-agi/delta-release/releases) | [Report Issues](https://github.com/nile-agi/delta/issues)
 
 </div>

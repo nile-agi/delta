@@ -8,7 +8,7 @@ class DeltaCli < Formula
 
   # Stable release — pre-built binaries (no build tools required)
   # Uncomment and update when a GitHub release is published:
-  # url "https://github.com/nile-agi/delta/releases/download/v#{version}/delta-cli-macos-#{Hardware::CPU.arm? ? "arm64" : "x86_64"}.tar.gz"
+  # url "https://github.com/nile-agi/delta-release/releases/download/v#{version}/delta-cli-macos-#{Hardware::CPU.arm? ? "arm64" : "x86_64"}.tar.gz"
   # version "1.0.0"
   # sha256 "UPDATE_SHA256_FOR_RELEASE"
 

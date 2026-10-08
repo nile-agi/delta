@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 
-	const REPO = 'nile-agi/delta';
+	// Installers are published to the public release repository; the source repo is private.
+	const REPO = 'nile-agi/delta-release';
 
 	type Platform = 'macos' | 'windows' | 'linux' | 'unknown';
 
