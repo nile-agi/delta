@@ -30,20 +30,10 @@ class UpdateManager {
     // Returns true if update available, false if up-to-date or offline
     bool check_for_updates(bool verbose = true);
 
-    // Get latest version info from GitHub
-    Version get_latest_version();
-
-    // Download and install update
+    // Download the latest release for this platform, check its SHA-256 against the published
+    // checksums, and replace the installed binaries and web UI. Package-managed installs are
+    // pointed at their own upgrade command instead.
     bool perform_update();
-
-    // Check if we have write permissions to update
-    bool can_update() const;
-
-    // Backup current installation
-    bool backup_current();
-
-    // Rollback to backup
-    bool rollback();
 
   private:
     std::string github_api_url_;
@@ -63,9 +53,6 @@ class UpdateManager {
 
     // Get platform-specific binary URL
     std::string get_binary_url_for_platform();
-
-    // Replace current executable
-    bool replace_executable(const std::string& new_binary);
 };
 
 } // namespace delta

@@ -3,6 +3,7 @@
  */
 
 #include "update.h"
+#include "update_install.h"
 #include "delta_cli.h"
 #include "vendor/json.hpp"
 #include <curl/curl.h>
@@ -11,6 +12,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
 #include <sys/stat.h>
 
 #ifdef _WIN32
@@ -155,22 +157,6 @@ bool UpdateManager::parse_release_info(const std::string& json) {
     return true;
 }
 
-Version UpdateManager::get_latest_version() {
-    std::string response = fetch_url(github_api_url_);
-
-    if (response.empty()) {
-        // Offline or error - return current version
-        return get_current_version();
-    }
-
-    if (parse_release_info(response)) {
-        return latest_version_;
-    }
-
-    // Parse error - return current version
-    return get_current_version();
-}
-
 bool UpdateManager::check_for_updates(bool verbose) {
     Version current = get_current_version();
 
@@ -230,160 +216,126 @@ bool UpdateManager::check_for_updates(bool verbose) {
     }
 }
 
-bool UpdateManager::can_update() const {
-#ifdef _WIN32
-    // Check if we can write to Program Files
-    return true; // Simplified - would check actual permissions
-#else
-    // Check if we can write to /usr/local/bin
-    return access("/usr/local/bin", W_OK) == 0;
-#endif
-}
-
 std::string UpdateManager::get_binary_url_for_platform() {
     return download_url_;
 }
 
+// libcurl write callback for a file.
+static size_t write_file_callback(void* contents, size_t size, size_t nmemb, void* userp) {
+    auto* file = static_cast<std::ofstream*>(userp);
+    file->write(static_cast<const char*>(contents), static_cast<std::streamsize>(size * nmemb));
+    return file->good() ? size * nmemb : 0;
+}
+
 bool UpdateManager::download_binary(const std::string& url, const std::string& dest) {
-    CURL* curl;
-    CURLcode res;
-    bool success = false;
-
-    // Open file for writing
     std::ofstream file(dest, std::ios::binary);
-    if (!file.is_open()) {
+    if (!file.is_open())
         return false;
-    }
 
+    bool success = false;
     curl_global_init(CURL_GLOBAL_DEFAULT);
-    curl = curl_easy_init();
-
+    CURL* curl = curl_easy_init();
     if (curl) {
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_string_callback);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_file_callback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &file);
         curl_easy_setopt(curl, CURLOPT_USERAGENT, "Delta-CLI/1.0");
-
-        res = curl_easy_perform(curl);
-
-        if (res == CURLE_OK) {
-            long response_code;
-            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-            if (response_code == 200) {
-                success = true;
-            }
-        }
-
+        curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+        // Archives are tens of megabytes; give up only if the transfer stalls.
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);
+        success = curl_easy_perform(curl) == CURLE_OK;
         curl_easy_cleanup(curl);
     }
-
     curl_global_cleanup();
     file.close();
-
-    return success;
-}
-
-bool UpdateManager::backup_current() {
-    // Get current executable path
-    std::string current_path = "/usr/local/bin/delta"; // Simplified
-    std::string backup_path = current_path + ".backup";
-
-    // Read current executable
-    std::ifstream src(current_path, std::ios::binary);
-    if (!src.is_open()) {
-        return false;
-    }
-
-    // Write to backup
-    std::ofstream dst(backup_path, std::ios::binary);
-    if (!dst.is_open()) {
-        return false;
-    }
-
-    dst << src.rdbuf();
-
-    src.close();
-    dst.close();
-
-    return true;
-}
-
-bool UpdateManager::rollback() {
-    std::string current_path = "/usr/local/bin/delta";
-    std::string backup_path = current_path + ".backup";
-
-    // Check if backup exists
-    struct stat st;
-    if (stat(backup_path.c_str(), &st) != 0) {
-        UI::print_error("No backup found to rollback to");
-        return false;
-    }
-
-    // Replace current with backup
-    if (std::rename(backup_path.c_str(), current_path.c_str()) != 0) {
-        UI::print_error("Failed to rollback");
-        return false;
-    }
-
-    UI::print_info("✓ Rolled back to previous version");
-    return true;
+    return success && file.good();
 }
 
 bool UpdateManager::perform_update() {
-    if (!update_available_) {
-        // Check first
-        if (!check_for_updates(false)) {
-            UI::print_info("No updates available");
-            return true; // Not an error
+    namespace fs = std::filesystem;
+
+    if (!update_available_ && !check_for_updates(false)) {
+        UI::print_info("You have the latest version (" + get_current_version().to_string() + ").");
+        return true;
+    }
+
+    // Replace the files this delta actually runs from, following any symlink to them.
+    std::error_code ec;
+    const fs::path exe_dir = fs::weakly_canonical(fs::path(tools::FileOps::get_executable_dir()), ec);
+    const std::string bin_dir = exe_dir.string();
+    const std::string manager = update::package_manager_for((exe_dir / "delta").string());
+    if (!manager.empty()) {
+        UI::print_info("Delta was installed with " + manager + ", so update it the same way:");
+        std::cout << "    " << update::upgrade_command(manager) << std::endl << std::endl;
+        return false;
+    }
+
+    const std::string archive_url = get_binary_url_for_platform();
+    if (archive_url.empty() || checksums_url_.empty()) {
+        UI::print_error("The latest release has no verified CLI download for this platform.");
+        UI::print_info("Download Delta from: " + RELEASES_PAGE + "/latest");
+        return false;
+    }
+
+    // Check we can write there before downloading anything.
+    {
+        const fs::path probe = exe_dir / ".delta-update-probe";
+        std::ofstream test(probe);
+        const bool writable = test.good();
+        test.close();
+        fs::remove(probe, ec);
+        if (!writable) {
+#ifdef _WIN32
+            UI::print_error("No permission to change " + bin_dir + ". Run the update from an administrator terminal.");
+#else
+            UI::print_error("No permission to change " + bin_dir + ". Run: sudo delta --update");
+#endif
+            return false;
         }
     }
 
-    UI::print_border("AUTOMATIC UPDATE");
-    UI::print_info("Updating to version: " + latest_version_.to_string());
-    std::cout << std::endl;
+    UI::print_border("UPDATING DELTA");
+    UI::print_info(get_current_version().to_string() + " -> " + latest_version_.to_string());
 
-    // Check permissions
-    if (!can_update()) {
-        UI::print_error("Insufficient permissions to update");
-        UI::print_info("Try running with sudo: sudo delta --update");
+    const fs::path work = fs::temp_directory_path(ec) / ("delta-update-" + latest_version_.to_string());
+    fs::remove_all(work, ec);
+    fs::create_directories(work, ec);
+    const std::string archive_name = archive_url.substr(archive_url.find_last_of('/') + 1);
+    const fs::path archive = work / archive_name;
+
+    UI::print_info("Downloading " + archive_name + "...");
+    if (!download_binary(archive_url, archive.string())) {
+        UI::print_error("Download failed. Check your connection and try again.");
+        fs::remove_all(work, ec);
         return false;
     }
 
-    // Replacing the running binaries in place is not automated yet; give the exact steps instead.
-    const std::string archive = cli_asset_name();
-    const std::string url = get_binary_url_for_platform();
-    if (url.empty()) {
-        UI::print_info("No CLI build for this platform in the latest release. Download Delta from:");
-        std::cout << "    " << RELEASES_PAGE << "/latest" << std::endl << std::endl;
+    // Never install anything that does not match the published checksum.
+    const std::string expected = update::checksum_for(fetch_url(checksums_url_), archive_name);
+    const std::string actual = update::sha256_file(archive.string());
+    if (expected.empty() || actual != expected) {
+        UI::print_error(expected.empty() ? "The release lists no checksum for " + archive_name + "; not installing it."
+                                         : "The download does not match its published checksum; not installing it.");
+        fs::remove_all(work, ec);
+        return false;
+    }
+    UI::print_info("Checksum verified.");
+
+    const std::string webui_dir = update::webui_dir_for(bin_dir);
+    auto result = update::install_archive(archive.string(), work.string(), bin_dir, webui_dir);
+    fs::remove_all(work, ec);
+    if (!result.ok) {
+        UI::print_error("Update failed, nothing was changed: " + result.error);
         return false;
     }
 
-    UI::print_info("Download and check the new version:");
-    std::cout << std::endl;
-#if defined(_WIN32)
-    std::cout << "    curl -LO " << url << std::endl;
-    if (!checksums_url_.empty())
-        std::cout << "    curl -LO " << checksums_url_ << std::endl;
-    std::cout << "    certutil -hashfile " << archive << " SHA256" << std::endl;
-    std::cout << std::endl;
-    UI::print_info("Compare the hash with the line for " + archive + " in the checksums file, then unzip it");
-    UI::print_info("over your current Delta folder.");
-#else
-    std::cout << "    curl -LO " << url << std::endl;
-    if (!checksums_url_.empty()) {
-        std::cout << "    curl -LO " << checksums_url_ << std::endl;
-        const std::string sums = checksums_url_.substr(checksums_url_.find_last_of('/') + 1);
-        std::cout << "    grep " << archive << " " << sums << " | shasum -a 256 -c -" << std::endl;
-    }
-    std::cout << "    tar -xzf " << archive << std::endl;
-    std::cout << std::endl;
-    UI::print_info("Then copy delta, delta-server and llama-server over your current install.");
-#endif
-    std::cout << std::endl;
-    UI::print_info("Release notes: " + RELEASES_PAGE + "/latest");
-
-    return false; // Not yet fully implemented
+    UI::print_info("Updated to " + latest_version_.to_string() + " in " + bin_dir +
+                   (webui_dir.empty() ? "." : ", web UI included."));
+    UI::print_info("Restart Delta (and any running delta server) to use the new version.");
+    UI::print_info("Release notes: " + RELEASES_PAGE + "/tag/" + latest_version_.tag);
+    return true;
 }
 
 } // namespace delta

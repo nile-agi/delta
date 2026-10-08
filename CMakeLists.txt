@@ -179,6 +179,7 @@ set(DELTA_SOURCES
     engine/models.cpp
     engine/inference.cpp
     engine/update.cpp
+    engine/update_install.cpp
     engine/commands.cpp
     engine/history.cpp
     engine/server_health.cpp
@@ -436,6 +437,14 @@ add_executable(delta-document-tests EXCLUDE_FROM_ALL
 )
 target_include_directories(delta-document-tests PRIVATE ${DELTA_INCLUDE_DIRS})
 target_link_libraries(delta-document-tests PRIVATE sqlite3 ${CMAKE_THREAD_LIBS_INIT})
+
+# Update tests: SHA-256, checksum files and installing an archive into a scratch folder.
+#   cmake --build build --target delta-update-tests && ./build/delta-update-tests
+add_executable(delta-update-tests EXCLUDE_FROM_ALL
+    tests/test_update_install.cpp
+    engine/update_install.cpp
+)
+target_include_directories(delta-update-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/engine)
 
 # Retrieval eval: hit rate, MRR and context budget over a frozen corpus (no model needed).
 #   cmake --build build --target delta-retrieval-eval && ./build/delta-retrieval-eval
