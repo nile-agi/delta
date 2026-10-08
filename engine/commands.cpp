@@ -83,6 +83,10 @@ std::string Commands::get_webui_public_path() {
 #endif
     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../public"));
     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../public"));
+    // Packaged installs: <prefix>/bin/delta with the UI in <prefix>/share/delta-cli/webui
+    // (Homebrew, MacPorts, Nix), or the release archive's bin/ beside webui/.
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../share/delta-cli/webui"));
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../webui"));
     public_candidates.push_back("/opt/homebrew/share/delta-cli/webui");
     public_candidates.push_back("/usr/local/share/delta-cli/webui");
     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"));
@@ -254,6 +258,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     public_candidates.push_back("./public");
     public_candidates.push_back("../public");
     // Homebrew / install locations
+    public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../share/delta-cli/webui"));
     public_candidates.push_back("/opt/homebrew/share/delta-cli/webui");
     public_candidates.push_back("/usr/local/share/delta-cli/webui");
     public_candidates.push_back(tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"));
