@@ -409,8 +409,8 @@ static void test_multi_step_loop() {
 static void test_write_result_reaches_model() {
     test("a write tool's result goes back to the model instead of a templated reply");
 
-    ScriptedServer server(
-        {assistant_calling("test_write", {{"title", "Standup"}}), {{"role", "assistant"}, {"content", "Booked it."}}});
+    ScriptedServer server(std::vector<json>{assistant_calling("test_write", {{"title", "Standup"}}),
+                                            {{"role", "assistant"}, {"content", "Booked it."}}});
     server.start();
 
     Harness harness(server.url(), "test-model", true);
@@ -437,8 +437,8 @@ static void test_write_result_reaches_model() {
 static void test_tool_failure_is_reported_to_model() {
     test("a failing tool reports the error back rather than aborting the run");
 
-    ScriptedServer server(
-        {assistant_calling("test_fail", json::object()), {{"role", "assistant"}, {"content", "That did not work."}}});
+    ScriptedServer server(std::vector<json>{assistant_calling("test_fail", json::object()),
+                                            {{"role", "assistant"}, {"content", "That did not work."}}});
     server.start();
 
     Harness harness(server.url(), "test-model", true);
@@ -483,8 +483,8 @@ static void test_chained_tools() {
 static void test_destructive_tool_requires_approval() {
     test("a destructive tool waits for approval and runs once allowed");
 
-    ScriptedServer server(
-        {assistant_calling("test_destroy", {{"id", "evt-42"}}), {{"role", "assistant"}, {"content", "Deleted."}}});
+    ScriptedServer server(std::vector<json>{assistant_calling("test_destroy", {{"id", "evt-42"}}),
+                                            {{"role", "assistant"}, {"content", "Deleted."}}});
     server.start();
 
     const int before = g_destructive_spy.calls;
@@ -534,8 +534,8 @@ static void test_approval_endpoint_resumes_a_parked_run() {
     // Drives answer_approval() -- the exact function POST /v1/agent/approve calls -- against a
     // real run parked on the broker, so the endpoint's success path is covered end to end and
     // not just the broker underneath it.
-    ScriptedServer server(
-        {assistant_calling("test_destroy", {{"id", "evt-77"}}), {{"role", "assistant"}, {"content", "Removed it."}}});
+    ScriptedServer server(std::vector<json>{assistant_calling("test_destroy", {{"id", "evt-77"}}),
+                                            {{"role", "assistant"}, {"content", "Removed it."}}});
     server.start();
 
     const int before = g_destructive_spy.calls;
@@ -631,8 +631,8 @@ static void test_denied_approval_tells_the_model() {
 static void test_approval_timeout_denies() {
     test("an unanswered approval times out and is treated as a refusal");
 
-    ScriptedServer server(
-        {assistant_calling("test_destroy", {{"id", "evt-1"}}), {{"role", "assistant"}, {"content", "Left it."}}});
+    ScriptedServer server(std::vector<json>{assistant_calling("test_destroy", {{"id", "evt-1"}}),
+                                            {{"role", "assistant"}, {"content", "Left it."}}});
     server.start();
 
     const int before = g_destructive_spy.calls;
@@ -1285,8 +1285,8 @@ static void test_policy_is_remembered() {
     memory.set_policy("test_destroy", "allow");
     check_eq(memory.get_policy("test_destroy"), std::string("allow"), "the decision was stored");
 
-    ScriptedServer server(
-        {assistant_calling("test_destroy", {{"id", "evt-5"}}), {{"role", "assistant"}, {"content", "Done."}}});
+    ScriptedServer server(std::vector<json>{assistant_calling("test_destroy", {{"id", "evt-5"}}),
+                                            {{"role", "assistant"}, {"content", "Done."}}});
     server.start();
 
     const int before = g_destructive_spy.calls;
@@ -1496,9 +1496,9 @@ static void test_harness_replays_a_matching_task_receipt_without_running_the_too
 static void test_interrupted_task_persists_its_bounded_handoff() {
     test("an interrupted task persists the model handoff for its next run");
 
-    ScriptedServer server(
-        {assistant_calling("test_read", json::object(), "handoff-read"),
-         {{"role", "assistant"}, {"content", "I found the source data; the next step is to review the two entries."}}});
+    ScriptedServer server(std::vector<json>{
+        assistant_calling("test_read", json::object(), "handoff-read"),
+        {{"role", "assistant"}, {"content", "I found the source data; the next step is to review the two entries."}}});
     server.start();
 
     Harness harness(server.url(), "test-model", true);
@@ -1678,8 +1678,8 @@ static void test_reasoning_only_reply_still_answers_the_user() {
 static void test_reasoning_is_kept_out_of_the_answer() {
     test("reasoning is reported on its own and never mixed into the answer");
 
-    ScriptedServer server(
-        {{{"role", "assistant"}, {"content", "Two."}, {"reasoning_content", "Let me count them: one, then two."}}});
+    ScriptedServer server(std::vector<json>{
+        {{"role", "assistant"}, {"content", "Two."}, {"reasoning_content", "Let me count them: one, then two."}}});
     server.start();
     Harness harness(server.url(), "test-model", true);
     harness.set_options(test_options());
@@ -1977,8 +1977,8 @@ static void test_truncation_never_produces_invalid_utf8() {
     }
 
     // And a run carrying such a result must survive end to end.
-    ScriptedServer server(
-        {assistant_calling("test_wide", json::object(), "c0"), {{"role", "assistant"}, {"content", "read it"}}});
+    ScriptedServer server(std::vector<json>{assistant_calling("test_wide", json::object(), "c0"),
+                                            {{"role", "assistant"}, {"content", "read it"}}});
     server.start();
     Harness harness(server.url(), "test-model", true);
     harness.set_options(test_options());
@@ -2109,9 +2109,9 @@ static void test_working_notes_survive_into_the_next_turn() {
     const std::string convo = "conv_working_notes";
     memory.clear_notes(convo);
 
-    ScriptedServer server(
-        {assistant_calling("note_to_self", {{"note", "The API key lives in ~/.config/app.toml"}}, "c0"),
-         {{"role", "assistant"}, {"content", "Noted."}}});
+    ScriptedServer server(std::vector<json>{
+        assistant_calling("note_to_self", {{"note", "The API key lives in ~/.config/app.toml"}}, "c0"),
+        {{"role", "assistant"}, {"content", "Noted."}}});
     server.start();
     Harness harness(server.url(), "test-model", true);
     RunOptions options = test_options();
