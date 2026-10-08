@@ -468,6 +468,8 @@ endif()
 
 # Build Web UI from web/app/ directory
 option(FORCE_BUILD_WEBUI "Always run pnpm run build for web UI (ignores timestamp)" OFF)
+# OFF skips the web UI entirely, for builds that only need to compile the engine (CI checks).
+option(BUILD_WEBUI "Build the web UI from web/app when it is out of date" ON)
 message(STATUS "")
 message(STATUS "Building Web UI from web/app/...")
 
@@ -481,7 +483,7 @@ elseif(NPM_EXECUTABLE)
     message(STATUS "  npm found: ${NPM_EXECUTABLE} (pnpm preferred)")
 endif()
 
-if(PKG_MANAGER)
+if(PKG_MANAGER AND BUILD_WEBUI)
     if(EXISTS "${CMAKE_SOURCE_DIR}/web/app/package.json")
         message(STATUS "  app/ directory found")
 
@@ -534,6 +536,8 @@ if(PKG_MANAGER)
     else()
         message(WARNING "  app/package.json not found, skipping web UI build")
     endif()
+elseif(NOT BUILD_WEBUI)
+    message(STATUS "  BUILD_WEBUI=OFF, web UI will not be built")
 else()
     message(WARNING "  Neither pnpm nor npm found, web UI will not be built")
     message(WARNING "  Install pnpm (https://pnpm.io) to build the web UI")

@@ -106,3 +106,60 @@ jobs:
         uses: docker://rhysd/actionlint:1.7.12
         with:
           args: -color
+
+  # The engine is otherwise compiled only when a release runs, which is where Windows-only build
+  # errors used to surface. Same settings as the release's build-cli job.
+  engine:
+    name: Engine build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-22.04, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libcurl4-openssl-dev uuid-dev
+
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        shell: bash
+        run: vcpkg install curl:x64-windows-static-md
+
+      - name: Configure
+        shell: bash
+        run: |
+          ARGS=(-DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_WEBUI=OFF -DLLAMA_OPENSSL=OFF
+                -DFORCE_SYSTEM_CLANG=OFF -DUSE_CURL=ON)
+          case "$RUNNER_OS" in
+            macOS) ARGS+=(-DGGML_METAL=ON) ;;
+            Linux) ARGS+=(-DGGML_METAL=OFF) ;;
+            Windows)
+              ARGS+=(-DGGML_METAL=OFF
+                     "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+                     -DVCPKG_TARGET_TRIPLET=x64-windows-static-md) ;;
+          esac
+          cmake -S . -B build "${ARGS[@]}"
+
+      - name: Build delta and delta-server
+        shell: bash
+        run: cmake --build build --config Release -j 4 --target delta --target delta-server
+
+      - name: Build and run engine tests
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake --build build --config Release -j 4 \
+            --target delta-document-tests --target delta-update-tests --target delta-harness-tests
+          ./build/delta-document-tests
+          ./build/delta-update-tests
+          ./build/delta-harness-tests
+
