@@ -5,6 +5,7 @@
 , stdenv
 , fetchurl
 , autoPatchelfHook
+, makeWrapper
 , curl
 , libuuid
 }:
@@ -29,7 +30,7 @@ stdenv.mkDerivation {
   };
 
   # The Linux binaries link the system libcurl and libuuid; point them at the Nix store.
-  nativeBuildInputs = lib.optionals stdenv.isLinux [ autoPatchelfHook ];
+  nativeBuildInputs = [ makeWrapper ] ++ lib.optionals stdenv.isLinux [ autoPatchelfHook ];
   buildInputs = lib.optionals stdenv.isLinux [ curl libuuid stdenv.cc.cc.lib ];
 
   dontConfigure = true;
@@ -38,11 +39,13 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
 
-    # delta looks for delta-server and llama-server beside itself, and for the web UI in
-    # share/delta-cli/webui.
-    install -Dm755 -t $out/bin bin/delta bin/delta-server bin/llama-server
-    mkdir -p $out/share/delta-cli
-    cp -r webui $out/share/delta-cli/webui
+    # Keep the release layout together: delta finds delta-server, llama-server and the web UI
+    # beside itself. Only wrappers go in bin/, so llama.cpp's own llama-server never collides.
+    mkdir -p $out/libexec/delta-cli
+    cp -r bin webui $out/libexec/delta-cli/
+    chmod 755 $out/libexec/delta-cli/bin/*
+    makeWrapper $out/libexec/delta-cli/bin/delta $out/bin/delta
+    makeWrapper $out/libexec/delta-cli/bin/delta-server $out/bin/delta-server
 
     runHook postInstall
   '';

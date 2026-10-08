@@ -31,10 +31,11 @@ class DeltaCli < Formula
   end
 
   def install
-    # delta looks for delta-server and llama-server beside itself, and for the web UI in
-    # share/delta-cli/webui.
-    bin.install "bin/delta", "bin/delta-server", "bin/llama-server"
-    (share/"delta-cli").install "webui"
+    # Keep the release layout together in libexec: delta finds delta-server, llama-server and the
+    # web UI beside itself. Only wrapper scripts go on PATH, so this never collides with
+    # llama.cpp's own llama-server, and delta never picks that one up instead of its own.
+    libexec.install "bin", "webui"
+    bin.write_exec_script libexec/"bin/delta", libexec/"bin/delta-server"
   end
 
   test do
