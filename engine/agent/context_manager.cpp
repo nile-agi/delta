@@ -11,12 +11,18 @@ namespace {
 // Head/tail budget for a single tool result before it is truncated. Shell and file tools can
 // otherwise return hundreds of kilobytes and evict the whole conversation on their own.
 constexpr size_t kMaxToolResultChars = 6000;
-// Leave headroom for the chat template's own scaffolding and any tokenizer disagreement.
-constexpr int kSafetyMargin = 320;
+// What one image or audio clip costs the window; only its text is otherwise counted.
+constexpr int kAttachmentTokens = 768;
+// Headroom for template scaffolding and tokenizer drift: 1/16 of the window, 64-320 tokens.
+int safety_margin_for(int n_ctx) {
+    return std::min(320, std::max(64, n_ctx / 16));
+}
 // Per-message overhead in tokens for role markers and template separators.
 constexpr int kMessageOverhead = 5;
 // Below this many dropped messages a summary is not worth a model call.
 constexpr int kMinDroppedForSummary = 4;
+// Below this a summary of dropped history cannot carry its facts; the caller should free room.
+constexpr int kMinSummaryRoom = 120;
 // Room set aside for the summary of what was dropped. It is appended to the system prompt after
 // packing, so without a reservation it is spent on top of the budget rather than out of it.
 constexpr int kSummaryAllowance = 400;
@@ -31,13 +37,14 @@ bool carries_tool_calls(const nlohmann::json& msg) {
 } // namespace
 
 ContextManager::ContextManager(int n_ctx, int reserve_output_tokens)
-    : n_ctx_(n_ctx > 0 ? n_ctx : 4096), reserve_output_(reserve_output_tokens > 0 ? reserve_output_tokens : 512) {
+    : n_ctx_(n_ctx > 0 ? n_ctx : 4096), reserve_output_(reserve_output_tokens > 0 ? reserve_output_tokens : 512),
+      safety_margin_(safety_margin_for(n_ctx_)) {
     recompute_budget();
 }
 
 void ContextManager::recompute_budget() {
-    budget_ = n_ctx_ - reserve_output_ - kSafetyMargin - tool_overhead_;
-    budget_ = std::max(0, budget_); // impossible windows are rejected before inference
+    budget_ = n_ctx_ - reserve_output_ - safety_margin_ - tool_overhead_;
+    budget_ = std::max(0, budget_); // the harness shrinks the request until it fits
 }
 
 void ContextManager::set_reserve_output(int tokens) {
@@ -91,6 +98,10 @@ int ContextManager::token_cost(const nlohmann::json& message) const {
         tokens = count_(text);
     if (tokens < 0)
         tokens = estimate_tokens(text);
+    if (message.is_object() && message.contains("content") && message["content"].is_array())
+        for (const auto& part : message["content"])
+            if (part.is_object() && part.value("type", "") != "text")
+                tokens += kAttachmentTokens;
     return tokens + kMessageOverhead;
 }
 
@@ -147,8 +158,10 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
                 copy["content"] = message_text(msg);
             if (is_tool_message(copy)) {
                 std::string content = copy["content"].get<std::string>();
-                if (content.size() > kMaxToolResultChars) {
-                    copy["content"] = truncate_middle(content, kMaxToolResultChars);
+                // About a third of a small window per result, so one result can never fill it.
+                const size_t cap = std::min(kMaxToolResultChars, std::max<size_t>(600, n_ctx_ * 6 / 5));
+                if (content.size() > cap) {
+                    copy["content"] = truncate_middle(content, cap);
                     stats_.truncated_results++;
                 }
             }
@@ -206,6 +219,7 @@ nlohmann::json ContextManager::build(const std::string& system_prompt, const nlo
             for (size_t i = blocks[n].first; i < blocks[n].second; i++)
                 dropped.push_back(turns[i]);
         stats_.dropped_messages = static_cast<int>(dropped.size());
+        stats_.summary_starved = summary_allowance < kMinSummaryRoom;
         std::string summary;
         if (summarize_ && summary_allowance > 0 && stats_.dropped_messages >= kMinDroppedForSummary) {
             auto hash_prefix = [&](size_t count) {

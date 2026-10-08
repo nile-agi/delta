@@ -113,6 +113,7 @@ class Harness {
     // knows the full extent of what it can do without paying for the schemas.
     std::string deferred_manifest() const;
     std::string summarize(const nlohmann::json& dropped, int n_ctx);
+    std::string summarize_prose(const nlohmann::json& dropped, int n_ctx);
     // The key the plan scratchpad lives under: the caller's conversation id when given, else this run.
     std::string scratchpad_key() const { return options_.scratchpad_id.empty() ? run_id_ : options_.scratchpad_id; }
     // The key memories are saved against and recalled by.
@@ -131,6 +132,11 @@ class Harness {
 
     // How much attached-file text the prompt may carry this run, from the probed context window.
     size_t document_budget_chars_ = 0;
+
+    // How far the request being built was shrunk to fit the window (kFit* in harness.cpp).
+    int fit_level_ = 0;
+    // Whether this conversation can use the document tools, decided once per run.
+    bool documents_available_ = false;
 
     mutable std::string context_cache_;
     mutable std::string context_cache_key_;

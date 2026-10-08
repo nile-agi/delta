@@ -382,33 +382,71 @@ nlohmann::json LlmClient::chat_stream(const nlohmann::json& messages, const nloh
     return {{"choices", {{{"index", 0}, {"message", message}, {"finish_reason", ctx.finish_reason}}}}};
 }
 
-int LlmClient::probe_context_size() {
+namespace {
+
+// GET a JSON document; null on any failure.
+nlohmann::json get_json(const std::string& url, long timeout_s) {
     CURL* curl = curl_easy_init();
     if (!curl)
-        return 0;
+        return nullptr;
     std::string out;
-    std::string url = server_url_ + "/props";
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, collect_body);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &out);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_s);
     CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
     curl_easy_cleanup(curl);
-    if (res != CURLE_OK)
-        return 0;
+    if (res != CURLE_OK || http_code >= 400)
+        return nullptr;
     try {
-        auto props = nlohmann::json::parse(out);
-        // llama-server exposes it as n_ctx at the top level, or nested under default_generation_settings.
-        if (props.contains("n_ctx") && props["n_ctx"].is_number_integer())
-            return props["n_ctx"].get<int>();
-        if (props.contains("default_generation_settings") && props["default_generation_settings"].is_object()) {
-            const auto& gen = props["default_generation_settings"];
-            if (gen.contains("n_ctx") && gen["n_ctx"].is_number_integer())
-                return gen["n_ctx"].get<int>();
-        }
+        return nlohmann::json::parse(out);
     } catch (...) {
+        return nullptr;
+    }
+}
+
+// n_ctx from a /props document: at the top level, or nested under default_generation_settings.
+int props_context(const nlohmann::json& props) {
+    if (!props.is_object())
+        return 0;
+    if (props.contains("n_ctx") && props["n_ctx"].is_number_integer())
+        return props["n_ctx"].get<int>();
+    if (props.contains("default_generation_settings") && props["default_generation_settings"].is_object()) {
+        const auto& gen = props["default_generation_settings"];
+        if (gen.contains("n_ctx") && gen["n_ctx"].is_number_integer())
+            return gen["n_ctx"].get<int>();
     }
     return 0;
+}
+
+std::string url_escape(const std::string& text) {
+    CURL* curl = curl_easy_init();
+    if (!curl)
+        return text;
+    char* escaped = curl_easy_escape(curl, text.c_str(), static_cast<int>(text.size()));
+    std::string out = escaped ? escaped : text;
+    curl_free(escaped);
+    curl_easy_cleanup(curl);
+    return out;
+}
+
+} // namespace
+
+int LlmClient::probe_context_size() {
+    // A router answers /props for itself (n_ctx 0); naming the model reaches its instance.
+    // A single-model server ignores the parameter, so asking by name works in both modes.
+    if (!model_name_.empty()) {
+        const std::string model = url_escape(model_name_);
+        if (int n = props_context(get_json(server_url_ + "/props?model=" + model, 10)); n > 0)
+            return n;
+        auto slots = get_json(server_url_ + "/slots?model=" + model, 5);
+        if (slots.is_array() && !slots.empty() && slots[0].is_object() && slots[0].contains("n_ctx") &&
+            slots[0]["n_ctx"].is_number_integer() && slots[0]["n_ctx"].get<int>() > 0)
+            return slots[0]["n_ctx"].get<int>();
+    }
+    return props_context(get_json(server_url_ + "/props", 5));
 }
 
 int LlmClient::count_tokens(const std::string& text) {
@@ -420,7 +458,11 @@ int LlmClient::count_tokens(const std::string& text) {
         return -1;
     std::string out;
     std::string url = server_url_ + "/tokenize";
-    std::string body = nlohmann::json{{"content", text}}.dump();
+    // A router only tokenizes for a named model; a single-model server ignores the field.
+    nlohmann::json request = {{"content", text}};
+    if (!model_name_.empty())
+        request["model"] = model_name_;
+    std::string body = request.dump();
     struct curl_slist* headers = nullptr;
     headers = curl_slist_append(headers, "Content-Type: application/json");
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());

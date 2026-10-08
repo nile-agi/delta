@@ -81,6 +81,10 @@ void register_all_tools();
 // True for a category whose schemas wait until the model asks for them.
 bool is_deferred_category(const std::string& category);
 
+// Defers these categories for this run to fit a small window; load_tools can still fetch them.
+// Replaces any earlier set; begin_tool_session clears it.
+void defer_categories_for_fit(const std::set<std::string>& categories);
+
 // One line saying what a category can do, for the manifest the model always sees.
 std::string category_summary(const std::string& category);
 

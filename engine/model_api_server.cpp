@@ -1187,7 +1187,10 @@ class ModelAPIServer {
                     json transcript = bounded_transcript(result.transcript_delta);
                     json response = {{"id", "chatcmpl-delta"},
                                      {"object", "chat.completion"},
-                                     {"choices", {{{"index", 0}, {"message", message}, {"finish_reason", "stop"}}}},
+                                     {"choices",
+                                      {{{"index", 0},
+                                        {"message", message},
+                                        {"finish_reason", result.stop_reason == "length" ? "length" : "stop"}}}},
                                      {"usage", {{"prompt_tokens", 0}, {"completion_tokens", 0}, {"total_tokens", 0}}}};
                     if (result.tool_calls > 0) {
                         response["tool_calls_made"] = result.tool_calls;
