@@ -687,7 +687,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         // Recomputed per attempt so a shrunk prompt gives the reply its room back.
         const int floor = std::min(256, std::max(64, n_ctx / 4));
         const int spare = n_ctx - cached_tool_tokens - minimum_prompt_tokens - context.safety_margin();
-        const int reply = std::max(floor, std::min(options_.max_tokens, spare));
+        // The floor stops the harness shrinking the reply too far; it never raises the caller's limit.
+        const int reply = std::max(std::min(floor, options_.max_tokens), std::min(options_.max_tokens, spare));
         LlmConfig cfg = client_.config();
         cfg.max_tokens = reply;
         client_.set_config(cfg);
@@ -802,6 +803,10 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
     int consecutive_failures = 0;
     bool going_in_circles = false;
     int empty_replies = 0;
+    // Set when llama-server rejects a request as too big despite our count: start higher, squeeze harder.
+    int min_fit_level = kFitFull;
+    int squeeze = 0;
+    int server_overflows = 0;
 
     for (int iteration = 0; iteration < options_.max_iterations; iteration++) {
         result.iterations = iteration + 1;
@@ -818,7 +823,7 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
         nlohmann::json active;
         std::string system_prompt;
         nlohmann::json request_messages;
-        for (fit_level_ = kFitFull;; fit_level_++) {
+        for (fit_level_ = min_fit_level;; fit_level_++) {
             defer_categories_for_fit(fit_level_ >= kFitFewerTools ? std::set<std::string>{"memory", "documents"}
                                                                   : std::set<std::string>{});
             active = tools_disabled_by_error ? nlohmann::json::array() : active_tools();
@@ -833,7 +838,7 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             if (fits || fit_level_ >= kFitMinimal)
                 break;
         }
-        if (context.stats().used_tokens > context.budget_tokens()) {
+        if (context.stats().used_tokens > context.budget_tokens() || squeeze > 0) {
             // This turn's own content is too big: shorten its tool results and message, never refuse.
             nlohmann::json shortened = transcript;
             for (auto& msg : shortened)
@@ -843,7 +848,7 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
                 if (!shortened[i].is_object() || shortened[i].value("role", "") != "user")
                     continue;
                 const int other = context.stats().used_tokens - context.token_cost(shortened[i]);
-                const int room = std::max(64, context.budget_tokens() - other);
+                const int room = std::max(64, (context.budget_tokens() - other) >> squeeze);
                 shortened[i]["content"] =
                     ContextManager::truncate_middle(message_text(shortened[i]), static_cast<size_t>(room) * 3);
                 break;
@@ -909,6 +914,38 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             continue;
         }
 
+        // The server's own count disagrees with ours: refit more tightly and try again, silently.
+        if (response.is_object() && response.contains("error") && server_overflows < 3) {
+            const std::string err = response["error"].dump();
+            if (err.find("exceed_context_size") != std::string::npos ||
+                err.find("exceeds the available context size") != std::string::npos) {
+                server_overflows++;
+                if (fit_level_ < kFitMinimal)
+                    min_fit_level = fit_level_ + 1;
+                else
+                    squeeze++;
+                std::cerr << "[delta-harness] server reported context overflow; refitting" << std::endl;
+                iteration--;
+                continue;
+            }
+        }
+
+        // A reply cut off inside a tool call fails llama-server's own parser: treat it as out of room.
+        if (response.is_object() && response.contains("error") &&
+            response["error"].dump().find("Failed to parse tool call arguments") != std::string::npos) {
+            if (empty_replies == 0) {
+                empty_replies++;
+                emit(EventType::Status, {{"message", "The model ran out of room before answering; asking again."}});
+                continue;
+            }
+            result.success = true;
+            result.content = "I ran out of room before I could answer. Ask me to continue.";
+            result.stop_reason = "length";
+            emit(EventType::Status,
+                 {{"message", "The reply reached its length limit and may be cut short. Ask to continue for more."}});
+            return finish(result);
+        }
+
         if (!response.is_object() || response.contains("error")) {
             std::string message = "Unexpected response from the model";
             if (response.is_object() && response.contains("error")) {
@@ -971,11 +1008,20 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
 
         if (!has_tool_calls) {
             if (cut_off) {
+                // Out of reply room is not a failure: keep what was written and say so softly.
+                if (content.empty() && empty_replies == 0) {
+                    empty_replies++;
+                    emit(EventType::Status, {{"message", "The model ran out of room before answering; asking again."}});
+                    continue;
+                }
                 transcript.push_back(assistant);
-                result.content = content;
-                result.stop_reason = "length";
-                result.error = "The model reply reached its token limit before finishing.";
-                emit(EventType::Error, {{"message", result.error}});
+                result.success = true;
+                result.content =
+                    content.empty() ? "I ran out of room before I could answer. Ask me to continue." : content;
+                result.stop_reason = "length"; // the task stays resumable
+                emit(EventType::Status,
+                     {{"message",
+                       "The reply reached its length limit and may be cut short. Ask to continue for more."}});
                 return finish(result);
             }
             // Nothing at all: no answer, no action. Ending the turn here would leave the user

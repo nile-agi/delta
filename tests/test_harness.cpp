@@ -3000,7 +3000,7 @@ static void test_partial_success_survives_a_model_failure() {
 }
 
 static void test_truncated_text_is_reported_as_incomplete() {
-    test("a reply cut off by the token budget is not reported as completed");
+    test("a reply cut off by the token limit is kept, flagged softly and left resumable, never an error");
     ScriptedServer server(
         std::vector<json>{{{"role", "assistant"}, {"content", "I started explaining"}, {"finish_reason", "length"}}});
     server.start();
@@ -3011,11 +3011,12 @@ static void test_truncated_text_is_reported_as_incomplete() {
     EventLog log;
     const auto result = harness.run(json::array({user("explain it")}), log.sink());
     server.stop();
-    check(!result.success, "an incomplete answer is not successful completion");
+    check(result.success, "the partial answer is delivered");
     check_eq(result.stop_reason, std::string("length"), "the summary reports the token limit");
     check_eq(result.content, std::string("I started explaining"), "the partial text is retained");
     check(!result.transcript_delta.empty(), "the partial assistant turn remains in history");
-    check_eq(log.count(EventType::Error), 1, "the client receives an explicit interruption reason");
+    check_eq(log.count(EventType::Error), 0, "no error is shown");
+    check(log.count(EventType::Status) > 0, "the user is told the reply may be cut short");
     check_eq(TaskStore::instance().get_task(result.task_id).status, std::string("interrupted"),
              "the durable task is resumable");
 }
@@ -3340,6 +3341,75 @@ static void test_compaction_keeps_the_ids_of_records_it_changed() {
     check(answering.find("23:00") != std::string::npos, "the latest request is kept whole");
 }
 
+static void test_an_empty_cut_off_reply_still_answers() {
+    test("a reply cut off before any text is retried once, then answered in plain words");
+    const json empty_cut = {{"role", "assistant"}, {"content", ""}, {"finish_reason", "length"}};
+    ScriptedServer server(std::vector<json>{empty_cut, empty_cut});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("think hard")}), log.sink());
+    server.stop();
+    check(result.success, "the run succeeds");
+    check_eq(server.requests().size(), size_t(2), "it asked once more");
+    check(result.content.find("continue") != std::string::npos, "the user gets a plain-language answer");
+    check_eq(log.count(EventType::Error), 0, "no error is shown");
+}
+
+static void test_a_server_context_overflow_is_refitted_silently() {
+    test("if llama-server rejects a request as too big, the harness refits it and tries again");
+    ScriptedServer server(std::vector<json>{
+        {{"http_status", 400}, {"error", "the request exceeds the available context size, try increasing it"}},
+        {{"role", "assistant"}, {"content", "Noted."}}});
+    server.set_router("test-model", 32768);
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(desktop_options("conv-server-overflow"));
+    EventLog log;
+    auto result = harness.run(json::array({user("I have meeting at 2200hrs today")}), log.sink());
+    server.stop();
+    check(result.success, "the run succeeds");
+    check_eq(log.count(EventType::Error), 0, "no error is shown");
+    auto requests = server.requests();
+    check_eq(requests.size(), size_t(2), "the request was sent again");
+    if (requests.size() == 2)
+        check(requests[1].dump().size() < requests[0].dump().size(), "the retry is smaller");
+}
+
+static void test_a_small_max_tokens_is_respected() {
+    test("a caller's reply limit below the harness's floor is still respected");
+    ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "Short."}}});
+    server.set_router("test-model", 32768);
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = desktop_options("conv-small-reply");
+    options.max_tokens = 16;
+    harness.set_options(options);
+    EventLog log;
+    harness.run(json::array({user("hello")}), log.sink());
+    server.stop();
+    auto requests = server.requests();
+    check(!requests.empty() && requests[0].value("max_tokens", 0) == 16, "the model is asked for at most 16 tokens");
+}
+
+static void test_a_tool_call_cut_off_by_the_limit_is_not_an_error() {
+    test("a tool call cut off by the reply limit (llama-server cannot parse it) is retried, never an error");
+    const json parse_fail = {{"http_status", 500},
+                             {"error", "Failed to parse tool call arguments as JSON: unexpected end of input"}};
+    ScriptedServer server(std::vector<json>{parse_fail, parse_fail});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("book it")}), log.sink());
+    server.stop();
+    check(result.success, "the run succeeds");
+    check_eq(server.requests().size(), size_t(2), "it retried once");
+    check_eq(log.count(EventType::Error), 0, "no error is shown");
+    check(result.content.find("continue") != std::string::npos, "the user gets a plain-language answer");
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -3469,6 +3539,10 @@ int main() {
     test_document_tools_are_offered_only_with_documents();
     test_a_huge_message_in_a_tiny_window_still_gets_an_answer();
     test_compaction_keeps_the_ids_of_records_it_changed();
+    test_an_empty_cut_off_reply_still_answers();
+    test_a_server_context_overflow_is_refitted_silently();
+    test_a_small_max_tokens_is_respected();
+    test_a_tool_call_cut_off_by_the_limit_is_not_an_error();
 
     AgentDatabase::instance().close();
     std::remove(db_path.c_str());
