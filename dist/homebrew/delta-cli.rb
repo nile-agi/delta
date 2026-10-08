@@ -1,121 +1,43 @@
 # typed: false
 # frozen_string_literal: true
 
+# Installs the prebuilt CLI from the public release repository. The source repository is private,
+# so there is no build-from-source (--HEAD) path. The version and every sha256 below are written by
+# scripts/update-package-manifests.cjs from the published release; do not edit them by hand.
 class DeltaCli < Formula
-  desc "Offline AI Assistant powered by llama.cpp"
-  homepage "https://github.com/nile-agi/delta"
+  desc "Offline AI assistant powered by llama.cpp"
+  homepage "https://github.com/nile-agi/delta-release"
+  version "1.0.13"
   license "MIT"
 
-  # Stable release — pre-built binaries (no build tools required)
-  # Uncomment and update when a GitHub release is published:
-  # url "https://github.com/nile-agi/delta-release/releases/download/v#{version}/delta-cli-macos-#{Hardware::CPU.arm? ? "arm64" : "x86_64"}.tar.gz"
-  # version "1.0.0"
-  # sha256 "UPDATE_SHA256_FOR_RELEASE"
-
-  head "https://github.com/nile-agi/delta.git", branch: "main", submodules: false
-
-  depends_on "cmake" => :build
-  depends_on "curl" => :build
-  depends_on "pkg-config" => :build
-  depends_on "node" => :build
-  depends_on "pnpm" => :build
-
   on_macos do
-    depends_on :macos
+    on_arm do
+      url "https://github.com/nile-agi/delta-release/releases/download/v1.0.13/delta-cli-macos-arm64.tar.gz"
+      sha256 "b70d5521c3a4da44badcd4e1cc50298d39553795887e10a17a93db472603616e"
+    end
+    on_intel do
+      url "https://github.com/nile-agi/delta-release/releases/download/v1.0.13/delta-cli-macos-x86_64.tar.gz"
+      sha256 "91320893125efc86d696d10c098fc3e2b2eac5f0666fab93dc56fcba20ba2fbd"
+    end
   end
 
   on_linux do
-    depends_on "gcc" => :build
+    on_intel do
+      url "https://github.com/nile-agi/delta-release/releases/download/v1.0.13/delta-cli-linux-x86_64.tar.gz"
+      sha256 "8185d2b0af3bc1cccd569656d82f6653ebed08931937ee2be10fbcc9d78a3da2"
+    end
+    depends_on "curl"
+    depends_on "util-linux" # libuuid
   end
 
   def install
-    if build.head?
-      install_from_source
-    else
-      install_from_binary
-    end
-  end
-
-  def install_from_source
-    ohai "Building Delta CLI from source..."
-
-    system "git", "submodule", "update", "--init", "engine/vendor/llama.cpp"
-
-    if Dir.exist?("engine/vendor/llama.cpp/.gitmodules")
-      cd "engine/vendor/llama.cpp" do
-        system "git", "submodule", "update", "--init", "--recursive" rescue nil
-      end
-    end
-
-    # Build web UI
-    if Dir.exist?("web/app")
-      ohai "Building web UI..."
-      cd "web/app" do
-        system "pnpm", "install"
-        system "pnpm", "run", "build"
-      end
-    end
-
-    mkdir "build" do
-      system "cmake", "..",
-                    "-DCMAKE_BUILD_TYPE=Release",
-                    "-DGGML_METAL=#{OS.mac? ? "ON" : "OFF"}",
-                    "-DLLAMA_CUDA=OFF",
-                    "-DLLAMA_VULKAN=OFF",
-                    "-DLLAMA_HIPBLAS=OFF",
-                    "-DBUILD_TESTS=OFF",
-                    "-DUSE_CURL=ON",
-                    *std_cmake_args
-      system "make", "-j#{ENV.make_jobs}"
-    end
-
-    bin.install "build/delta"
-    bin.install "build/delta-server"
-
-    server_path = nil
-    %w[
-      build/bin/llama-server
-      build/engine/vendor/llama.cpp/bin/llama-server
-      build/engine/vendor/llama.cpp/tools/server/llama-server
-      build/llama-server
-      build/bin/server
-      build/server
-    ].each do |p|
-      if File.exist?(p)
-        server_path = p
-        break
-      end
-    end
-
-    if server_path
-      bin.install server_path => "llama-server"
-      ohai "Installed llama-server"
-    else
-      opoo "llama-server binary not found"
-    end
-
-    # Install Delta's custom web UI
-    if Dir.exist?("public") && (File.exist?("public/index.html") || File.exist?("public/index.html.gz"))
-      (share/"delta-cli").install "public" => "webui"
-      ohai "Web UI installed"
-    else
-      opoo "Web UI not found in public/, skipping"
-    end
-  end
-
-  def install_from_binary
-    ohai "Installing pre-built Delta CLI..."
-
-    bin.install "bin/delta"
-    bin.install "bin/delta-server"
-    bin.install "bin/llama-server" if File.exist?("bin/llama-server")
-
-    if Dir.exist?("webui")
-      (share/"delta-cli").install "webui"
-    end
+    # delta looks for delta-server and llama-server beside itself, and for the web UI in
+    # share/delta-cli/webui.
+    bin.install "bin/delta", "bin/delta-server", "bin/llama-server"
+    (share/"delta-cli").install "webui"
   end
 
   test do
-    system "#{bin}/delta", "--version"
+    assert_match version.to_s, shell_output("#{bin}/delta --version")
   end
 end

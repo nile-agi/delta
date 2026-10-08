@@ -46,31 +46,8 @@ if [[ -f "$REPO_ROOT/src-tauri/Cargo.toml" ]]; then
     echo "  Updated src-tauri/Cargo.toml"
 fi
 
-# dist/macports/Portfile
-if [[ -f "$REPO_ROOT/dist/macports/Portfile" ]]; then
-    sed -i.bak -E "s/^version[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+/version             $VERSION/" \
-        "$REPO_ROOT/dist/macports/Portfile"
-    rm -f "$REPO_ROOT/dist/macports/Portfile.bak"
-    echo "  Updated dist/macports/Portfile"
-fi
-
-# dist/nix/default.nix
-if [[ -f "$REPO_ROOT/dist/nix/default.nix" ]]; then
-    sed -i.bak -E "s/version = \"[0-9]+\.[0-9]+\.[0-9]+\"/version = \"$VERSION\"/" \
-        "$REPO_ROOT/dist/nix/default.nix"
-    rm -f "$REPO_ROOT/dist/nix/default.nix.bak"
-    echo "  Updated dist/nix/default.nix"
-fi
-
-# dist/winget/delta-cli.yaml
-if [[ -f "$REPO_ROOT/dist/winget/delta-cli.yaml" ]]; then
-    sed -i.bak -E "s/PackageVersion: [0-9]+\.[0-9]+\.[0-9]+/PackageVersion: $VERSION/" \
-        "$REPO_ROOT/dist/winget/delta-cli.yaml"
-    sed -i.bak -E "s|/v[0-9]+\.[0-9]+\.[0-9]+/|/v$VERSION/|" \
-        "$REPO_ROOT/dist/winget/delta-cli.yaml"
-    rm -f "$REPO_ROOT/dist/winget/delta-cli.yaml.bak"
-    echo "  Updated dist/winget/delta-cli.yaml"
-fi
+# The package manifests in dist/ describe the latest *published* release and carry its
+# checksums, which only exist once it is out: scripts/update-package-manifests.cjs updates them.
 
 echo ""
 echo "Done. VERSION=$VERSION synced to all project files."

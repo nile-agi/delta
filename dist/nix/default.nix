@@ -1,97 +1,63 @@
+# Installs the prebuilt CLI from the public release repository (the source repository is private).
+# The version and every sha256 below are written by scripts/update-package-manifests.cjs from the
+# published release; do not edit them by hand.
 { lib
 , stdenv
-, fetchFromGitHub
-, cmake
+, fetchurl
+, autoPatchelfHook
 , curl
-, pkg-config
-, makeWrapper
-, nodejs
-, nodePackages
-, darwin
+, libuuid
 }:
 
-stdenv.mkDerivation rec {
+let
+  version = "1.0.13";
+  sources = {
+    aarch64-darwin = { asset = "delta-cli-macos-arm64.tar.gz"; sha256 = "b70d5521c3a4da44badcd4e1cc50298d39553795887e10a17a93db472603616e"; };
+    x86_64-darwin = { asset = "delta-cli-macos-x86_64.tar.gz"; sha256 = "91320893125efc86d696d10c098fc3e2b2eac5f0666fab93dc56fcba20ba2fbd"; };
+    x86_64-linux = { asset = "delta-cli-linux-x86_64.tar.gz"; sha256 = "8185d2b0af3bc1cccd569656d82f6653ebed08931937ee2be10fbcc9d78a3da2"; };
+  };
+  source = sources.${stdenv.hostPlatform.system}
+    or (throw "delta-cli has no prebuilt release for ${stdenv.hostPlatform.system}");
+in
+stdenv.mkDerivation {
   pname = "delta-cli";
-  version = "1.0.15";
+  inherit version;
 
-  src = fetchFromGitHub {
-    owner = "nile-agi";
-    repo = "delta";
-    rev = "v${version}";
-    sha256 = "PLACEHOLDER_SHA256";  # Update when release is published
-    fetchSubmodules = true;
+  src = fetchurl {
+    url = "https://github.com/nile-agi/delta-release/releases/download/v${version}/${source.asset}";
+    inherit (source) sha256;
   };
 
-  nativeBuildInputs = [
-    cmake
-    curl
-    pkg-config
-    makeWrapper
-    nodejs
-    nodePackages.pnpm
-  ] ++ lib.optionals stdenv.isDarwin [
-    darwin.apple_sdk.frameworks.Metal
-    darwin.apple_sdk.frameworks.Foundation
-    darwin.apple_sdk.frameworks.Accelerate
-  ];
+  # The Linux binaries link the system libcurl and libuuid; point them at the Nix store.
+  nativeBuildInputs = lib.optionals stdenv.isLinux [ autoPatchelfHook ];
+  buildInputs = lib.optionals stdenv.isLinux [ curl libuuid stdenv.cc.cc.lib ];
 
-  buildInputs = [
-    curl
-  ];
-
-  cmakeFlags = [
-    "-DCMAKE_BUILD_TYPE=Release"
-    "-DGGML_METAL=${if stdenv.isDarwin then "ON" else "OFF"}"
-    "-DLLAMA_CUDA=OFF"
-    "-DLLAMA_VULKAN=OFF"
-    "-DLLAMA_HIPBLAS=OFF"
-    "-DBUILD_TESTS=OFF"
-    "-DUSE_CURL=ON"
-    "-DFORCE_SYSTEM_CLANG=OFF"
-  ];
-
-  preBuild = ''
-    # Build web UI before C++ compilation
-    cd $src/web/app
-    export HOME=$TMPDIR
-    pnpm install --frozen-lockfile
-    pnpm run build
-    cd $NIX_BUILD_TOP/$sourceRoot
-  '';
+  dontConfigure = true;
+  dontBuild = true;
 
   installPhase = ''
     runHook preInstall
 
-    install -Dm755 delta $out/bin/delta
-    install -Dm755 delta-server $out/bin/delta-server
-
-    # Install llama-server
-    if [ -f bin/llama-server ]; then
-      install -Dm755 bin/llama-server $out/bin/llama-server
-    elif [ -f llama-server ]; then
-      install -Dm755 llama-server $out/bin/llama-server
-    fi
-
-    # Install Delta's custom web UI
-    if [ -f $NIX_BUILD_TOP/$sourceRoot/public/index.html ]; then
-      mkdir -p $out/share/delta-cli
-      cp -r $NIX_BUILD_TOP/$sourceRoot/public $out/share/delta-cli/webui
-    fi
+    # delta looks for delta-server and llama-server beside itself, and for the web UI in
+    # share/delta-cli/webui.
+    install -Dm755 -t $out/bin bin/delta bin/delta-server bin/llama-server
+    mkdir -p $out/share/delta-cli
+    cp -r webui $out/share/delta-cli/webui
 
     runHook postInstall
   '';
 
   meta = with lib; {
-    description = "Offline AI Assistant powered by llama.cpp";
+    description = "Offline AI assistant powered by llama.cpp";
     longDescription = ''
-      Delta CLI is an offline-first AI assistant that runs large language
-      models directly on your device via llama.cpp. Includes a web UI,
-      model management, and GPU acceleration (Metal, CUDA, Vulkan).
+      Delta runs large language models directly on your device via llama.cpp, with a web UI,
+      model management and GPU acceleration.
     '';
-    homepage = "https://github.com/nile-agi/delta";
+    homepage = "https://github.com/nile-agi/delta-release";
     license = licenses.mit;
+    sourceProvenance = [ sourceTypes.binaryNativeCode ];
     maintainers = [ ];
-    platforms = platforms.unix;
+    platforms = builtins.attrNames sources;
     mainProgram = "delta";
   };
 }

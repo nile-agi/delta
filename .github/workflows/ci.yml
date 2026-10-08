@@ -91,6 +91,8 @@ jobs:
 
       - name: Test version syncing
         run: node --test scripts/bump-version.test.cjs
+      - name: Test package manifest updates
+        run: node --test scripts/update-package-manifests.test.cjs
 
       - name: Test Linux packaging
         run: |
