@@ -25,3 +25,6 @@ vite.config.ts.timestamp-*
 
 *storybook.log
 storybook-static
+
+# Vitest browser screenshots (failure captures and layout snapshots for review)
+__screenshots__/

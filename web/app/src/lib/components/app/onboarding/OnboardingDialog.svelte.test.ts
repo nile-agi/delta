@@ -32,6 +32,6 @@ it('fits the name step on a small screen', async () => {
 	render(OnboardingDialog);
 	await expect.element(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
 	expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390);
-	await page.screenshot({ path: '/tmp/delta-onboarding-mobile.png' });
+	await page.screenshot({ path: '__screenshots__/delta-onboarding-mobile.png' });
 	await page.viewport(1280, 800);
 });
