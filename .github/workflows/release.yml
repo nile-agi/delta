@@ -42,6 +42,21 @@ jobs:
             exit 1
           fi
 
+      - name: Require version.txt to match the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # v1.0.16 once shipped files named 1.0.14 because its commit still said 1.0.14.
+          # A prerelease tag (v1.2.3-rc.1) matches version.txt 1.2.3.
+          expected="${RELEASE_TAG#v}"
+          expected="${expected%%[-+]*}"
+          actual=$(gh api "repos/$GITHUB_REPOSITORY/contents/version.txt?ref=$RELEASE_TAG" \
+            -H "Accept: application/vnd.github.raw" | tr -d '[:space:]')
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::$RELEASE_TAG points at a commit whose version.txt says '$actual', not '$expected'."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
       - name: Generate release notes and prepare a draft
         id: release
