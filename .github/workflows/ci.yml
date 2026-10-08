@@ -14,9 +14,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Decides which jobs a change needs. A PR that only touches the web app should not compile
+  # Decides which jobs a pull request needs. A PR that only touches the web app should not compile
   # llama.cpp on three platforms, and an engine-only PR should not rerun the browser suites.
-  # Skipped jobs still satisfy required status checks.
+  # Skipped jobs still satisfy required status checks. Pushes to dev and main run everything: they
+  # are the runs that save the compiler cache PRs read from.
   changes:
     name: Detect changed areas
     runs-on: ubuntu-latest
@@ -25,14 +26,14 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      frontend: ${{ steps.filter.outputs.frontend }}
-      engine: ${{ steps.filter.outputs.engine }}
-      release: ${{ steps.filter.outputs.release }}
+      frontend: ${{ github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true' }}
+      engine: ${{ github.event_name != 'pull_request' || steps.filter.outputs.engine == 'true' }}
+      release: ${{ github.event_name != 'pull_request' || steps.filter.outputs.release == 'true' }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+      # Pull requests list their changed files through the API, so no history is needed. On a
+      # push the filter would compare against main with git, which a shallow checkout cannot do.
       - uses: dorny/paths-filter@v3
+        if: github.event_name == 'pull_request'
         id: filter
         with:
           filters: |
