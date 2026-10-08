@@ -87,8 +87,37 @@ jobs:
       - name: Check Svelte and TypeScript
         run: pnpm --filter webui check
 
-      - name: Install Chromium for browser tests
-        run: pnpm --filter webui exec playwright install --with-deps --only-shell chromium
+      # The browser downloads are cached per Playwright version, so most runs skip them; a slow
+      # CDN once held this step for over eight minutes. The system libraries they need are not
+      # in the cache and install each run (about a minute). Saved from dev and main only.
+      - name: Playwright version
+        id: playwright
+        # Read from the installed package: pnpm's own output can include workspace warnings.
+        working-directory: web/app
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browsers
+        id: playwright-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-shell-webkit
+
+      - name: Install Chromium and WebKit for browser tests
+        run: |
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            pnpm --filter webui exec playwright install-deps chromium webkit
+          else
+            pnpm --filter webui exec playwright install --with-deps --only-shell chromium
+            pnpm --filter webui exec playwright install --with-deps webkit
+          fi
+
+      - name: Save Playwright browsers
+        if: github.event_name == 'push' && steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.playwright-cache.outputs.cache-primary-key }}
 
       - name: Run unit tests
         run: pnpm --filter webui exec vitest run --project=server --maxWorkers=2 --minWorkers=1
@@ -114,9 +143,7 @@ jobs:
       - name: Test production startup in WebKit
         env:
           DELTA_TEST_PREBUILT: '1'
-        run: |
-          pnpm --filter webui exec playwright install --with-deps webkit
-          pnpm --filter webui exec playwright test e2e/startup.test.ts --browser=webkit --workers=1
+        run: pnpm --filter webui exec playwright test e2e/startup.test.ts --browser=webkit --workers=1
 
   release-checks:
     name: Release scripts and workflow validation
