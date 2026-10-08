@@ -150,7 +150,8 @@ describe('chat request guidance and history', () => {
 		expect(prompt).toContain('Keep answers short');
 		expect(prompt).not.toContain('Musa');
 		expect(prompt).not.toContain('Give thorough answers');
-		expect(prompt.match(/Today is /g)).toHaveLength(1);
+		// The harness states the date, so a stale generated clock is dropped rather than refreshed.
+		expect(prompt).not.toContain('Today is Sunday, 4 October 2026');
 	});
 	for (const useTools of [false, true]) {
 		it(`preserves the active history and settings with tools=${useTools}`, async () => {

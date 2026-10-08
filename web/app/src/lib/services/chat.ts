@@ -187,18 +187,9 @@ export class ChatService {
 				return true;
 			});
 
-		// Indexed files are searched by the engine's agent server, so a chat holding one goes there
-		// even with tools off; it then runs as a plain chat plus the matching passages.
-		const hasIndexedDocuments = messages.some(
-			(msg) =>
-				'extra' in msg &&
-				Array.isArray(msg.extra) &&
-				msg.extra.some((e: DatabaseMessageExtra) => e.type === 'documentFile' && !!e.docId)
-		);
-		const useAgentServer = !!useTools || hasIndexedDocuments;
-
-		// The agent harness states the date itself; a plain llama-server chat has no other source.
-		const processedMessages = this.injectSystemMessage(normalizedMessages, !useAgentServer);
+		// Every chat goes through the harness, which fits it to the window and states the date;
+		// sent straight to llama-server, a long chat fails with a context error.
+		const processedMessages = this.injectSystemMessage(normalizedMessages, false);
 		const alternatingMessages = ChatService.ensureAlternatingRoles(processedMessages);
 
 		const requestBody: ApiChatCompletionRequest = {
@@ -285,11 +276,9 @@ export class ChatService {
 			const apiKey = currentConfig.apiKey?.toString().trim();
 			// Tools live in the agent loop, which only the model API server hosts. getModelApiBaseUrl()
 			// resolves it in every mode (Tauri, same-origin UI-only, and port+1 after the 8080 migration).
-			if (!useTools && hasIndexedDocuments && conversationId) {
-				requestBody.conversation_id = conversationId;
-			}
-			if (useAgentServer) requestBody.use_documents = true;
-			const baseUrl = useAgentServer ? getModelApiBaseUrl() : getServerBaseUrl();
+			if (conversationId) requestBody.conversation_id = conversationId;
+			requestBody.use_documents = true;
+			const baseUrl = getModelApiBaseUrl();
 			const url = `${baseUrl}/v1/chat/completions`;
 			const headers: Record<string, string> = {
 				'Content-Type': 'application/json',
