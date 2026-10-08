@@ -101,18 +101,18 @@ it('keeps settings usable on narrow screens and uses a vertical section list on 
 	openSettings();
 	const groups = document.querySelector('nav[aria-label="Settings groups"]')!;
 	expect(getComputedStyle(groups).flexDirection).toBe('column');
-	await page.screenshot({ path: '/tmp/delta-settings-desktop.png' });
+	await page.screenshot({ path: '__screenshots__/delta-settings-desktop.png' });
 	await page.viewport(390, 844);
 	await expect.element(page.getByLabelText('Settings group', { exact: true })).toBeVisible();
 	expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390);
-	await page.screenshot({ path: '/tmp/delta-settings-mobile.png' });
+	await page.screenshot({ path: '__screenshots__/delta-settings-mobile.png' });
 	await page.getByRole('button', { name: 'Developer', exact: true }).click();
 	await expect
 		.element(page.getByRole('button', { name: 'Reset to model defaults', exact: true }))
 		.toBeVisible();
 	expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(390);
 	document.documentElement.classList.add('dark');
-	await page.screenshot({ path: '/tmp/delta-settings-mobile-dark.png' });
+	await page.screenshot({ path: '__screenshots__/delta-settings-mobile-dark.png' });
 	document.documentElement.classList.remove('dark');
 	await page.viewport(1280, 800);
 });
