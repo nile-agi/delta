@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# delta is private, so installers and archives are published to this public repository. Writing
+# there needs RELEASE_REPO_TOKEN: a fine-grained token with Contents read & write on it alone.
+env:
+  RELEASE_REPO: nile-agi/delta-release
+
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
@@ -28,15 +33,35 @@ jobs:
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
+      - name: Require the release repository token
+        env:
+          RELEASE_REPO_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_REPO_TOKEN" ]; then
+            echo "::error::Add a RELEASE_REPO_TOKEN secret with Contents read & write on $RELEASE_REPO."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
       - name: Generate release notes and prepare a draft
         id: release
         uses: actions/github-script@v7
+        env:
+          SOURCE_TOKEN: ${{ github.token }}
         with:
+          github-token: ${{ secrets.RELEASE_REPO_TOKEN }}
           script: |
             const { prepareRelease } = require('./scripts/release-notes.cjs');
             const tag = process.env.RELEASE_TAG;
-            const id = await prepareRelease({ github, context, tag });
+            // The tag and the notes are read from this repository with its own token; the draft
+            // is created in the public release repository with the release token.
+            const id = await prepareRelease({
+              github,
+              sourceGithub: getOctokit(process.env.SOURCE_TOKEN),
+              context,
+              tag,
+              releaseRepo: process.env.RELEASE_REPO
+            });
             core.setOutput('release_id', id);
             core.setOutput('tag', tag);
 
@@ -247,7 +272,7 @@ jobs:
   build-tauri:
     needs: prepare-release
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -385,7 +410,7 @@ jobs:
         if: steps.signing.outputs.available == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -393,6 +418,8 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
+          owner: nile-agi
+          repo: delta-release
           releaseId: ${{ needs.prepare-release.outputs.release_id }}
           tagName: ${{ needs.prepare-release.outputs.tag }}
           tauriScript: ${{ matrix.platform == 'ubuntu-22.04' && './scripts/tauri-release-build.sh' || '' }}
@@ -402,24 +429,26 @@ jobs:
         if: steps.signing.outputs.available == 'false'
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
         with:
+          owner: nile-agi
+          repo: delta-release
           releaseId: ${{ needs.prepare-release.outputs.release_id }}
           tagName: ${{ needs.prepare-release.outputs.tag }}
           tauriScript: ${{ matrix.platform == 'ubuntu-22.04' && './scripts/tauri-release-build.sh' || '' }}
           args: ${{ matrix.args }}
 
   # ---------------------------------------------------------------------------
-  # Attach CLI binaries + checksums to the GitHub Release
+  # Attach CLI binaries + checksums to the public release
   # ---------------------------------------------------------------------------
   attach-cli:
     needs: [prepare-release, build-cli]
     env:
-      GH_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
       RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -447,7 +476,7 @@ jobs:
 
       - name: Attach CLI assets without changing release notes or draft status
         run: |
-          gh release upload "$RELEASE_TAG" --clobber \
+          gh release upload "$RELEASE_TAG" --repo "$RELEASE_REPO" --clobber \
             delta-cli-macos-arm64.tar.gz \
             delta-cli-macos-x86_64.tar.gz \
             delta-cli-linux-x86_64.tar.gz \
@@ -459,7 +488,7 @@ jobs:
     needs: [prepare-release, build-tauri, attach-cli]
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     env:
       RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
       RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
@@ -468,10 +497,12 @@ jobs:
       - name: Publish the completed release
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.RELEASE_REPO_TOKEN }}
           script: |
             const { publishRelease } = require('./scripts/release-notes.cjs');
             await publishRelease({
               github, context,
               tag: process.env.RELEASE_TAG,
-              releaseId: process.env.RELEASE_ID
+              releaseId: process.env.RELEASE_ID,
+              releaseRepo: process.env.RELEASE_REPO
             });
