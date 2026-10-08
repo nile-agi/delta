@@ -22,6 +22,8 @@ struct ContextStats {
     int dropped_messages = 0;
     int truncated_results = 0;
     bool summarized = false;
+    // History was dropped with too little room left to summarize it, so its facts would be lost.
+    bool summary_starved = false;
 };
 
 // Decides what actually gets sent to the model. Replaces the old "keep the last 6 messages" rule
@@ -54,6 +56,8 @@ class ContextManager {
 
     int budget_tokens() const { return budget_; }
     int reserve_output_tokens() const { return reserve_output_; }
+    int safety_margin() const { return safety_margin_; }
+    int n_ctx() const { return n_ctx_; }
     // Characters-per-token estimate used when the tokenizer endpoint is unavailable.
     static int estimate_tokens(const std::string& text);
     int token_cost(const nlohmann::json& message) const;
@@ -72,6 +76,7 @@ class ContextManager {
   private:
     int n_ctx_;
     int reserve_output_;
+    int safety_margin_;
     int tool_overhead_ = 0;
     int budget_;
 
