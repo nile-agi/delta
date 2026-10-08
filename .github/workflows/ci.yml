@@ -14,8 +14,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decides which jobs a change needs. A PR that only touches the web app should not compile
+  # llama.cpp on three platforms, and an engine-only PR should not rerun the browser suites.
+  # Skipped jobs still satisfy required status checks.
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      engine: ${{ steps.filter.outputs.engine }}
+      release: ${{ steps.filter.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'web/app/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/ci.yml'
+            engine:
+              - 'engine/**'
+              - 'tests/**'
+              - 'CMakeLists.txt'
+              - 'version.txt'
+              - '.gitmodules'
+              - '.github/workflows/ci.yml'
+            release:
+              - 'scripts/**'
+              - '.github/**'
+              - 'dist/**'
+              - 'src-tauri/**'
+              - 'version.txt'
+
   frontend:
     name: Frontend checks, tests, and build
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -75,6 +119,8 @@ jobs:
 
   release-checks:
     name: Release scripts and workflow validation
+    needs: changes
+    if: needs.changes.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -111,6 +157,8 @@ jobs:
   # errors used to surface. Same settings as the release's build-cli job.
   engine:
     name: Engine build (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -134,16 +182,40 @@ jobs:
         shell: bash
         run: vcpkg install curl:x64-windows-static-md
 
+      # Compiler cache: llama.cpp and ggml rarely change, so most runs only recompile Delta's own
+      # files. Saved from dev and main only; PRs read that cache instead of each storing their own
+      # copy against the repository's 10 GB limit.
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: engine-${{ runner.os }}
+          variant: ${{ runner.os == 'Windows' && 'sccache' || 'ccache' }}
+          max-size: 2G
+          save: ${{ github.event_name == 'push' }}
+
+      # sccache needs a generator that calls the compiler directly, so Windows builds with Ninja
+      # from a Visual Studio developer environment instead of the MSBuild generator.
+      - name: Visual Studio environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Configure
         shell: bash
         run: |
           ARGS=(-DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_WEBUI=OFF -DLLAMA_OPENSSL=OFF
                 -DFORCE_SYSTEM_CLANG=OFF -DUSE_CURL=ON)
           case "$RUNNER_OS" in
-            macOS) ARGS+=(-DGGML_METAL=ON) ;;
-            Linux) ARGS+=(-DGGML_METAL=OFF) ;;
-            Windows)
+            macOS)
+              ARGS+=(-DGGML_METAL=ON
+                     -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache) ;;
+            Linux)
               ARGS+=(-DGGML_METAL=OFF
+                     -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache) ;;
+            Windows)
+              ARGS+=(-G Ninja -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DGGML_METAL=OFF
+                     -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
                      "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
                      -DVCPKG_TARGET_TRIPLET=x64-windows-static-md) ;;
           esac
@@ -163,3 +235,8 @@ jobs:
           ./build/delta-update-tests
           ./build/delta-harness-tests
 
+      - name: Compiler cache statistics
+        if: always()
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then sccache --show-stats; else ccache --show-stats; fi
