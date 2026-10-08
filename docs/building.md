@@ -267,9 +267,22 @@ To rebuild an existing tag (after a failed run, say), run the Release workflow b
 ### Version bumping
 
 `version.txt` is the single source. `scripts/bump-version.sh [X.Y.Z]` writes it into
-`src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and the package manifests in `dist/`;
-CMake reads `version.txt` when it configures. The release workflow runs the script itself, so the
-tagged commit only needs the right `version.txt`.
+`src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`; CMake reads `version.txt` when it
+configures. The release workflow runs the script itself, so the tagged commit only needs the right
+`version.txt`, and the release stops if the tag and `version.txt` disagree.
+
+### Package manifests
+
+The Homebrew formula, Nix expression, MacPorts Portfile and winget manifest in `dist/` install the
+prebuilt CLI archives from `delta-release`; this repository is private, so none of them build from
+source. Each names a published version and the SHA-256 of its archive, which exist only once the
+release is out. After publishing, point them at it and commit the result:
+
+```bash
+node scripts/update-package-manifests.cjs v1.0.16
+```
+
+The values come from the digests GitHub records for each release asset.
 
 ### macOS code signing
 

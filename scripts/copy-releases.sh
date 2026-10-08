@@ -98,10 +98,11 @@ for TAG in "${TAGS[@]}"; do
 
     if [[ -z "$DST_ID" ]]; then
         echo "   creating draft in $TARGET"
-        FLAGS=(--draft --title "$TITLE" --notes-file "$WORK/notes.md" --target main)
-        [[ "$PRERELEASE" == "true" ]] && FLAGS+=(--prerelease)
-        gh release create "$TAG" -R "$TARGET" "${FLAGS[@]}" >/dev/null
-        DST_ID=$(release_id "$TARGET" "$TAG")
+        # Take the id from the create call itself: a new draft can take a moment to show up when
+        # releases are listed, and every later step addresses the release by id.
+        DST_ID=$(gh api "repos/$TARGET/releases" -X POST \
+            -f tag_name="$TAG" -f target_commitish=main -f name="$TITLE" \
+            -F body=@"$WORK/notes.md" -F draft=true -F prerelease="$PRERELEASE" --jq .id)
     fi
 
     echo "   uploading"
@@ -113,6 +114,6 @@ for TAG in "${TAGS[@]}"; do
         exit 1
     fi
     echo "   all $COUNT assets match by SHA-256; publishing"
-    gh release edit "$TAG" -R "$TARGET" --draft=false >/dev/null
+    gh api "repos/$TARGET/releases/$DST_ID" -X PATCH -F draft=false >/dev/null
     rm -rf "$WORK/assets"
 done
