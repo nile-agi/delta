@@ -93,7 +93,7 @@ it('only offers discard when values have changed and links to issue templates', 
 	await page.getByRole('button', { name: 'Info', exact: true }).click();
 	await expect
 		.element(page.getByRole('link', { name: 'Get help or report a problem' }))
-		.toHaveAttribute('href', 'https://github.com/nile-agi/delta/issues/new/choose');
+		.toHaveAttribute('href', 'https://github.com/nile-agi/delta-release/issues/new/choose');
 });
 
 it('keeps settings usable on narrow screens and uses a vertical section list on desktop', async () => {

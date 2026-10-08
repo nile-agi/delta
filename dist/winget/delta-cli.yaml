@@ -3,12 +3,12 @@ PackageIdentifier: DeltaCLI.DeltaCLI
 PackageVersion: 1.0.15
 PackageName: Delta CLI
 Publisher: Delta CLI
-PublisherUrl: https://github.com/nile-agi/delta
-PublisherSupportUrl: https://github.com/nile-agi/delta/issues
+PublisherUrl: https://github.com/nile-agi/delta-release
+PublisherSupportUrl: https://github.com/nile-agi/delta-release/issues
 License: MIT
-LicenseUrl: https://github.com/nile-agi/delta/blob/main/LICENSE
+LicenseUrl: https://github.com/nile-agi/delta-release/blob/main/LICENSE
 Copyright: Copyright (c) 2026 Nile AGI
-CopyrightUrl: https://github.com/nile-agi/delta
+CopyrightUrl: https://github.com/nile-agi/delta-release
 ShortDescription: Offline AI Assistant powered by llama.cpp
 Description: |
   Delta CLI is an open-source, offline-first AI assistant that runs large 
