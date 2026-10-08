@@ -103,7 +103,7 @@ Update `dist\winget\delta-cli.yaml` or the winget repository manifest with the S
 1. Create a new release tag: `v1.0.0`
 2. Upload `delta-cli-windows-x64.zip` to the release
 3. The ZIP file should be accessible at:
-   `https://github.com/nile-agi/delta/releases/download/v1.0.0/delta-cli-windows-x64.zip`
+   `https://github.com/nile-agi/delta-release/releases/download/v1.0.0/delta-cli-windows-x64.zip`
 
 ## ZIP File Requirements for Winget
 

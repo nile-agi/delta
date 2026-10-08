@@ -39,7 +39,7 @@ Commands:
 Installers:
   - Architecture: x64
     InstallerType: zip
-    InstallerUrl: https://github.com/nile-agi/delta/releases/download/v1.0.15/delta-cli-windows-x64.zip
+    InstallerUrl: https://github.com/nile-agi/delta-release/releases/download/v1.0.15/delta-cli-windows-x64.zip
     InstallerSha256: UPDATE_SHA256_FOR_RELEASE
     Scope: machine
     InstallLocation: "C:\\Program Files\\Delta CLI"

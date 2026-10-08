@@ -146,7 +146,7 @@ Update the winget manifest with the SHA256 hash:
 ### Step 7: Create GitHub Release
 
 1. **Create a new release** on GitHub:
-   - Go to https://github.com/nile-agi/delta/releases
+   - Go to https://github.com/nile-agi/delta-release/releases
    - Click "Draft a new release"
    - Tag: `v1.0.0` (must match version in manifest)
    - Title: `Delta CLI v1.0.0`
@@ -161,7 +161,7 @@ Update the winget manifest with the SHA256 hash:
 4. **Verify the URL**:
    The ZIP should be accessible at:
    ```
-   https://github.com/nile-agi/delta/releases/download/v1.0.0/delta-cli-windows-x64.zip
+   https://github.com/nile-agi/delta-release/releases/download/v1.0.0/delta-cli-windows-x64.zip
    ```
 
 ### Step 8: Test Installation (Optional)
