@@ -663,7 +663,7 @@ dependencies = [
 
 [[package]]
 name = "delta-app"
-version = "1.0.15"
+version = "1.0.16"
 dependencies = [
  "log",
  "serde",
