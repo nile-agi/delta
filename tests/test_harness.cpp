@@ -24,6 +24,7 @@
 #include "vendor/llama.cpp/vendor/cpp-httplib/httplib.h"
 #include "vendor/json.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -87,17 +88,33 @@ static void test(const std::string& name) {
 class ScriptedServer {
   public:
     explicit ScriptedServer(std::vector<json> script) : script_(std::move(script)) {
-        server_.Get("/props", [](const httplib::Request&, httplib::Response& res) {
-            res.set_content(json{{"n_ctx", 4096}}.dump(), "application/json");
+        server_.Get("/props", [this](const httplib::Request& req, httplib::Response& res) {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                props_queries_.push_back(req.has_param("model") ? req.get_param_value("model") : "");
+            }
+            // A router answers for itself (n_ctx 0) unless asked about one of its models.
+            if (!router_model_.empty() && req.get_param_value("model") != router_model_) {
+                res.set_content(json{{"role", "router"}, {"default_generation_settings", {{"n_ctx", 0}}}}.dump(),
+                                "application/json");
+                return;
+            }
+            res.set_content(json{{"default_generation_settings", {{"n_ctx", n_ctx_}}}}.dump(), "application/json");
         });
 
-        server_.Post("/tokenize", [](const httplib::Request& req, httplib::Response& res) {
+        server_.Post("/tokenize", [this](const httplib::Request& req, httplib::Response& res) {
             // A token per 4 characters is close enough for budgeting tests.
-            size_t n = 0;
+            json body = json::object();
             try {
-                n = json::parse(req.body).value("content", std::string("")).size() / 4 + 1;
+                body = json::parse(req.body);
             } catch (...) {
             }
+            if (!router_model_.empty() && body.value("model", std::string()) != router_model_) {
+                res.status = 400;
+                res.set_content(json{{"error", "model name is missing from the request"}}.dump(), "application/json");
+                return;
+            }
+            size_t n = body.value("content", std::string("")).size() / 4 + 1;
             res.set_content(json{{"tokens", std::vector<int>(n, 1)}}.dump(), "application/json");
         });
 
@@ -137,6 +154,21 @@ class ScriptedServer {
             }
             res.set_content(sse_for(message), "text/event-stream");
         });
+    }
+
+    // The context window the model reports.
+    void set_context(int n_ctx) { n_ctx_ = n_ctx; }
+
+    // Behave like llama-server in router mode, as the desktop app runs it: /props and /tokenize
+    // only answer for `model`, named in the query or the body.
+    void set_router(const std::string& model, int n_ctx) {
+        router_model_ = model;
+        n_ctx_ = n_ctx;
+    }
+
+    std::vector<std::string> props_queries() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return props_queries_;
     }
 
     // Hold every completion response for this long, to stand in for a slow model.
@@ -216,6 +248,9 @@ class ScriptedServer {
     std::thread thread_;
     int port_ = 0;
     int delay_ms_ = 0;
+    int n_ctx_ = 4096;
+    std::string router_model_;
+    std::vector<std::string> props_queries_;
     std::function<json(const json&)> responder_;
     std::vector<json> script_;
     std::vector<json> requests_;
@@ -1052,8 +1087,9 @@ static void test_context_keeps_complete_exchanges() {
     test("compaction preserves the user request together with its assistant reply");
     ContextManager context(1400, 256);
     context.set_token_counter([](const std::string& text) { return static_cast<int>(text.size()); });
-    json history = json::array({user(std::string(500, 'a')),
-                                {{"role", "assistant"}, {"content", std::string(500, 'b')}},
+    // Together the earlier exchange is larger than the 1400-token window's budget.
+    json history = json::array({user(std::string(700, 'a')),
+                                {{"role", "assistant"}, {"content", std::string(700, 'b')}},
                                 user("Current question")});
     auto built = context.build("SYSTEM", history);
     check_eq(built.size(), size_t(2), "the oversized earlier exchange is dropped as a unit");
@@ -1115,23 +1151,34 @@ static void test_summary_keeps_late_message_details() {
 }
 
 static void test_oversized_current_request_is_explicit() {
-    test("an oversized latest request is rejected explicitly rather than silently cut");
-    ScriptedServer server(std::vector<json>{});
+    test("an oversized latest request is shortened visibly and answered, never refused");
+    ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "Here is what I read."}}});
     server.start();
     Harness harness(server.url(), "test-model", true);
     auto options = test_options();
     options.n_ctx = 1400;
     harness.set_options(options);
     EventLog log;
-    auto result = harness.run(json::array({user(std::string(12000, 'a'))}), log.sink());
+    const std::string message = "BEGINNING " + std::string(12000, 'a') + " ENDING";
+    auto result = harness.run(json::array({user(message)}), log.sink());
     server.stop();
-    check(!result.success, "the run reports failure");
-    check(result.error.find("context window") != std::string::npos, "the reason is clear");
-    check(server.requests().empty(), "no oversized inference is sent");
+    check(result.success, "the run succeeds");
+    check_eq(log.count(EventType::Error), 0, "no error is shown");
+    auto requests = server.requests();
+    check(requests.size() == 1, "one request is sent");
+    if (!requests.empty()) {
+        const std::string sent = requests[0]["messages"].dump();
+        check(sent.find("characters truncated by Delta") != std::string::npos, "the omission is marked for the model");
+        check(sent.find("BEGINNING") != std::string::npos && sent.find("ENDING") != std::string::npos,
+              "the beginning and the end are kept");
+        check(requests[0].dump().size() / 4 < 1400, "the request fits the window");
+    }
+    check(log.text().find("beginning and the end") != std::string::npos || log.count(EventType::Status) > 0,
+          "the user is told the message was shortened");
     check(!result.task_id.empty(), "the run has a task record");
     if (!result.task_id.empty())
-        check_eq(delta::agent::TaskStore::instance().get_task(result.task_id).status, std::string("failed"),
-                 "the task is finalized as failed");
+        check(delta::agent::TaskStore::instance().get_task(result.task_id).status != "failed",
+              "the task is not marked failed");
 }
 
 static void test_context_never_orphans_tool_messages() {
@@ -2953,7 +3000,7 @@ static void test_partial_success_survives_a_model_failure() {
 }
 
 static void test_truncated_text_is_reported_as_incomplete() {
-    test("a reply cut off by the token budget is not reported as completed");
+    test("a reply cut off by the token limit is kept, flagged softly and left resumable, never an error");
     ScriptedServer server(
         std::vector<json>{{{"role", "assistant"}, {"content", "I started explaining"}, {"finish_reason", "length"}}});
     server.start();
@@ -2964,11 +3011,12 @@ static void test_truncated_text_is_reported_as_incomplete() {
     EventLog log;
     const auto result = harness.run(json::array({user("explain it")}), log.sink());
     server.stop();
-    check(!result.success, "an incomplete answer is not successful completion");
+    check(result.success, "the partial answer is delivered");
     check_eq(result.stop_reason, std::string("length"), "the summary reports the token limit");
     check_eq(result.content, std::string("I started explaining"), "the partial text is retained");
     check(!result.transcript_delta.empty(), "the partial assistant turn remains in history");
-    check_eq(log.count(EventType::Error), 1, "the client receives an explicit interruption reason");
+    check_eq(log.count(EventType::Error), 0, "no error is shown");
+    check(log.count(EventType::Status) > 0, "the user is told the reply may be cut short");
     check_eq(TaskStore::instance().get_task(result.task_id).status, std::string("interrupted"),
              "the durable task is resumable");
 }
@@ -3137,6 +3185,231 @@ static void test_passages_fit_a_small_window_with_a_long_history() {
     DocumentStore::instance().remove_conversation("conv-window");
 }
 
+// ------------------------------------------------- the context window and small windows
+
+// The categories a desktop chat offers with agent tools on (files and shell are opt-in).
+static RunOptions desktop_options(const std::string& conversation) {
+    RunOptions options;
+    options.enabled_categories = {"calendar", "notes", "memory", "task", "documents"};
+    options.max_iterations = 4;
+    options.max_tokens = 2048; // what the UI's "no limit" (-1) becomes
+    options.memory_scope = conversation;
+    return options;
+}
+
+static std::vector<std::string> sent_tool_names(const json& request) {
+    std::vector<std::string> names;
+    if (request.contains("tools"))
+        for (const auto& t : request["tools"])
+            names.push_back(t["function"].value("name", ""));
+    return names;
+}
+
+static bool contains_name(const std::vector<std::string>& names, const std::string& name) {
+    return std::find(names.begin(), names.end(), name) != names.end();
+}
+
+static void test_router_mode_reports_the_real_context_window() {
+    test("in router mode the harness asks for the model's own window instead of assuming 4096");
+
+    ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "Noted."}}});
+    server.set_router("test-model", 32768);
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(desktop_options("conv-router"));
+    EventLog log;
+    auto result = harness.run(json::array({user("I have meeting at 2200hrs today")}), log.sink());
+    server.stop();
+
+    check(result.success, "a new chat succeeds");
+    check_eq(log.count(EventType::Error), 0, "no error is shown");
+    bool asked_for_model = false;
+    for (const auto& q : server.props_queries())
+        asked_for_model = asked_for_model || q == "test-model";
+    check(asked_for_model, "the probe named the model");
+}
+
+static void test_a_new_chat_never_reports_the_context_error() {
+    test("a new chat gets a reply at small windows: the request is fitted, never refused");
+
+    for (int n_ctx : {4096, 2048, 1024}) {
+        const std::string label = " (" + std::to_string(n_ctx) + " tokens)";
+        ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "Noted."}}});
+        server.set_router("test-model", n_ctx);
+        server.start();
+        Harness harness(server.url(), "test-model", true);
+        harness.set_options(desktop_options("conv-small-" + std::to_string(n_ctx)));
+        EventLog log;
+        auto result = harness.run(json::array({user("I have meeting at 2200hrs today")}), log.sink());
+        server.stop();
+
+        check(result.success, "the run succeeds" + label);
+        check_eq(log.count(EventType::Error), 0, "no error is shown" + label);
+        auto requests = server.requests();
+        check(!requests.empty(), "the model was called" + label);
+        if (requests.empty())
+            continue;
+        const json& sent = requests.back();
+        check(sent["messages"].dump().find("2200hrs") != std::string::npos, "the user's message was sent" + label);
+        const size_t approx_tokens = sent.dump().size() / 4;
+        check(approx_tokens < static_cast<size_t>(n_ctx), "the request fits the window" + label);
+    }
+}
+
+static void test_document_tools_are_offered_only_with_documents() {
+    test("the document tools are only offered when the chat has documents");
+
+    auto tools_for = [](const std::string& conversation) {
+        ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "ok"}}});
+        server.set_router("test-model", 32768);
+        server.start();
+        Harness harness(server.url(), "test-model", true);
+        harness.set_options(desktop_options(conversation));
+        EventLog log;
+        harness.run(json::array({user("what is in my report?")}), log.sink());
+        server.stop();
+        auto requests = server.requests();
+        return requests.empty() ? std::vector<std::string>{} : sent_tool_names(requests.back());
+    };
+
+    check(!contains_name(tools_for("conv-no-docs"), "search_documents"), "absent in a chat without documents");
+    DocumentStore::instance().add("report.pdf", "application/pdf", "conv-with-docs",
+                                  {{1, "", "The quarterly report covers revenue.", false}});
+    check(contains_name(tools_for("conv-with-docs"), "search_documents"), "present once a document is attached");
+    DocumentStore::instance().remove_conversation("conv-with-docs");
+}
+
+static void test_a_huge_message_in_a_tiny_window_still_gets_an_answer() {
+    test("even a message larger than the window gets an answer, never the context error");
+
+    ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "That is a lot of text."}}});
+    server.set_router("test-model", 1024);
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(desktop_options("conv-huge"));
+    EventLog log;
+    std::string big = "Please read this: ";
+    for (int i = 0; i < 2000; i++)
+        big += "word" + std::to_string(i) + " ";
+    auto result = harness.run(json::array({user(big)}), log.sink());
+    server.stop();
+
+    check(result.success, "the run succeeds");
+    check_eq(log.count(EventType::Error), 0, "no error is shown");
+    check(!server.requests().empty(), "the model was called");
+}
+
+static void test_compaction_keeps_the_ids_of_records_it_changed() {
+    test("compaction keeps the id and title of a record created early in a long chat");
+
+    json history = json::array();
+    history.push_back(user("Book the board meeting tomorrow at 22:00"));
+    history.push_back(assistant_calling("create_event", {{"title", "Board meeting"}}, "call_book"));
+    history.push_back(
+        {{"role", "tool"},
+         {"tool_call_id", "call_book"},
+         {"content", json{{"id", "evt-777"}, {"title", "Board meeting"}, {"start_time", "2026-10-09T22:00"}}.dump()}});
+    history.push_back({{"role", "assistant"}, {"content", "Booked the board meeting."}});
+    for (int turn = 0; turn < 30; turn++) {
+        history.push_back(user("Side question " + std::to_string(turn) + ": " + std::string(300, 'q')));
+        history.push_back({{"role", "assistant"}, {"content", "Side answer: " + std::string(300, 'a')}});
+    }
+    history.push_back(user("Move the board meeting to 23:00"));
+
+    ScriptedServer server(std::vector<json>{});
+    server.set_router("test-model", 4096);
+    server.set_responder([](const json& request) -> json {
+        const bool summary =
+            request["messages"][0].value("content", "").find("Summarize this earlier") != std::string::npos;
+        return {{"role", "assistant"}, {"content", summary ? "The user asked side questions." : "Moved."}};
+    });
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(desktop_options("conv-receipts"));
+    EventLog log;
+    auto result = harness.run(history, log.sink());
+    server.stop();
+
+    check(result.success, "the run succeeds");
+    check(log.count(EventType::Compaction) > 0, "the early turns were compacted");
+    std::string answering;
+    for (const auto& r : server.requests())
+        if (r.value("stream", false))
+            answering = r["messages"].dump();
+    check(answering.find("evt-777") != std::string::npos, "the record's id reaches the model");
+    check(answering.find("Board meeting") != std::string::npos, "and so does its title");
+    check(answering.find("23:00") != std::string::npos, "the latest request is kept whole");
+}
+
+static void test_an_empty_cut_off_reply_still_answers() {
+    test("a reply cut off before any text is retried once, then answered in plain words");
+    const json empty_cut = {{"role", "assistant"}, {"content", ""}, {"finish_reason", "length"}};
+    ScriptedServer server(std::vector<json>{empty_cut, empty_cut});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("think hard")}), log.sink());
+    server.stop();
+    check(result.success, "the run succeeds");
+    check_eq(server.requests().size(), size_t(2), "it asked once more");
+    check(result.content.find("continue") != std::string::npos, "the user gets a plain-language answer");
+    check_eq(log.count(EventType::Error), 0, "no error is shown");
+}
+
+static void test_a_server_context_overflow_is_refitted_silently() {
+    test("if llama-server rejects a request as too big, the harness refits it and tries again");
+    ScriptedServer server(std::vector<json>{
+        {{"http_status", 400}, {"error", "the request exceeds the available context size, try increasing it"}},
+        {{"role", "assistant"}, {"content", "Noted."}}});
+    server.set_router("test-model", 32768);
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(desktop_options("conv-server-overflow"));
+    EventLog log;
+    auto result = harness.run(json::array({user("I have meeting at 2200hrs today")}), log.sink());
+    server.stop();
+    check(result.success, "the run succeeds");
+    check_eq(log.count(EventType::Error), 0, "no error is shown");
+    auto requests = server.requests();
+    check_eq(requests.size(), size_t(2), "the request was sent again");
+    if (requests.size() == 2)
+        check(requests[1].dump().size() < requests[0].dump().size(), "the retry is smaller");
+}
+
+static void test_a_small_max_tokens_is_respected() {
+    test("a caller's reply limit below the harness's floor is still respected");
+    ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "Short."}}});
+    server.set_router("test-model", 32768);
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    RunOptions options = desktop_options("conv-small-reply");
+    options.max_tokens = 16;
+    harness.set_options(options);
+    EventLog log;
+    harness.run(json::array({user("hello")}), log.sink());
+    server.stop();
+    auto requests = server.requests();
+    check(!requests.empty() && requests[0].value("max_tokens", 0) == 16, "the model is asked for at most 16 tokens");
+}
+
+static void test_a_tool_call_cut_off_by_the_limit_is_not_an_error() {
+    test("a tool call cut off by the reply limit (llama-server cannot parse it) is retried, never an error");
+    const json parse_fail = {{"http_status", 500},
+                             {"error", "Failed to parse tool call arguments as JSON: unexpected end of input"}};
+    ScriptedServer server(std::vector<json>{parse_fail, parse_fail});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(test_options());
+    EventLog log;
+    auto result = harness.run(json::array({user("book it")}), log.sink());
+    server.stop();
+    check(result.success, "the run succeeds");
+    check_eq(server.requests().size(), size_t(2), "it retried once");
+    check_eq(log.count(EventType::Error), 0, "no error is shown");
+    check(result.content.find("continue") != std::string::npos, "the user gets a plain-language answer");
+}
+
 int main() {
     std::cout << "Delta harness tests\n===================\n";
 
@@ -3261,6 +3534,15 @@ int main() {
     test_read_file_does_not_load_more_than_it_returns();
     test_attached_files_reach_the_model_as_passages();
     test_passages_fit_a_small_window_with_a_long_history();
+    test_router_mode_reports_the_real_context_window();
+    test_a_new_chat_never_reports_the_context_error();
+    test_document_tools_are_offered_only_with_documents();
+    test_a_huge_message_in_a_tiny_window_still_gets_an_answer();
+    test_compaction_keeps_the_ids_of_records_it_changed();
+    test_an_empty_cut_off_reply_still_answers();
+    test_a_server_context_overflow_is_refitted_silently();
+    test_a_small_max_tokens_is_respected();
+    test_a_tool_call_cut_off_by_the_limit_is_not_an_error();
 
     AgentDatabase::instance().close();
     std::remove(db_path.c_str());

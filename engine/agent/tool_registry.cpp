@@ -231,11 +231,17 @@ const std::set<std::string>& deferred_categories() {
 // two conversations served at once must not change each other's tool set.
 thread_local std::set<std::string> g_loaded_categories;
 thread_local std::set<std::string> g_permitted_categories;
+// Held back for this run only, to fit a small context window; loadable like any deferred group.
+thread_local std::set<std::string> g_fit_deferred;
 
 } // namespace
 
 bool is_deferred_category(const std::string& category) {
-    return deferred_categories().count(category) > 0;
+    return deferred_categories().count(category) > 0 || g_fit_deferred.count(category) > 0;
+}
+
+void defer_categories_for_fit(const std::set<std::string>& categories) {
+    g_fit_deferred = categories;
 }
 
 std::string category_summary(const std::string& category) {
@@ -258,6 +264,7 @@ std::string category_summary(const std::string& category) {
 
 void begin_tool_session(const std::set<std::string>& permitted) {
     g_loaded_categories.clear();
+    g_fit_deferred.clear();
     g_permitted_categories = permitted;
 }
 

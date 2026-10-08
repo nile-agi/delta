@@ -57,10 +57,10 @@ describe('indexed documents in chat requests', () => {
 		expect(text.length).toBeLessThan(2000);
 	});
 
-	it('leaves a chat without indexed files on the plain server', async () => {
+	it('sends a plain chat through the harness too, so it is fitted to the window', async () => {
 		const { url, body } = await send([{ type: 'textFile', name: 'a.txt', content: 'hello' }]);
-		expect(url).toBe('http://plain.test/v1/chat/completions');
-		expect(body.use_documents).toBeUndefined();
-		expect(body.conversation_id).toBeUndefined();
+		expect(url).toBe('http://agent.test/v1/chat/completions');
+		expect(body.use_tools).toBe(false);
+		expect(body.conversation_id).toBe('conv-7');
 	});
 });
