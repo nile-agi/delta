@@ -69,10 +69,11 @@ jobs:
             const { prepareRelease } = require('./scripts/release-notes.cjs');
             const tag = process.env.RELEASE_TAG;
             // The tag and the notes are read from this repository with its own token; the draft
-            // is created in the public release repository with the release token.
+            // is created in the public release repository with the release token. github-script
+            // does not expose getOctokit, so the second client is built from the same class.
             const id = await prepareRelease({
               github,
-              sourceGithub: getOctokit(process.env.SOURCE_TOKEN),
+              sourceGithub: new github.constructor({ auth: process.env.SOURCE_TOKEN }),
               context,
               tag,
               releaseRepo: process.env.RELEASE_REPO
