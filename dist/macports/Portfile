@@ -1,76 +1,62 @@
 # -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4
 
+# Installs the prebuilt CLI from the public release repository (the source repository is private).
+# The version and the checksums below are written by scripts/update-package-manifests.cjs from the
+# published release; do not edit them by hand.
+
 PortSystem          1.0
-PortGroup           github 1.0
-PortGroup           cmake 1.1
 
 name                delta-cli
-version             1.0.15
+version             1.0.13
 revision            0
-github.setup        nile-agi delta v${version}
 
-categories          ai llm machine-learning
+categories          sysutils
 platforms           darwin
+supported_archs     arm64 x86_64
+installs_libs       no
 license             MIT
 maintainers         openmaintainer
 
-description         Offline AI Assistant powered by llama.cpp
+description         Offline AI assistant powered by llama.cpp
 long_description    \
-    Delta CLI is an open-source, offline-first AI assistant that runs \
-    large language models (LLMs) directly on your device. Built on top \
-    of llama.cpp with a custom web UI and GPU acceleration.
+    Delta runs large language models (LLMs) directly on your device. Built \
+    on llama.cpp, with a web UI, model management and Metal acceleration.
 
-depends_build       port:cmake \
-                    port:curl \
-                    port:pkgconfig \
-                    port:nodejs22 \
-                    port:pnpm
+homepage            https://github.com/nile-agi/delta-release
+master_sites        https://github.com/nile-agi/delta-release/releases/download/v${version}/
 
-depends_lib         port:curl
-
-# Fetch submodules
-pre-build {
-    system -W ${worksrcpath} "git submodule update --init --recursive"
+if {${configure.build_arch} eq "arm64"} {
+    distname        delta-cli-macos-arm64
+    checksums       sha256  b70d5521c3a4da44badcd4e1cc50298d39553795887e10a17a93db472603616e \
+                    size    0
+} else {
+    distname        delta-cli-macos-x86_64
+    checksums       sha256  91320893125efc86d696d10c098fc3e2b2eac5f0666fab93dc56fcba20ba2fbd \
+                    size    0
 }
 
-# Build web UI before C++ compilation
-pre-configure {
-    system -W ${worksrcpath}/web/app "pnpm install && pnpm run build"
-}
-
-configure.args-append \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DGGML_METAL=ON \
-    -DLLAMA_CUDA=OFF \
-    -DLLAMA_VULKAN=OFF \
-    -DLLAMA_HIPBLAS=OFF \
-    -DBUILD_TESTS=OFF \
-    -DUSE_CURL=ON
-
-build.target        delta delta-server llama-server
+worksrcdir          delta-cli-${version}
+use_configure       no
+build {}
 
 destroot {
-    xinstall -m 755 ${cmake.build_dir}/delta ${destroot}${prefix}/bin/delta
-    xinstall -m 755 ${cmake.build_dir}/delta-server ${destroot}${prefix}/bin/delta-server
-
-    # Install llama-server
-    foreach candidate [list \
-        ${cmake.build_dir}/bin/llama-server \
-        ${cmake.build_dir}/llama-server \
-        ${cmake.build_dir}/bin/server \
-    ] {
-        if {[file exists $candidate]} {
-            xinstall -m 755 $candidate ${destroot}${prefix}/bin/llama-server
-            break
-        }
+    # Keep the release layout together: delta finds delta-server, llama-server and the web UI
+    # beside itself. Only wrappers go in bin/, so llama.cpp's own llama-server never collides.
+    set home ${prefix}/libexec/${name}
+    xinstall -d ${destroot}${home}/bin
+    foreach binary {delta delta-server llama-server} {
+        xinstall -m 0755 ${worksrcpath}/bin/${binary} ${destroot}${home}/bin/${binary}
     }
-
-    # Install web UI
-    if {[file exists ${worksrcpath}/public/index.html]} {
-        xinstall -d ${destroot}${prefix}/share/delta-cli
-        copy ${worksrcpath}/public ${destroot}${prefix}/share/delta-cli/webui
+    copy ${worksrcpath}/webui ${destroot}${home}/webui
+    foreach binary {delta delta-server} {
+        set wrapper [open ${destroot}${prefix}/bin/${binary} w]
+        puts ${wrapper} "#!/bin/sh"
+        puts ${wrapper} "exec \"${home}/bin/${binary}\" \"\$@\""
+        close ${wrapper}
+        file attributes ${destroot}${prefix}/bin/${binary} -permissions 0755
     }
 }
 
-livecheck.url       ${github.livecheck.url}
-livecheck.regex     v([0-9.]+)
+livecheck.type      regex
+livecheck.url       https://github.com/nile-agi/delta-release/releases/latest
+livecheck.regex     {/releases/tag/v([0-9.]+)}

@@ -179,6 +179,7 @@ set(DELTA_SOURCES
     engine/models.cpp
     engine/inference.cpp
     engine/update.cpp
+    engine/update_install.cpp
     engine/commands.cpp
     engine/history.cpp
     engine/server_health.cpp
@@ -437,6 +438,14 @@ add_executable(delta-document-tests EXCLUDE_FROM_ALL
 target_include_directories(delta-document-tests PRIVATE ${DELTA_INCLUDE_DIRS})
 target_link_libraries(delta-document-tests PRIVATE sqlite3 ${CMAKE_THREAD_LIBS_INIT})
 
+# Update tests: SHA-256, checksum files and installing an archive into a scratch folder.
+#   cmake --build build --target delta-update-tests && ./build/delta-update-tests
+add_executable(delta-update-tests EXCLUDE_FROM_ALL
+    tests/test_update_install.cpp
+    engine/update_install.cpp
+)
+target_include_directories(delta-update-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/engine)
+
 # Retrieval eval: hit rate, MRR and context budget over a frozen corpus (no model needed).
 #   cmake --build build --target delta-retrieval-eval && ./build/delta-retrieval-eval
 add_executable(delta-retrieval-eval EXCLUDE_FROM_ALL
@@ -459,6 +468,8 @@ endif()
 
 # Build Web UI from web/app/ directory
 option(FORCE_BUILD_WEBUI "Always run pnpm run build for web UI (ignores timestamp)" OFF)
+# OFF skips the web UI entirely, for builds that only need to compile the engine (CI checks).
+option(BUILD_WEBUI "Build the web UI from web/app when it is out of date" ON)
 message(STATUS "")
 message(STATUS "Building Web UI from web/app/...")
 
@@ -472,7 +483,7 @@ elseif(NPM_EXECUTABLE)
     message(STATUS "  npm found: ${NPM_EXECUTABLE} (pnpm preferred)")
 endif()
 
-if(PKG_MANAGER)
+if(PKG_MANAGER AND BUILD_WEBUI)
     if(EXISTS "${CMAKE_SOURCE_DIR}/web/app/package.json")
         message(STATUS "  app/ directory found")
 
@@ -525,6 +536,8 @@ if(PKG_MANAGER)
     else()
         message(WARNING "  app/package.json not found, skipping web UI build")
     endif()
+elseif(NOT BUILD_WEBUI)
+    message(STATUS "  BUILD_WEBUI=OFF, web UI will not be built")
 else()
     message(WARNING "  Neither pnpm nor npm found, web UI will not be built")
     message(WARNING "  Install pnpm (https://pnpm.io) to build the web UI")

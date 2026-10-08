@@ -1,14 +1,15 @@
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.schema.2.0
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.singleton.1.6.0.schema.json
+# Version, URL, nested path and SHA-256 are written by scripts/update-package-manifests.cjs.
 PackageIdentifier: DeltaCLI.DeltaCLI
-PackageVersion: 1.0.15
+PackageVersion: 1.0.13
 PackageName: Delta CLI
 Publisher: Delta CLI
-PublisherUrl: https://github.com/nile-agi/delta
-PublisherSupportUrl: https://github.com/nile-agi/delta/issues
+PublisherUrl: https://github.com/nile-agi/delta-release
+PublisherSupportUrl: https://github.com/nile-agi/delta-release/issues
 License: MIT
-LicenseUrl: https://github.com/nile-agi/delta/blob/main/LICENSE
+LicenseUrl: https://github.com/nile-agi/delta-release/blob/main/LICENSE
 Copyright: Copyright (c) 2026 Nile AGI
-CopyrightUrl: https://github.com/nile-agi/delta
+CopyrightUrl: https://github.com/nile-agi/delta-release
 ShortDescription: Offline AI Assistant powered by llama.cpp
 Description: |
   Delta CLI is an open-source, offline-first AI assistant that runs large 
@@ -39,13 +40,14 @@ Commands:
 Installers:
   - Architecture: x64
     InstallerType: zip
-    InstallerUrl: https://github.com/nile-agi/delta/releases/download/v1.0.15/delta-cli-windows-x64.zip
-    InstallerSha256: UPDATE_SHA256_FOR_RELEASE
-    Scope: machine
-    InstallLocation: "C:\\Program Files\\Delta CLI"
-    InstallModes:
-      - silent
-      - interactive
-ManifestType: version
-ManifestVersion: 1.4.0
-
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: delta-cli-1.0.13\bin\delta.exe
+        PortableCommandAlias: delta
+    # delta finds delta-server, llama-server and the web UI next to itself, so put the extracted
+    # folder on PATH instead of linking the one executable somewhere else.
+    ArchiveBinariesDependOnPath: true
+    InstallerUrl: https://github.com/nile-agi/delta-release/releases/download/v1.0.13/delta-cli-windows-x64.zip
+    InstallerSha256: 46D018C88A43AD8D2646C544245AA9268EF03F0902038751FCCBFF397E965153
+ManifestType: singleton
+ManifestVersion: 1.6.0

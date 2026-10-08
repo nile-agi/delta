@@ -246,14 +246,43 @@ The workflow (`.github/workflows/release.yml`) runs two parallel jobs:
 | `build-cli` | CLI archives (delta + delta-server + llama-server) | macOS arm64/x86_64, Linux x86_64, Windows x64 |
 | `build-tauri` | Desktop installers (dmg, deb, AppImage, exe) | macOS arm64/x86_64, Linux x86_64, Windows x64 |
 
-After both complete, `attach-cli` uploads CLI archives + SHA-256 checksums to the GitHub Release.
+After both complete, `attach-cli` uploads CLI archives + SHA-256 checksums, and `publish-release` takes the release out of draft.
+
+### Where releases are published
+
+This repository is private, so releases go to the public
+[nile-agi/delta-release](https://github.com/nile-agi/delta-release/releases) repository; the website's
+download button, the README and the winget manifest all point there. The workflow still runs here, so
+the signing secrets stay here too. It needs one more secret:
+
+- `RELEASE_REPO_TOKEN` -- a fine-grained personal access token with **Contents: read & write** on
+  `nile-agi/delta-release` only. Without it the release fails at its first step.
+
+Release notes are generated from this repository's pull requests; links back into it are removed
+from the public copy, since readers outside the organization cannot open them. The tag is created in
+`delta-release` on its `main` branch.
+
+To rebuild an existing tag (after a failed run, say), run the Release workflow by hand with that tag.
 
 ### Version bumping
 
-Update version in three places (must match):
-1. `version.txt`
-2. `src-tauri/tauri.conf.json` -> `"version"`
-3. `src-tauri/Cargo.toml` -> `version`
+`version.txt` is the single source. `scripts/bump-version.sh [X.Y.Z]` writes it into
+`src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`; CMake reads `version.txt` when it
+configures. The release workflow runs the script itself, so the tagged commit only needs the right
+`version.txt`, and the release stops if the tag and `version.txt` disagree.
+
+### Package manifests
+
+The Homebrew formula, Nix expression, MacPorts Portfile and winget manifest in `dist/` install the
+prebuilt CLI archives from `delta-release`; this repository is private, so none of them build from
+source. Each names a published version and the SHA-256 of its archive, which exist only once the
+release is out. After publishing, point them at it and commit the result:
+
+```bash
+node scripts/update-package-manifests.cjs v1.0.16
+```
+
+The values come from the digests GitHub records for each release asset.
 
 ### macOS code signing
 

@@ -655,12 +655,12 @@
 								<div class="flex flex-wrap gap-3">
 									<a
 										class="rounded-md border px-4 py-2 text-sm hover:bg-accent"
-										href="https://github.com/nile-agi/delta"
+										href="https://github.com/nile-agi/delta-release"
 										target="_blank"
 										rel="noreferrer">Project & documentation</a
 									><a
 										class="rounded-md border px-4 py-2 text-sm hover:bg-accent"
-										href="https://github.com/nile-agi/delta/issues/new/choose"
+										href="https://github.com/nile-agi/delta-release/issues/new/choose"
 										target="_blank"
 										rel="noreferrer">Get help or report a problem</a
 									>
