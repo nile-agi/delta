@@ -190,6 +190,7 @@ set(DELTA_SOURCES
     engine/tools/browser.cpp
     engine/model_api_server.cpp
     engine/api/document_routes.cpp
+    engine/api/openai_api.cpp
     engine/api/note_routes.cpp
     engine/agent/agent_database.cpp
     engine/agent/memory_store.cpp
@@ -275,6 +276,7 @@ add_executable(delta-server
     engine/delta_server_wrapper.cpp
     engine/model_api_server.cpp
     engine/api/document_routes.cpp
+    engine/api/openai_api.cpp
     engine/models.cpp
     engine/server_health.cpp
     engine/tools/hardware_monitor.cpp
@@ -437,6 +439,19 @@ add_executable(delta-document-tests EXCLUDE_FROM_ALL
 )
 target_include_directories(delta-document-tests PRIVATE ${DELTA_INCLUDE_DIRS})
 target_link_libraries(delta-document-tests PRIVATE sqlite3 ${CMAKE_THREAD_LIBS_INIT})
+
+# OpenAI API tests: request gate, settings file, and the proxy against a stand-in llama-server.
+#   cmake --build build --target delta-openai-tests && ./build/delta-openai-tests
+add_executable(delta-openai-tests EXCLUDE_FROM_ALL
+    tests/test_openai_api.cpp
+    engine/api/openai_api.cpp
+)
+target_include_directories(delta-openai-tests PRIVATE ${DELTA_INCLUDE_DIRS})
+target_link_libraries(delta-openai-tests PRIVATE cpp-httplib ${CMAKE_THREAD_LIBS_INIT})
+if(WIN32)
+    target_compile_definitions(delta-openai-tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(delta-openai-tests PRIVATE ws2_32)
+endif()
 
 # Update tests: SHA-256, checksum files and installing an archive into a scratch folder.
 #   cmake --build build --target delta-update-tests && ./build/delta-update-tests

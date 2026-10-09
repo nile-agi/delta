@@ -53,6 +53,64 @@ static void exit_signal_handler(int) {
 #endif
 
 // Command handlers
+void print_server_help() {
+    std::cout << R"(
+DELTA SERVER — web UI and an OpenAI-compatible API for your models
+
+USAGE:
+    delta server [OPTIONS]          (same as: delta --server)
+
+WHAT IT STARTS:
+    Web UI                  http://localhost:8080
+    OpenAI-compatible API   http://127.0.0.1:8081/v1      (always the web UI port + 1)
+
+OPTIONS:
+    -m, --model <MODEL>     Load this model at start (otherwise pick one in the web UI)
+    --port <N>              Web UI port (default 8080); the API listens on N+1
+    --host <ADDR>           API address: 127.0.0.1 (default, this computer only)
+                            or 0.0.0.0 to share it with other devices on your network
+    --api-key <KEY>         Require this key from API clients (or set DELTA_API_KEY)
+                            Sharing on the network always needs a key
+    --np <N>                Max parallel requests (default: 4)
+    --c <N>                 Max context size (default: model native)
+    --models-dir <DIR>      Scan this directory for .gguf models
+    --embedding             Enable /v1/embeddings
+
+ENDPOINTS:
+    GET  /v1/models                 Your downloaded models (use an "id" as "model")
+    POST /v1/chat/completions       Chat: streaming, tools / function calling, JSON mode
+    POST /v1/completions            Plain text completion
+    POST /v1/embeddings             Embeddings (start the server with --embedding)
+
+EXAMPLES:
+  curl:
+    curl http://127.0.0.1:8081/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{"model": "qwen2.5:0.5b", "messages": [{"role": "user", "content": "Hello"}]}'
+
+  Python (pip install openai):
+    from openai import OpenAI
+    client = OpenAI(base_url="http://127.0.0.1:8081/v1", api_key="delta")
+    reply = client.chat.completions.create(
+        model="qwen2.5:0.5b", messages=[{"role": "user", "content": "Hello"}])
+    print(reply.choices[0].message.content)
+
+  JavaScript (npm install openai):
+    import OpenAI from "openai";
+    const client = new OpenAI({ baseURL: "http://127.0.0.1:8081/v1", apiKey: "delta" });
+
+  Share with other devices on your network:
+    delta server --host 0.0.0.0 --api-key my-secret
+    then call http://<this-computer's-IP>:8081/v1 with "Authorization: Bearer my-secret"
+
+  No key set? Any api_key value works on this computer.
+
+SETTINGS:
+    The desktop app sets the same things under Settings > Developer > API access
+    (saved in ~/.delta-cli/api_server.json). Flags override them for one run.
+)" << std::endl;
+}
+
 void print_help() {
 #ifndef DELTA_VERSION
 #define DELTA_VERSION "dev"
@@ -74,7 +132,7 @@ QUICK START:
     delta --server            # 2. Start server + open Web UI
 
 USAGE:
-    delta --server              Start server with Web UI (recommended)
+    delta --server              Start server with Web UI (recommended; also `delta server`)
     delta                       Start interactive terminal mode
     delta [OPTIONS] [PROMPT]    One-shot query
     delta pull <model-name>     Download a model
@@ -89,6 +147,12 @@ SERVER OPTIONS (delta --server):
     --embedding                 Enable embedding endpoints
     --reranking                 Enable reranking endpoints
     --md <model>                Draft model for speculative decoding
+    --host <ADDR>               API address (default: 127.0.0.1; 0.0.0.0 shares it on your network)
+    --api-key <KEY>             Require this key on the API (or set DELTA_API_KEY)
+
+OPENAI-COMPATIBLE API:
+    While Delta runs, any OpenAI client can use your models at http://127.0.0.1:8081/v1
+    Run 'delta server --help' for endpoints, keys, network sharing and code examples.
 
 CLI OPTIONS:
     -h, --help                  Show this help message
@@ -111,6 +175,7 @@ EXAMPLES:
     delta --server                        # Start with auto-selected model
     delta --server -m llama3.1:8b         # Start with specific model
     delta --server --port 9090            # Use custom port
+    delta server --host 0.0.0.0 --api-key KEY  # Share the API on your network
     delta -m qwen2.5:0.5b "Hello world"  # One-shot query
     delta --list-models --available       # Browse available models
 
@@ -684,6 +749,8 @@ int main(int argc, char** argv) {
     bool enable_reranking = false;
     std::string draft_model = "";
     std::string grammar_file = "";
+    std::string api_host;
+    std::string api_key;
 
     // Check for pull command first
     if (argc > 1 && std::string(argv[1]) == "pull") {
@@ -714,8 +781,12 @@ int main(int argc, char** argv) {
             show_available = true;
         } else if (arg == "-i" || arg == "--interactive") {
             interactive = true;
-        } else if (arg == "--server") {
+        } else if (arg == "--server" || (i == 1 && arg == "server")) {
             start_server = true;
+        } else if (arg == "--host" && i + 1 < argc) {
+            api_host = argv[++i];
+        } else if (arg == "--api-key" && i + 1 < argc) {
+            api_key = argv[++i];
         } else if (arg == "--port" && i + 1 < argc) {
             try {
                 server_port = std::stoi(argv[++i]);
@@ -859,7 +930,10 @@ int main(int argc, char** argv) {
 
     // Handle help/version/list-models
     if (show_help) {
-        print_help();
+        if (start_server)
+            print_server_help();
+        else
+            print_help();
         return 0;
     }
 
@@ -1145,7 +1219,17 @@ int main(int argc, char** argv) {
                 dir_arg = models_dir;
             cmd << " --models-dir \"" << dir_arg << "\"";
         }
-        cmd << " --port " << server_port << " --parallel " << max_parallel;
+        cmd << " --port " << server_port << " --model-api-port " << (server_port + 1) << " --parallel " << max_parallel;
+        if (!api_host.empty())
+            cmd << " --host \"" << api_host << "\"";
+        // The key goes through the environment so it never shows up in a process list.
+        if (!api_key.empty()) {
+#ifdef _WIN32
+            _putenv_s("DELTA_API_KEY", api_key.c_str());
+#else
+            setenv("DELTA_API_KEY", api_key.c_str(), 1);
+#endif
+        }
         if (server_ctx > 0) {
             cmd << " -c " << server_ctx;
         }

@@ -5,6 +5,7 @@
 
 #include "delta_cli.h"
 #include "model_api_server.h"
+#include "api/openai_api.h"
 #include "server_health.h"
 #include "agent/agent_database.h"
 #include "tools/hardware_monitor.h"
@@ -285,6 +286,19 @@ class DeltaServerWrapper {
     void set_reranking(bool enable) { enable_reranking_ = enable; }
     void set_draft_model(const std::string& model) { draft_model_ = model; }
     void set_grammar_file(const std::string& file) { grammar_file_ = file; }
+
+    void print_api_urls() const {
+        const std::string port = std::to_string(model_api_port_);
+        std::cout << "  OpenAI-compatible API: http://127.0.0.1:" << port << "/v1" << std::endl;
+        const std::string host = delta::model_api_host();
+        if (!delta::api::is_loopback(host)) {
+            const std::string lan = host == "0.0.0.0" ? delta::api::lan_address() : host;
+            if (!lan.empty())
+                std::cout << "  On your network:       http://" << lan << ":" << port << "/v1" << std::endl;
+        }
+        if (!delta::model_api_key().empty())
+            std::cout << "  API key required:      Authorization: Bearer <key>" << std::endl;
+    }
 
     std::string find_webui_path() {
         std::vector<std::string> candidates;
@@ -991,9 +1005,11 @@ class DeltaServerWrapper {
         if (!model_path_.empty()) {
             std::cout << "  Model: " << model_path_ << std::endl;
         }
+        print_api_urls();
         std::cout << "  Press Ctrl+C to stop" << std::endl;
         std::cout << std::endl;
 
+        delta::set_model_api_llama_port(port_);
         delta::start_model_api_server(model_api_port_);
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
@@ -1114,6 +1130,9 @@ int main(int argc, char* argv[]) {
     bool enable_reranking = false;
     std::string draft_model;
     std::string grammar_file;
+    std::string api_host;
+    const char* env_key = std::getenv("DELTA_API_KEY");
+    std::string api_key = env_key ? env_key : "";
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -1137,7 +1156,28 @@ int main(int argc, char* argv[]) {
             draft_model = argv[++i];
         } else if (arg == "--grammar-file" && i + 1 < argc) {
             grammar_file = argv[++i];
+        } else if (arg == "-h" || arg == "--help") {
+            std::cout << "delta-server: runs llama-server and Delta's API (normally started by 'delta server').\n"
+                         "  -m <path> | --models-dir <dir>   one model, or pick from a folder\n"
+                         "  --port <N>                       llama-server and web UI port (default 8080)\n"
+                         "  --model-api-port <N>             Delta and OpenAI-compatible API port (default 8081)\n"
+                         "  --host <addr>                    API address (default 127.0.0.1; 0.0.0.0 shares it)\n"
+                         "  --api-key <key>                  require this key on /v1 (or set DELTA_API_KEY)\n"
+                         "Run 'delta server --help' for endpoints and examples."
+                      << std::endl;
+            return 0;
+        } else if (arg == "--host" && i + 1 < argc) {
+            api_host = argv[++i];
+        } else if (arg == "--api-key" && i + 1 < argc) {
+            api_key = argv[++i];
         }
+    }
+
+    delta::set_model_api_overrides(api_host, api_key);
+    if (!delta::api::is_loopback(delta::model_api_host()) && delta::model_api_key().empty()) {
+        std::cerr << "Sharing the API on the network needs a key: add --api-key <key> (or set DELTA_API_KEY)."
+                  << std::endl;
+        return 2;
     }
 
     wrapper.set_model_path(model_path);

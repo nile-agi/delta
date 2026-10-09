@@ -14,6 +14,7 @@
 	import { config, settingsStore } from '$lib/stores/settings.svelte';
 	import { downloads } from '$lib/stores/downloads.svelte';
 	import { resolveModelApiBaseUrl, resetModelApiResolution } from '$lib/utils/model-api-url';
+	import { syncApiKey } from '$lib/services/developer-api';
 	import { getServerBaseUrl } from '$lib/utils/server-base-url';
 	import { ModelBackendWarning, ServerErrorSplash } from '$lib/components/app';
 	import { ModeWatcher } from 'mode-watcher';
@@ -159,7 +160,9 @@
 			return;
 		}
 		Promise.race([
-			resolveModelApiBaseUrl().then(() => true),
+			resolveModelApiBaseUrl()
+				.then(syncApiKey)
+				.then(() => true),
 			new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000))
 		]).then((resolved) => {
 			if (!resolved) {
