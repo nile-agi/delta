@@ -112,7 +112,7 @@
 		"highlight.js": "^11.11.1",
 		"mammoth": "^1.13.0",
 		"mode-watcher": "^1.1.0",
-		"pdfjs-dist": "^5.4.54",
+		"pdfjs-dist": "^6.2.108",
 		"rehype-highlight": "^7.0.2",
 		"rehype-stringify": "^10.0.1",
 		"remark": "^15.0.1",
