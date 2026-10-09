@@ -258,10 +258,11 @@ jobs:
         shell: bash
         run: |
           cmake --build build --config Release -j 4 \
-            --target delta-document-tests --target delta-update-tests --target delta-harness-tests
+            --target delta-document-tests --target delta-update-tests --target delta-harness-tests --target delta-openai-tests
           ./build/delta-document-tests
           ./build/delta-update-tests
           ./build/delta-harness-tests
+          ./build/delta-openai-tests
 
       - name: Compiler cache statistics
         if: always()
