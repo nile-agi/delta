@@ -29,6 +29,11 @@ jobs:
       frontend: ${{ github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true' }}
       engine: ${{ github.event_name != 'pull_request' || steps.filter.outputs.engine == 'true' }}
       release: ${{ github.event_name != 'pull_request' || steps.filter.outputs.release == 'true' }}
+      # macOS minutes bill at 10x and Windows at 2x, so PRs into dev build on Linux only. PRs into
+      # main and pushes to dev and main still build all three before anything is released.
+      engine_os: >-
+        ${{ (github.event_name == 'pull_request' && github.base_ref == 'dev')
+            && '["ubuntu-22.04"]' || '["macos-latest", "ubuntu-22.04", "windows-latest"]' }}
     steps:
       # Pull requests list their changed files through the API, so no history is needed. On a
       # push the filter would compare against main with git, which a shallow checkout cannot do.
@@ -192,7 +197,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-22.04, windows-latest]
+        os: ${{ fromJSON(needs.changes.outputs.engine_os) }}
     steps:
       - uses: actions/checkout@v4
         with:
