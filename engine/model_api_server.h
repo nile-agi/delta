@@ -13,6 +13,13 @@ void start_model_api_server(int port = 8081);
 /** Start model API server on port and serve web UI from webui_path (for first-time users with no model). */
 void start_model_api_server(int port, const std::string& webui_path);
 void stop_model_api_server();
+// llama-server's port, when it is not the model API's port minus one.
+void set_model_api_llama_port(int port);
+// `--host` / `--api-key` for this run; empty keeps the saved Developer settings.
+void set_model_api_overrides(const std::string& host, const std::string& api_key);
+// Address the model API listens on, and its key (empty when none), after settings and flags.
+std::string model_api_host();
+std::string model_api_key();
 
 // Callback function type for model switching
 // Parameters: model_path, model_name, ctx_size, model_alias

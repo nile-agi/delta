@@ -29,6 +29,7 @@
 #include "vendor/llama.cpp/vendor/cpp-httplib/httplib.h"
 #include "api/note_routes.h"
 #include "api/document_routes.h"
+#include "api/openai_api.h"
 #include "vendor/json.hpp"
 
 #include <iostream>
@@ -257,6 +258,17 @@ static json sse_finish_chunk() {
     return json{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
 }
 
+// Who may reach the API (Developer settings plus CLI flags), loaded on first start.
+static api::ApiAccess& api_access() {
+    static api::ApiAccess access(tools::FileOps::join_path(
+        tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli"), "api_server.json"));
+    static std::once_flag loaded;
+    std::call_once(loaded, [] { access.load(); });
+    return access;
+}
+
+static std::atomic<int> g_llama_port{0};
+
 // Forward declaration for model switch callback
 static ModelSwitchCallback* g_model_switch_callback = nullptr;
 // Callback for unloading model / stopping llama-server
@@ -329,6 +341,72 @@ class ModelAPIServer {
     std::thread server_thread_;
     std::atomic<bool> running_;
     ModelManager model_mgr_;
+    std::thread rebind_thread_;
+
+    int llama_port() const {
+        const int explicit_port = g_llama_port.load();
+        return explicit_port > 0 ? explicit_port : port_ - 1;
+    }
+
+    // The model llama-server should answer with: a registry name maps to its file's stem, and
+    // no name means the model that is loaded now.
+    std::string resolve_llama_model(const std::string& requested) {
+        if (!requested.empty() && requested != "default") {
+            auto reg = model_mgr_.get_registry_entry(requested);
+            if (!reg.name.empty() && !reg.filename.empty())
+                return std::filesystem::path(reg.filename).stem().string();
+            return requested;
+        }
+        {
+            std::lock_guard<std::mutex> lock(g_props_fallback_mutex);
+            if (!g_props_fallback_model_alias.empty())
+                return g_props_fallback_model_alias;
+        }
+        // Router mode: ask which of its models is running.
+        httplib::Client cli("127.0.0.1", llama_port());
+        cli.set_connection_timeout(1, 0);
+        cli.set_read_timeout(2, 0);
+        if (auto r = cli.Get("/v1/models"); r && r->status == 200) {
+            try {
+                for (const auto& m : json::parse(r->body).value("data", json::array())) {
+                    const auto& st = m.contains("status") ? m["status"] : json();
+                    if (st.is_object() && st.value("value", std::string()) == "loaded")
+                        return m.value("id", std::string());
+                }
+            } catch (...) {
+            }
+        }
+        return "";
+    }
+
+    json openai_model(const std::string& id, const std::string& display_name) const {
+        return json{{"id", id}, {"object", "model"}, {"created", 0}, {"owned_by", "delta"}, {"name", display_name}};
+    }
+
+    // Plain OpenAI calls go to llama-server as they are, with the model name translated.
+    void proxy_plain(httplib::Response& res, const std::string& path, json body) {
+        const std::string model = resolve_llama_model(body.value("model", std::string()));
+        if (!model.empty())
+            body["model"] = model;
+        api::proxy_openai(res, path, body, "127.0.0.1", llama_port());
+    }
+
+    // Moves the listener to the address the settings now ask for. Runs off the request thread.
+    void rebind() {
+        if (rebind_thread_.joinable())
+            rebind_thread_.join();
+        rebind_thread_ = std::thread([this] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            if (!running_)
+                return;
+            server_->stop();
+            if (server_thread_.joinable())
+                server_thread_.join();
+            server_ = std::make_unique<httplib::Server>();
+            setup_routes();
+            server_thread_ = std::thread(&ModelAPIServer::server_loop, this);
+        });
+    }
 
     void write_props_fallback(httplib::Response& res) {
         std::string model_path;
@@ -418,14 +496,27 @@ class ModelAPIServer {
 
         server_->Options(".*", [](const httplib::Request&, httplib::Response&) { return; });
 
+        // Other devices reach only the OpenAI routes, and those need the key when one is set.
+        server_->set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+            const auto gate =
+                api::check_request(req.method, req.path, req.remote_addr, req.get_header_value("Authorization"),
+                                   req.get_header_value("X-Api-Key"), api_access().api_key());
+            if (gate.status == 0)
+                return httplib::Server::HandlerResponse::Unhandled;
+            res.status = gate.status;
+            res.set_content(gate.body.dump(), "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        });
+
+        api::register_developer_routes(*server_, {&api_access(), [this] { return port_; }, [this] { rebind(); }});
+
         server_->Get("/props", [this](const httplib::Request&, httplib::Response& res) { write_props_fallback(res); });
 
         api::register_document_routes(*server_);
 
         server_->Get("/api/props", [this](const httplib::Request&, httplib::Response& res) {
             try {
-                int llama_port = port_ - 1;
-                httplib::Client cli("127.0.0.1", llama_port);
+                httplib::Client cli("127.0.0.1", llama_port());
                 cli.set_connection_timeout(2, 0);
                 cli.set_read_timeout(2, 0);
                 auto proxy_res = cli.Get("/props");
@@ -944,7 +1035,7 @@ class ModelAPIServer {
         });
 
         server_->Post("/v1/chat/completions", [&](const httplib::Request& req, httplib::Response& res) {
-            int llama_port = port_ - 1;
+            const int llama_port = this->llama_port();
             {
                 httplib::Client probe("127.0.0.1", llama_port);
                 probe.set_connection_timeout(1, 0);
@@ -991,6 +1082,11 @@ class ModelAPIServer {
                         res.set_content(err.dump(), "application/json");
                         return;
                     }
+                }
+                // Other apps and SDKs get the model itself: their own tools, usage and stop reasons.
+                if (!api::is_delta_request(body)) {
+                    proxy_plain(res, "/v1/chat/completions", body);
+                    return;
                 }
                 bool stream = body.value("stream", false);
                 std::string model_name = body.value("model", std::string("default"));
@@ -1322,10 +1418,53 @@ class ModelAPIServer {
             res.set_content(json{{"ok", ok}}.dump(), "application/json");
         });
 
-        server_->Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
-            json out = {{"object", "list"}, {"data", json::array()}};
-            res.set_content(out.dump(), "application/json");
+        server_->Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
+            json data = json::array();
+            try {
+                for (const auto& m : model_mgr_.get_friendly_model_list(false))
+                    data.push_back(openai_model(m.name, m.display_name));
+            } catch (const std::exception& e) {
+                std::cerr << "[delta-server] listing models: " << e.what() << std::endl;
+            }
+            res.set_content(json{{"object", "list"}, {"data", data}}.dump(), "application/json");
         });
+
+        server_->Get(R"(/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+            const std::string id = req.matches[1];
+            try {
+                for (const auto& m : model_mgr_.get_friendly_model_list(false)) {
+                    if (m.name == id) {
+                        res.set_content(openai_model(m.name, m.display_name).dump(), "application/json");
+                        return;
+                    }
+                }
+            } catch (...) {
+            }
+            res.status = 404;
+            res.set_content(
+                api::openai_error("The model '" + id + "' does not exist", "invalid_request_error", "model_not_found")
+                    .dump(),
+                "application/json");
+        });
+
+        for (const char* path : {"/v1/completions", "/v1/embeddings"}) {
+            const std::string route = path;
+            server_->Post(route, [this, route](const httplib::Request& req, httplib::Response& res) {
+                json body;
+                try {
+                    body = json::parse(req.body);
+                } catch (...) {
+                }
+                if (!body.is_object()) {
+                    res.status = 400;
+                    res.set_content(
+                        api::openai_error("Request body must be a JSON object", "invalid_request_error").dump(),
+                        "application/json");
+                    return;
+                }
+                proxy_plain(res, route, body);
+            });
+        }
 
         server_->Post("/api/models/unload", [](const httplib::Request&, httplib::Response& res) {
             try {
@@ -1941,9 +2080,16 @@ class ModelAPIServer {
     }
 
     void server_loop() {
-        if (!server_->bind_to_port("127.0.0.1", port_)) {
-            std::cerr << "Failed to bind model API server to port " << port_ << std::endl;
-            return;
+        std::string host = api_access().host();
+        if (!api::is_loopback(host) && api_access().api_key().empty()) {
+            std::cerr << "[delta-server] Network access needs an API key; listening on this computer only."
+                      << std::endl;
+            host = "127.0.0.1";
+        }
+        if (!server_->bind_to_port(host, port_)) {
+            std::cerr << "Failed to bind model API server to " << host << ":" << port_ << std::endl;
+            if (host == "127.0.0.1" || !server_->bind_to_port("127.0.0.1", port_))
+                return;
         }
 
         server_->listen_after_bind();
@@ -1977,6 +2123,8 @@ class ModelAPIServer {
 
     void stop() {
         running_ = false;
+        if (rebind_thread_.joinable() && rebind_thread_.get_id() != std::this_thread::get_id())
+            rebind_thread_.join();
         if (server_) {
             server_->stop();
         }
@@ -2022,6 +2170,22 @@ void start_model_api_server(int port, const std::string& webui_path) {
     stop_model_api_server();
     g_model_api_server = std::make_unique<ModelAPIServer>(port, webui_path);
     g_model_api_server->start();
+}
+
+void set_model_api_llama_port(int port) {
+    g_llama_port = port;
+}
+
+void set_model_api_overrides(const std::string& host, const std::string& api_key) {
+    api_access().set_overrides(host, api_key);
+}
+
+std::string model_api_host() {
+    return api_access().host();
+}
+
+std::string model_api_key() {
+    return api_access().api_key();
 }
 
 void stop_model_api_server() {
