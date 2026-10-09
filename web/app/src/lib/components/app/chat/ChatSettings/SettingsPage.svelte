@@ -35,6 +35,7 @@
 	} from '$lib/services/generation-settings';
 	import { CORE_AGENT_TOOL_KEYS } from '$lib/constants/settings-config';
 	import ImportExportTab from './ImportExportTab.svelte';
+	import ApiAccessPanel from './ApiAccessPanel.svelte';
 	import ModelManagementTab from '../ModelManagement/ModelManagementTab.svelte';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import {
@@ -720,6 +721,8 @@
 
 									{#if currentSection.title === 'Import/Export'}
 										<ImportExportTab />
+									{:else if currentSection.title === 'Connection'}
+										<ApiAccessPanel onKeyChange={(key) => handleConfigChange('apiKey', key)} />
 									{:else if currentSection.title === 'Developer'}
 										<div class="space-y-6">
 											<ChatSettingsFields
