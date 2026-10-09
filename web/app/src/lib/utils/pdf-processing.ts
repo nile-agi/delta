@@ -14,17 +14,18 @@ type TextItem = {
 	transform?: number[];
 };
 
-if (browser) {
-	// Import worker as text and create blob URL for inline bundling
-	import('pdfjs-dist/build/pdf.worker.min.mjs?raw')
-		.then((workerModule) => {
-			const workerBlob = new Blob([workerModule.default], { type: 'application/javascript' });
-			pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
-		})
-		.catch(() => {
-			console.warn('Failed to load PDF.js worker, PDF processing may not work');
-		});
-}
+// The worker is bundled as text and loaded once; every PDF call waits for it, since a file
+// opened before it was ready used to fail with "No GlobalWorkerOptions.workerSrc specified".
+const workerReady: Promise<void> = browser
+	? import('pdfjs-dist/build/pdf.worker.min.mjs?raw')
+			.then((workerModule) => {
+				const workerBlob = new Blob([workerModule.default], { type: 'application/javascript' });
+				pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
+			})
+			.catch(() => {
+				console.warn('Failed to load PDF.js worker, PDF processing may not work');
+			})
+	: Promise.resolve();
 
 /**
  * Convert a File object to ArrayBuffer for PDF.js processing
@@ -87,7 +88,8 @@ export async function extractPDFPages(file: File): Promise<string[]> {
 
 	try {
 		const buffer = await getFileAsBuffer(file);
-		const pdf = await pdfjs.getDocument(buffer).promise;
+		await workerReady;
+		const pdf = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
 		const pages: Promise<string>[] = [];
 		for (let i = 1; i <= pdf.numPages; i++) {
 			pages.push(
@@ -129,7 +131,8 @@ export async function convertPDFToImage(file: File, scale: number = 1.5): Promis
 
 	try {
 		const buffer = await getFileAsBuffer(file);
-		const doc = await pdfjs.getDocument(buffer).promise;
+		await workerReady;
+		const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
 		const pages: Promise<string>[] = [];
 
 		for (let i = 1; i <= doc.numPages; i++) {
