@@ -28,10 +28,19 @@ The Delta desktop app is a single native application with a built-in web UI. Dow
 
 ### CLI
 
+Download `delta-cli-<os>-<arch>` from [Releases](https://github.com/nile-agi/delta-release/releases),
+then follow **Install the command-line tool (CLI)** on the release page (the text lives in
+[`.github/release-installation.md`](.github/release-installation.md)). In short, on macOS:
+
 ```bash
-delta                    # Launch web UI in browser
-delta server             # Start server on port 8080
-delta server -m model.gguf  # Start with a specific model
+mkdir -p ~/.local/share/delta-cli
+tar -xzf ~/Downloads/delta-cli-macos-arm64.tar.gz -C ~/.local/share/delta-cli --strip-components=1
+xattr -dr com.apple.quarantine ~/.local/share/delta-cli
+echo 'export PATH="$HOME/.local/share/delta-cli/bin:$PATH"' >> ~/.zshrc   # then open a new terminal
+
+delta pull qwen2.5:0.5b  # download a small model
+delta                    # chat in the browser (and the terminal)
+delta server             # web UI + OpenAI-compatible API
 ```
 
 ---
