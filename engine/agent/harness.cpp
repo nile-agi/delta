@@ -572,6 +572,10 @@ std::string Harness::document_context(const nlohmann::json& messages, bool has_t
     block = "\nPassages from the files attached to this chat that match the latest message. Answer from them and "
             "cite the source in brackets, like [report.pdf, p.12]." +
             more + "\n";
+    nlohmann::json shown = nlohmann::json::array();
+    for (const auto& ex : excerpts)
+        shown.push_back(ex.to_json());
+    note_sources(shown);
     for (const auto& ex : excerpts) {
         block += "\n[" + ex.citation() + "]";
         if (!ex.heading.empty())
@@ -581,7 +585,47 @@ std::string Harness::document_context(const nlohmann::json& messages, bool has_t
     return block;
 }
 
+void Harness::note_sources(const nlohmann::json& excerpts) const {
+    constexpr size_t kMaxSources = 8;
+    constexpr size_t kMaxText = 600; // enough to find and highlight the passage
+    if (!excerpts.is_array())
+        return;
+    for (const auto& ex : excerpts) {
+        if (!ex.is_object() || !ex.contains("document_id") || sources_.size() >= kMaxSources)
+            continue;
+        nlohmann::json source = ex;
+        source.erase("score");
+        std::string text = source.value("text", "");
+        if (text.size() > kMaxText) {
+            size_t cut = kMaxText;
+            while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80)
+                cut--; // never split a multi-byte character
+            text.resize(cut);
+        }
+        source["text"] = text;
+        const auto key = [](const nlohmann::json& s) {
+            return s.value("document_id", "") + "|" + std::to_string(s.value("page_start", 0)) + "-" +
+                   std::to_string(s.value("page_end", 0)) + "|" + std::to_string(s.value("section_start", 0)) + "-" +
+                   std::to_string(s.value("section_end", 0));
+        };
+        bool seen = false;
+        for (const auto& existing : sources_)
+            seen = seen || key(existing) == key(source);
+        if (!seen)
+            sources_.push_back(source);
+    }
+}
+
 RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
+    sources_ = nlohmann::json::array();
+    RunResult result = run_loop(messages, sink);
+    result.sources = sources_;
+    if (!sources_.empty() && sink && !result.client_aborted)
+        sink(HarnessEvent{EventType::Sources, {{"sources", sources_}}});
+    return result;
+}
+
+RunResult Harness::run_loop(const nlohmann::json& messages, const EventSink& sink) {
     RunResult result;
     task_dossier_.clear();
     auto& registry = ToolRegistry::instance();
@@ -1201,6 +1245,13 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
             }
 
             const ToolResult tool_result = registry.execute(name, arguments);
+            if (tool_result.success && (name == "search_documents" || name == "read_document")) {
+                try {
+                    const auto found = nlohmann::json::parse(tool_result.content);
+                    note_sources(found.contains("results") ? found["results"] : nlohmann::json::array({found}));
+                } catch (...) {
+                }
+            }
             if (tool_result.success && def->risk != ToolRisk::Safe)
                 context_cache_key_.clear(); // The next iteration must see the saved state.
             result.tool_calls++;

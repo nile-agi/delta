@@ -250,6 +250,17 @@ class CliRunPrinter {
             return true;
         }
 
+        case EventType::Sources: {
+            std::string list;
+            for (const auto& source : event.data.value("sources", nlohmann::json::array()))
+                list += (list.empty() ? "" : "; ") + source.value("source", "");
+            if (!list.empty()) {
+                break_line();
+                std::cout << "  Sources: " << list << std::endl;
+            }
+            return true;
+        }
+
         case EventType::Status:
         case EventType::Error: {
             const std::string message = event.data.value("message", "");
