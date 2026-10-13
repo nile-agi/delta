@@ -206,10 +206,26 @@ json upstream_error(int status, const std::string& body) {
                         "server_error");
 }
 
+// Renames the model in one JSON reply or one `data: {...}` event line; anything else passes as is.
+std::string rename_model(const std::string& text, const std::string& model) {
+    const bool event = text.rfind("data: {", 0) == 0;
+    if (model.empty() || (!event && (text.empty() || text[0] != '{')))
+        return text;
+    try {
+        json j = json::parse(event ? text.substr(6) : text);
+        if (!j.is_object() || !j.contains("model"))
+            return text;
+        j["model"] = model;
+        return event ? "data: " + j.dump() : j.dump();
+    } catch (...) {
+        return text;
+    }
+}
+
 } // namespace
 
-void proxy_openai(httplib::Response& res, const std::string& path, const json& body, const std::string& host,
-                  int port) {
+void proxy_openai(httplib::Response& res, const std::string& path, const json& body, const std::string& host, int port,
+                  const std::string& reply_model) {
     const std::string payload = body.dump();
     if (!body.value("stream", false)) {
         httplib::Client cli(host, port);
@@ -227,12 +243,12 @@ void proxy_openai(httplib::Response& res, const std::string& path, const json& b
             return;
         }
         const std::string type = up->get_header_value("Content-Type");
-        res.set_content(up->body, type.empty() ? "application/json" : type);
+        res.set_content(rename_model(up->body, reply_model), type.empty() ? "application/json" : type);
         return;
     }
 
     struct Job {
-        std::string path, payload, host;
+        std::string path, payload, host, reply_model;
         int port = 0;
         bool started = false;
     };
@@ -241,6 +257,7 @@ void proxy_openai(httplib::Response& res, const std::string& path, const json& b
     job->payload = payload;
     job->host = host;
     job->port = port;
+    job->reply_model = reply_model;
 
     res.set_header("Cache-Control", "no-cache");
     res.set_header("X-Accel-Buffering", "no");
@@ -256,7 +273,21 @@ void proxy_openai(httplib::Response& res, const std::string& path, const json& b
         cli.set_read_timeout(kReadTimeoutSec, 0);
         // An error arrives as one JSON object rather than events; it is held back and resent as one.
         bool first = true, plain = false;
-        std::string held;
+        std::string held, partial;
+        // Events are renamed whole lines at a time, since a chunk can end mid-line.
+        auto forward = [&](const char* data, size_t len) -> bool {
+            if (job->reply_model.empty())
+                return sink.write(data, len);
+            partial.append(data, len);
+            std::string out;
+            size_t start = 0, nl;
+            while ((nl = partial.find('\n', start)) != std::string::npos) {
+                out += rename_model(partial.substr(start, nl - start), job->reply_model) + "\n";
+                start = nl + 1;
+            }
+            partial.erase(0, start);
+            return out.empty() || sink.write(out.data(), out.size());
+        };
         auto up = cli.Post(job->path, httplib::Headers{{"Accept", "text/event-stream"}}, job->payload,
                            "application/json", [&](const char* data, size_t len) {
                                if (first) {
@@ -270,8 +301,10 @@ void proxy_openai(httplib::Response& res, const std::string& path, const json& b
                                    held.append(data, len);
                                    return true;
                                }
-                               return sink.write(data, len);
+                               return forward(data, len);
                            });
+        if (!partial.empty())
+            sink.write(partial.data(), partial.size());
         const int status = up ? up->status : 0;
         if (plain || status == 0 || (status >= 400 && first)) {
             const std::string frame = "data: " + upstream_error(status, held).dump() + "\n\n";

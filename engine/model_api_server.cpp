@@ -193,10 +193,14 @@ static json build_hardware_json(const delta::HardwareMetrics& m) {
 namespace delta {
 
 // OpenAI-compatible SSE frames for /v1/chat/completions streaming.
-static json sse_content_chunk(const std::string& text) {
+// `model` is the registry name the picker shows, so a reply is labelled the same way.
+static json sse_content_chunk(const std::string& text, const std::string& model = "") {
     json delta{{"content", text}};
     json choice{{"index", 0}, {"delta", delta}, {"finish_reason", nullptr}};
-    return json{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
+    json chunk{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
+    if (!model.empty())
+        chunk["model"] = model;
+    return chunk;
 }
 
 // Delta's own SSE frames, carried on the same stream as the OpenAI chunks. Clients that do not
@@ -253,9 +257,12 @@ static const char* agent_event_name(delta::agent::EventType type) {
     return "status";
 }
 
-static json sse_finish_chunk() {
+static json sse_finish_chunk(const std::string& model = "") {
     json choice{{"index", 0}, {"delta", json::object()}, {"finish_reason", "stop"}};
-    return json{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
+    json chunk{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
+    if (!model.empty())
+        chunk["model"] = model;
+    return chunk;
 }
 
 // Who may reach the API (Developer settings plus CLI flags), loaded on first start.
@@ -385,10 +392,15 @@ class ModelAPIServer {
 
     // Plain OpenAI calls go to llama-server as they are, with the model name translated.
     void proxy_plain(httplib::Response& res, const std::string& path, json body) {
-        const std::string model = resolve_llama_model(body.value("model", std::string()));
+        const std::string requested = body.value("model", std::string());
+        const std::string model = resolve_llama_model(requested);
         if (!model.empty())
             body["model"] = model;
-        api::proxy_openai(res, path, body, "127.0.0.1", llama_port());
+        // Replies name the model the way the client did (or by its registry name), not the file stem.
+        std::string reply_model = requested;
+        if (reply_model.empty() || reply_model == "default")
+            reply_model = model_mgr_.get_registry_entry(model).name;
+        api::proxy_openai(res, path, body, "127.0.0.1", llama_port(), reply_model == model ? "" : reply_model);
     }
 
     // Moves the listener to the address the settings now ask for. Runs off the request thread.
@@ -543,6 +555,9 @@ class ModelAPIServer {
                                        {"size_bytes", model.size_bytes},
                                        {"installed", model.installed},
                                        {"supports_tools", model.supports_tools}};
+                    // The file stem llama-server answers with, so the app can map it back to a name.
+                    if (auto entry = model_mgr_.get_registry_entry(model.name); !entry.filename.empty())
+                        model_json["alias"] = std::filesystem::path(entry.filename).stem().string();
 
                     // DHATS: annotate with live compatibility
                     if (model.size_bytes > 0) {
@@ -580,6 +595,9 @@ class ModelAPIServer {
                                        {"quantization", model.quantization},
                                        {"size_bytes", model.size_bytes},
                                        {"supports_tools", model.supports_tools}};
+                    // The file stem llama-server answers with, so the app can map it back to a name.
+                    if (auto entry = model_mgr_.get_registry_entry(model.name); !entry.filename.empty())
+                        model_json["alias"] = std::filesystem::path(entry.filename).stem().string();
 
                     // DHATS: annotate with live compatibility
                     if (model.size_bytes > 0) {
@@ -1095,6 +1113,9 @@ class ModelAPIServer {
                 bool model_supports_tools = false;
                 auto reg = model_mgr_.get_registry_entry(model_name);
                 std::string llama_model_name = model_name;
+                // Requests may name the file stem; replies always carry the registry name.
+                const std::string reported_model =
+                    !reg.name.empty() ? reg.name : (model_name == "default" ? "" : model_name);
                 if (!reg.name.empty()) {
                     model_supports_tools = reg.supports_tools;
                     if (!reg.filename.empty()) {
@@ -1177,7 +1198,7 @@ class ModelAPIServer {
 
                 if (stream) {
                     struct StreamJob {
-                        std::string llama_url, llama_model;
+                        std::string llama_url, llama_model, reported_model;
                         bool supports_tools = false;
                         agent::RunOptions options;
                         json messages;
@@ -1186,6 +1207,7 @@ class ModelAPIServer {
                     auto job = std::make_shared<StreamJob>();
                     job->llama_url = llama_url;
                     job->llama_model = llama_model_name;
+                    job->reported_model = reported_model;
                     job->supports_tools = model_supports_tools;
                     job->options = run_options;
                     job->messages = messages;
@@ -1221,7 +1243,7 @@ class ModelAPIServer {
                                         const std::string text = event.data.value("text", "");
                                         if (text.empty())
                                             return true;
-                                        return emit(sse_content_chunk(text));
+                                        return emit(sse_content_chunk(text, job->reported_model));
                                     }
                                     return emit(sse_agent_event(agent_event_name(event.type), event.data));
                                 });
@@ -1233,9 +1255,9 @@ class ModelAPIServer {
 
                                 if (!result.success) {
                                     std::cerr << "[delta-server] stream error: " << result.error << std::endl;
-                                    emit(sse_content_chunk(result.error));
+                                    emit(sse_content_chunk(result.error, job->reported_model));
                                 } else if (result.streamed_chars == 0 && !result.content.empty()) {
-                                    emit(sse_content_chunk(result.content));
+                                    emit(sse_content_chunk(result.content, job->reported_model));
                                 }
                                 // Always sent, not just when a tool ran: a turn where every call
                                 // was refused still has a transcript the client must keep, or the
@@ -1249,10 +1271,10 @@ class ModelAPIServer {
                                                         {"transcript", bounded_transcript(result.transcript_delta)}}));
                             } catch (const std::exception& e) {
                                 std::cerr << "[delta-server] exception in stream provider: " << e.what() << std::endl;
-                                emit(sse_content_chunk(std::string("Error: ") + e.what()));
+                                emit(sse_content_chunk(std::string("Error: ") + e.what(), job->reported_model));
                             }
 
-                            emit(sse_finish_chunk());
+                            emit(sse_finish_chunk(job->reported_model));
                             static const std::string done = "data: [DONE]\n\n";
                             sink.write(done.data(), done.size());
                             sink.done();
@@ -1283,6 +1305,7 @@ class ModelAPIServer {
                     json transcript = bounded_transcript(result.transcript_delta);
                     json response = {{"id", "chatcmpl-delta"},
                                      {"object", "chat.completion"},
+                                     {"model", reported_model},
                                      {"choices",
                                       {{{"index", 0},
                                         {"message", message},
