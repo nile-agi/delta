@@ -39,6 +39,31 @@ it('opens a cited PDF at the page and highlights the passage', async () => {
 	await expect.element(page.getByText('Page 2 of 2')).toBeVisible();
 });
 
+it('opens a multi-page source at the page that holds the passage', async () => {
+	render(DocumentViewer, {
+		open: true,
+		place: {
+			name: 'service.pdf',
+			pageStart: 1,
+			pageEnd: 3,
+			passage: 'The filter is replaced every 400 hours'
+		},
+		document: {
+			name: 'service.pdf',
+			mimeType: 'application/pdf',
+			base64Data: tinyPdfBase64([
+				'Intro and safety notes',
+				'The filter is replaced every 400 hours',
+				'Index'
+			])
+		}
+	});
+	await expect.element(page.getByText('Page 2 of 3')).toBeVisible();
+	await expect
+		.poll(() => document.querySelectorAll('[data-page="2"] [data-highlight]').length)
+		.toBeGreaterThan(0);
+});
+
 it('opens a text document at the cited section with the passage marked', async () => {
 	render(DocumentViewer, {
 		open: true,

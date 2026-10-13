@@ -5,6 +5,7 @@
 	import { activeConversation, activeMessages } from '$lib/stores/chat.svelte';
 	import { documentsService } from '$lib/services/documents';
 	import {
+		bestPageFor,
 		citationLabel,
 		findAttachedDocument,
 		highlightRanges,
@@ -19,6 +20,7 @@
 	import {
 		openPDF,
 		pageSize,
+		pageText,
 		renderPDFPage,
 		type OpenedPDF,
 		type PageTextBox
@@ -54,7 +56,7 @@
 
 	const name = $derived(target?.name ?? '');
 	const where = $derived(target ? citationLabel(target) : '');
-	const targetPage = $derived(target?.pageStart ?? 1);
+	let citedPage = $state(1);
 	const isPdf = (doc: AttachedDocument) =>
 		!!doc.base64Data && (doc.mimeType === 'application/pdf' || /\.pdf$/i.test(doc.name));
 
@@ -117,7 +119,18 @@
 			{ root: scroller, threshold: [0, 0.5] }
 		);
 		pageElements.forEach((el) => el && observer!.observe(el));
-		await goToPage(Math.min(Math.max(1, t.pageStart ?? 1), pdf.numPages));
+		citedPage = await pageHoldingPassage(t);
+		await goToPage(citedPage);
+	}
+
+	// A source can span pages; open at the one that holds the passage (reading up to 40 pages).
+	async function pageHoldingPassage(t: CitationTarget): Promise<number> {
+		const first = Math.min(Math.max(1, t.pageStart ?? 1), pdf!.numPages);
+		const last = Math.min(t.pageEnd ?? first, pdf!.numPages, first + 39);
+		if (!t.passage || last <= first) return first;
+		const texts: string[] = [];
+		for (let n = first; n <= last; n++) texts.push(await pageText(pdf!, n));
+		return first + bestPageFor(texts, t.passage);
 	}
 
 	async function renderPage(n: number) {
@@ -227,7 +240,7 @@
 				<Button
 					variant="outline"
 					size="sm"
-					onclick={() => (mode === 'pdf' ? goToPage(targetPage) : showActiveSection())}
+					onclick={() => (mode === 'pdf' ? goToPage(citedPage) : showActiveSection())}
 				>
 					<LocateFixed class="mr-1 h-4 w-4" /> Show cited passage
 				</Button>

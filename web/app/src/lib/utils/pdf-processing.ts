@@ -196,6 +196,12 @@ export async function pageSize(pdf: OpenedPDF, n: number, scale: number) {
 	return { width: viewport.width, height: viewport.height };
 }
 
+/** The text of page `n`, without drawing it. */
+export async function pageText(pdf: OpenedPDF, n: number): Promise<string> {
+	const content = await (await pdf.getPage(n)).getTextContent();
+	return (content.items as TextItem[]).map((item) => item.str ?? '').join(' ');
+}
+
 /** Draws page `n` into `canvas` and returns where each piece of its text sits, for highlighting. */
 export async function renderPDFPage(
 	pdf: OpenedPDF,

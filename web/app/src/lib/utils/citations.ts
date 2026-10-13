@@ -158,10 +158,17 @@ export function sectionsFromContent(content: string): DocumentSection[] {
 /** The section a cited place falls in, or -1. */
 export function sectionIndexFor(sections: DocumentSection[], t: CitationTarget): number {
 	if (t.pageStart !== undefined) {
-		const i = sections.findIndex(
-			(s) => s.pageStart !== undefined && s.pageStart <= t.pageStart! && t.pageStart! <= (s.pageEnd ?? s.pageStart)
-		);
-		if (i >= 0) return i;
+		// Of the sections the cited pages span, the one holding the passage.
+		const end = t.pageEnd ?? t.pageStart;
+		const overlapping = sections
+			.map((s, i) => ({ s, i }))
+			.filter(
+				({ s }) => s.pageStart !== undefined && s.pageStart <= end && t.pageStart! <= (s.pageEnd ?? s.pageStart)
+			);
+		const holding = t.passage
+			? overlapping.find(({ s }) => highlightRanges(s.text, t.passage!).length > 0)
+			: undefined;
+		if (holding ?? overlapping[0]) return (holding ?? overlapping[0]).i;
 	}
 	if (t.sectionStart !== undefined) {
 		const i = sections.findIndex((s) => s.section === t.sectionStart);
@@ -203,6 +210,23 @@ export function matchPassage(pageWords: string[], passage: string, n = 4): boole
 		}
 	}
 	return marked;
+}
+
+/** Which of several page texts holds most of the passage; the first when none does. */
+export function bestPageFor(pageTexts: string[], passage: string): number {
+	let best = 0;
+	let bestCount = 0;
+	pageTexts.forEach((text, i) => {
+		const count = matchPassage(
+			words(text).map((w) => w.word),
+			passage
+		).filter(Boolean).length;
+		if (count > bestCount) {
+			best = i;
+			bestCount = count;
+		}
+	});
+	return best;
 }
 
 /** Character ranges of `text` that belong to the passage, merged across spaces and punctuation. */

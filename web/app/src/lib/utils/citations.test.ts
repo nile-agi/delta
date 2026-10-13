@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	bestPageFor,
 	citationLabel,
 	findAttachedDocument,
 	highlightRanges,
@@ -18,9 +19,27 @@ describe('splitCitations', () => {
 		);
 		const cites = parts.filter((p) => typeof p !== 'string');
 		expect(cites).toEqual([
-			{ name: 'service.pdf', pageStart: 17, pageEnd: 17, sectionStart: undefined, sectionEnd: undefined },
-			{ name: 'manual.pdf', pageStart: 41, pageEnd: 42, sectionStart: undefined, sectionEnd: undefined },
-			{ name: 'manual.pdf', pageStart: 3, pageEnd: 4, sectionStart: undefined, sectionEnd: undefined },
+			{
+				name: 'service.pdf',
+				pageStart: 17,
+				pageEnd: 17,
+				sectionStart: undefined,
+				sectionEnd: undefined
+			},
+			{
+				name: 'manual.pdf',
+				pageStart: 41,
+				pageEnd: 42,
+				sectionStart: undefined,
+				sectionEnd: undefined
+			},
+			{
+				name: 'manual.pdf',
+				pageStart: 3,
+				pageEnd: 4,
+				sectionStart: undefined,
+				sectionEnd: undefined
+			},
 			{ name: 'notes.md', pageStart: undefined, pageEnd: undefined, sectionStart: 4, sectionEnd: 4 }
 		]);
 		expect(parts[0]).toBe('Every 400 hours ');
@@ -74,7 +93,15 @@ describe('findAttachedDocument', () => {
 		{
 			role: 'user',
 			extra: [
-				{ type: 'documentFile', name: 'manual.pdf', mimeType: 'application/pdf', docId: 'doc-1', base64Data: 'QUJD', pages: 60, chars: 1 },
+				{
+					type: 'documentFile',
+					name: 'manual.pdf',
+					mimeType: 'application/pdf',
+					docId: 'doc-1',
+					base64Data: 'QUJD',
+					pages: 60,
+					chars: 1
+				},
 				{ type: 'textFile', name: 'notes.txt', content: 'hello' }
 			]
 		}
@@ -108,17 +135,45 @@ describe('sections', () => {
 		const sections = sectionsFromContent(content);
 		expect(sectionIndexFor(sections, { name: 'a', pageStart: 2 })).toBe(1);
 		expect(sectionIndexFor(sections, { name: 'a', sectionStart: 1 })).toBe(0);
-		expect(sectionIndexFor(sections, { name: 'a', passage: 'filter is replaced every 400' })).toBe(1);
+		expect(sectionIndexFor(sections, { name: 'a', passage: 'filter is replaced every 400' })).toBe(
+			1
+		);
 		expect(sectionIndexFor(sections, { name: 'a', pageStart: 9 })).toBe(-1);
+	});
+
+	it('prefers the section holding the passage when a source spans pages', () => {
+		const sections = sectionsFromContent(content);
+		expect(
+			sectionIndexFor(sections, {
+				name: 'a',
+				pageStart: 1,
+				pageEnd: 2,
+				passage: 'filter is replaced every 400'
+			})
+		).toBe(1);
+		expect(sectionIndexFor(sections, { name: 'a', pageStart: 1, pageEnd: 2 })).toBe(0);
+	});
+
+	it('picks the page that holds most of the passage', () => {
+		expect(
+			bestPageFor(
+				['intro text here', 'the filter is replaced every 400 hours', 'other'],
+				'filter is replaced every 400 hours'
+			)
+		).toBe(1);
+		expect(bestPageFor(['a', 'b'], 'nothing matches here at all')).toBe(0);
 	});
 });
 
 describe('passage matching', () => {
 	it('marks the words of the passage despite line breaks and hyphens', () => {
-		const page = words('Intro. The compressor filter must be re-\nplaced every 400 operating hours. Other text.').map(
-			(w) => w.word
+		const page = words(
+			'Intro. The compressor filter must be re-\nplaced every 400 operating hours. Other text.'
+		).map((w) => w.word);
+		const marked = matchPassage(
+			page,
+			'The compressor filter must be re- placed every 400 operating hours.'
 		);
-		const marked = matchPassage(page, 'The compressor filter must be re- placed every 400 operating hours.');
 		const hit = page.filter((_, i) => marked[i]);
 		expect(hit).toContain('compressor');
 		expect(hit).toContain('400');
