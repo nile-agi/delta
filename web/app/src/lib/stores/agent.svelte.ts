@@ -43,7 +43,10 @@ class AgentStore {
 		// the database disagreeing after a reload.
 		if (
 			!activity ||
-			(!activity.steps?.length && !activity.notices?.length && !activity.transcript?.length)
+			(!activity.steps?.length &&
+				!activity.notices?.length &&
+				!activity.transcript?.length &&
+				!activity.sources?.length)
 		)
 			return;
 		this.activities.set(messageId, {
@@ -53,7 +56,8 @@ class AgentStore {
 			stopReason: activity.stopReason,
 			iterations: activity.iterations,
 			transcript: activity.transcript,
-			reasoning: activity.reasoning
+			reasoning: activity.reasoning,
+			sources: activity.sources
 		});
 	}
 
@@ -66,7 +70,8 @@ class AgentStore {
 			stopReason: current.stopReason,
 			iterations: current.iterations,
 			transcript: current.transcript,
-			reasoning: current.reasoning
+			reasoning: current.reasoning,
+			sources: current.sources
 		};
 		fn(next);
 		this.activities.set(messageId, next);
@@ -196,6 +201,15 @@ class AgentStore {
 						activity.notices.push(data.message as string);
 					});
 				}
+				break;
+			}
+
+			case 'sources': {
+				const data = event.data as AgentSourcesData;
+				if (!Array.isArray(data.sources) || data.sources.length === 0) break;
+				this.mutate(messageId, (activity) => {
+					activity.sources = data.sources;
+				});
 				break;
 			}
 
