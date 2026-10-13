@@ -18,6 +18,7 @@
 	import { modelOptions, selectModel } from '$lib/stores/models.svelte';
 	import type { DatabaseMessageToolCall } from '$lib/types/database';
 	import { copyToClipboard } from '$lib/utils/copy';
+	import { findModelOption, modelDisplayName } from '$lib/utils/model-names';
 	import autoResizeTextarea from '$lib/utils/autoresize-textarea';
 
 	interface Props {
@@ -163,23 +164,11 @@
 	);
 
 	function getModelDisplayName(): string {
-		const modelId = message.model;
-		if (modelId) {
-			const opt = options.find((m) => m.id === modelId || m.model === modelId);
-			return (
-				opt?.name ??
-				modelId
-					.split(/[/\\]/)
-					.pop()
-					?.replace(/\.gguf$/i, '') ??
-				modelId
-			);
-		}
-		return 'Unknown model';
+		return modelDisplayName(message.model, options);
 	}
 
 	async function handleModelSelect(optionId: string) {
-		if (optionId === message.model) return;
+		if (findModelOption(message.model, options)?.id === optionId) return;
 		try {
 			await selectModel(optionId);
 			onRegenerate();
