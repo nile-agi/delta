@@ -113,6 +113,7 @@ export class ModelsStore {
 						id: modelId,
 						name: displayName,
 						model: modelInfo.name,
+						alias: modelInfo.alias,
 						description: modelInfo.description,
 						capabilities: modelInfo.supports_tools ? ['tools'] : [],
 						details: {

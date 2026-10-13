@@ -1,3 +1,5 @@
+import type { ModelOption } from '$lib/types/models';
+
 /**
  * Normalizes a model name by extracting the filename from a path.
  *
@@ -36,4 +38,31 @@ export function normalizeModelName(modelName: string): string {
  */
 export function isValidModelName(modelName: string): boolean {
 	return normalizeModelName(modelName).length > 0;
+}
+
+const canonical = (id: string) =>
+	normalizeModelName(id ?? '')
+		.toLowerCase()
+		.replace(/\.gguf$/, '')
+		.replace(/\s+/g, '')
+		.replace(/:/g, '-');
+
+/**
+ * The picker option a model id refers to, whether it is the registry name ("qwen2.5:0.5b"),
+ * the file stem llama-server reports ("qwen2.5-0.5b-instruct-q4_k_m") or a path to the file.
+ */
+export function findModelOption(id: string | undefined, options: ModelOption[]): ModelOption | undefined {
+	if (!id) return undefined;
+	const exact = options.find((o) => o.id === id || o.model === id || o.alias === id);
+	if (exact) return exact;
+	const key = canonical(id);
+	return options.find(
+		(o) => canonical(o.id) === key || canonical(o.model) === key || (!!o.alias && canonical(o.alias) === key)
+	);
+}
+
+/** The name to show for a model: the picker's name when known, else the bare file name. */
+export function modelDisplayName(id: string | undefined, options: ModelOption[]): string {
+	if (!id) return 'Unknown model';
+	return findModelOption(id, options)?.name ?? normalizeModelName(id).replace(/\.gguf$/i, '');
 }

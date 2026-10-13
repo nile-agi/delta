@@ -66,8 +66,9 @@ bool is_delta_request(const nlohmann::json& body);
 nlohmann::json openai_error(const std::string& message, const std::string& type, const std::string& code = "");
 
 // Forwards an OpenAI request to llama-server unchanged apart from `body`, streaming when asked.
+// `reply_model`, when set, replaces the `model` llama-server reports (its file stem) in every reply.
 void proxy_openai(httplib::Response& res, const std::string& path, const nlohmann::json& body, const std::string& host,
-                  int port);
+                  int port, const std::string& reply_model = "");
 
 std::string generate_api_key();
 std::string mask_api_key(const std::string& key);

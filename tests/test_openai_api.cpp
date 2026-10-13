@@ -262,11 +262,51 @@ static void proxy_tests() {
           "no model server is a clean 502");
 }
 
+static void reply_model_tests() {
+    section("replies name the model the client asked for");
+    TestServer llama;
+    llama.server.Post("/v1/chat/completions", [](const httplib::Request& req, httplib::Response& res) {
+        if (json::parse(req.body).value("stream", false)) {
+            // Split mid-event, so renaming has to wait for whole lines.
+            res.set_chunked_content_provider("text/event-stream", [](size_t, httplib::DataSink& sink) {
+                const std::string a = "data: {\"model\":\"qwen2.5-0.5b-instruct-q4_k_m\",\"choices\":[{\"del";
+                const std::string b = "ta\":{\"content\":\"Hi\"}}]}\n\ndata: [DONE]\n\n";
+                sink.write(a.data(), a.size());
+                sink.write(b.data(), b.size());
+                sink.done();
+                return true;
+            });
+            return;
+        }
+        res.set_content(R"({"model":"qwen2.5-0.5b-instruct-q4_k_m","choices":[{"message":{"content":"Hi"}}]})",
+                        "application/json");
+    });
+    llama.start();
+
+    TestServer api;
+    api.server.Post("/v1/chat/completions", [&](const httplib::Request& req, httplib::Response& res) {
+        proxy_openai(res, "/v1/chat/completions", json::parse(req.body), "127.0.0.1", llama.port, "qwen2.5:0.5b");
+    });
+    api.start();
+    httplib::Client cli("127.0.0.1", api.port);
+
+    auto plain = cli.Post("/v1/chat/completions", R"({"messages":[]})", "application/json");
+    check(plain && json::parse(plain->body)["model"] == "qwen2.5:0.5b", "a reply carries the requested name");
+    auto st = cli.Post("/v1/chat/completions", R"({"stream":true,"messages":[]})", "application/json");
+    const std::string body = st ? st->body : "";
+    check(body.find("\"model\":\"qwen2.5:0.5b\"") != std::string::npos &&
+              body.find("instruct-q4_k_m") == std::string::npos,
+          "so does every streamed event, even one split across chunks");
+    check(body.find("\"content\":\"Hi\"") != std::string::npos && body.find("data: [DONE]") != std::string::npos,
+          "with the content and [DONE] intact");
+}
+
 int main() {
     gate_tests();
     settings_tests();
     developer_route_tests();
     proxy_tests();
+    reply_model_tests();
     std::cout << "\n" << (g_checks - g_failures) << "/" << g_checks << " checks passed\n";
     return g_failures == 0 ? 0 : 1;
 }

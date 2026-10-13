@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isValidModelName, normalizeModelName } from './model-names';
+import {
+	findModelOption,
+	isValidModelName,
+	modelDisplayName,
+	normalizeModelName
+} from './model-names';
 
 describe('normalizeModelName', () => {
 	it('extracts filename from forward slash path', () => {
@@ -40,5 +45,34 @@ describe('isValidModelName', () => {
 	it('returns false for empty values', () => {
 		expect(isValidModelName('')).toBe(false);
 		expect(isValidModelName('   ')).toBe(false);
+	});
+});
+
+describe('findModelOption and modelDisplayName', () => {
+	const options = [
+		{
+			id: 'qwen2.5:0.5b',
+			name: 'Qwen 2.5 0.5B',
+			model: 'qwen2.5:0.5b',
+			alias: 'qwen2.5-0.5b-instruct-q4_k_m',
+			capabilities: []
+		},
+		{ id: 'gemma3:270m', name: 'Gemma 3 270M', model: 'gemma3:270m', capabilities: [] }
+	];
+
+	it('finds the picker option by registry name, file stem or path', () => {
+		expect(findModelOption('qwen2.5:0.5b', options)?.name).toBe('Qwen 2.5 0.5B');
+		expect(findModelOption('qwen2.5-0.5b-instruct-q4_k_m', options)?.name).toBe('Qwen 2.5 0.5B');
+		expect(findModelOption('/models/qwen2.5-0.5b-instruct-q4_k_m.gguf', options)?.name).toBe(
+			'Qwen 2.5 0.5B'
+		);
+		expect(findModelOption('gemma3-270m', options)?.name).toBe('Gemma 3 270M');
+		expect(findModelOption('unknown', options)).toBeUndefined();
+	});
+
+	it('labels replies with the picker name, or the bare file name when unknown', () => {
+		expect(modelDisplayName('qwen2.5-0.5b-instruct-q4_k_m', options)).toBe('Qwen 2.5 0.5B');
+		expect(modelDisplayName('/x/other-model.gguf', options)).toBe('other-model');
+		expect(modelDisplayName(undefined, options)).toBe('Unknown model');
 	});
 });
