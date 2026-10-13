@@ -52,10 +52,11 @@
 
 	interface Props {
 		section?: string;
+		backLabel?: string;
 		onBack: () => void;
 	}
 
-	let { section = 'General', onBack }: Props = $props();
+	let { section = 'General', backLabel = 'Back to Home', onBack }: Props = $props();
 
 	const settingSections: Array<{
 		fields: SettingsFieldConfig[];
@@ -565,8 +566,8 @@
 		<Button
 			variant="ghost"
 			size="icon"
-			aria-label="Back to Home"
-			title="Back to Home"
+			aria-label={backLabel}
+			title={backLabel}
 			onclick={onBack}
 		>
 			<ArrowLeft class="h-4 w-4" />
