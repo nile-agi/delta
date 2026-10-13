@@ -146,7 +146,14 @@ export async function extractSheetSegments(file: File, csv = false): Promise<Doc
 }
 
 export function segmentsText(segments: DocumentSegment[]): string {
+	// Page markers let the model cite pages, and the viewer open a file sent whole at one.
 	return segments
-		.map((s) => (s.label && segments.length > 1 ? `## ${s.label}\n${s.text}` : s.text))
+		.map((s) =>
+			s.page
+				? `[Page ${s.page}]\n${s.text}`
+				: s.label && segments.length > 1
+					? `## ${s.label}\n${s.text}`
+					: s.text
+		)
 		.join('\n\n');
 }
