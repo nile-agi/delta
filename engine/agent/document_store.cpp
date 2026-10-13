@@ -5,6 +5,7 @@
 #include <cstring>
 #include <ctime>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <set>
 
@@ -346,6 +347,14 @@ nlohmann::json DocumentExcerpt::to_json() const {
     nlohmann::json j = {{"document", doc_name}, {"document_id", doc_id}, {"source", citation()}, {"text", text}};
     if (!heading.empty())
         j["heading"] = heading;
+    // Numbers as well as the citation string, so the app can open the file at this place.
+    if (page_start > 0) {
+        j["page_start"] = page_start;
+        j["page_end"] = std::max(page_start, page_end);
+    } else if (section_start > 0) {
+        j["section_start"] = section_start;
+        j["section_end"] = std::max(section_start, section_end);
+    }
     return j;
 }
 
@@ -851,6 +860,23 @@ std::vector<DocumentExcerpt> DocumentStore::search(const std::string& query, con
         ex.text = cut_to(ex.text, max_chars - used);
         used += ex.text.size();
         out.push_back(std::move(ex));
+    }
+    return out;
+}
+
+std::vector<DocumentChunk> DocumentStore::sections(const std::string& doc_id) const {
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
+    std::vector<DocumentChunk> out;
+    if (!db_)
+        return out;
+    for (const auto& row : fetch_chunks(db_, doc_id, "ordinal BETWEEN ? AND ?", 0, std::numeric_limits<int>::max())) {
+        DocumentChunk chunk;
+        chunk.page_start = row.page_start;
+        chunk.page_end = row.page_end;
+        chunk.heading = row.heading;
+        const size_t skip = std::min(row.text.size(), static_cast<size_t>(std::max(0, row.overlap)));
+        chunk.text = row.text.substr(skip);
+        out.push_back(std::move(chunk));
     }
     return out;
 }

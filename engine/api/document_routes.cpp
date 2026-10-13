@@ -144,6 +144,28 @@ void handle_search(const httplib::Request& req, httplib::Response& res) {
     }
 }
 
+// GET /api/documents/:id/sections?conversation_id=...  (the whole text, for the viewer)
+void handle_sections(const httplib::Request& req, httplib::Response& res) {
+    auto& store = DocumentStore::instance();
+    const std::string cid = clip_id(req.has_param("conversation_id") ? req.get_param_value("conversation_id") : "");
+    agent::DocumentInfo info;
+    if (!store.resolve(req.matches[1], cid, info) || info.id != req.matches[1].str())
+        return send_error(res, 404, "Document not found");
+    json sections = json::array();
+    int number = 0;
+    for (const auto& c : store.sections(info.id)) {
+        json s = {{"section", ++number}, {"text", c.text}};
+        if (c.page_start > 0) {
+            s["page_start"] = c.page_start;
+            s["page_end"] = std::max(c.page_start, c.page_end);
+        }
+        if (!c.heading.empty())
+            s["heading"] = c.heading;
+        sections.push_back(s);
+    }
+    res.set_content(json({{"document", info.to_json()}, {"sections", sections}}).dump(), "application/json");
+}
+
 } // namespace
 
 void register_document_routes(httplib::Server& server) {
@@ -151,6 +173,7 @@ void register_document_routes(httplib::Server& server) {
     server.Post("/api/documents", handle_upload);
     server.Get("/api/documents", handle_list);
     server.Delete("/api/documents", handle_delete_conversation);
+    server.Get(R"(/api/documents/([A-Za-z0-9-]+)/sections)", handle_sections);
     server.Put(R"(/api/documents/([A-Za-z0-9-]+))", handle_update);
     server.Delete(R"(/api/documents/([A-Za-z0-9-]+))", handle_delete);
 }
