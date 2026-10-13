@@ -253,6 +253,8 @@ static const char* agent_event_name(delta::agent::EventType type) {
         return "status";
     case EventType::Error:
         return "error";
+    case EventType::Sources:
+        return "sources";
     }
     return "status";
 }
@@ -1319,6 +1321,8 @@ class ModelAPIServer {
                     }
                     if (!transcript.empty())
                         response["transcript"] = transcript;
+                    if (!result.sources.empty())
+                        response["sources"] = result.sources;
                     res.set_content(response.dump(), "application/json");
                 }
             } catch (const json::parse_error&) {

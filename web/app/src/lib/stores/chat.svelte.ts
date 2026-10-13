@@ -652,7 +652,8 @@ class ChatStore {
 						if (
 							agentActivity?.steps.length ||
 							agentActivity?.notices.length ||
-							agentActivity?.transcript?.length
+							agentActivity?.transcript?.length ||
+							agentActivity?.sources?.length
 						) {
 							updateData.agent_activity = agentActivity;
 						}
@@ -1037,7 +1038,8 @@ class ChatStore {
 		const hasActivity = Boolean(
 			interruptedActivity?.steps.length ||
 			interruptedActivity?.notices.length ||
-			interruptedActivity?.transcript?.length
+			interruptedActivity?.transcript?.length ||
+			interruptedActivity?.sources?.length
 		);
 		if (!streamingState.response.trim() && !hasActivity) return;
 

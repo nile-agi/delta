@@ -1,5 +1,6 @@
 import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
 import type { DocumentSegment } from '$lib/utils/document-extraction';
+import type { DocumentSection } from '$lib/utils/citations';
 
 // Documents live in the engine next to the agent, so reuse the model API's base URL resolution.
 function apiUrl(path: string): string {
@@ -69,6 +70,22 @@ export const documentsService = {
 	},
 
 	/** Documents kept for all chats. */
+	/** A document's whole text in order, one entry per stored section, for the citation viewer. */
+	async sections(id: string, conversationId?: string): Promise<DocumentSection[]> {
+		const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : '';
+		const res = await ok(await fetch(apiUrl(`/api/documents/${encodeURIComponent(id)}/sections${query}`)));
+		const data = await res.json();
+		return (data.sections ?? []).map(
+			(s: { section: number; page_start?: number; page_end?: number; heading?: string; text: string }) => ({
+				section: s.section,
+				pageStart: s.page_start,
+				pageEnd: s.page_end,
+				heading: s.heading,
+				text: s.text
+			})
+		);
+	},
+
 	async library(): Promise<IndexedDocument[]> {
 		const res = await ok(await fetch(apiUrl('/api/documents?library=1')));
 		return (await res.json()).documents ?? [];

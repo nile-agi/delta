@@ -26,6 +26,8 @@ import type {
 	AgentCompactionData,
 	AgentStatusData,
 	AgentRunSummaryData,
+	AgentSource,
+	AgentSourcesData,
 	AgentActivity,
 	AgentActivityStep
 } from '$lib/types/agent';
@@ -108,6 +110,8 @@ declare global {
 		AgentCompactionData,
 		AgentStatusData,
 		AgentRunSummaryData,
+		AgentSource,
+		AgentSourcesData,
 		AgentActivity,
 		AgentActivityStep
 	};

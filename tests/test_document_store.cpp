@@ -173,6 +173,28 @@ static void test_store() {
     check(!hits.empty() && hits[0].page_start <= 80 && hits[0].page_end >= 80, "and cites page 80");
     check(!hits.empty() && hits[0].citation().find("annual-report.pdf, p.") == 0, "citations name the file and page");
     check(search_us < 10000, "search takes under 10 ms (" + std::to_string(search_us) + " us)");
+    {
+        const auto j = hits.empty() ? nlohmann::json() : hits[0].to_json();
+        check(j.value("page_start", 0) <= 80 && j.value("page_end", 0) >= 80 && j.value("document_id", "") == id,
+              "the JSON carries the page numbers, for opening the file there");
+    }
+
+    // The whole text in order, for the viewer: overlap removed, every page present once.
+    {
+        auto sections = store.sections(id);
+        std::string all;
+        for (const auto& c : sections)
+            all += c.text;
+        bool ordered = !sections.empty();
+        for (size_t i = 1; i < sections.size(); i++)
+            ordered = ordered && sections[i].page_start >= sections[i - 1].page_start;
+        check(ordered, "sections() returns the chunks in page order");
+        size_t n80 = 0;
+        for (size_t at = all.find("hydraulic pump"); at != std::string::npos; at = all.find("hydraulic pump", at + 1))
+            n80++;
+        check(n80 == 1, "with the overlap removed, so no sentence appears twice");
+        check(all.find(filler_page(1).substr(0, 40)) != std::string::npos, "starting from the first page");
+    }
 
     size_t total = 0;
     for (auto& h : store.search("revenue logistics training roadmap", "conv-a", false, 3000))

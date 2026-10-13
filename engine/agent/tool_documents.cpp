@@ -83,7 +83,8 @@ void register_document_tools() {
             bool truncated = false;
             auto ex = store.read(info.id, from, to, kMaxToolChars, truncated);
             const int last = info.pages > 0 ? info.pages : info.chunks;
-            nlohmann::json out = {{"source", ex.citation()}, {"text", ex.text}, {"total", last}};
+            nlohmann::json out = ex.to_json();
+            out["total"] = last;
             out["unit"] = info.pages > 0 ? "pages" : "sections";
             if (truncated)
                 out["note"] = "Cut short to fit. Read a smaller range to see the rest.";

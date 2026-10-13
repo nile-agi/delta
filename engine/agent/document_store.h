@@ -111,6 +111,9 @@ class DocumentStore {
     // The text of pages [from, to] (or sections, for a file without pages), capped at `max_chars`.
     // `truncated` reports whether the range had more to give.
     DocumentExcerpt read(const std::string& doc_id, int from, int to, size_t max_chars, bool& truncated) const;
+    // The whole document in order, one entry per stored chunk with its repeated overlap removed,
+    // so a viewer can show the text and jump to the section a citation names.
+    std::vector<DocumentChunk> sections(const std::string& doc_id) const;
 
   private:
     DocumentStore() = default;

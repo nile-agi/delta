@@ -873,7 +873,7 @@ export class ChatService {
 			} else {
 				contentParts.push({
 					type: 'text',
-					text: `\n\n--- PDF File: ${pdfFile.name} ---\n${pdfFile.content}`
+					text: `\n\n--- PDF File: ${pdfFile.name} (cite pages like [${pdfFile.name}, p.2]) ---\n${pdfFile.content}`
 				});
 			}
 		}
