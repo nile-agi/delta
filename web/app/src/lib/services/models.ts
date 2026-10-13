@@ -13,6 +13,7 @@ export interface ModelInfo {
 	size_bytes: number;
 	installed?: boolean;
 	supports_tools?: boolean;
+	alias?: string;
 }
 
 export interface ModelListResponse {
@@ -437,17 +438,8 @@ export class ModelsService {
 			}
 		});
 
+		// No navigator.deviceMemory fallback: browsers cap it at 8 GB, which wrongly blocked big models.
 		if (!response.ok) {
-			// Fallback: try browser API if available
-			if (typeof navigator !== 'undefined' && 'deviceMemory' in navigator) {
-				const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-				if (deviceMemory) {
-					return {
-						total_ram_gb: deviceMemory,
-						total_ram_bytes: deviceMemory * 1024 * 1024 * 1024
-					};
-				}
-			}
 			throw new Error(`Failed to get system RAM (status ${response.status})`);
 		}
 

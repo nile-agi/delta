@@ -81,18 +81,8 @@
 			const ramInfo = await ModelsService.getSystemRAM();
 			systemRAMGB = ramInfo.total_ram_gb;
 		} catch (error) {
+			// Unknown memory blocks nothing; guessing 8 GB marked bigger models incompatible.
 			console.error('Failed to load system RAM:', error);
-			// Fallback: try browser API
-			if (typeof navigator !== 'undefined' && 'deviceMemory' in navigator) {
-				const deviceMemory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-				if (deviceMemory) {
-					systemRAMGB = deviceMemory;
-				}
-			}
-			// If still no RAM info, default to 8GB for safety
-			if (systemRAMGB === null) {
-				systemRAMGB = 8;
-			}
 		} finally {
 			loadingRAM = false;
 		}
@@ -301,10 +291,6 @@
 				</div>
 			{/if}
 			<!-- Catalog View -->
-		{:else if systemRAMGB === null && !loadingRAM}
-			<div class="py-16 text-center text-muted-foreground">
-				<p>Unable to detect system RAM. Hardware-aware filtering disabled.</p>
-			</div>
 		{:else if filteredFamilies.length === 0}
 			<div class="py-16 text-center text-muted-foreground">
 				<p>No model families match your search.</p>
@@ -322,7 +308,7 @@
 								<FamilyAccordion
 									{family}
 									expanded={false}
-									systemRAMGB={systemRAMGB || 8}
+									systemRAMGB={systemRAMGB ?? 0}
 									{installedModelNames}
 									onModelDownload={handleDownload}
 									onModelRemove={handleRemove}
