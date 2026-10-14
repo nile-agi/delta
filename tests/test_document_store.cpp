@@ -201,6 +201,37 @@ static void test_store() {
         total += h.text.size();
     check(total <= 3000 + 10, "excerpts respect the character budget");
 
+    // The digest: a few percent of the file, from its opening and from across the whole of it.
+    {
+        const std::string digest = store.digest(id);
+        size_t chars = 0;
+        for (const auto& p : pages)
+            chars += p.text.size();
+        check(digest.size() >= 800 && digest.size() <= 4000 && digest.size() <= chars * 3 / 100 + 400,
+              "the digest is about 3% of the file (" + std::to_string(digest.size()) + " of " + std::to_string(chars) +
+                  " chars)");
+        check(digest.rfind("[p.1", 0) == 0 && digest.find(filler_page(1).substr(0, 30)) != std::string::npos,
+              "it starts with the opening, tagged with its pages");
+        int last_page = 0;
+        for (size_t at = digest.find("\n[p."); at != std::string::npos; at = digest.find("\n[p.", at + 1))
+            last_page = std::max(last_page, std::atoi(digest.c_str() + at + 4));
+        check(last_page > 90, "and reaches the end of the file (last tag p." + std::to_string(last_page) + ")");
+
+        // A document indexed before digests gets one on first use, and keeps it.
+        sqlite3_exec(db, ("UPDATE documents SET digest = '' WHERE id = '" + id + "'").c_str(), nullptr, nullptr,
+                     nullptr);
+        check(store.digest(id) == digest, "an older document gets the same digest built on demand");
+        sqlite3_stmt* st = nullptr;
+        sqlite3_prepare_v2(db, "SELECT length(digest) FROM documents WHERE id = ?", -1, &st, nullptr);
+        sqlite3_bind_text(st, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(st);
+        check(sqlite3_column_int(st, 0) > 0, "and it is saved");
+        sqlite3_finalize(st);
+        check(store.init(db) && store.digest(id) == digest, "setting the store up again keeps the column");
+        check(build_digest({}, 0).empty() && build_digest({{1, 1, "", "Short note.", 0}}, 11) == "[p.1] Short note.\n",
+              "an empty file has no digest, a tiny one is quoted whole");
+    }
+
     // Scoping.
     check(store.search("hydraulic pump", "conv-b", false, 4000).empty(), "another conversation sees nothing");
     check(store.has_documents("conv-a") && !store.has_documents("conv-b"), "has_documents follows the links");
