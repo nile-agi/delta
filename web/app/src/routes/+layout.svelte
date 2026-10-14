@@ -32,7 +32,7 @@
 	import HardwareDashboard from '$lib/components/app/hardware/HardwareDashboard.svelte';
 	import { hardwareWindow } from '$lib/stores/hardware-window.svelte';
 	import Notes from '$lib/components/app/misc/Notes.svelte';
-	import SettingsShortcut from '$lib/components/app/chat/ChatSettings/SettingsShortcut.svelte';
+	// import SettingsShortcut from '$lib/components/app/chat/ChatSettings/SettingsShortcut.svelte';
 
 	// ❌ REMOVED: import { Calendar } from 'bits-ui';
 	// ❌ REMOVED: import Calendar from '$lib/components/app/misc/Calendar.svelte';
@@ -254,15 +254,9 @@
 	// Sidebar auto-open logic — skip in auxiliary webviews
 	$effect(() => {
 		if (isAuxWindow) return;
-		if (isHomeRoute && !isNewChatMode) {
-			sidebarOpen = false;
-		} else if (isHomeRoute && isNewChatMode) {
-			sidebarOpen = true;
-		} else if (isChatRoute) {
-			sidebarOpen = true;
-		} else {
-			sidebarOpen = showSidebarByDefault;
-		}
+		if (isHomeRoute && !isNewChatMode) sidebarOpen = false;
+		else if (isHomeRoute && isNewChatMode) sidebarOpen = false;
+		else if (isChatRoute) sidebarOpen = false;
 	});
 
 	$effect(() => {
@@ -411,21 +405,13 @@
 		{:else}
 			<Sidebar.Provider bind:open={sidebarOpen}>
 				<div class="flex h-screen w-full" style:height="{innerHeight}px">
-					<Sidebar.Root class="h-full">
+					<Sidebar.Root class="h-full" collapsible="icon" variant="floating">
 						<ChatSidebar bind:this={chatSidebar} />
 					</Sidebar.Root>
-
-					<Sidebar.Trigger
-						class="transition-left absolute z-[900] h-8 w-8 duration-200 ease-linear {sidebarOpen
-							? 'md:left-[var(--sidebar-width)]'
-							: 'left-0'}"
-						style="translate: 1rem 1rem;"
-					/>
 
 					<Sidebar.Inset class="flex flex-1 flex-col overflow-hidden">
 						{@render children?.()}
 					</Sidebar.Inset>
-					<SettingsShortcut />
 				</div>
 			</Sidebar.Provider>
 		{/if}
