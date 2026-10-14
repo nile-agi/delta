@@ -1,7 +1,7 @@
 # Setup workflow: decides what a build needs, then continues with .circleci/continue.yml.
-# Branches build only what they changed against dev, on Linux. Pushes to dev and main build
-# everything on Linux, macOS and Windows: they are the builds that save the compiler caches.
-# A v* tag runs the release instead.
+# Every build checks only what changed: a branch against dev, a push to dev or main against the
+# commit before it. macOS and Windows (200 and 40 credits a minute) build the engine only on main,
+# the merge before a release. A v* tag runs the release instead.
 version: 2.1
 setup: true
 
@@ -23,22 +23,28 @@ jobs:
               printf '{"release-tag": "%s"}\n' "$CIRCLE_TAG" | tee /tmp/pipeline-parameters.json
               exit 0
             fi
-            all=false
-            case "$CIRCLE_BRANCH" in dev|main) all=true ;; esac
-            if [ "$all" = true ]; then
-              changed=""
-            else
-              git fetch --quiet origin dev
-              changed="$(git diff --name-only "$(git merge-base origin/dev HEAD)" HEAD)"
-              printf 'Changed files:\n%s\n' "$changed"
-            fi
-            touched() { [ "$all" = true ] || printf '%s\n' "$changed" | grep -Eq "$1"; }
-            flag() { if touched "$1"; then echo true; else echo false; fi; }
+            case "$CIRCLE_BRANCH" in
+              dev|main)
+                base="<< pipeline.git.base_revision >>"
+                git cat-file -e "${base}^{commit}" 2>/dev/null || base="HEAD~1"
+                ;;
+              *)
+                git fetch --quiet origin dev
+                base="$(git merge-base origin/dev HEAD)"
+                ;;
+            esac
+            changed="$(git diff --name-only "$base" HEAD)"
+            printf 'Changed since %s:\n%s\n' "$base" "$changed"
+            flag() { if printf '%s\n' "$changed" | grep -Eq "$1"; then echo true; else echo false; fi; }
             frontend=$(flag '^(web/app/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.circleci/)')
             engine=$(flag '^(engine/|tests/|CMakeLists\.txt$|version\.txt$|\.gitmodules$|\.circleci/)')
             release=$(flag '^(scripts/|\.github/|\.circleci/|dist/|src-tauri/|version\.txt$)')
-            printf '{"run-frontend": %s, "run-engine": %s, "run-release-checks": %s, "all-platforms": %s}\n' \
-              "$frontend" "$engine" "$release" "$all" | tee /tmp/pipeline-parameters.json
+            # Story tests are the slowest frontend step: run them when components or packages change.
+            stories=$(flag '^(web/app/src/lib/components/|web/app/\.storybook/|web/app/package\.json$|pnpm-lock\.yaml$|\.circleci/)|\.stories\.')
+            native=false
+            [ "$CIRCLE_BRANCH" = main ] && [ "$engine" = true ] && native=true
+            printf '{"run-frontend": %s, "run-stories": %s, "run-engine": %s, "run-release-checks": %s, "all-platforms": %s}\n' \
+              "$frontend" "$stories" "$engine" "$release" "$native" | tee /tmp/pipeline-parameters.json
       - continuation/continue:
           configuration_path: .circleci/continue.yml
           parameters: /tmp/pipeline-parameters.json
