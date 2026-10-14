@@ -14,10 +14,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Decides which jobs a pull request needs. A PR that only touches the web app should not compile
-  # llama.cpp on three platforms, and an engine-only PR should not rerun the browser suites.
-  # Skipped jobs still satisfy required status checks. Pushes to dev and main run everything: they
-  # are the runs that save the compiler cache PRs read from.
+  # Decides which jobs a run needs: a pull request checks what it changed against its base, a push
+  # what it changed since the previous push. A web-only change never compiles llama.cpp, and an
+  # engine-only change never reruns the browser suites. Skipped jobs still satisfy status checks.
   changes:
     name: Detect changed areas
     runs-on: ubuntu-latest
@@ -26,21 +25,25 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      frontend: ${{ github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true' }}
-      engine: ${{ github.event_name != 'pull_request' || steps.filter.outputs.engine == 'true' }}
-      release: ${{ github.event_name != 'pull_request' || steps.filter.outputs.release == 'true' }}
-      # macOS minutes bill at 10x and Windows at 2x, so PRs into dev build on Linux only. PRs into
-      # main and pushes to dev and main still build all three before anything is released.
+      frontend: ${{ steps.filter.outputs.frontend }}
+      stories: ${{ steps.filter.outputs.stories }}
+      engine: ${{ steps.filter.outputs.engine }}
+      release: ${{ steps.filter.outputs.release }}
+      # macOS minutes bill at 10x and Windows at 2x, so they build the engine only on pushes to
+      # main (the merge before a release); everything else builds it on Linux.
       engine_os: >-
-        ${{ (github.event_name == 'pull_request' && github.base_ref == 'dev')
-            && '["ubuntu-22.04"]' || '["macos-latest", "ubuntu-22.04", "windows-latest"]' }}
+        ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main')
+            && '["macos-latest", "ubuntu-22.04", "windows-latest"]' || '["ubuntu-22.04"]' }}
     steps:
-      # Pull requests list their changed files through the API, so no history is needed. On a
-      # push the filter would compare against main with git, which a shallow checkout cannot do.
+      # A push compares with the commit before it, which needs git; pull requests use the API.
+      - uses: actions/checkout@v4
+        if: github.event_name == 'push'
+        with:
+          persist-credentials: false
       - uses: dorny/paths-filter@v3
-        if: github.event_name == 'pull_request'
         id: filter
         with:
+          base: ${{ github.event_name == 'push' && github.ref_name || '' }}
           filters: |
             frontend:
               - 'web/app/**'
@@ -54,6 +57,14 @@ jobs:
               - 'CMakeLists.txt'
               - 'version.txt'
               - '.gitmodules'
+              - '.github/workflows/ci.yml'
+            # Story tests are the slowest frontend step: run them when components or packages change.
+            stories:
+              - 'web/app/src/lib/components/**'
+              - 'web/app/.storybook/**'
+              - '**/*.stories.*'
+              - 'web/app/package.json'
+              - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
             release:
               - 'scripts/**'
@@ -131,6 +142,7 @@ jobs:
         run: pnpm --filter webui exec vitest run --project=client --browser.headless --no-file-parallelism
 
       - name: Run UI stories
+        if: needs.changes.outputs.stories == 'true'
         # Formula-heavy stories include accessibility scans that exceed 15 seconds.
         run: pnpm --filter webui exec vitest run --project=ui --browser.headless --no-file-parallelism --testTimeout=60000
 
@@ -198,6 +210,11 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(needs.changes.outputs.engine_os) }}
+    # Paths relative to the checkout and compilers compared by content, so the release reuses this cache.
+    env:
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/../vcpkg-cache,readwrite
     steps:
       - uses: actions/checkout@v4
         with:
@@ -210,10 +227,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libcurl4-openssl-dev uuid-dev
 
+      - name: Restore vcpkg packages
+        if: runner.os == 'Windows'
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/../vcpkg-cache
+          key: vcpkg-curl-x64-windows-static-md-v1
+
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         shell: bash
-        run: vcpkg install curl:x64-windows-static-md
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/../vcpkg-cache"
+          vcpkg install curl:x64-windows-static-md
+
+      - name: Save vcpkg packages
+        if: runner.os == 'Windows' && github.event_name == 'push' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/../vcpkg-cache
+          key: vcpkg-curl-x64-windows-static-md-v1
 
       # Compiler cache: llama.cpp and ggml rarely change, so most runs only recompile Delta's own
       # files. Saved from dev and main only; PRs read that cache instead of each storing their own
@@ -241,7 +275,9 @@ jobs:
                 -DFORCE_SYSTEM_CLANG=OFF -DUSE_CURL=ON)
           case "$RUNNER_OS" in
             macOS)
-              ARGS+=(-DGGML_METAL=ON
+              # The compiler and architecture of the release builds, so they reuse this cache.
+              ARGS+=(-DGGML_METAL=ON -DCMAKE_C_COMPILER=/usr/bin/cc -DCMAKE_CXX_COMPILER=/usr/bin/c++
+                     -DCMAKE_OSX_ARCHITECTURES=arm64
                      -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache) ;;
             Linux)
               ARGS+=(-DGGML_METAL=OFF
