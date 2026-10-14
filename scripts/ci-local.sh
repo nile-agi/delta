@@ -59,7 +59,8 @@ engine_tests() {
 gcc11_check() {
   command -v docker >/dev/null && docker info >/dev/null 2>&1 || { echo "Docker not running; skipped"; return 0; }
   local files
-  files="$(git diff --name-only "$(git merge-base "$BASE" HEAD)" HEAD -- 'engine/*.cpp' 'tests/*.cpp' |
+  # Against the working tree, so uncommitted changes are compiled too.
+  files="$(git diff --name-only "$(git merge-base "$BASE" HEAD)" -- 'engine/*.cpp' 'tests/*.cpp' |
     grep -v '^engine/vendor/' | tr '\n' ' ')"
   [[ -z "$files" ]] && { echo "no changed C++ files"; return 0; }
   local inc="-Iengine/vendor/sqlite3 -Iengine -Iengine/vendor -Iengine/vendor/llama.cpp -Iengine/vendor/llama.cpp/include

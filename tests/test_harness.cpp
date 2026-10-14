@@ -3191,6 +3191,69 @@ static void test_answers_report_their_sources() {
     DocumentStore::instance().remove_conversation("conv-src");
 }
 
+static void test_a_file_sent_without_a_question_gets_its_highlights() {
+    test("a file sent with no question, or a request for its gist, is answered from its overview");
+
+    std::vector<DocumentSegment> pages;
+    for (int p = 1; p <= 40; p++) {
+        std::string text = "Section " + std::to_string(p) + " of the plant manual covers routine checks. ";
+        text += "Operators log the gauge readings and report leaks to the shift lead.\n\n";
+        if (p == 1)
+            text = "Plant Operations Manual. This manual explains how the compressor plant is run safely.\n\n" + text;
+        if (p == 23)
+            text += "The compressor filter must be replaced every 400 operating hours.\n\n";
+        pages.push_back({p, "", text, false});
+    }
+    DocumentStore::instance().add("plant.pdf", "application/pdf", "conv-hl", pages);
+    const std::string stub = "\n\n--- Attached file: plant.pdf (40 pages; the passages relevant to each question "
+                             "are provided) ---";
+
+    auto ask = [](const std::string& text, json* sources = nullptr) {
+        ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "Here are the highlights."}}});
+        server.start();
+        Harness harness(server.url(), "test-model", false);
+        RunOptions options = test_options();
+        options.tools_enabled = false;
+        options.memory_scope = "conv-hl";
+        harness.set_options(options);
+        EventLog log;
+        auto result = harness.run(json::array({user(text)}), log.sink());
+        server.stop();
+        if (sources)
+            *sources = result.sources;
+        auto requests = server.requests();
+        return requests.empty() ? std::string() : system_text(requests[0]);
+    };
+
+    json sources;
+    const std::string alone = ask(stub, &sources);
+    check(alone.find("Overview of plant.pdf (40 pages)") != std::string::npos, "the file alone gets its overview");
+    check(alone.find("Plant Operations Manual") != std::string::npos, "starting from its opening");
+    check(alone.find("highlights") != std::string::npos && alone.find("questions they could ask") != std::string::npos,
+          "with the request to give the highlights and suggest questions");
+    check(alone.find("Nothing in the attached files matched") == std::string::npos, "never \"nothing matched\"");
+    check(!sources.empty() && sources[0].value("page_start", 0) == 1, "and the pages it quotes are its sources");
+
+    check(ask("summarize this" + stub).find("Overview of plant.pdf") != std::string::npos, "\"summarize this\" too");
+    check(ask("Give me the highlights").find("Overview of plant.pdf") != std::string::npos, "\"the highlights\" too");
+    check(ask("Fupisha hati hii").find("Overview of plant.pdf") != std::string::npos, "and Swahili \"fupisha\"");
+
+    const std::string specific = ask("How often must the compressor filter be replaced?");
+    check(specific.find("400 operating hours") != std::string::npos &&
+              specific.find("Overview of plant.pdf") == std::string::npos,
+          "a specific question still gets the matching passage, not the overview");
+    check(ask("What is this compressor filter replacement interval in operating hours exactly?").find("Overview of") ==
+              std::string::npos,
+          "a longer question is searched even when it says \"what is this\"");
+
+    const std::string unmatched = ask("Which zebracorn mascot sings in the glossy brochure?");
+    check(unmatched.find("Nothing in the attached files matched") != std::string::npos &&
+              unmatched.find("Overview of plant.pdf") != std::string::npos,
+          "a question nothing matches gets the overview instead of an empty answer");
+
+    DocumentStore::instance().remove_conversation("conv-hl");
+}
+
 static void test_passages_fit_a_small_window_with_a_long_history() {
     test("a large file and a long chat still fit a 4K window: passages stay in budget, history compacts");
 
@@ -3605,6 +3668,7 @@ int main() {
     test_a_new_chat_never_reports_the_context_error();
     test_document_tools_are_offered_only_with_documents();
     test_answers_report_their_sources();
+    test_a_file_sent_without_a_question_gets_its_highlights();
     test_a_huge_message_in_a_tiny_window_still_gets_an_answer();
     test_compaction_keeps_the_ids_of_records_it_changed();
     test_an_empty_cut_off_reply_still_answers();

@@ -109,6 +109,49 @@ size_t word_count(const std::string& text) {
     return words;
 }
 
+// The user's own words: drops the "--- Attached file: ... ---" lines the app adds for each file,
+// which would otherwise be searched as if they were the question.
+std::string without_attachment_stubs(const std::string& text) {
+    std::string out;
+    size_t start = 0;
+    while (start <= text.size()) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos)
+            end = text.size();
+        const std::string line = text.substr(start, end - start);
+        const bool stub = line.rfind("--- Attached file:", 0) == 0 || line.rfind("--- File:", 0) == 0 ||
+                          line.rfind("--- PDF File:", 0) == 0;
+        if (!stub)
+            out += line + "\n";
+        start = end + 1;
+    }
+    while (!out.empty() && std::isspace(static_cast<unsigned char>(out.back())))
+        out.pop_back();
+    return out;
+}
+
+// A file sent with no question, or a request for its gist rather than for something in it.
+bool wants_overview(const std::string& text) {
+    std::string t;
+    for (char c : text)
+        t += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    const size_t words = word_count(t);
+    if (words == 0)
+        return true;
+    // A longer message asks something specific even when it says "what is this".
+    if (words > 8)
+        return false;
+    static const char* kAsks[] = {"summar",     "overview",     "highlight",     "key point",
+                                  "main point", "outline",      "tl;dr",         "tldr",
+                                  "gist",       "what is this", "what's this",   "what is it about",
+                                  "about this", "explain this", "describe this", "what does it say",
+                                  "muhtasari",  "fupisha",      "inahusu nini",  "mambo muhimu"};
+    for (const char* ask : kAsks)
+        if (t.find(ask) != std::string::npos)
+            return true;
+    return false;
+}
+
 // One line describing what a tool returned, for the activity feed in the UI. The model always
 // gets the full result; this is only what a human sees.
 std::string summarize_result(const std::string& tool, const ToolResult& result) {
@@ -551,27 +594,24 @@ std::string Harness::document_context(const nlohmann::json& messages, bool has_t
         !docs.has_documents(conversation))
         return "";
 
+    const std::string asked = without_attachment_stubs(last_user_text(messages));
+    if (wants_overview(asked))
+        return document_overview(conversation, false);
+
     // A short follow-up ("and the deadline?") names nothing to search for on its own.
-    std::string query = last_user_text(messages);
+    std::string query = asked;
     if (word_count(query) < 6)
-        query = previous_user_text(messages) + "\n" + query;
+        query = without_attachment_stubs(previous_user_text(messages)) + "\n" + query;
 
     auto excerpts = docs.search(query, conversation, false, document_budget_chars_);
+    if (excerpts.empty())
+        return document_overview(conversation, true);
     const std::string more = has_tools ? " Call search_documents with other keywords, or read_document for a page "
                                          "range, when they do not hold the answer."
                                        : " If they do not hold the answer, say what you could not find.";
-    std::string block;
-    if (excerpts.empty()) {
-        std::string names;
-        for (const auto& d : docs.list(conversation, false))
-            names += (names.empty() ? "" : ", ") + d.name;
-        block = "\nFiles attached to this chat: " + names + ". Nothing in them matched the latest message." +
-                (has_tools ? " Use search_documents or read_document to look inside them.\n" : "\n");
-        return block;
-    }
-    block = "\nPassages from the files attached to this chat that match the latest message. Answer from them and "
-            "cite the source in brackets, like [report.pdf, p.12]." +
-            more + "\n";
+    std::string block = "\nPassages from the files attached to this chat that match the latest message. Answer from "
+                        "them and cite the source in brackets, like [report.pdf, p.12]." +
+                        more + "\n";
     nlohmann::json shown = nlohmann::json::array();
     for (const auto& ex : excerpts)
         shown.push_back(ex.to_json());
@@ -582,6 +622,59 @@ std::string Harness::document_context(const nlohmann::json& messages, bool has_t
             block += " " + ex.heading;
         block += "\n" + ex.text + "\n";
     }
+    return block;
+}
+
+std::string Harness::document_overview(const std::string& conversation, bool nothing_matched) const {
+    auto& docs = DocumentStore::instance();
+    const auto attached = docs.list(conversation, false);
+    if (attached.empty())
+        return "";
+    const size_t per_file = document_budget_chars_ / attached.size();
+    std::string block =
+        nothing_matched
+            ? "\nNothing in the attached files matched the latest message closely. Here is what each one covers; "
+              "answer from it if you can, otherwise say what you could not find. Cite pages like [report.pdf, p.12]."
+              "\n"
+            : "\nThe user wants the highlights of the attached files. From the overview below, give a short summary "
+              "(a sentence or two on what the file is, then its main points), cite the pages shown in brackets like "
+              "[report.pdf, p.12], and offer two or three questions they could ask next.\n";
+    nlohmann::json shown = nlohmann::json::array();
+    for (const auto& d : attached) {
+        std::string digest = docs.digest(d.id);
+        if (digest.empty())
+            continue;
+        if (digest.size() > per_file)
+            digest = ContextManager::truncate_middle(digest, per_file);
+        block += "\nOverview of " + d.name +
+                 (d.pages > 0 ? " (" + std::to_string(d.pages) + " pages)" : std::string()) +
+                 ", drawn from its text:\n" + digest + "\n";
+        // Each tagged line ("[p.37] ...") is a place the answer can come from.
+        size_t start = 0;
+        while (start < digest.size()) {
+            size_t end = digest.find('\n', start);
+            if (end == std::string::npos)
+                end = digest.size();
+            const std::string line = digest.substr(start, end - start);
+            start = end + 1;
+            const bool page = line.rfind("[p.", 0) == 0;
+            const size_t from = page ? 3 : line.rfind("[section ", 0) == 0 ? 9 : 0;
+            const size_t close = line.find(']');
+            int a = 0, b = 0;
+            if (from == 0 || close == std::string::npos ||
+                std::sscanf(line.substr(from, close - from).c_str(), "%d-%d", &a, &b) < 1 || a <= 0)
+                continue;
+            b = std::max(a, b);
+            DocumentExcerpt ex;
+            ex.doc_id = d.id;
+            ex.doc_name = d.name;
+            (page ? ex.page_start : ex.section_start) = a;
+            (page ? ex.page_end : ex.section_end) = b;
+            ex.text = line.substr(std::min(line.size(), close + 2));
+            shown.push_back(ex.to_json());
+        }
+    }
+    note_sources(shown);
     return block;
 }
 
