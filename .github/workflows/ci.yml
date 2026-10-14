@@ -1,0 +1,278 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Decides which jobs a pull request needs. A PR that only touches the web app should not compile
+  # llama.cpp on three platforms, and an engine-only PR should not rerun the browser suites.
+  # Skipped jobs still satisfy required status checks. Pushes to dev and main run everything: they
+  # are the runs that save the compiler cache PRs read from.
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      frontend: ${{ github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true' }}
+      engine: ${{ github.event_name != 'pull_request' || steps.filter.outputs.engine == 'true' }}
+      release: ${{ github.event_name != 'pull_request' || steps.filter.outputs.release == 'true' }}
+      # macOS minutes bill at 10x and Windows at 2x, so PRs into dev build on Linux only. PRs into
+      # main and pushes to dev and main still build all three before anything is released.
+      engine_os: >-
+        ${{ (github.event_name == 'pull_request' && github.base_ref == 'dev')
+            && '["ubuntu-22.04"]' || '["macos-latest", "ubuntu-22.04", "windows-latest"]' }}
+    steps:
+      # Pull requests list their changed files through the API, so no history is needed. On a
+      # push the filter would compare against main with git, which a shallow checkout cannot do.
+      - uses: dorny/paths-filter@v3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'web/app/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/ci.yml'
+            engine:
+              - 'engine/**'
+              - 'tests/**'
+              - 'CMakeLists.txt'
+              - 'version.txt'
+              - '.gitmodules'
+              - '.github/workflows/ci.yml'
+            release:
+              - 'scripts/**'
+              - '.github/**'
+              - 'dist/**'
+              - 'src-tauri/**'
+              - 'version.txt'
+
+  frontend:
+    name: Frontend checks, tests, and build
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        # Vitest 3 browser setup modules must stay within the app's Vite root.
+        run: pnpm install --frozen-lockfile --virtual-store-dir=web/app/node_modules/.pnpm
+
+      - name: Check Svelte and TypeScript
+        run: pnpm --filter webui check
+
+      # The browser downloads are cached per Playwright version, so most runs skip them; a slow
+      # CDN once held this step for over eight minutes. The system libraries they need are not
+      # in the cache and install each run (about a minute). Saved from dev and main only.
+      - name: Playwright version
+        id: playwright
+        # Read from the installed package: pnpm's own output can include workspace warnings.
+        working-directory: web/app
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browsers
+        id: playwright-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-shell-webkit
+
+      - name: Install Chromium and WebKit for browser tests
+        run: |
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            pnpm --filter webui exec playwright install-deps chromium webkit
+          else
+            pnpm --filter webui exec playwright install --with-deps --only-shell chromium
+            pnpm --filter webui exec playwright install --with-deps webkit
+          fi
+
+      - name: Save Playwright browsers
+        if: github.event_name == 'push' && steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.playwright-cache.outputs.cache-primary-key }}
+
+      - name: Run unit tests
+        run: pnpm --filter webui exec vitest run --project=server --maxWorkers=2 --minWorkers=1
+
+      - name: Run browser component tests
+        run: pnpm --filter webui exec vitest run --project=client --browser.headless --no-file-parallelism
+
+      - name: Run UI stories
+        # Formula-heavy stories include accessibility scans that exceed 15 seconds.
+        run: pnpm --filter webui exec vitest run --project=ui --browser.headless --no-file-parallelism --testTimeout=60000
+
+      - name: Build web UI
+        run: pnpm --filter webui build
+
+      - name: Verify build output
+        run: test -s public/index.html
+
+      - name: Test production startup
+        env:
+          DELTA_TEST_PREBUILT: '1'
+        run: pnpm --filter webui exec playwright test e2e/startup.test.ts --workers=1
+
+      - name: Test production startup in WebKit
+        env:
+          DELTA_TEST_PREBUILT: '1'
+        run: pnpm --filter webui exec playwright test e2e/startup.test.ts --browser=webkit --workers=1
+
+  release-checks:
+    name: Release scripts and workflow validation
+    needs: changes
+    if: needs.changes.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test release notes
+        run: node --test scripts/release-notes.test.cjs
+
+      - name: Test version syncing
+        run: node --test scripts/bump-version.test.cjs
+      - name: Test package manifest updates
+        run: node --test scripts/update-package-manifests.test.cjs
+
+      - name: Test Linux packaging
+        run: |
+          bash scripts/test-appimage-graphics-libs.sh
+          bash scripts/test-linux-webview-defaults.sh
+          bash scripts/test-repack-linux-appimage.sh
+          bash scripts/test-verify-linux-appimage.sh
+          bash scripts/test-tauri-release-build.sh
+
+      - name: Lint all GitHub Actions workflows
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+
+  # The engine is otherwise compiled only when a release runs, which is where Windows-only build
+  # errors used to surface. Same settings as the release's build-cli job.
+  engine:
+    name: Engine build (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.changes.outputs.engine_os) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libcurl4-openssl-dev uuid-dev
+
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        shell: bash
+        run: vcpkg install curl:x64-windows-static-md
+
+      # Compiler cache: llama.cpp and ggml rarely change, so most runs only recompile Delta's own
+      # files. Saved from dev and main only; PRs read that cache instead of each storing their own
+      # copy against the repository's 10 GB limit.
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: engine-${{ runner.os }}
+          variant: ${{ runner.os == 'Windows' && 'sccache' || 'ccache' }}
+          max-size: 2G
+          save: ${{ github.event_name == 'push' }}
+
+      # sccache needs a generator that calls the compiler directly, so Windows builds with Ninja
+      # from a Visual Studio developer environment instead of the MSBuild generator.
+      - name: Visual Studio environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: bash
+        run: |
+          ARGS=(-DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_WEBUI=OFF -DLLAMA_OPENSSL=OFF
+                -DFORCE_SYSTEM_CLANG=OFF -DUSE_CURL=ON)
+          case "$RUNNER_OS" in
+            macOS)
+              ARGS+=(-DGGML_METAL=ON
+                     -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache) ;;
+            Linux)
+              ARGS+=(-DGGML_METAL=OFF
+                     -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache) ;;
+            Windows)
+              ARGS+=(-G Ninja -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DGGML_METAL=OFF
+                     -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+                     "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+                     -DVCPKG_TARGET_TRIPLET=x64-windows-static-md) ;;
+          esac
+          cmake -S . -B build "${ARGS[@]}"
+
+      - name: Build delta and delta-server
+        shell: bash
+        run: cmake --build build --config Release -j 4 --target delta --target delta-server
+
+      - name: Build and run engine tests
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cmake --build build --config Release -j 4 \
+            --target delta-document-tests --target delta-update-tests --target delta-harness-tests --target delta-openai-tests \
+            --target delta-ocr-tests
+          ./build/delta-document-tests
+          ./build/delta-update-tests
+          ./build/delta-harness-tests
+          ./build/delta-openai-tests
+          ./build/delta-ocr-tests
+
+      - name: Compiler cache statistics
+        if: always()
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then sccache --show-stats; else ccache --show-stats; fi
