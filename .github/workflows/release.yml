@@ -1,0 +1,524 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to build or retry (for example, v1.0.14)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# delta is private, so installers and archives are published to this public repository. Writing
+# there needs RELEASE_REPO_TOKEN: a fine-grained token with Contents read & write on it alone.
+env:
+  RELEASE_REPO: nile-agi/delta-release
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+      tag: ${{ steps.release.outputs.tag }}
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Require the release repository token
+        env:
+          RELEASE_REPO_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_REPO_TOKEN" ]; then
+            echo "::error::Add a RELEASE_REPO_TOKEN secret with Contents read & write on $RELEASE_REPO."
+            exit 1
+          fi
+
+      - name: Require version.txt to match the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # v1.0.16 once shipped files named 1.0.14 because its commit still said 1.0.14.
+          # A prerelease tag (v1.2.3-rc.1) matches version.txt 1.2.3.
+          expected="${RELEASE_TAG#v}"
+          expected="${expected%%[-+]*}"
+          actual=$(gh api "repos/$GITHUB_REPOSITORY/contents/version.txt?ref=$RELEASE_TAG" \
+            -H "Accept: application/vnd.github.raw" | tr -d '[:space:]')
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::$RELEASE_TAG points at a commit whose version.txt says '$actual', not '$expected'."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+      - name: Generate release notes and prepare a draft
+        id: release
+        uses: actions/github-script@v7
+        env:
+          SOURCE_TOKEN: ${{ github.token }}
+        with:
+          github-token: ${{ secrets.RELEASE_REPO_TOKEN }}
+          script: |
+            const { prepareRelease } = require('./scripts/release-notes.cjs');
+            const tag = process.env.RELEASE_TAG;
+            // The tag and the notes are read from this repository with its own token; the draft
+            // is created in the public release repository with the release token. github-script
+            // does not expose getOctokit, so the second client is built from the same class.
+            const id = await prepareRelease({
+              github,
+              sourceGithub: new github.constructor({ auth: process.env.SOURCE_TOKEN }),
+              context,
+              tag,
+              releaseRepo: process.env.RELEASE_REPO
+            });
+            core.setOutput('release_id', id);
+            core.setOutput('tag', tag);
+
+  # ---------------------------------------------------------------------------
+  # CLI release — standalone binaries (delta + delta-server + llama-server)
+  # ---------------------------------------------------------------------------
+  build-cli:
+    needs: prepare-release
+    env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            archive: delta-cli-macos-arm64.tar.gz
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            archive: delta-cli-macos-x86_64.tar.gz
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            archive: delta-cli-linux-x86_64.tar.gz
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: delta-cli-windows-x64.zip
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # Must satisfy engines.pnpm in web/app/package.json (>=11).
+          version: 11
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libcurl4-openssl-dev
+
+      - name: Install Windows dependencies
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          vcpkg install curl:x64-windows-static-md
+
+      - name: Build web UI
+        shell: bash
+        run: |
+          pnpm install --filter webui...
+          pnpm --filter webui run build
+
+      - name: Verify web UI build
+        shell: bash
+        run: |
+          test -f public/index.html || { echo "ERROR: public/index.html not found"; exit 1; }
+
+      - name: Test production startup before packaging
+        shell: bash
+        env:
+          DELTA_TEST_PREBUILT: '1'
+        run: |
+          pnpm --filter webui exec playwright install --with-deps --only-shell chromium
+          pnpm --filter webui exec playwright test e2e/startup.test.ts --workers=1
+
+      - name: Build CLI binaries
+        shell: bash
+        env:
+          CLI_TARGET: ${{ matrix.target }}
+          CLI_PLATFORM: ${{ matrix.platform }}
+        run: |
+          VERSION=$(cat version.txt)
+          BUILD_DIR="build_release"
+          mkdir -p "$BUILD_DIR"
+
+          CMAKE_ARGS=(
+            -DCMAKE_BUILD_TYPE=Release
+            -DBUILD_TESTS=OFF
+            -DLLAMA_OPENSSL=OFF
+            -DFORCE_SYSTEM_CLANG=OFF
+          )
+
+          case "${{ matrix.platform }}" in
+            macos-*)
+              CMAKE_ARGS+=(-DGGML_METAL=ON -DUSE_CURL=ON)
+              case "${{ matrix.target }}" in
+                aarch64-apple-darwin) CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=arm64) ;;
+                x86_64-apple-darwin)
+                  CMAKE_ARGS+=(-DCMAKE_OSX_ARCHITECTURES=x86_64 -DGGML_NATIVE=OFF)
+                  ;;
+              esac
+              ;;
+            ubuntu-*)
+              CMAKE_ARGS+=(-DGGML_METAL=OFF -DUSE_CURL=ON)
+              ;;
+            windows-*)
+              CMAKE_ARGS+=(
+                -DGGML_METAL=OFF
+                -DUSE_CURL=ON
+                "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+                -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+              )
+              ;;
+          esac
+
+          cmake -S . -B "$BUILD_DIR" "${CMAKE_ARGS[@]}"
+          NPROC=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+          cmake --build "$BUILD_DIR" --config Release -j "$NPROC" --target delta --target delta-server
+          cmake --build "$BUILD_DIR" --config Release -j "$NPROC" --target llama-server || \
+          cmake --build "$BUILD_DIR" --config Release -j "$NPROC" --target server || true
+
+          # Collect binaries into staging dir
+          STAGE="delta-cli-${VERSION}"
+          mkdir -p "$STAGE/bin"
+
+          EXT=""
+          if [[ "$CLI_TARGET" == *windows* ]]; then EXT=".exe"; fi
+
+          # MSVC puts binaries under Release/ subdir, others put them at root
+          BIN_ROOT="$BUILD_DIR"
+          if [[ -f "$BUILD_DIR/Release/delta${EXT}" ]]; then
+            BIN_ROOT="$BUILD_DIR/Release"
+          fi
+
+          cp "$BIN_ROOT/delta${EXT}" "$STAGE/bin/"
+          cp "$BIN_ROOT/delta-server${EXT}" "$STAGE/bin/"
+
+          # Find llama-server (varies by generator and llama.cpp version)
+          LLAMA_SERVER=""
+          for candidate in \
+            "$BIN_ROOT/llama-server${EXT}" \
+            "$BUILD_DIR/bin/llama-server${EXT}" \
+            "$BUILD_DIR/bin/Release/llama-server${EXT}" \
+            "$BUILD_DIR/engine/vendor/llama.cpp/bin/llama-server${EXT}" \
+            "$BUILD_DIR/bin/server${EXT}"; do
+            if [[ -f "$candidate" ]]; then
+              LLAMA_SERVER="$candidate"
+              break
+            fi
+          done
+          if [[ -n "$LLAMA_SERVER" ]]; then
+            cp "$LLAMA_SERVER" "$STAGE/bin/llama-server${EXT}"
+          fi
+
+          # Include web UI
+          if [[ -d public ]]; then
+            cp -r public "$STAGE/webui"
+          fi
+
+          # Include Metal shaders on macOS
+          if [[ "$CLI_PLATFORM" == macos-* ]]; then
+            METALLIB=$(find "$BUILD_DIR" -name "*.metallib" 2>/dev/null | head -1)
+            if [[ -n "$METALLIB" ]]; then
+              cp "$METALLIB" "$STAGE/bin/"
+            fi
+          fi
+
+          # Write build info for traceability
+          {
+            echo "version: ${VERSION}"
+            echo "target: ${{ matrix.target }}"
+            echo "commit: $(git rev-parse HEAD)"
+            echo "tag: ${RELEASE_TAG}"
+            echo "date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "$STAGE/BUILD_INFO"
+
+          echo "STAGE_DIR=$STAGE" >> "$GITHUB_ENV"
+
+      - name: Package (tar.gz)
+        if: matrix.platform != 'windows-latest'
+        shell: bash
+        run: tar czf "${{ matrix.archive }}" "$STAGE_DIR"
+
+      - name: Package (zip)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: 7z a "${{ matrix.archive }}" "$STAGE_DIR"
+
+      - name: Generate checksum
+        shell: bash
+        run: |
+          if command -v sha256sum &>/dev/null; then
+            sha256sum "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+          else
+            shasum -a 256 "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+          fi
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: |
+            ${{ matrix.archive }}
+            ${{ matrix.archive }}.sha256
+
+  # ---------------------------------------------------------------------------
+  # Desktop app release — Tauri bundles (dmg, deb, AppImage, exe)
+  # ---------------------------------------------------------------------------
+  build-tauri:
+    needs: prepare-release
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            args: '--target aarch64-apple-darwin'
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            args: '--target x86_64-apple-darwin'
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            args: ''
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # Must satisfy engines.pnpm in web/app/package.json (>=11).
+          version: 11
+
+      - name: Sync version from version.txt
+        shell: bash
+        run: |
+          chmod +x scripts/bump-version.sh
+          ./scripts/bump-version.sh
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Validate Tauri Rust edition
+        shell: bash
+        run: |
+          cargo metadata --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1 > "$RUNNER_TEMP/tauri-metadata.json"
+          node - "$RUNNER_TEMP/tauri-metadata.json" <<'NODE'
+          const fs = require('node:fs');
+          const metadata = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const app = metadata.packages.find(pkg => pkg.name === 'delta-app');
+          if (!app || app.targets.some(target => !['2021', '2024'].includes(target.edition))) {
+            throw new Error('delta-app requires an explicit Rust edition of 2021 or 2024 in Cargo.toml');
+          }
+          NODE
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libcurl4-openssl-dev
+
+      - name: Check Linux WebView runtime
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          chmod +x scripts/check-linux-runtime.sh
+          scripts/check-linux-runtime.sh
+
+      - name: Install Windows dependencies
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          vcpkg install curl:x64-windows-static-md
+
+      - name: Build web UI
+        shell: bash
+        run: |
+          pnpm install --filter webui...
+          pnpm --filter webui run build
+
+      - name: Verify web UI build
+        shell: bash
+        run: |
+          test -f public/index.html || { echo "ERROR: public/index.html not found"; exit 1; }
+          chmod +x scripts/verify-tauri-release-assets.sh
+          scripts/verify-tauri-release-assets.sh --web-only
+
+      - name: Test production startup before packaging
+        shell: bash
+        env:
+          DELTA_TEST_PREBUILT: '1'
+        run: |
+          pnpm --filter webui exec playwright install --with-deps --only-shell chromium
+          pnpm --filter webui exec playwright test e2e/startup.test.ts --workers=1
+
+      - name: Build C++ sidecars
+        shell: bash
+        run: |
+          chmod +x scripts/build-sidecars.sh
+          scripts/build-sidecars.sh --release --target ${{ matrix.target }}
+          scripts/verify-tauri-release-assets.sh ${{ matrix.target }}
+
+      - name: Check signing availability
+        id: signing
+        shell: bash
+        run: |
+          if [[ -n "$APPLE_CERT" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE }}
+
+      - name: Prepare pinned AppImage repacking tool
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          APPIMAGETOOL_PATH="$RUNNER_TEMP/appimagetool-x86_64.AppImage"
+          curl -fsSL --retry 3 -o "$APPIMAGETOOL_PATH" \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  $APPIMAGETOOL_PATH" \
+            | sha256sum --check --strict
+          chmod +x "$APPIMAGETOOL_PATH"
+          echo "APPIMAGETOOL_PATH=$APPIMAGETOOL_PATH" >> "$GITHUB_ENV"
+
+      - name: Build Tauri app (signed)
+        if: steps.signing.outputs.available == 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          owner: nile-agi
+          repo: delta-release
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          tagName: ${{ needs.prepare-release.outputs.tag }}
+          tauriScript: ${{ matrix.platform == 'ubuntu-22.04' && './scripts/tauri-release-build.sh' || '' }}
+          args: ${{ matrix.args }}
+
+      - name: Build Tauri app (unsigned)
+        if: steps.signing.outputs.available == 'false'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+        with:
+          owner: nile-agi
+          repo: delta-release
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          tagName: ${{ needs.prepare-release.outputs.tag }}
+          tauriScript: ${{ matrix.platform == 'ubuntu-22.04' && './scripts/tauri-release-build.sh' || '' }}
+          args: ${{ matrix.args }}
+
+  # ---------------------------------------------------------------------------
+  # Attach CLI binaries + checksums to the public release
+  # ---------------------------------------------------------------------------
+  attach-cli:
+    needs: [prepare-release, build-cli]
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          merge-multiple: true
+
+      - name: Build combined checksum file
+        run: |
+          VERSION=$(cat version.txt)
+          {
+            echo "# Delta CLI ${RELEASE_TAG} — SHA-256 Checksums"
+            echo "# Verify: sha256sum -c checksums-${VERSION}.sha256"
+            echo "#"
+            echo "# Commit: $(git rev-parse HEAD)"
+            echo "# Date:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo ""
+            cat delta-cli-*.sha256
+          } > "checksums-${VERSION}.sha256"
+          cat "checksums-${VERSION}.sha256"
+          echo "CHECKSUMS_FILE=checksums-${VERSION}.sha256" >> "$GITHUB_ENV"
+
+      - name: Attach CLI assets without changing release notes or draft status
+        run: |
+          gh release upload "$RELEASE_TAG" --repo "$RELEASE_REPO" --clobber \
+            delta-cli-macos-arm64.tar.gz \
+            delta-cli-macos-x86_64.tar.gz \
+            delta-cli-linux-x86_64.tar.gz \
+            delta-cli-windows-x64.zip \
+            "$CHECKSUMS_FILE"
+
+  # Default success gating keeps a new release in draft if any build or upload fails.
+  publish-release:
+    needs: [prepare-release, build-tauri, attach-cli]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+      RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish the completed release
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.RELEASE_REPO_TOKEN }}
+          script: |
+            const { publishRelease } = require('./scripts/release-notes.cjs');
+            await publishRelease({
+              github, context,
+              tag: process.env.RELEASE_TAG,
+              releaseId: process.env.RELEASE_ID,
+              releaseRepo: process.env.RELEASE_REPO
+            });
