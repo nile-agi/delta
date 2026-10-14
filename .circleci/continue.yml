@@ -12,7 +12,10 @@ parameters:
   run-release-checks:
     type: boolean
     default: false
-  # Pushes to dev and main also build the engine on macOS and Windows.
+  run-stories:
+    type: boolean
+    default: false
+  # Pushes to main that change the engine also build it on macOS and Windows.
   all-platforms:
     type: boolean
     default: false
@@ -72,13 +75,17 @@ commands:
       metal:
         type: enum
         enum: ['ON', 'OFF']
+      cmake-args:
+        type: string
+        default: ''
+
     steps:
       - run:
           name: Configure
           command: |
             cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_WEBUI=OFF \
               -DLLAMA_OPENSSL=OFF -DFORCE_SYSTEM_CLANG=OFF -DUSE_CURL=ON -DGGML_METAL=<< parameters.metal >> \
-              -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache << parameters.cmake-args >>
       - run:
           name: Build delta and delta-server
           command: cmake --build build --config Release -j 4 --target delta --target delta-server
@@ -127,26 +134,55 @@ commands:
 
   install-rust:
     parameters:
-      target:
+      targets:
         type: string
     steps:
       - run:
           name: Install Rust
           command: |
             if [ "$(uname -s)" = Darwin ] || [ "$(uname -s)" = Linux ]; then
-              curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
-                --target << parameters.target >>
+              curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
             else
               curl -fsSL -o /tmp/rustup-init.exe https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe
               /tmp/rustup-init.exe -y --profile minimal --default-toolchain stable --default-host x86_64-pc-windows-msvc
             fi
             echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> "$BASH_ENV"
+            "$HOME/.cargo/bin/rustup" target add << parameters.targets >>
+
+  build-release-target:
+    parameters:
+      target:
+        type: string
+      cli-archive:
+        type: string
+      tauri-args:
+        type: string
+        default: ''
+    steps:
+      - run:
+          name: Build the engine and package the CLI (<< parameters.target >>)
+          command: |
+            bash scripts/build-sidecars.sh --release --target << parameters.target >>
+            bash scripts/verify-tauri-release-assets.sh << parameters.target >>
+            cmake --build build_tauri_release --config Release -j 4 --target delta
+            bash scripts/package-cli.sh build_tauri_release << parameters.target >> \
+              dist-release/<< parameters.target >>/<< parameters.cli-archive >> "$CIRCLE_TAG"
+      - run:
+          name: Build the desktop app (<< parameters.target >>)
+          command: |
+            if [ "$(uname -s)" = Linux ]; then
+              ./scripts/tauri-release-build.sh build << parameters.tauri-args >>
+            else
+              web/app/node_modules/.bin/tauri build << parameters.tauri-args >>
+            fi
+            bash scripts/collect-tauri-bundles.sh << parameters.target >> dist-release/<< parameters.target >>
+            rm -rf build_tauri_release
 
 jobs:
   frontend:
     docker:
       - image: cimg/node:22.23
-    resource_class: large
+    resource_class: medium
     environment:
       CI: 'true'
     steps:
@@ -194,12 +230,15 @@ jobs:
       - run:
           name: Run browser component tests
           command: pnpm --filter webui exec vitest run --project=client --browser.headless --no-file-parallelism
-      - run:
-          name: Run UI stories
-          # Formula-heavy stories include accessibility scans that exceed 15 seconds.
-          command: |
-            pnpm --filter webui exec vitest run --project=ui --browser.headless --no-file-parallelism \
-              --testTimeout=60000
+      - when:
+          condition: << pipeline.parameters.run-stories >>
+          steps:
+            - run:
+                name: Run UI stories
+                # Formula-heavy stories include accessibility scans that exceed 15 seconds.
+                command: |
+                  pnpm --filter webui exec vitest run --project=ui --browser.headless --no-file-parallelism \
+                    --testTimeout=60000
       - run:
           name: Build web UI
           command: pnpm --filter webui build
@@ -247,6 +286,8 @@ jobs:
     environment:
       CCACHE_DIR: /home/circleci/.ccache
       CCACHE_MAXSIZE: 2G
+      CCACHE_BASEDIR: /home/circleci/project
+      CCACHE_COMPILERCHECK: content
     steps:
       - checkout-with-submodules
       - run:
@@ -258,6 +299,7 @@ jobs:
           keys:
             - ccache-linux-v1-{{ .Branch }}-
             - ccache-linux-v1-dev-
+            - ccache-linux-v1-main-
       - build-and-test-engine:
           metal: 'OFF'
       - save-cache-on-main-branches:
@@ -271,6 +313,8 @@ jobs:
     environment:
       CCACHE_DIR: /Users/distiller/.ccache
       CCACHE_MAXSIZE: 2G
+      CCACHE_BASEDIR: /Users/distiller/project
+      CCACHE_COMPILERCHECK: content
       HOMEBREW_NO_AUTO_UPDATE: '1'
     steps:
       - checkout-with-submodules
@@ -280,15 +324,18 @@ jobs:
       - restore_cache:
           keys:
             - ccache-macos-v1-{{ .Branch }}-
-            - ccache-macos-v1-dev-
+            - ccache-macos-v1-main-
       - build-and-test-engine:
           metal: 'ON'
+          # The compiler and architecture the release's build-sidecars.sh uses, so it reuses this cache.
+          cmake-args: -DCMAKE_C_COMPILER=/usr/bin/cc -DCMAKE_CXX_COMPILER=/usr/bin/c++ -DCMAKE_OSX_ARCHITECTURES=arm64
       - save-cache-on-main-branches:
           key: ccache-macos-v1-{{ .Branch }}-{{ epoch }}
           path: /Users/distiller/.ccache
 
   # Windows build errors used to surface only at release time. Builds with Ninja from a Visual
-  # Studio developer shell and a static curl from vcpkg, like the release.
+  # Studio developer shell and a static curl from vcpkg, like the release, through sccache: a cold
+  # build is 409 compiles (about 12 minutes at 40 credits a minute).
   engine-windows:
     machine:
       image: windows-server-2022-gui:current
@@ -296,11 +343,24 @@ jobs:
     shell: powershell.exe -ExecutionPolicy Bypass
     environment:
       VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg-cache
+      SCCACHE_DIR: C:\sccache
+      SCCACHE_CACHE_SIZE: 2G
     steps:
       - checkout-with-submodules
       - restore_cache:
           keys:
             - vcpkg-curl-v1-
+      - restore_cache:
+          keys:
+            - sccache-windows-v1-{{ .Branch }}-
+            - sccache-windows-v1-main-
+      - run:
+          name: Install sccache
+          command: |
+            $v = 'v0.17.0'
+            Invoke-WebRequest "https://github.com/mozilla/sccache/releases/download/$v/sccache-$v-x86_64-pc-windows-msvc.zip" -OutFile C:\sccache.zip
+            Expand-Archive C:\sccache.zip -DestinationPath C:\sccache-bin
+            Copy-Item "C:\sccache-bin\sccache-$v-x86_64-pc-windows-msvc\sccache.exe" C:\Windows\sccache.exe
       - run:
           name: Install curl with vcpkg
           command: |
@@ -323,10 +383,18 @@ jobs:
             cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl `
               -DBUILD_TESTS=OFF -DBUILD_WEBUI=OFF -DLLAMA_OPENSSL=OFF -DFORCE_SYSTEM_CLANG=OFF -DUSE_CURL=ON `
               -DGGML_METAL=OFF -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake `
-              -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+              -DVCPKG_TARGET_TRIPLET=x64-windows-static-md `
+              -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
             cmake --build build --config Release -j 4 --target delta --target delta-server
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - run:
+          name: Compiler cache statistics
+          when: always
+          command: sccache --show-stats
+      - save-cache-on-main-branches:
+          key: sccache-windows-v1-{{ .Branch }}-{{ epoch }}
+          path: C:\sccache
 
   # ---------------------------------------------------------------------------------------------
   # Release (v* tags): draft the release, build the web UI once, build each platform's CLI archive
@@ -393,18 +461,22 @@ jobs:
           paths:
             - public
 
+  # One machine per platform builds the engine once per target and makes both the CLI archive and
+  # the installers from it. macOS builds arm64 and x86_64 in one job, so its setup is paid once.
   release-build:
     parameters:
       platform:
         type: executor
-      target:
+      rust-targets:
         type: string
-      cli-archive:
+      cache-os:
         type: string
-      tauri-args:
-        type: string
-        default: ''
+      builds:
+        type: steps
     executor: << parameters.platform >>
+    environment:
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPILERCHECK: content
     steps:
       - checkout-with-submodules
       - attach_workspace:
@@ -415,7 +487,7 @@ jobs:
             case "$(uname -s)" in
               Linux)
                 sudo apt-get update
-                sudo apt-get install -y build-essential cmake libcurl4-openssl-dev libwebkit2gtk-4.1-dev \
+                sudo apt-get install -y build-essential cmake ccache libcurl4-openssl-dev libwebkit2gtk-4.1-dev \
                   libappindicator3-dev librsvg2-dev patchelf libfuse2 file
                 bash scripts/check-linux-runtime.sh
                 # Pinned AppImage repacking tool (scripts/repack-linux-appimage.sh).
@@ -425,9 +497,11 @@ jobs:
                 echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  $tool" | sha256sum --check --strict
                 chmod +x "$tool"
                 echo "export APPIMAGETOOL_PATH=$tool" >> "$BASH_ENV"
+                echo "export DELTA_COMPILER_LAUNCHER=ccache CCACHE_DIR=$HOME/.ccache CCACHE_BASEDIR=$PWD" >> "$BASH_ENV"
                 ;;
               Darwin)
-                brew install cmake
+                brew install cmake ccache
+                echo "export DELTA_COMPILER_LAUNCHER=ccache CCACHE_DIR=$HOME/.ccache CCACHE_BASEDIR=$PWD" >> "$BASH_ENV"
                 ;;
               *)
                 # CMake from Visual Studio, and a static curl from vcpkg.
@@ -439,9 +513,18 @@ jobs:
                 echo 'export VCPKG_INSTALLATION_ROOT=C:/vcpkg' >> "$BASH_ENV"
                 ;;
             esac
+      # The engine objects CI built on main; the first release after an engine change still compiles.
+      - restore_cache:
+          keys:
+            - ccache-<< parameters.cache-os >>-v1-main-
+            - ccache-<< parameters.cache-os >>-v1-dev-
       - install-node-and-pnpm
       - install-rust:
-          target: << parameters.target >>
+          targets: << parameters.rust-targets >>
+      - restore_cache:
+          keys:
+            - cargo-<< parameters.cache-os >>-v1-{{ checksum "src-tauri/Cargo.lock" }}
+            - cargo-<< parameters.cache-os >>-v1-
       - run:
           name: Sync version and check the Tauri crate
           command: |
@@ -454,27 +537,17 @@ jobs:
                 throw new Error("delta-app requires an explicit Rust edition of 2021 or 2024 in Cargo.toml");'
             pnpm install --filter webui...
             bash scripts/verify-tauri-release-assets.sh --web-only
-      - run:
-          name: Build the engine and package the CLI
-          command: |
-            bash scripts/build-sidecars.sh --release --target << parameters.target >>
-            bash scripts/verify-tauri-release-assets.sh << parameters.target >>
-            cmake --build build_tauri_release --config Release -j 4 --target delta
-            bash scripts/package-cli.sh build_tauri_release << parameters.target >> \
-              dist-release/<< parameters.target >>/<< parameters.cli-archive >> "$CIRCLE_TAG"
-      - run:
-          name: Build the desktop app
-          command: |
-            if [ "$(uname -s)" = Linux ]; then
-              ./scripts/tauri-release-build.sh build << parameters.tauri-args >>
-            else
-              web/app/node_modules/.bin/tauri build << parameters.tauri-args >>
-            fi
-            bash scripts/collect-tauri-bundles.sh << parameters.target >> dist-release/<< parameters.target >>
+      - steps: << parameters.builds >>
+      # Downloaded crates only: the compiled target directory is gigabytes and stored caches cost credits.
+      - save_cache:
+          key: cargo-<< parameters.cache-os >>-v1-{{ checksum "src-tauri/Cargo.lock" }}
+          paths:
+            - ~/.cargo/registry
+            - ~/.cargo/git
       - persist_to_workspace:
           root: .
           paths:
-            - dist-release/<< parameters.target >>
+            - dist-release
 
   release-publish:
     docker:
@@ -543,34 +616,42 @@ workflows:
       - release-web: *on-tags
       - release-build:
           <<: *on-tags
-          name: release-macos-arm64
+          name: release-macos
           requires: [release-prepare, release-web]
           platform: macos
-          target: aarch64-apple-darwin
-          cli-archive: delta-cli-macos-arm64.tar.gz
-          tauri-args: --target aarch64-apple-darwin
-      - release-build:
-          <<: *on-tags
-          name: release-macos-x86_64
-          requires: [release-prepare, release-web]
-          platform: macos
-          target: x86_64-apple-darwin
-          cli-archive: delta-cli-macos-x86_64.tar.gz
-          tauri-args: --target x86_64-apple-darwin
+          cache-os: macos
+          rust-targets: aarch64-apple-darwin x86_64-apple-darwin
+          builds:
+            - build-release-target:
+                target: aarch64-apple-darwin
+                cli-archive: delta-cli-macos-arm64.tar.gz
+                tauri-args: --target aarch64-apple-darwin
+            - build-release-target:
+                target: x86_64-apple-darwin
+                cli-archive: delta-cli-macos-x86_64.tar.gz
+                tauri-args: --target x86_64-apple-darwin
       - release-build:
           <<: *on-tags
           name: release-linux-x86_64
           requires: [release-prepare, release-web]
           platform: linux-vm
-          target: x86_64-unknown-linux-gnu
-          cli-archive: delta-cli-linux-x86_64.tar.gz
+          cache-os: linux
+          rust-targets: x86_64-unknown-linux-gnu
+          builds:
+            - build-release-target:
+                target: x86_64-unknown-linux-gnu
+                cli-archive: delta-cli-linux-x86_64.tar.gz
       - release-build:
           <<: *on-tags
           name: release-windows-x64
           requires: [release-prepare, release-web]
           platform: windows
-          target: x86_64-pc-windows-msvc
-          cli-archive: delta-cli-windows-x64.zip
+          cache-os: windows
+          rust-targets: x86_64-pc-windows-msvc
+          builds:
+            - build-release-target:
+                target: x86_64-pc-windows-msvc
+                cli-archive: delta-cli-windows-x64.zip
       - release-publish:
           <<: *on-tags
-          requires: [release-macos-arm64, release-macos-x86_64, release-linux-x86_64, release-windows-x64]
+          requires: [release-macos, release-linux-x86_64, release-windows-x64]
