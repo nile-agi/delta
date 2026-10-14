@@ -215,7 +215,9 @@ static void test_store() {
         int last_page = 0;
         for (size_t at = digest.find("\n[p."); at != std::string::npos; at = digest.find("\n[p.", at + 1))
             last_page = std::max(last_page, std::atoi(digest.c_str() + at + 4));
-        check(last_page > 90, "and reaches the end of the file (last tag p." + std::to_string(last_page) + ")");
+        check(last_page >= 88,
+              "and reaches the last quarter of the file (last tag p." + std::to_string(last_page) + ")");
+        check(digest.find("36 months") != std::string::npos, "and picks out the file's distinctive facts");
 
         // A document indexed before digests gets one on first use, and keeps it.
         sqlite3_exec(db, ("UPDATE documents SET digest = '' WHERE id = '" + id + "'").c_str(), nullptr, nullptr,

@@ -4,7 +4,9 @@
 #include <cctype>
 #include <cstring>
 #include <ctime>
+#include <cmath>
 #include <iostream>
+#include <map>
 #include <limits>
 #include <random>
 #include <set>
@@ -291,20 +293,95 @@ std::string build_digest(const std::vector<DocumentChunk>& chunks, size_t total_
     std::string out = place_tag(chunks[0].page_start, chunks[next - 1].page_end, 1, next) + " " +
                       first_sentences(opening, opening_budget, 1000) + "\n";
 
-    // Then evenly spaced points across the rest, so the end of the file is represented too.
-    constexpr size_t kLine = 220;
-    const size_t remaining = chunks.size() - next;
-    const size_t picks = std::min(remaining, (budget - std::min(budget, out.size())) / (kLine + 16));
-    for (size_t k = 0; k < picks; k++) {
-        const size_t i = next + (2 * k + 1) * remaining / (2 * picks);
-        const auto& c = chunks[i];
-        std::string line = place_tag(c.page_start, c.page_end, i + 1, i + 1) + " ";
-        if (!c.heading.empty())
-            line += fold_spaces(c.heading) + ": ";
-        line += first_sentences(chunk_body(c), kLine, 2) + "\n";
-        if (out.size() + line.size() > budget)
-            break;
-        out += line;
+    // Then the most informative sentences of the rest: rare words and figures score high, text that
+    // repeats on every page (headers, boilerplate) scores nothing. Kept in document order.
+    struct Sentence {
+        size_t chunk;
+        std::string text;
+        double score;
+    };
+    std::vector<std::vector<std::string>> chunk_words(chunks.size());
+    std::map<std::string, int> df;
+    std::vector<Sentence> sentences;
+    for (size_t i = next; i < chunks.size(); i++) {
+        const std::string body = fold_spaces(chunk_body(chunks[i]));
+        std::set<std::string> seen;
+        for (size_t at = 0; at < body.size();) {
+            size_t end = at;
+            while (end < body.size() && !((body[end] == '.' || body[end] == '?' || body[end] == '!') &&
+                                          (end + 1 == body.size() || body[end + 1] == ' ')))
+                end++;
+            const std::string sentence = body.substr(at, std::min(body.size(), end + 1) - at);
+            at = end + 2;
+            if (sentence.size() < 40 || sentence.size() > 320)
+                continue;
+            sentences.push_back({i, sentence, 0});
+            std::string word;
+            for (char c : sentence + " ") {
+                if (std::isalnum(static_cast<unsigned char>(c)) || (c & 0x80)) {
+                    word += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                } else if (!word.empty()) {
+                    if (word.size() > 2 && seen.insert(word).second)
+                        df[word]++;
+                    word.clear();
+                }
+            }
+        }
+    }
+    const double n = static_cast<double>(std::max<size_t>(1, chunks.size() - next));
+    for (auto& s : sentences) {
+        std::set<std::string> words;
+        std::string word;
+        bool figure = false;
+        for (char c : s.text + " ") {
+            figure = figure || std::isdigit(static_cast<unsigned char>(c));
+            if (std::isalnum(static_cast<unsigned char>(c)) || (c & 0x80))
+                word += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            else if (!word.empty()) {
+                if (word.size() > 2)
+                    words.insert(word);
+                word.clear();
+            }
+        }
+        for (const auto& w : words)
+            s.score += std::log(n / std::max(1, df[w]));
+        s.score = s.score / std::sqrt(static_cast<double>(std::max<size_t>(1, words.size()))) + (figure ? 1.5 : 0);
+    }
+    std::vector<size_t> order(sentences.size());
+    for (size_t i = 0; i < order.size(); i++)
+        order[i] = i;
+    std::stable_sort(order.begin(), order.end(),
+                     [&](size_t a, size_t b) { return sentences[a].score > sentences[b].score; });
+    std::vector<size_t> picked;
+    std::map<size_t, int> per_chunk;
+    size_t used = out.size();
+    auto take = [&](size_t i) {
+        const auto& s = sentences[i];
+        const size_t line = s.text.size() + 16;
+        if (s.score <= 0 || per_chunk[s.chunk] >= 2 || used + line > budget ||
+            std::find(picked.begin(), picked.end(), i) != picked.end())
+            return;
+        used += line;
+        per_chunk[s.chunk]++;
+        picked.push_back(i);
+    };
+    // The best sentence of each quarter first, so the whole file is covered, then the best overall.
+    const size_t rest = chunks.size() - next;
+    for (size_t q = 0; q < 4 && rest > 0; q++) {
+        const size_t lo = next + q * rest / 4, hi = next + (q + 1) * rest / 4;
+        for (size_t i : order)
+            if (sentences[i].chunk >= lo && sentences[i].chunk < hi) {
+                take(i);
+                break;
+            }
+    }
+    for (size_t i : order)
+        take(i);
+    std::sort(picked.begin(), picked.end());
+    for (size_t i : picked) {
+        const auto& c = chunks[sentences[i].chunk];
+        out += place_tag(c.page_start, c.page_end, sentences[i].chunk + 1, sentences[i].chunk + 1) + " " +
+               sentences[i].text + "\n";
     }
     return out;
 }
