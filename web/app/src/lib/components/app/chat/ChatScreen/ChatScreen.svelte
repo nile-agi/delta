@@ -342,6 +342,9 @@
 					showHelperText={false}
 					bind:uploadedFiles
 				/>
+				<p class="mt-2 text-center text-xs text-muted-foreground">
+					AI can make mistakes. Double-check important information.
+				</p>
 			</div>
 		</div>
 	</div>
