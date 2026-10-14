@@ -4,8 +4,8 @@ import { openPDF, pageImage } from './pdf-processing';
 
 // A page with fewer letters and digits than this has no real text layer (a scan, maybe a page number).
 const MIN_PAGE_CHARS = 20;
-// Twice PDF size (about 144 DPI): sharp enough for small print, small enough to send quickly.
-const OCR_SCALE = 2;
+// About 100 DPI on A4: reads small print, and the reader's time grows faster than the image does.
+const OCR_LONG_SIDE = 1200;
 const POLL_MS = 1000;
 const DOWNLOAD_TOAST = 'ocr-download';
 
@@ -71,7 +71,7 @@ export async function readScannedPages(
 			for (const [i, n] of scanned.entries()) {
 				if (controller.signal.aborted) break;
 				toast.loading(progressText(i, scanned.length), { id, description: name });
-				read[n] = await ocrService.readPage(await pageImage(pdf, n, OCR_SCALE), controller.signal);
+				read[n] = await ocrService.readPage(await pageImage(pdf, n, OCR_LONG_SIDE), controller.signal);
 			}
 		} finally {
 			void pdf.loadingTask.destroy();

@@ -202,10 +202,11 @@ export async function pageText(pdf: OpenedPDF, n: number): Promise<string> {
 	return (content.items as TextItem[]).map((item) => item.str ?? '').join(' ');
 }
 
-/** Page `n` as a PNG data URL, for the text reader. */
-export async function pageImage(pdf: OpenedPDF, n: number, scale: number): Promise<string> {
+/** Page `n` as a PNG data URL `longSide` pixels on its longer side, for the text reader. */
+export async function pageImage(pdf: OpenedPDF, n: number, longSide: number): Promise<string> {
 	const page = await pdf.getPage(n);
-	const viewport = page.getViewport({ scale });
+	const base = page.getViewport({ scale: 1 });
+	const viewport = page.getViewport({ scale: longSide / Math.max(base.width, base.height) });
 	const canvas = document.createElement('canvas');
 	canvas.width = Math.floor(viewport.width);
 	canvas.height = Math.floor(viewport.height);
