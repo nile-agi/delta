@@ -66,7 +66,8 @@
 	let editedName = $state('');
 	let toolsOpen = $state(false);
 
-	let isCollapsed = $derived(!sidebar.isMobile && sidebar.state === 'collapsed');
+	// let isCollapsed = $derived(!sidebar.isMobile && sidebar.state === 'collapsed');
+	let isCollapsed = $derived(sidebar.state === 'collapsed');
 
 	let filteredConversations = $derived.by(() => {
 		if (searchQuery.trim().length > 0) {
