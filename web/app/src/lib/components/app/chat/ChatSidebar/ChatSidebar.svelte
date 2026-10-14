@@ -240,7 +240,7 @@
 				{#if isCollapsed}
 					<div class="flex w-full justify-center">
 						<DropdownMenu.Root bind:open={toolsOpen}>
-							<DropdownMenu.Trigger asChild>
+							<!-- <DropdownMenu.Trigger asChild>
 								<button
 									class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground hover:scale-105 active:scale-95"
 									aria-label="Tools"
@@ -248,6 +248,18 @@
 								>
 									<Wrench class="h-4 w-4" />
 								</button>
+							</DropdownMenu.Trigger> -->
+							<DropdownMenu.Trigger>
+								{#snippet child({ props })}
+									<button
+										{...props}
+										class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground hover:scale-105 active:scale-95"
+										aria-label="Tools"
+										title="Tools"
+									>
+										<Wrench class="h-4 w-4" />
+									</button>
+								{/snippet}
 							</DropdownMenu.Trigger>
 							<DropdownMenu.Content side="right" align="start" class="w-48">
 								<DropdownMenu.Group>
@@ -284,7 +296,7 @@
 						Tools
 					</Sidebar.GroupLabel>
 					<DropdownMenu.Root bind:open={toolsOpen}>
-						<DropdownMenu.Trigger asChild>
+						<!-- <DropdownMenu.Trigger asChild>
 							<button
 								class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
 								aria-label="Tools"
@@ -299,6 +311,25 @@
 										: ''}"
 								/>
 							</button>
+						</DropdownMenu.Trigger> -->
+						<DropdownMenu.Trigger>
+							{#snippet child({ props })}
+								<button
+									{...props}
+									class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+									aria-label="Tools"
+								>
+									<span class="flex items-center gap-2">
+										<Wrench class="h-4 w-4" />
+										<span>Tools</span>
+									</span>
+									<ChevronDown
+										class="h-3 w-3 transition-transform duration-200 {toolsOpen
+											? 'rotate-180'
+											: ''}"
+									/>
+								</button>
+							{/snippet}
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content side="right" align="start" class="w-48">
 							<DropdownMenu.Group>
