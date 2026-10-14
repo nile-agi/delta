@@ -19,6 +19,7 @@
 #include "agent/memory_store.h"
 #include "agent/task_store.h"
 #include "agent/document_store.h"
+#include "agent/ocr_reader.h"
 #include "agent/policy.h"
 #include "agent/quick_add.h"
 #include "agent/time_compat.h"
@@ -29,6 +30,7 @@
 #include "vendor/llama.cpp/vendor/cpp-httplib/httplib.h"
 #include "api/note_routes.h"
 #include "api/document_routes.h"
+#include "api/ocr_routes.h"
 #include "api/openai_api.h"
 #include "vendor/json.hpp"
 
@@ -342,6 +344,45 @@ static std::mutex g_progress_mutex;
 thread_local std::shared_ptr<DownloadProgress> g_current_progress = nullptr;
 thread_local std::string g_current_model_name;
 
+static long long system_ram_bytes() {
+    long long total_ram_bytes = 0;
+#ifdef _WIN32
+    MEMORYSTATUSEX memInfo;
+    memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+    if (GlobalMemoryStatusEx(&memInfo)) {
+        total_ram_bytes = memInfo.ullTotalPhys;
+    }
+#elif defined(__APPLE__)
+    int64_t memsize = 0;
+    size_t len = sizeof(memsize);
+    int mib[2] = {CTL_HW, HW_MEMSIZE};
+    if (sysctl(mib, 2, &memsize, &len, NULL, 0) == 0) {
+        total_ram_bytes = memsize;
+    }
+#else
+    struct sysinfo info;
+    if (sysinfo(&info) == 0) {
+        total_ram_bytes = info.totalram * info.mem_unit;
+    }
+#endif
+    return total_ram_bytes;
+}
+
+// The text reader for scanned pages lives beside the models, so it never shows up as a chat model.
+static void configure_ocr_reader() {
+    const std::string root =
+        tools::FileOps::join_path(tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli"), "ocr");
+    const int ram_gb = static_cast<int>((system_ram_bytes() + (1LL << 30) - 1) >> 30);
+    agent::OcrReader::Hooks hooks;
+    hooks.download = [](const std::string& url, const std::string& dest,
+                        const std::function<void(long long, long long)>& progress) {
+        return ModelManager::download_to("ocr", url, dest, progress);
+    };
+    hooks.cancel = [] { ModelManager::cancel_download("ocr"); };
+    agent::OcrReader::instance().configure(root, agent::find_llama_server(tools::FileOps::get_executable_dir()), ram_gb,
+                                           hooks);
+}
+
 class ModelAPIServer {
   private:
     int port_;
@@ -527,6 +568,7 @@ class ModelAPIServer {
         server_->Get("/props", [this](const httplib::Request&, httplib::Response& res) { write_props_fallback(res); });
 
         api::register_document_routes(*server_);
+        api::register_ocr_routes(*server_);
 
         server_->Get("/api/props", [this](const httplib::Request&, httplib::Response& res) {
             try {
@@ -1510,28 +1552,7 @@ class ModelAPIServer {
 
         server_->Get("/api/system/ram", [](const httplib::Request&, httplib::Response& res) {
             try {
-                long long total_ram_bytes = 0;
-
-#ifdef _WIN32
-                MEMORYSTATUSEX memInfo;
-                memInfo.dwLength = sizeof(MEMORYSTATUSEX);
-                if (GlobalMemoryStatusEx(&memInfo)) {
-                    total_ram_bytes = memInfo.ullTotalPhys;
-                }
-#elif defined(__APPLE__)
-                int64_t memsize = 0;
-                size_t len = sizeof(memsize);
-                int mib[2] = {CTL_HW, HW_MEMSIZE};
-                if (sysctl(mib, 2, &memsize, &len, NULL, 0) == 0) {
-                    total_ram_bytes = memsize;
-                }
-#else
-                struct sysinfo info;
-                if (sysinfo(&info) == 0) {
-                    total_ram_bytes = info.totalram * info.mem_unit;
-                }
-#endif
-
+                const long long total_ram_bytes = system_ram_bytes();
                 long long total_ram_gb = (total_ram_bytes + (1024LL * 1024 * 1024 - 1)) / (1024LL * 1024 * 1024);
 
                 json result = {{"total_ram_gb", total_ram_gb}, {"total_ram_bytes", total_ram_bytes}};
@@ -2140,6 +2161,7 @@ class ModelAPIServer {
             std::cerr << "[WARNING] Failed to initialize document search — attached files are sent whole" << std::endl;
         }
         agent::register_all_tools();
+        configure_ocr_reader();
         setup_routes();
     }
 
