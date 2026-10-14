@@ -1,5 +1,5 @@
-# CI jobs, started by the setup workflow in config.yml with the areas a build needs.
-# Mirrors .github/workflows/ci.yml; scripts/ci-local.sh runs the same checks on a Mac.
+# CI and release jobs, started by the setup workflow in config.yml.
+# scripts/ci-local.sh runs the same checks on a Mac.
 version: 2.1
 
 parameters:
@@ -12,10 +12,36 @@ parameters:
   run-release-checks:
     type: boolean
     default: false
-  # Pushes to dev and main also build the engine on macOS and Windows.
+  run-stories:
+    type: boolean
+    default: false
+  # Pushes to main that change the engine also build it on macOS and Windows.
   all-platforms:
     type: boolean
     default: false
+  # Set for a v* tag: build every platform and publish to nile-agi/delta-release.
+  release-tag:
+    type: string
+    default: ''
+
+executors:
+  # A VM rather than Docker: the AppImage bundler needs FUSE, and Ubuntu 22.04 keeps the Linux
+  # binaries on glibc 2.35.
+  linux-vm:
+    machine:
+      image: ubuntu-2204:current
+    resource_class: large
+  macos:
+    macos:
+      xcode: 27.0.0
+    resource_class: m4pro.medium
+    environment:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+  windows:
+    machine:
+      image: windows-server-2022-gui:current
+    resource_class: windows.medium
+    shell: bash.exe
 
 commands:
   checkout-with-submodules:
@@ -49,13 +75,17 @@ commands:
       metal:
         type: enum
         enum: ['ON', 'OFF']
+      cmake-args:
+        type: string
+        default: ''
+
     steps:
       - run:
           name: Configure
           command: |
             cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_WEBUI=OFF \
               -DLLAMA_OPENSSL=OFF -DFORCE_SYSTEM_CLANG=OFF -DUSE_CURL=ON -DGGML_METAL=<< parameters.metal >> \
-              -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache << parameters.cmake-args >>
       - run:
           name: Build delta and delta-server
           command: cmake --build build --config Release -j 4 --target delta --target delta-server
@@ -74,11 +104,85 @@ commands:
           when: always
           command: ccache --show-stats
 
+  install-node-and-pnpm:
+    steps:
+      - run:
+          name: Install Node 22 and pnpm 11
+          command: |
+            NODE=22.23.0
+            case "$(uname -s)" in
+              Darwin) os=darwin ;;
+              Linux) os=linux ;;
+              *) os=win ;;
+            esac
+            case "$(uname -m)" in
+              arm64|aarch64) arch=arm64 ;;
+              *) arch=x64 ;;
+            esac
+            dir="$HOME/node-v$NODE-$os-$arch"
+            if [ "$os" = win ]; then
+              curl -fsSL -o /tmp/node.zip "https://nodejs.org/dist/v$NODE/node-v$NODE-win-x64.zip"
+              powershell.exe -NoProfile -Command "Expand-Archive -Path '$(cygpath -w /tmp/node.zip)' -DestinationPath '$(cygpath -w "$HOME")'"
+              echo "export PATH=\"$dir:\$PATH\"" >> "$BASH_ENV"
+            else
+              curl -fsSL "https://nodejs.org/dist/v$NODE/node-v$NODE-$os-$arch.tar.gz" | tar xz -C "$HOME"
+              echo "export PATH=\"$dir/bin:\$PATH\"" >> "$BASH_ENV"
+            fi
+            export PATH="$dir/bin:$dir:$PATH"
+            npm install -g pnpm@11
+            node --version && pnpm --version
+
+  install-rust:
+    parameters:
+      targets:
+        type: string
+    steps:
+      - run:
+          name: Install Rust
+          command: |
+            if [ "$(uname -s)" = Darwin ] || [ "$(uname -s)" = Linux ]; then
+              curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+            else
+              curl -fsSL -o /tmp/rustup-init.exe https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe
+              /tmp/rustup-init.exe -y --profile minimal --default-toolchain stable --default-host x86_64-pc-windows-msvc
+            fi
+            echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> "$BASH_ENV"
+            "$HOME/.cargo/bin/rustup" target add << parameters.targets >>
+
+  build-release-target:
+    parameters:
+      target:
+        type: string
+      cli-archive:
+        type: string
+      tauri-args:
+        type: string
+        default: ''
+    steps:
+      - run:
+          name: Build the engine and package the CLI (<< parameters.target >>)
+          command: |
+            bash scripts/build-sidecars.sh --release --target << parameters.target >>
+            bash scripts/verify-tauri-release-assets.sh << parameters.target >>
+            cmake --build build_tauri_release --config Release -j 4 --target delta
+            bash scripts/package-cli.sh build_tauri_release << parameters.target >> \
+              dist-release/<< parameters.target >>/<< parameters.cli-archive >> "$CIRCLE_TAG"
+      - run:
+          name: Build the desktop app (<< parameters.target >>)
+          command: |
+            if [ "$(uname -s)" = Linux ]; then
+              ./scripts/tauri-release-build.sh build << parameters.tauri-args >>
+            else
+              web/app/node_modules/.bin/tauri build << parameters.tauri-args >>
+            fi
+            bash scripts/collect-tauri-bundles.sh << parameters.target >> dist-release/<< parameters.target >>
+            rm -rf build_tauri_release
+
 jobs:
   frontend:
     docker:
       - image: cimg/node:22.23
-    resource_class: large
+    resource_class: medium
     environment:
       CI: 'true'
     steps:
@@ -126,12 +230,15 @@ jobs:
       - run:
           name: Run browser component tests
           command: pnpm --filter webui exec vitest run --project=client --browser.headless --no-file-parallelism
-      - run:
-          name: Run UI stories
-          # Formula-heavy stories include accessibility scans that exceed 15 seconds.
-          command: |
-            pnpm --filter webui exec vitest run --project=ui --browser.headless --no-file-parallelism \
-              --testTimeout=60000
+      - when:
+          condition: << pipeline.parameters.run-stories >>
+          steps:
+            - run:
+                name: Run UI stories
+                # Formula-heavy stories include accessibility scans that exceed 15 seconds.
+                command: |
+                  pnpm --filter webui exec vitest run --project=ui --browser.headless --no-file-parallelism \
+                    --testTimeout=60000
       - run:
           name: Build web UI
           command: pnpm --filter webui build
@@ -161,6 +268,7 @@ jobs:
             node --test scripts/release-notes.test.cjs
             node --test scripts/bump-version.test.cjs
             node --test scripts/update-package-manifests.test.cjs
+            node --test scripts/github-release.test.cjs
       - run:
           name: Test Linux packaging
           command: |
@@ -169,11 +277,7 @@ jobs:
             bash scripts/test-repack-linux-appimage.sh
             bash scripts/test-verify-linux-appimage.sh
             bash scripts/test-tauri-release-build.sh
-      - run:
-          name: Lint GitHub Actions workflows
-          command: |
-            bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 /tmp
-            /tmp/actionlint -color
+            bash scripts/test-release-packaging.sh
 
   engine-linux:
     docker:
@@ -182,6 +286,8 @@ jobs:
     environment:
       CCACHE_DIR: /home/circleci/.ccache
       CCACHE_MAXSIZE: 2G
+      CCACHE_BASEDIR: /home/circleci/project
+      CCACHE_COMPILERCHECK: content
     steps:
       - checkout-with-submodules
       - run:
@@ -193,6 +299,7 @@ jobs:
           keys:
             - ccache-linux-v1-{{ .Branch }}-
             - ccache-linux-v1-dev-
+            - ccache-linux-v1-main-
       - build-and-test-engine:
           metal: 'OFF'
       - save-cache-on-main-branches:
@@ -206,6 +313,8 @@ jobs:
     environment:
       CCACHE_DIR: /Users/distiller/.ccache
       CCACHE_MAXSIZE: 2G
+      CCACHE_BASEDIR: /Users/distiller/project
+      CCACHE_COMPILERCHECK: content
       HOMEBREW_NO_AUTO_UPDATE: '1'
     steps:
       - checkout-with-submodules
@@ -215,15 +324,18 @@ jobs:
       - restore_cache:
           keys:
             - ccache-macos-v1-{{ .Branch }}-
-            - ccache-macos-v1-dev-
+            - ccache-macos-v1-main-
       - build-and-test-engine:
           metal: 'ON'
+          # The compiler and architecture the release's build-sidecars.sh uses, so it reuses this cache.
+          cmake-args: -DCMAKE_C_COMPILER=/usr/bin/cc -DCMAKE_CXX_COMPILER=/usr/bin/c++ -DCMAKE_OSX_ARCHITECTURES=arm64
       - save-cache-on-main-branches:
           key: ccache-macos-v1-{{ .Branch }}-{{ epoch }}
           path: /Users/distiller/.ccache
 
   # Windows build errors used to surface only at release time. Builds with Ninja from a Visual
-  # Studio developer shell and a static curl from vcpkg, like the release.
+  # Studio developer shell and a static curl from vcpkg, like the release, through sccache: a cold
+  # build is 409 compiles (about 12 minutes at 40 credits a minute).
   engine-windows:
     machine:
       image: windows-server-2022-gui:current
@@ -231,11 +343,24 @@ jobs:
     shell: powershell.exe -ExecutionPolicy Bypass
     environment:
       VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg-cache
+      SCCACHE_DIR: C:\sccache
+      SCCACHE_CACHE_SIZE: 2G
     steps:
       - checkout-with-submodules
       - restore_cache:
           keys:
             - vcpkg-curl-v1-
+      - restore_cache:
+          keys:
+            - sccache-windows-v1-{{ .Branch }}-
+            - sccache-windows-v1-main-
+      - run:
+          name: Install sccache
+          command: |
+            $v = 'v0.17.0'
+            Invoke-WebRequest "https://github.com/mozilla/sccache/releases/download/$v/sccache-$v-x86_64-pc-windows-msvc.zip" -OutFile C:\sccache.zip
+            Expand-Archive C:\sccache.zip -DestinationPath C:\sccache-bin
+            Copy-Item "C:\sccache-bin\sccache-$v-x86_64-pc-windows-msvc\sccache.exe" C:\Windows\sccache.exe
       - run:
           name: Install curl with vcpkg
           command: |
@@ -258,10 +383,205 @@ jobs:
             cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl `
               -DBUILD_TESTS=OFF -DBUILD_WEBUI=OFF -DLLAMA_OPENSSL=OFF -DFORCE_SYSTEM_CLANG=OFF -DUSE_CURL=ON `
               -DGGML_METAL=OFF -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake `
-              -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+              -DVCPKG_TARGET_TRIPLET=x64-windows-static-md `
+              -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
             cmake --build build --config Release -j 4 --target delta --target delta-server
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - run:
+          name: Compiler cache statistics
+          when: always
+          command: sccache --show-stats
+      - save-cache-on-main-branches:
+          key: sccache-windows-v1-{{ .Branch }}-{{ epoch }}
+          path: C:\sccache
+
+  # ---------------------------------------------------------------------------------------------
+  # Release (v* tags): draft the release, build the web UI once, build each platform's CLI archive
+  # and desktop installers from one engine build, then upload everything and publish. Any failure
+  # leaves the release in draft; rerun the failed jobs from the CircleCI workflow page.
+  # Needs RELEASE_REPO_TOKEN (Contents read & write on nile-agi/delta-release) and SOURCE_REPO_TOKEN
+  # (Contents read & write on nile-agi/delta, to read the tag and generate notes); the APPLE_*
+  # variables sign and notarize the macOS app when set.
+  # ---------------------------------------------------------------------------------------------
+  release-prepare:
+    docker:
+      - image: cimg/node:22.23
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Require version.txt to match the tag
+          # A prerelease tag (v1.2.3-rc.1) matches version.txt 1.2.3.
+          command: |
+            expected="${CIRCLE_TAG#v}"
+            expected="${expected%%[-+]*}"
+            actual="$(tr -d '[:space:]' < version.txt)"
+            if [ "$actual" != "$expected" ]; then
+              echo "$CIRCLE_TAG points at a commit whose version.txt says '$actual', not '$expected'."
+              exit 1
+            fi
+      - run:
+          name: Generate release notes and prepare a draft
+          command: |
+            mkdir -p release
+            node scripts/github-release.cjs prepare "$CIRCLE_TAG" release/release.json
+      - persist_to_workspace:
+          root: .
+          paths:
+            - release/release.json
+
+  release-web:
+    docker:
+      - image: cimg/node:22.23
+    resource_class: large
+    steps:
+      - checkout
+      - run:
+          name: Install pnpm 11
+          command: sudo npm install -g pnpm@11
+      - run:
+          name: Sync version from version.txt
+          command: bash scripts/bump-version.sh
+      - run:
+          name: Build web UI
+          command: |
+            pnpm install --filter webui...
+            pnpm --filter webui run build
+            bash scripts/verify-tauri-release-assets.sh --web-only
+      - run:
+          name: Test production startup before packaging
+          environment:
+            DELTA_TEST_PREBUILT: '1'
+          command: |
+            pnpm --filter webui exec playwright install --with-deps --only-shell chromium
+            pnpm --filter webui exec playwright test e2e/startup.test.ts --workers=1
+      - persist_to_workspace:
+          root: .
+          paths:
+            - public
+
+  # One machine per platform builds the engine once per target and makes both the CLI archive and
+  # the installers from it. macOS builds arm64 and x86_64 in one job, so its setup is paid once.
+  release-build:
+    parameters:
+      platform:
+        type: executor
+      rust-targets:
+        type: string
+      cache-os:
+        type: string
+      builds:
+        type: steps
+    executor: << parameters.platform >>
+    environment:
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPILERCHECK: content
+    steps:
+      - checkout-with-submodules
+      - attach_workspace:
+          at: .
+      - run:
+          name: Install platform dependencies
+          command: |
+            case "$(uname -s)" in
+              Linux)
+                sudo apt-get update
+                sudo apt-get install -y build-essential cmake ccache libcurl4-openssl-dev libwebkit2gtk-4.1-dev \
+                  libappindicator3-dev librsvg2-dev patchelf libfuse2 file
+                bash scripts/check-linux-runtime.sh
+                # Pinned AppImage repacking tool (scripts/repack-linux-appimage.sh).
+                tool="$HOME/appimagetool-x86_64.AppImage"
+                curl -fsSL --retry 3 -o "$tool" \
+                  https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+                echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  $tool" | sha256sum --check --strict
+                chmod +x "$tool"
+                echo "export APPIMAGETOOL_PATH=$tool" >> "$BASH_ENV"
+                echo "export DELTA_COMPILER_LAUNCHER=ccache CCACHE_DIR=$HOME/.ccache CCACHE_BASEDIR=$PWD" >> "$BASH_ENV"
+                ;;
+              Darwin)
+                brew install cmake ccache
+                echo "export DELTA_COMPILER_LAUNCHER=ccache CCACHE_DIR=$HOME/.ccache CCACHE_BASEDIR=$PWD" >> "$BASH_ENV"
+                ;;
+              *)
+                # CMake from Visual Studio, and a static curl from vcpkg.
+                vs="$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath)"
+                echo "export PATH=\"$(cygpath -u "$vs")/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin:\$PATH\"" >> "$BASH_ENV"
+                git clone --depth 1 https://github.com/microsoft/vcpkg /c/vcpkg
+                cmd //c 'C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics'
+                /c/vcpkg/vcpkg.exe install curl:x64-windows-static-md
+                echo 'export VCPKG_INSTALLATION_ROOT=C:/vcpkg' >> "$BASH_ENV"
+                ;;
+            esac
+      # The engine objects CI built on main; the first release after an engine change still compiles.
+      - restore_cache:
+          keys:
+            - ccache-<< parameters.cache-os >>-v1-main-
+            - ccache-<< parameters.cache-os >>-v1-dev-
+      - install-node-and-pnpm
+      - install-rust:
+          targets: << parameters.rust-targets >>
+      - restore_cache:
+          keys:
+            - cargo-<< parameters.cache-os >>-v1-{{ checksum "src-tauri/Cargo.lock" }}
+            - cargo-<< parameters.cache-os >>-v1-
+      - run:
+          name: Sync version and check the Tauri crate
+          command: |
+            bash scripts/bump-version.sh
+            cargo metadata --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1 > /tmp/tauri-metadata.json
+            node -e '
+              const m = JSON.parse(require("fs").readFileSync("/tmp/tauri-metadata.json", "utf8"));
+              const app = m.packages.find((p) => p.name === "delta-app");
+              if (!app || app.targets.some((t) => !["2021", "2024"].includes(t.edition)))
+                throw new Error("delta-app requires an explicit Rust edition of 2021 or 2024 in Cargo.toml");'
+            pnpm install --filter webui...
+            bash scripts/verify-tauri-release-assets.sh --web-only
+      - steps: << parameters.builds >>
+      # Downloaded crates only: the compiled target directory is gigabytes and stored caches cost credits.
+      - save_cache:
+          key: cargo-<< parameters.cache-os >>-v1-{{ checksum "src-tauri/Cargo.lock" }}
+          paths:
+            - ~/.cargo/registry
+            - ~/.cargo/git
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist-release
+
+  release-publish:
+    docker:
+      - image: cimg/node:22.23
+    resource_class: small
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Build the combined CLI checksum file
+          command: |
+            VERSION="$(tr -d '[:space:]' < version.txt)"
+            {
+              echo "# Delta CLI ${CIRCLE_TAG} — SHA-256 Checksums"
+              echo "# Verify: sha256sum -c checksums-${VERSION}.sha256"
+              echo "#"
+              echo "# Commit: $(git rev-parse HEAD)"
+              echo "# Date:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              echo ""
+              cat dist-release/*/delta-cli-*.sha256
+            } > "dist-release/checksums-${VERSION}.sha256"
+            cat "dist-release/checksums-${VERSION}.sha256"
+      - run:
+          name: Upload installers and CLI archives
+          command: |
+            id="$(node -p 'require("./release/release.json").release_id')"
+            find dist-release -type f ! -name 'delta-cli-*.sha256' -print0 | sort -z |
+              xargs -0 node scripts/github-release.cjs upload "$id"
+      - run:
+          name: Publish the release
+          command: |
+            id="$(node -p 'require("./release/release.json").release_id')"
+            node scripts/github-release.cjs publish "$CIRCLE_TAG" "$id"
 
 workflows:
   frontend:
@@ -284,3 +604,54 @@ workflows:
     jobs:
       - engine-macos
       - engine-windows
+  release:
+    when: << pipeline.parameters.release-tag >>
+    jobs:
+      - release-prepare: &on-tags
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v.*/
+      - release-web: *on-tags
+      - release-build:
+          <<: *on-tags
+          name: release-macos
+          requires: [release-prepare, release-web]
+          platform: macos
+          cache-os: macos
+          rust-targets: aarch64-apple-darwin x86_64-apple-darwin
+          builds:
+            - build-release-target:
+                target: aarch64-apple-darwin
+                cli-archive: delta-cli-macos-arm64.tar.gz
+                tauri-args: --target aarch64-apple-darwin
+            - build-release-target:
+                target: x86_64-apple-darwin
+                cli-archive: delta-cli-macos-x86_64.tar.gz
+                tauri-args: --target x86_64-apple-darwin
+      - release-build:
+          <<: *on-tags
+          name: release-linux-x86_64
+          requires: [release-prepare, release-web]
+          platform: linux-vm
+          cache-os: linux
+          rust-targets: x86_64-unknown-linux-gnu
+          builds:
+            - build-release-target:
+                target: x86_64-unknown-linux-gnu
+                cli-archive: delta-cli-linux-x86_64.tar.gz
+      - release-build:
+          <<: *on-tags
+          name: release-windows-x64
+          requires: [release-prepare, release-web]
+          platform: windows
+          cache-os: windows
+          rust-targets: x86_64-pc-windows-msvc
+          builds:
+            - build-release-target:
+                target: x86_64-pc-windows-msvc
+                cli-archive: delta-cli-windows-x64.zip
+      - release-publish:
+          <<: *on-tags
+          requires: [release-macos, release-linux-x86_64, release-windows-x64]
