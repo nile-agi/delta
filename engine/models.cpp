@@ -1785,80 +1785,80 @@ void ModelManager::init_model_registry() {
         true // supports_tools
     };
 
-    model_registry_["mistral-3:3b"] = {
-        "mistral-3:3b",
-        "mistral-3-3b",
+    model_registry_["ministral-3:3b"] = {
+        "ministral-3:3b",
+        "ministral-3-3b",
         "mistralai/Ministral-3-3B-Instruct-2512-GGUF",
         "Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
         "Q4_K_M",
         2150LL * 1024 * 1024, // 2.15 GB
         "Edge Instruct model",
-        "mistral 3 3b",
+        "ministral 3 3b",
         0,   // use models default (-c from model)
         true // supports_tools
     };
 
-    model_registry_["mistral-3:8b"] = {
-        "mistral-3:8b",
-        "mistral-3-8b",
+    model_registry_["ministral-3:8b"] = {
+        "ministral-3:8b",
+        "ministral-3-8b",
         "mistralai/Ministral-3-8B-Instruct-2512-GGUF",
         "Ministral-3-8B-Instruct-2512-Q4_K_M.gguf",
         "Q4_K_M",
         5200LL * 1024 * 1024, // 5.2 GB
         "Edge Instruct model",
-        "mistral 3 8b",
+        "ministral 3 8b",
         0,   // use models default (-c from model)
         true // supports_tools
     };
 
-    model_registry_["mistral-3:14b"] = {
-        "mistral-3:14b",
-        "mistral-3-14b",
+    model_registry_["ministral-3:14b"] = {
+        "ministral-3:14b",
+        "ministral-3-14b",
         "mistralai/Ministral-3-14B-Instruct-2512-GGUF",
         "Ministral-3-14B-Instruct-2512-Q4_K_M.gguf",
         "Q4_K_M",
         8240LL * 1024 * 1024, // 8.24 GB
         "Edge Instruct model",
-        "mistral 3 14b",
+        "ministral 3 14b",
         0,   // use models default (-c from model)
         true // supports_tools
     };
 
-    model_registry_["mistral-3R:3b"] = {
-        "mistral-3R:3b",
-        "mistral-3R-3b",
-        "mistralai/Ministral-3-3B-Reasoning-2512-GGUF",
+    model_registry_["ministral-3R:3b"] = {
+        "ministral-3R:3b",
+        "ministral-3R-3b",
+        "munsloth/Ministral-3-3B-Reasoning-2512-GGUF",
         "Ministral-3-3B-Reasoning-2512-Q4_K_M.gguf",
         "Q4_K_M",
         2150LL * 1024 * 1024, // 2.15 GB
         "Edge Reasoning model",
-        "mistral 3 Reasoning 3b",
+        "ministral 3 Reasoning 3b",
         0,   // use models default (-c from model)
         true // supports_tools
     };
 
-    model_registry_["mistral-3R:8b"] = {
-        "mistral-3R:8b",
-        "mistral-3R-8b",
-        "mistralai/Ministral-3-8B-Reasoning-2512-GGUF",
+    model_registry_["ministral-3R:8b"] = {
+        "ministral-3R:8b",
+        "ministral-3R-8b",
+        "unsloth/Ministral-3-8B-Reasoning-2512-GGUF",
         "Ministral-3-8B-Reasoning-2512-Q4_K_M.gguf",
         "Q4_K_M",
         5200LL * 1024 * 1024, // 5.2 GB
         "Edge Reasoning model",
-        "mistral 3 Reasoning 8b",
+        "ministral 3 Reasoning 8b",
         0,   // use models default (-c from model)
         true // supports_tools
     };
 
-    model_registry_["mistral-3R:14b"] = {
-        "mistral-3R:14b",
-        "mistral-3R-14b",
-        "mistralai/Ministral-3-14B-Reasoning-2512-GGUF",
+    model_registry_["ministral-3R:14b"] = {
+        "ministral-3R:14b",
+        "ministral-3R-14b",
+        "unsloth/Ministral-3-14B-Reasoning-2512-GGUF",
         "Ministral-3-14B-Reasoning-2512-Q4_K_M.gguf",
         "Q4_K_M",
         8240LL * 1024 * 1024, // 8.24 GB
         "Edge Reasoning model",
-        "mistral 3 Reasoning 14b",
+        "ministral 3 Reasoning 14b",
         0,   // use models default (-c from model)
         true // supports_tools
     };

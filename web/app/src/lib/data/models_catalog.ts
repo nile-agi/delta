@@ -74,42 +74,42 @@ export const modelsCatalog: ModelFamily[] = [
 			}
 		]
 	},
-	{
-		id: 'ministral-3R',
-		name: 'Ministral 3R',
-		description:
-			"Mistral AI's compact Reasoning edge models with vision capabilities. Designed for complex problem-solving. Offers best cost-to-performance ratio for on-device deployment in 3B, 8B, 14B sizes.",
-		icon: 'mistral-color.svg',
-		models: [
-			{
-				name: 'ministral-3R:3b',
-				display_name: 'Ministral 3R 3B',
-				download_url:  'mistralai/Ministral-3-3B-Reasoning-2512-GGUF',
-				file_size_gb: 2.15,
-				context_size: 128000,
-				required_ram_gb: calculateRequiredRAM(2.15),
-				quantization: 'Q4_K_M'
-			},
-			{
-				name: 'ministral-3R:8b',
-				display_name: 'Ministral 3R 8B',
-				download_url: 'mistralai/Ministral-3-8B-Reasoning-2512-GGUF',
-				file_size_gb: 5.2,
-				context_size: 128000,
-				required_ram_gb: calculateRequiredRAM(5.2),
-				quantization: 'Q4_K_M'
-			},
-			{
-				name: 'ministral-3R:14b',
-				display_name: 'Ministral 3R 14B',
-				download_url: 'mistralai/Ministral-3-14B-Reasoning-2512-GGUF',
-				file_size_gb: 8.24,
-				context_size: 128000,
-				required_ram_gb: calculateRequiredRAM(8.24),
-				quantization: 'Q4_K_M'
-			}
-		]
-	},
+	// {
+	// 	id: 'ministral-3R',
+	// 	name: 'Ministral 3R',
+	// 	description:
+	// 		"Mistral AI's compact Reasoning edge models with vision capabilities. Designed for complex problem-solving. Offers best cost-to-performance ratio for on-device deployment in 3B, 8B, 14B sizes.",
+	// 	icon: 'mistral-color.svg',
+	// 	models: [
+	// 		{
+	// 			name: 'ministral-3R:3b',
+	// 			display_name: 'Ministral 3R 3B',
+	// 			download_url:  'unsloth/Ministral-3-3B-Reasoning-2512-GGUF',
+	// 			file_size_gb: 2.15,
+	// 			context_size: 32768,
+	// 			required_ram_gb: calculateRequiredRAM(2.15),
+	// 			quantization: 'Q4_K_M'
+	// 		},
+	// 		{
+	// 			name: 'ministral-3R:8b',
+	// 			display_name: 'Ministral 3R 8B',
+	// 			download_url: 'unsloth/Ministral-3-8B-Reasoning-2512-GGUF',
+	// 			file_size_gb: 5.2,
+	// 			context_size: 131072,
+	// 			required_ram_gb: calculateRequiredRAM(5.2),
+	// 			quantization: 'Q4_K_M'
+	// 		},
+	// 		{
+	// 			name: 'ministral-3R:14b',
+	// 			display_name: 'Ministral 3R 14B',
+	// 			download_url: 'unsloth/Ministral-3-14B-Reasoning-2512-GGUF',
+	// 			file_size_gb: 8.24,
+	// 			context_size: 131072,
+	// 			required_ram_gb: calculateRequiredRAM(8.24),
+	// 			quantization: 'Q4_K_M'
+	// 		}
+	// 	]
+	// },
 	// {
 	// 	id: 'mistral-7B',
 	// 	name: 'Mistral 7B',
