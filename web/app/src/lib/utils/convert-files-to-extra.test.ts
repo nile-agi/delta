@@ -6,10 +6,15 @@ vi.mock('./text-files', async (importActual) => ({
 	...(await importActual<typeof import('./text-files')>()),
 	readFileAsText: (f: File) => f.text()
 }));
+const scans = vi.hoisted(() => ({ read: vi.fn() }));
+vi.mock('./scanned-pages', () => ({ readScannedPages: scans.read }));
 vi.mock('svelte-sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() } }));
 import { parseFilesToMessageExtras } from './convert-files-to-extra';
 beforeEach(() => {
 	pdf.vision = false;
+	scans.read
+		.mockReset()
+		.mockImplementation(async (_n, _b, pages: string[]) => ({ pages, explained: false }));
 	pdf.text.mockReset().mockResolvedValue(['Document text', '', 'Page three']);
 	pdf.images.mockReset().mockResolvedValue(['data:image/png;base64,page']);
 	vi.stubGlobal(
@@ -45,7 +50,11 @@ it('uses extracted text even when the model can read images', async () => {
 });
 it('keeps a long text file for indexing and a short one inline', async () => {
 	const textFile = (name: string, text: string) =>
-		({ name, type: 'text/plain', file: new File([text], name, { type: 'text/plain' }) }) as ChatUploadedFile;
+		({
+			name,
+			type: 'text/plain',
+			file: new File([text], name, { type: 'text/plain' })
+		}) as ChatUploadedFile;
 	const result = await parseFilesToMessageExtras([
 		textFile('long.txt', 'word '.repeat(2000)),
 		textFile('short.txt', 'a short note')
@@ -110,4 +119,28 @@ it('reports a processing failure instead of sending an empty attachment', async 
 	expect(result.extras).toEqual([]);
 	const { toast } = await import('svelte-sonner');
 	expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Could not read'));
+});
+
+it('indexes the text the reader found on scanned pages', async () => {
+	pdf.text.mockResolvedValue(['', 'Page two']);
+	scans.read.mockResolvedValue({ pages: ['Read from the scan', 'Page two'], explained: false });
+	const result = await parseFilesToMessageExtras([file]);
+	expect(scans.read).toHaveBeenCalledWith('document.pdf', 'pdf', ['', 'Page two']);
+	expect(result.extras[0]).toMatchObject({
+		type: 'documentFile',
+		pages: 2,
+		segments: [
+			{ page: 1, text: 'Read from the scan' },
+			{ page: 2, text: 'Page two' }
+		]
+	});
+});
+it('does not repeat the warning once the reader has been offered', async () => {
+	pdf.text.mockResolvedValue(['']);
+	scans.read.mockResolvedValue({ pages: [''], explained: true });
+	const { toast } = await import('svelte-sonner');
+	vi.mocked(toast.warning).mockClear();
+	const result = await parseFilesToMessageExtras([file]);
+	expect(result.extras).toEqual([]);
+	expect(toast.warning).not.toHaveBeenCalled();
 });

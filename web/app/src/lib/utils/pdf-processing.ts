@@ -202,6 +202,19 @@ export async function pageText(pdf: OpenedPDF, n: number): Promise<string> {
 	return (content.items as TextItem[]).map((item) => item.str ?? '').join(' ');
 }
 
+/** Page `n` as a PNG data URL, for the text reader. */
+export async function pageImage(pdf: OpenedPDF, n: number, scale: number): Promise<string> {
+	const page = await pdf.getPage(n);
+	const viewport = page.getViewport({ scale });
+	const canvas = document.createElement('canvas');
+	canvas.width = Math.floor(viewport.width);
+	canvas.height = Math.floor(viewport.height);
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('Failed to get 2D context from canvas');
+	await page.render({ canvasContext: ctx, canvas, viewport }).promise;
+	return canvas.toDataURL(MimeTypeImage.PNG);
+}
+
 /** Draws page `n` into `canvas` and returns where each piece of its text sits, for highlighting. */
 export async function renderPDFPage(
 	pdf: OpenedPDF,
