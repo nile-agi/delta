@@ -1,0 +1,286 @@
+# CI jobs, started by the setup workflow in config.yml with the areas a build needs.
+# Mirrors .github/workflows/ci.yml; scripts/ci-local.sh runs the same checks on a Mac.
+version: 2.1
+
+parameters:
+  run-frontend:
+    type: boolean
+    default: false
+  run-engine:
+    type: boolean
+    default: false
+  run-release-checks:
+    type: boolean
+    default: false
+  # Pushes to dev and main also build the engine on macOS and Windows.
+  all-platforms:
+    type: boolean
+    default: false
+
+commands:
+  checkout-with-submodules:
+    steps:
+      - checkout
+      - run:
+          name: Fetch submodules
+          command: git submodule update --init --recursive --depth 1 --jobs 4
+
+  # Compiler caches are saved from dev and main only; branches read them.
+  save-cache-on-main-branches:
+    parameters:
+      key:
+        type: string
+      path:
+        type: string
+    steps:
+      - when:
+          condition:
+            or:
+              - equal: [dev, << pipeline.git.branch >>]
+              - equal: [main, << pipeline.git.branch >>]
+          steps:
+            - save_cache:
+                key: << parameters.key >>
+                paths:
+                  - << parameters.path >>
+
+  build-and-test-engine:
+    parameters:
+      metal:
+        type: enum
+        enum: ['ON', 'OFF']
+    steps:
+      - run:
+          name: Configure
+          command: |
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_WEBUI=OFF \
+              -DLLAMA_OPENSSL=OFF -DFORCE_SYSTEM_CLANG=OFF -DUSE_CURL=ON -DGGML_METAL=<< parameters.metal >> \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - run:
+          name: Build delta and delta-server
+          command: cmake --build build --config Release -j 4 --target delta --target delta-server
+      - run:
+          name: Build and run engine tests
+          command: |
+            cmake --build build --config Release -j 4 --target delta-document-tests --target delta-update-tests \
+              --target delta-harness-tests --target delta-openai-tests --target delta-ocr-tests
+            ./build/delta-document-tests
+            ./build/delta-update-tests
+            ./build/delta-harness-tests
+            ./build/delta-openai-tests
+            ./build/delta-ocr-tests
+      - run:
+          name: Compiler cache statistics
+          when: always
+          command: ccache --show-stats
+
+jobs:
+  frontend:
+    docker:
+      - image: cimg/node:22.23
+    resource_class: large
+    environment:
+      CI: 'true'
+    steps:
+      - checkout
+      - run:
+          name: Install pnpm 11
+          command: sudo npm install -g pnpm@11
+      - restore_cache:
+          keys:
+            - pnpm-v1-{{ checksum "pnpm-lock.yaml" }}
+            - pnpm-v1-
+      - run:
+          name: Install dependencies
+          # Vitest 3 browser setup modules must stay within the app's Vite root.
+          command: |
+            pnpm config set store-dir ~/.pnpm-store
+            pnpm install --frozen-lockfile --virtual-store-dir=web/app/node_modules/.pnpm
+      - save_cache:
+          key: pnpm-v1-{{ checksum "pnpm-lock.yaml" }}
+          paths:
+            - ~/.pnpm-store
+      - run:
+          name: Check Svelte and TypeScript
+          command: pnpm --filter webui check
+      - run:
+          name: Playwright version
+          working_directory: web/app
+          command: node -p "require('playwright/package.json').version" > /tmp/playwright-version
+      - restore_cache:
+          keys:
+            - playwright-v1-{{ checksum "/tmp/playwright-version" }}
+      - run:
+          name: Install Chromium and WebKit for browser tests
+          # Browsers come from the cache when it has them; the system libraries install each run.
+          command: |
+            pnpm --filter webui exec playwright install --with-deps --only-shell chromium
+            pnpm --filter webui exec playwright install --with-deps webkit
+      - save_cache:
+          key: playwright-v1-{{ checksum "/tmp/playwright-version" }}
+          paths:
+            - ~/.cache/ms-playwright
+      - run:
+          name: Run unit tests
+          command: pnpm --filter webui exec vitest run --project=server --maxWorkers=2 --minWorkers=1
+      - run:
+          name: Run browser component tests
+          command: pnpm --filter webui exec vitest run --project=client --browser.headless --no-file-parallelism
+      - run:
+          name: Run UI stories
+          # Formula-heavy stories include accessibility scans that exceed 15 seconds.
+          command: |
+            pnpm --filter webui exec vitest run --project=ui --browser.headless --no-file-parallelism \
+              --testTimeout=60000
+      - run:
+          name: Build web UI
+          command: pnpm --filter webui build
+      - run:
+          name: Verify build output
+          command: test -s public/index.html
+      - run:
+          name: Test production startup
+          environment:
+            DELTA_TEST_PREBUILT: '1'
+          command: pnpm --filter webui exec playwright test e2e/startup.test.ts --workers=1
+      - run:
+          name: Test production startup in WebKit
+          environment:
+            DELTA_TEST_PREBUILT: '1'
+          command: pnpm --filter webui exec playwright test e2e/startup.test.ts --browser=webkit --workers=1
+
+  release-checks:
+    docker:
+      - image: cimg/node:22.23
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Test release notes, version syncing and package manifests
+          command: |
+            node --test scripts/release-notes.test.cjs
+            node --test scripts/bump-version.test.cjs
+            node --test scripts/update-package-manifests.test.cjs
+      - run:
+          name: Test Linux packaging
+          command: |
+            bash scripts/test-appimage-graphics-libs.sh
+            bash scripts/test-linux-webview-defaults.sh
+            bash scripts/test-repack-linux-appimage.sh
+            bash scripts/test-verify-linux-appimage.sh
+            bash scripts/test-tauri-release-build.sh
+      - run:
+          name: Lint GitHub Actions workflows
+          command: |
+            bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 /tmp
+            /tmp/actionlint -color
+
+  engine-linux:
+    docker:
+      - image: cimg/base:current-22.04
+    resource_class: large
+    environment:
+      CCACHE_DIR: /home/circleci/.ccache
+      CCACHE_MAXSIZE: 2G
+    steps:
+      - checkout-with-submodules
+      - run:
+          name: Install Linux dependencies
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y build-essential cmake ccache libcurl4-openssl-dev uuid-dev
+      - restore_cache:
+          keys:
+            - ccache-linux-v1-{{ .Branch }}-
+            - ccache-linux-v1-dev-
+      - build-and-test-engine:
+          metal: 'OFF'
+      - save-cache-on-main-branches:
+          key: ccache-linux-v1-{{ .Branch }}-{{ epoch }}
+          path: /home/circleci/.ccache
+
+  engine-macos:
+    macos:
+      xcode: 27.0.0
+    resource_class: m4pro.medium
+    environment:
+      CCACHE_DIR: /Users/distiller/.ccache
+      CCACHE_MAXSIZE: 2G
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - checkout-with-submodules
+      - run:
+          name: Install macOS dependencies
+          command: brew install cmake ccache
+      - restore_cache:
+          keys:
+            - ccache-macos-v1-{{ .Branch }}-
+            - ccache-macos-v1-dev-
+      - build-and-test-engine:
+          metal: 'ON'
+      - save-cache-on-main-branches:
+          key: ccache-macos-v1-{{ .Branch }}-{{ epoch }}
+          path: /Users/distiller/.ccache
+
+  # Windows build errors used to surface only at release time. Builds with Ninja from a Visual
+  # Studio developer shell and a static curl from vcpkg, like the release.
+  engine-windows:
+    machine:
+      image: windows-server-2022-gui:current
+    resource_class: windows.medium
+    shell: powershell.exe -ExecutionPolicy Bypass
+    environment:
+      VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg-cache
+    steps:
+      - checkout-with-submodules
+      - restore_cache:
+          keys:
+            - vcpkg-curl-v1-
+      - run:
+          name: Install curl with vcpkg
+          command: |
+            New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+            git clone --depth 1 https://github.com/microsoft/vcpkg C:\vcpkg
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            C:\vcpkg\vcpkg.exe install curl:x64-windows-static-md
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - save-cache-on-main-branches:
+          key: vcpkg-curl-v1-{{ epoch }}
+          path: C:\vcpkg-cache
+      - run:
+          name: Build delta and delta-server
+          command: |
+            $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+            Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+            Enter-VsDevShell -VsInstallPath $vs -DevCmdArguments '-arch=x64' -SkipAutomaticLocation
+            cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl `
+              -DBUILD_TESTS=OFF -DBUILD_WEBUI=OFF -DLLAMA_OPENSSL=OFF -DFORCE_SYSTEM_CLANG=OFF -DUSE_CURL=ON `
+              -DGGML_METAL=OFF -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake `
+              -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            cmake --build build --config Release -j 4 --target delta --target delta-server
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+workflows:
+  frontend:
+    when: << pipeline.parameters.run-frontend >>
+    jobs:
+      - frontend
+  release-checks:
+    when: << pipeline.parameters.run-release-checks >>
+    jobs:
+      - release-checks
+  engine:
+    when: << pipeline.parameters.run-engine >>
+    jobs:
+      - engine-linux
+  engine-macos-windows:
+    when:
+      and:
+        - << pipeline.parameters.run-engine >>
+        - << pipeline.parameters.all-platforms >>
+    jobs:
+      - engine-macos
+      - engine-windows
