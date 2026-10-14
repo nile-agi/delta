@@ -1,5 +1,15 @@
 import { expect, test } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+	await page.route('**/v1/models', (route) =>
+		route.fulfill({ json: { object: 'list', data: [] } })
+	);
+	await page.route(
+		(url) => url.pathname === '/models',
+		(route) => route.fulfill({ json: { models: [] } })
+	);
+});
+
 // Exercise the production root layout, including the settings/server effects.
 // Component tests alone do not mount this startup path.
 for (const desktop of [false, true]) {
@@ -51,8 +61,8 @@ for (const desktop of [false, true]) {
 		await page.goto('/');
 		await expect(page.getByText('What are we working on?', { exact: true })).toBeVisible();
 		await expect(page.locator('#app-loading')).toHaveCount(0);
-		// Verify the app remains interactive after the backend has supplied defaults.
-		await page.getByRole('button', { name: 'Open Settings', exact: true }).click();
+		// Use the settings button in the collapsed sidebar after defaults arrive.
+		await page.getByRole('button', { name: 'Settings', exact: true }).click();
 		await expect(page.getByRole('main', { name: 'Settings' })).toBeVisible();
 		await expect
 			.poll(() =>
