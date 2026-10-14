@@ -56,9 +56,24 @@ export function findModelOption(id: string | undefined, options: ModelOption[]):
 	const exact = options.find((o) => o.id === id || o.model === id || o.alias === id);
 	if (exact) return exact;
 	const key = canonical(id);
-	return options.find(
+	const same = options.find(
 		(o) => canonical(o.id) === key || canonical(o.model) === key || (!!o.alias && canonical(o.alias) === key)
 	);
+	if (same) return same;
+	// An engine that sends no alias leaves only the file name ("gemma-3-270m-it-Q8_0"); it starts
+	// with the registry name once punctuation is dropped ("gemma3:270m"). The longest such name wins.
+	const compact = (s: string) => canonical(s).replace(/[^\p{L}\p{N}]/gu, '');
+	const file = compact(id);
+	let best: ModelOption | undefined;
+	let bestLength = 0;
+	for (const o of options) {
+		const name = compact(o.model || o.id);
+		if (name.length >= 4 && file.startsWith(name) && name.length > bestLength) {
+			best = o;
+			bestLength = name.length;
+		}
+	}
+	return best;
 }
 
 /** The name to show for a model: the picker's name when known, else the bare file name. */

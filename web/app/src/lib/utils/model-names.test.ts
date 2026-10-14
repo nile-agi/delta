@@ -70,6 +70,19 @@ describe('findModelOption and modelDisplayName', () => {
 		expect(findModelOption('unknown', options)).toBeUndefined();
 	});
 
+	it('recognises a file name when the engine sent no alias', () => {
+		const noAlias = [
+			{ id: 'gemma3:270m', name: 'Gemma 3 270M', model: 'gemma3:270m', capabilities: [] },
+			{ id: 'gemma3qat:270m', name: 'Gemma 3 270M QAT', model: 'gemma3qat:270m', capabilities: [] },
+			{ id: 'qwen2.5:0.5b', name: 'Qwen 2.5 0.5B', model: 'qwen2.5:0.5b', capabilities: [] },
+			{ id: 'qwen2.5:7b', name: 'Qwen 2.5 7B', model: 'qwen2.5:7b', capabilities: [] }
+		];
+		expect(modelDisplayName('gemma-3-270m-it-Q8_0', noAlias)).toBe('Gemma 3 270M');
+		expect(modelDisplayName('qwen2.5-0.5b-instruct-q4_k_m', noAlias)).toBe('Qwen 2.5 0.5B');
+		expect(modelDisplayName('qwen2.5-7b-instruct-q4_k_m.gguf', noAlias)).toBe('Qwen 2.5 7B');
+		expect(modelDisplayName('llama-3.2-1b-q4', noAlias)).toBe('llama-3.2-1b-q4');
+	});
+
 	it('labels replies with the picker name, or the bare file name when unknown', () => {
 		expect(modelDisplayName('qwen2.5-0.5b-instruct-q4_k_m', options)).toBe('Qwen 2.5 0.5B');
 		expect(modelDisplayName('/x/other-model.gguf', options)).toBe('other-model');
