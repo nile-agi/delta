@@ -1,6 +1,7 @@
-# Setup workflow: decides which areas a build needs, then continues with .circleci/continue.yml.
+# Setup workflow: decides what a build needs, then continues with .circleci/continue.yml.
 # Branches build only what they changed against dev, on Linux. Pushes to dev and main build
 # everything on Linux, macOS and Windows: they are the builds that save the compiler caches.
+# A v* tag runs the release instead.
 version: 2.1
 setup: true
 
@@ -18,6 +19,10 @@ jobs:
           name: Detect changed areas
           command: |
             set -euo pipefail
+            if [ -n "${CIRCLE_TAG:-}" ]; then
+              printf '{"release-tag": "%s"}\n' "$CIRCLE_TAG" | tee /tmp/pipeline-parameters.json
+              exit 0
+            fi
             all=false
             case "$CIRCLE_BRANCH" in dev|main) all=true ;; esac
             if [ "$all" = true ]; then
@@ -41,4 +46,7 @@ jobs:
 workflows:
   setup:
     jobs:
-      - detect-changes
+      - detect-changes:
+          filters:
+            tags:
+              only: /^v.*/
