@@ -1,0 +1,44 @@
+# Setup workflow: decides which areas a build needs, then continues with .circleci/continue.yml.
+# Branches build only what they changed against dev, on Linux. Pushes to dev and main build
+# everything on Linux, macOS and Windows: they are the builds that save the compiler caches.
+version: 2.1
+setup: true
+
+orbs:
+  continuation: circleci/continuation@1.1.0
+
+jobs:
+  detect-changes:
+    docker:
+      - image: cimg/base:current-22.04
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Detect changed areas
+          command: |
+            set -euo pipefail
+            all=false
+            case "$CIRCLE_BRANCH" in dev|main) all=true ;; esac
+            if [ "$all" = true ]; then
+              changed=""
+            else
+              git fetch --quiet origin dev
+              changed="$(git diff --name-only "$(git merge-base origin/dev HEAD)" HEAD)"
+              printf 'Changed files:\n%s\n' "$changed"
+            fi
+            touched() { [ "$all" = true ] || printf '%s\n' "$changed" | grep -Eq "$1"; }
+            flag() { if touched "$1"; then echo true; else echo false; fi; }
+            frontend=$(flag '^(web/app/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.circleci/)')
+            engine=$(flag '^(engine/|tests/|CMakeLists\.txt$|version\.txt$|\.gitmodules$|\.circleci/)')
+            release=$(flag '^(scripts/|\.github/|\.circleci/|dist/|src-tauri/|version\.txt$)')
+            printf '{"run-frontend": %s, "run-engine": %s, "run-release-checks": %s, "all-platforms": %s}\n' \
+              "$frontend" "$engine" "$release" "$all" | tee /tmp/pipeline-parameters.json
+      - continuation/continue:
+          configuration_path: .circleci/continue.yml
+          parameters: /tmp/pipeline-parameters.json
+
+workflows:
+  setup:
+    jobs:
+      - detect-changes
