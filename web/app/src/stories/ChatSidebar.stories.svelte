@@ -1,8 +1,8 @@
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
 	import ChatSidebar from '$lib/components/app/chat/ChatSidebar/ChatSidebar.svelte';
-	import { waitFor } from 'storybook/test';
-	import { screen } from 'storybook/test';
+	import { Provider as SidebarProvider } from '$lib/components/ui/sidebar';
+	import { expect, waitFor } from 'storybook/test';
 
 	const { Story } = defineMeta({
 		title: 'Components/ChatSidebar',
@@ -50,48 +50,56 @@
 <Story
 	asChild
 	name="Default"
-	play={async () => {
+	play={async ({ canvas }) => {
 		const { chatStore } = await import('$lib/stores/chat.svelte');
-		
-		waitFor(() => setTimeout(() => {
-			chatStore.conversations = mockConversations;
-		}, 0));
+		chatStore.conversations = mockConversations;
+		await expect(await canvas.findByText('Getting Started with AI')).toBeVisible();
 	}}
 >
 	<div class="flex-column h-full h-screen w-72 bg-background">
-		<ChatSidebar />
+		<SidebarProvider>
+			<ChatSidebar />
+		</SidebarProvider>
 	</div>
 </Story>
 
 <Story
 	asChild
 	name="SearchActive"
-	play={async ({ userEvent }) => {
+	play={async ({ canvas, userEvent }) => {
 		const { chatStore } = await import('$lib/stores/chat.svelte');
-		
-		waitFor(() => setTimeout(() => {
-			chatStore.conversations = mockConversations;
-		}, 0));
-		
-		const searchTrigger = screen.getByText('Search conversations');
-		userEvent.click(searchTrigger);
+		chatStore.conversations = mockConversations;
+		await expect(await canvas.findByText('Getting Started with AI')).toBeVisible();
+		await userEvent.click(await canvas.findByRole('button', { name: /Search conversations/ }));
+		const searchInput = await canvas.findByPlaceholderText('Search conversations...');
+		await expect(searchInput).toHaveFocus();
+		await userEvent.type(searchInput, 'Python');
+		await expect(await canvas.findByText('Python Programming Help')).toBeVisible();
+		await waitFor(() =>
+			expect(canvas.queryByText('Getting Started with AI')).not.toBeInTheDocument()
+		);
 	}}
 >
 	<div class="flex-column h-full h-screen w-72 bg-background">
-		<ChatSidebar />
+		<SidebarProvider>
+			<ChatSidebar />
+		</SidebarProvider>
 	</div>
 </Story>
 
 <Story
 	asChild
 	name="Empty"
-	play={async () => {
+	play={async ({ canvas }) => {
 		// Mock empty conversations store
 		const { chatStore } = await import('$lib/stores/chat.svelte');
 		chatStore.conversations = [];
+		await expect(await canvas.findByText('No conversations yet')).toBeVisible();
 	}}
 >
 	<div class="flex-column h-full h-screen w-72 bg-background">
-		<ChatSidebar />
+		<SidebarProvider>
+			<ChatSidebar />
+		</SidebarProvider>
 	</div>
 </Story>
