@@ -50,7 +50,7 @@ engine_configure() {
 
 engine_tests() {
   local t
-  for t in delta-document-tests delta-update-tests delta-harness-tests delta-openai-tests; do
+  for t in delta-document-tests delta-update-tests delta-harness-tests delta-openai-tests delta-ocr-tests; do
     "./$BUILD_DIR/$t" >"/tmp/ci-local-$t.log" 2>&1 || { tail -30 "/tmp/ci-local-$t.log"; return 1; }
     echo "$t: $(tail -1 "/tmp/ci-local-$t.log")"
   done
@@ -60,15 +60,16 @@ gcc11_check() {
   command -v docker >/dev/null && docker info >/dev/null 2>&1 || { echo "Docker not running; skipped"; return 0; }
   local files
   # Against the working tree, so uncommitted changes are compiled too.
-  files="$(git diff --name-only "$(git merge-base "$BASE" HEAD)" -- 'engine/*.cpp' 'tests/*.cpp' |
-    grep -v '^engine/vendor/' | tr '\n' ' ')"
+  files="$({ git diff --name-only "$(git merge-base "$BASE" HEAD)" -- 'engine/*.cpp' 'tests/*.cpp'
+    git ls-files --others --exclude-standard -- 'engine/*.cpp' 'tests/*.cpp'; } |
+    grep -v '^engine/vendor/' | sort -u | tr '\n' ' ')"
   [[ -z "$files" ]] && { echo "no changed C++ files"; return 0; }
   local inc="-Iengine/vendor/sqlite3 -Iengine -Iengine/vendor -Iengine/vendor/llama.cpp -Iengine/vendor/llama.cpp/include
     -Iengine/vendor/llama.cpp/common -Iengine/vendor/llama.cpp/tools/server -Iengine/vendor/llama.cpp/vendor
     -Iengine/vendor/llama.cpp/vendor/nlohmann -Iengine/vendor/llama.cpp/vendor/cpp-httplib -Iengine/agent
     -Iengine/vendor/llama.cpp/ggml/include"
   docker run --rm -v "$PWD":/src -w /src ubuntu:22.04 bash -c "
-    apt-get update -qq >/dev/null && apt-get install -y -qq g++ >/dev/null 2>&1 || exit 1
+    apt-get update -qq >/dev/null && apt-get install -y -qq g++ libcurl4-openssl-dev >/dev/null 2>&1 || exit 1
     rc=0
     for f in $files; do g++ -std=c++17 -fsyntax-only $(echo $inc) \"\$f\" || rc=1; echo \"  \$f\"; done
     exit \$rc"
@@ -78,7 +79,7 @@ run_engine() {
   step "engine: configure" engine_configure
   step "engine: build delta, delta-server and tests" cmake --build "$BUILD_DIR" -j "$JOBS" --target delta \
     --target delta-server --target delta-document-tests --target delta-update-tests \
-    --target delta-harness-tests --target delta-openai-tests
+    --target delta-harness-tests --target delta-openai-tests --target delta-ocr-tests
   step "engine: tests" engine_tests
   step "engine: GCC 11 compile of changed files" gcc11_check
 }
