@@ -1,4 +1,5 @@
 import { convertPDFToImage, extractPDFPages } from './pdf-processing';
+import { PdfTooLongError } from './pdf-page-limits';
 import {
 	documentKind,
 	extractDocxSegments,
@@ -121,7 +122,8 @@ export async function parseFilesToMessageExtras(
 				try {
 					pages = await extractPDFPages(file.file);
 				} catch (error) {
-					if (!hasVisionSupport) throw error;
+					// Too long is too long as images too.
+					if (!hasVisionSupport || error instanceof PdfTooLongError) throw error;
 				}
 				const scans = await readScannedPages(file.name, base64Data, pages);
 				pages = scans.pages;
@@ -151,7 +153,9 @@ export async function parseFilesToMessageExtras(
 			} catch (error) {
 				console.error(`Failed to process PDF file ${file.name}:`, error);
 				toast.error(
-					`Could not read "${file.name}". Try another PDF or a model that can read images.`
+					error instanceof PdfTooLongError
+						? `"${file.name}" is too long to attach. ${error.message}`
+						: `Could not read "${file.name}". Try another PDF or a model that can read images.`
 				);
 			}
 		} else if (documentKind(file.name, file.type)) {

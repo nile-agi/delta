@@ -144,3 +144,17 @@ it('does not repeat the warning once the reader has been offered', async () => {
 	expect(result.extras).toEqual([]);
 	expect(toast.warning).not.toHaveBeenCalled();
 });
+
+it('says why a PDF over the page limit is refused, without trying its pages as images', async () => {
+	const { PdfTooLongError } = await import('./pdf-page-limits');
+	pdf.vision = true;
+	pdf.text.mockRejectedValue(new PdfTooLongError(4200));
+	const { toast } = await import('svelte-sonner');
+	vi.mocked(toast.error).mockClear();
+	const result = await parseFilesToMessageExtras([file]);
+	expect(result.extras).toEqual([]);
+	expect(pdf.images).not.toHaveBeenCalled();
+	expect(toast.error).toHaveBeenCalledWith(
+		expect.stringContaining('4,200 pages; Delta reads up to 1,000')
+	);
+});

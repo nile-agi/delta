@@ -6,6 +6,7 @@
 import { browser } from '$app/environment';
 import { MimeTypeApplication, MimeTypeImage } from '$lib/enums/files';
 import * as pdfjs from 'pdfjs-dist';
+import { checkPdfPageCount, PdfTooLongError } from './pdf-page-limits';
 
 type TextItem = {
 	str?: string;
@@ -90,6 +91,7 @@ export async function extractPDFPages(file: File): Promise<string[]> {
 		const buffer = await getFileAsBuffer(file);
 		await workerReady;
 		const pdf = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
+		checkPdfPageCount(pdf.numPages);
 		const pages: Promise<string>[] = [];
 		for (let i = 1; i <= pdf.numPages; i++) {
 			pages.push(
@@ -102,6 +104,7 @@ export async function extractPDFPages(file: File): Promise<string[]> {
 		}
 		return await Promise.all(pages);
 	} catch (error) {
+		if (error instanceof PdfTooLongError) throw error;
 		console.error('Error converting PDF to text:', error);
 		throw new Error(
 			`Failed to convert PDF to text: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -133,6 +136,7 @@ export async function convertPDFToImage(file: File, scale: number = 1.5): Promis
 		const buffer = await getFileAsBuffer(file);
 		await workerReady;
 		const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
+		checkPdfPageCount(doc.numPages);
 		const pages: Promise<string>[] = [];
 
 		for (let i = 1; i <= doc.numPages; i++) {
@@ -162,6 +166,7 @@ export async function convertPDFToImage(file: File, scale: number = 1.5): Promis
 
 		return await Promise.all(pages);
 	} catch (error) {
+		if (error instanceof PdfTooLongError) throw error;
 		console.error('Error converting PDF to images:', error);
 		throw new Error(
 			`Failed to convert PDF to images: ${error instanceof Error ? error.message : 'Unknown error'}`
