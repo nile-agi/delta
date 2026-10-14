@@ -12,6 +12,7 @@ import { supportsVision } from '$lib/stores/server.svelte';
 import { getFileTypeCategory } from '$lib/utils/file-type';
 import { readFileAsText, isLikelyTextFile } from './text-files';
 import { toast } from 'svelte-sonner';
+import { readScannedPages } from './scanned-pages';
 
 function readFileAsBase64(file: File): Promise<string> {
 	return new Promise((resolve, reject) => {
@@ -122,6 +123,8 @@ export async function parseFilesToMessageExtras(
 				} catch (error) {
 					if (!hasVisionSupport) throw error;
 				}
+				const scans = await readScannedPages(file.name, base64Data, pages);
+				pages = scans.pages;
 				const segments = pages
 					.map((text, i) => ({ page: i + 1, text }))
 					.filter((segment) => segment.text.trim());
@@ -140,7 +143,7 @@ export async function parseFilesToMessageExtras(
 						processedAsImages: true,
 						base64Data
 					});
-				} else {
+				} else if (!scans.explained) {
 					toast.warning(
 						`"${file.name}" has no readable text. Choose a model that can read images to use this PDF.`
 					);
@@ -165,7 +168,9 @@ export async function parseFilesToMessageExtras(
 				}
 			} catch (error) {
 				console.error(`Failed to read document ${file.name}:`, error);
-				toast.error(`Could not read "${file.name}". The file may be damaged or password-protected.`);
+				toast.error(
+					`Could not read "${file.name}". The file may be damaged or password-protected.`
+				);
 			}
 		} else {
 			try {

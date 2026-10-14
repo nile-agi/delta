@@ -173,11 +173,66 @@ static void test_store() {
     check(!hits.empty() && hits[0].page_start <= 80 && hits[0].page_end >= 80, "and cites page 80");
     check(!hits.empty() && hits[0].citation().find("annual-report.pdf, p.") == 0, "citations name the file and page");
     check(search_us < 10000, "search takes under 10 ms (" + std::to_string(search_us) + " us)");
+    {
+        const auto j = hits.empty() ? nlohmann::json() : hits[0].to_json();
+        check(j.value("page_start", 0) <= 80 && j.value("page_end", 0) >= 80 && j.value("document_id", "") == id,
+              "the JSON carries the page numbers, for opening the file there");
+    }
+
+    // The whole text in order, for the viewer: overlap removed, every page present once.
+    {
+        auto sections = store.sections(id);
+        std::string all;
+        for (const auto& c : sections)
+            all += c.text;
+        bool ordered = !sections.empty();
+        for (size_t i = 1; i < sections.size(); i++)
+            ordered = ordered && sections[i].page_start >= sections[i - 1].page_start;
+        check(ordered, "sections() returns the chunks in page order");
+        size_t n80 = 0;
+        for (size_t at = all.find("hydraulic pump"); at != std::string::npos; at = all.find("hydraulic pump", at + 1))
+            n80++;
+        check(n80 == 1, "with the overlap removed, so no sentence appears twice");
+        check(all.find(filler_page(1).substr(0, 40)) != std::string::npos, "starting from the first page");
+    }
 
     size_t total = 0;
     for (auto& h : store.search("revenue logistics training roadmap", "conv-a", false, 3000))
         total += h.text.size();
     check(total <= 3000 + 10, "excerpts respect the character budget");
+
+    // The digest: a few percent of the file, from its opening and from across the whole of it.
+    {
+        const std::string digest = store.digest(id);
+        size_t chars = 0;
+        for (const auto& p : pages)
+            chars += p.text.size();
+        check(digest.size() >= 800 && digest.size() <= 4000 && digest.size() <= chars * 3 / 100 + 400,
+              "the digest is about 3% of the file (" + std::to_string(digest.size()) + " of " + std::to_string(chars) +
+                  " chars)");
+        check(digest.rfind("[p.1", 0) == 0 && digest.find(filler_page(1).substr(0, 30)) != std::string::npos,
+              "it starts with the opening, tagged with its pages");
+        int last_page = 0;
+        for (size_t at = digest.find("\n[p."); at != std::string::npos; at = digest.find("\n[p.", at + 1))
+            last_page = std::max(last_page, std::atoi(digest.c_str() + at + 4));
+        check(last_page >= 88,
+              "and reaches the last quarter of the file (last tag p." + std::to_string(last_page) + ")");
+        check(digest.find("36 months") != std::string::npos, "and picks out the file's distinctive facts");
+
+        // A document indexed before digests gets one on first use, and keeps it.
+        sqlite3_exec(db, ("UPDATE documents SET digest = '' WHERE id = '" + id + "'").c_str(), nullptr, nullptr,
+                     nullptr);
+        check(store.digest(id) == digest, "an older document gets the same digest built on demand");
+        sqlite3_stmt* st = nullptr;
+        sqlite3_prepare_v2(db, "SELECT length(digest) FROM documents WHERE id = ?", -1, &st, nullptr);
+        sqlite3_bind_text(st, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(st);
+        check(sqlite3_column_int(st, 0) > 0, "and it is saved");
+        sqlite3_finalize(st);
+        check(store.init(db) && store.digest(id) == digest, "setting the store up again keeps the column");
+        check(build_digest({}, 0).empty() && build_digest({{1, 1, "", "Short note.", 0}}, 11) == "[p.1] Short note.\n",
+              "an empty file has no digest, a tiny one is quoted whole");
+    }
 
     // Scoping.
     check(store.search("hydraulic pump", "conv-b", false, 4000).empty(), "another conversation sees nothing");

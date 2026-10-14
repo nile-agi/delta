@@ -342,6 +342,25 @@
 					showHelperText={false}
 					bind:uploadedFiles
 				/>
+				<p class="mt-2 text-center text-xs text-muted-foreground">
+					AI can make mistakes. Double-check important information.
+				</p>
+				<p class="mt-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+        <span>Made with ♥️ by </span>
+        <a
+					href="https://delta.nileagi.com/"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="flex items-center hover:opacity-80 transition-opacity"
+				>
+        <img
+            src="/nileagi-logo.avif"
+            alt="Nile AGI Logo"
+            class="h-4 w-auto object-contain"
+        />
+				</a>
+        <span>for the 🌍</span>
+    </p>
 			</div>
 		</div>
 	</div>

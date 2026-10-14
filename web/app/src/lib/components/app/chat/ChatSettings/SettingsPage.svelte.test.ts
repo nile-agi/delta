@@ -160,3 +160,48 @@ it('keeps response statistics optional and disabled by default', async () => {
 	await page.getByRole('button', { name: 'Save settings', exact: true }).click();
 	expect(settingsStore.config.showMessageStats).toBe(true);
 });
+
+it('shows the OpenAI-compatible address, models and a working example under API access', async () => {
+	let server = {
+		network: false,
+		host: '127.0.0.1',
+		port: 8081,
+		local_url: 'http://127.0.0.1:8081/v1',
+		network_url: null as string | null,
+		has_key: false,
+		api_key: '',
+		overridden: false
+	};
+	const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+		if (String(url).endsWith('/api/developer/server')) {
+			if (init?.method === 'PUT') {
+				server = {
+					...server,
+					network: true,
+					host: '0.0.0.0',
+					network_url: 'http://192.168.1.5:8081/v1',
+					has_key: true,
+					api_key: 'delta-test-key'
+				};
+			}
+			return new Response(JSON.stringify(server));
+		}
+		if (String(url).endsWith('/v1/models'))
+			return new Response(JSON.stringify({ data: [{ id: 'qwen2.5:0.5b' }] }));
+		return new Response(JSON.stringify({ blocked: false }));
+	});
+	vi.stubGlobal('fetch', fetch);
+	const result = render(SettingsPage, { section: 'Connection', onBack: vi.fn() });
+	result.container.style.height = '100vh';
+
+	await expect.element(page.getByText('http://127.0.0.1:8081/v1', { exact: true })).toBeVisible();
+	await expect.element(page.getByRole('button', { name: 'qwen2.5:0.5b' })).toBeVisible();
+	await expect.element(page.getByText(/chat\/completions/).first()).toBeVisible();
+	await page.getByRole('tab', { name: 'Python' }).click();
+	await expect.element(page.getByText(/from openai import OpenAI/)).toBeVisible();
+
+	await page.getByRole('checkbox', { name: 'Allow devices on my network' }).click();
+	await expect.element(page.getByText('http://192.168.1.5:8081/v1', { exact: true })).toBeVisible();
+	await expect.element(page.getByRole('button', { name: 'Copy key' })).toBeVisible();
+	expect(settingsStore.config.apiKey).toBe('delta-test-key');
+});

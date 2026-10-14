@@ -67,6 +67,11 @@ struct DocumentExcerpt {
 std::vector<DocumentChunk> chunk_segments(const std::vector<DocumentSegment>& segments, size_t target = 1800,
                                           size_t overlap = 200);
 
+// A short, extractive overview of a document, about 3% of its text (800-4000 chars): the opening,
+// then the first sentences of evenly spaced chunks, each line tagged with its place ("[p.37]").
+// Built at index time without a model, so a file sent with no question can still be summarised.
+std::string build_digest(const std::vector<DocumentChunk>& chunks, size_t total_chars);
+
 // Turns free text into an FTS5 query that cannot be a syntax error: every term quoted, joined
 // with OR, stop words dropped. Empty when nothing searchable is left. Exposed for tests.
 std::string build_match_query(const std::string& text);
@@ -111,6 +116,11 @@ class DocumentStore {
     // The text of pages [from, to] (or sections, for a file without pages), capped at `max_chars`.
     // `truncated` reports whether the range had more to give.
     DocumentExcerpt read(const std::string& doc_id, int from, int to, size_t max_chars, bool& truncated) const;
+    // The whole document in order, one entry per stored chunk with its repeated overlap removed,
+    // so a viewer can show the text and jump to the section a citation names.
+    std::vector<DocumentChunk> sections(const std::string& doc_id) const;
+    // The stored overview; built from the chunks (and saved) for a document indexed before digests.
+    std::string digest(const std::string& doc_id) const;
 
   private:
     DocumentStore() = default;

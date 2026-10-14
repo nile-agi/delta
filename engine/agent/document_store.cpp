@@ -4,7 +4,10 @@
 #include <cctype>
 #include <cstring>
 #include <ctime>
+#include <cmath>
 #include <iostream>
+#include <map>
+#include <limits>
 #include <random>
 #include <set>
 
@@ -219,6 +222,170 @@ std::vector<Block> to_blocks(const std::vector<DocumentSegment>& segments, size_
 
 } // namespace
 
+namespace {
+
+// Whitespace runs folded to single spaces, so a digest line is one line.
+std::string fold_spaces(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    bool space = false;
+    for (char c : text) {
+        if (std::isspace(static_cast<unsigned char>(c))) {
+            space = !out.empty();
+            continue;
+        }
+        if (space)
+            out += ' ';
+        space = false;
+        out += c;
+    }
+    return out;
+}
+
+// Up to `sentences` whole sentences of `text`, never longer than `max_chars`.
+std::string first_sentences(const std::string& text, size_t max_chars, int sentences) {
+    const std::string t = fold_spaces(text);
+    size_t end = 0;
+    int found = 0;
+    for (size_t i = 0; i < t.size() && i < max_chars && found < sentences; i++) {
+        const char c = t[i];
+        if ((c == '.' || c == '?' || c == '!') && (i + 1 == t.size() || t[i + 1] == ' ')) {
+            end = i + 1;
+            found++;
+        }
+    }
+    if (end > 0)
+        return t.substr(0, end);
+    if (t.size() <= max_chars)
+        return t;
+    size_t cut = utf8_floor(t, max_chars);
+    const size_t space = t.rfind(' ', cut);
+    if (space != std::string::npos && space > max_chars / 2)
+        cut = space;
+    return t.substr(0, cut) + "...";
+}
+
+std::string place_tag(int page_start, int page_end, size_t section_start, size_t section_end) {
+    if (page_start > 0)
+        return "[p." + std::to_string(page_start) + (page_end > page_start ? "-" + std::to_string(page_end) : "") + "]";
+    return "[section " + std::to_string(section_start) +
+           (section_end > section_start ? "-" + std::to_string(section_end) : "") + "]";
+}
+
+std::string chunk_body(const DocumentChunk& c) {
+    const size_t skip = std::min(c.text.size(), static_cast<size_t>(std::max(0, c.overlap)));
+    return c.text.substr(skip);
+}
+
+} // namespace
+
+std::string build_digest(const std::vector<DocumentChunk>& chunks, size_t total_chars) {
+    if (chunks.empty())
+        return "";
+    const size_t budget = std::clamp<size_t>(total_chars * 3 / 100, 800, 4000);
+
+    // The opening: title, abstract, introduction, whatever the file starts with.
+    const size_t opening_budget = budget * 2 / 5;
+    std::string opening;
+    size_t next = 0;
+    while (next < chunks.size() && opening.size() < opening_budget)
+        opening += " " + chunk_body(chunks[next++]);
+    std::string out = place_tag(chunks[0].page_start, chunks[next - 1].page_end, 1, next) + " " +
+                      first_sentences(opening, opening_budget, 1000) + "\n";
+
+    // Then the most informative sentences of the rest: rare words and figures score high, text that
+    // repeats on every page (headers, boilerplate) scores nothing. Kept in document order.
+    struct Sentence {
+        size_t chunk;
+        std::string text;
+        double score;
+    };
+    std::vector<std::vector<std::string>> chunk_words(chunks.size());
+    std::map<std::string, int> df;
+    std::vector<Sentence> sentences;
+    for (size_t i = next; i < chunks.size(); i++) {
+        const std::string body = fold_spaces(chunk_body(chunks[i]));
+        std::set<std::string> seen;
+        for (size_t at = 0; at < body.size();) {
+            size_t end = at;
+            while (end < body.size() && !((body[end] == '.' || body[end] == '?' || body[end] == '!') &&
+                                          (end + 1 == body.size() || body[end + 1] == ' ')))
+                end++;
+            const std::string sentence = body.substr(at, std::min(body.size(), end + 1) - at);
+            at = end + 2;
+            if (sentence.size() < 40 || sentence.size() > 320)
+                continue;
+            sentences.push_back({i, sentence, 0});
+            std::string word;
+            for (char c : sentence + " ") {
+                if (std::isalnum(static_cast<unsigned char>(c)) || (c & 0x80)) {
+                    word += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                } else if (!word.empty()) {
+                    if (word.size() > 2 && seen.insert(word).second)
+                        df[word]++;
+                    word.clear();
+                }
+            }
+        }
+    }
+    const double n = static_cast<double>(std::max<size_t>(1, chunks.size() - next));
+    for (auto& s : sentences) {
+        std::set<std::string> words;
+        std::string word;
+        bool figure = false;
+        for (char c : s.text + " ") {
+            figure = figure || std::isdigit(static_cast<unsigned char>(c));
+            if (std::isalnum(static_cast<unsigned char>(c)) || (c & 0x80))
+                word += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            else if (!word.empty()) {
+                if (word.size() > 2)
+                    words.insert(word);
+                word.clear();
+            }
+        }
+        for (const auto& w : words)
+            s.score += std::log(n / std::max(1, df[w]));
+        s.score = s.score / std::sqrt(static_cast<double>(std::max<size_t>(1, words.size()))) + (figure ? 1.5 : 0);
+    }
+    std::vector<size_t> order(sentences.size());
+    for (size_t i = 0; i < order.size(); i++)
+        order[i] = i;
+    std::stable_sort(order.begin(), order.end(),
+                     [&](size_t a, size_t b) { return sentences[a].score > sentences[b].score; });
+    std::vector<size_t> picked;
+    std::map<size_t, int> per_chunk;
+    size_t used = out.size();
+    auto take = [&](size_t i) {
+        const auto& s = sentences[i];
+        const size_t line = s.text.size() + 16;
+        if (s.score <= 0 || per_chunk[s.chunk] >= 2 || used + line > budget ||
+            std::find(picked.begin(), picked.end(), i) != picked.end())
+            return;
+        used += line;
+        per_chunk[s.chunk]++;
+        picked.push_back(i);
+    };
+    // The best sentence of each quarter first, so the whole file is covered, then the best overall.
+    const size_t rest = chunks.size() - next;
+    for (size_t q = 0; q < 4 && rest > 0; q++) {
+        const size_t lo = next + q * rest / 4, hi = next + (q + 1) * rest / 4;
+        for (size_t i : order)
+            if (sentences[i].chunk >= lo && sentences[i].chunk < hi) {
+                take(i);
+                break;
+            }
+    }
+    for (size_t i : order)
+        take(i);
+    std::sort(picked.begin(), picked.end());
+    for (size_t i : picked) {
+        const auto& c = chunks[sentences[i].chunk];
+        out += place_tag(c.page_start, c.page_end, sentences[i].chunk + 1, sentences[i].chunk + 1) + " " +
+               sentences[i].text + "\n";
+    }
+    return out;
+}
+
 std::vector<DocumentChunk> chunk_segments(const std::vector<DocumentSegment>& segments, size_t target, size_t overlap) {
     std::vector<DocumentChunk> out;
     if (target == 0)
@@ -346,6 +513,14 @@ nlohmann::json DocumentExcerpt::to_json() const {
     nlohmann::json j = {{"document", doc_name}, {"document_id", doc_id}, {"source", citation()}, {"text", text}};
     if (!heading.empty())
         j["heading"] = heading;
+    // Numbers as well as the citation string, so the app can open the file at this place.
+    if (page_start > 0) {
+        j["page_start"] = page_start;
+        j["page_end"] = std::max(page_start, page_end);
+    } else if (section_start > 0) {
+        j["section_start"] = section_start;
+        j["section_end"] = std::max(section_start, section_end);
+    }
     return j;
 }
 
@@ -377,7 +552,8 @@ bool DocumentStore::init(sqlite3* db, std::recursive_mutex* mutex) {
         pages INTEGER DEFAULT 0,
         chars INTEGER DEFAULT 0,
         chunks INTEGER DEFAULT 0,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        digest TEXT DEFAULT ''
       );
       CREATE TABLE IF NOT EXISTS document_links (
         doc_id TEXT NOT NULL,
@@ -414,6 +590,11 @@ bool DocumentStore::init(sqlite3* db, std::recursive_mutex* mutex) {
         sqlite3_free(err);
         return false;
     }
+    // Databases from before digests: add the column; documents get their digest on first use.
+    sqlite3_stmt* probe = nullptr;
+    if (sqlite3_prepare_v2(db, "SELECT digest FROM documents LIMIT 0", -1, &probe, nullptr) != SQLITE_OK)
+        sqlite3_exec(db, "ALTER TABLE documents ADD COLUMN digest TEXT DEFAULT ''", nullptr, nullptr, nullptr);
+    sqlite3_finalize(probe);
     db_ = db;
     return true;
 }
@@ -441,8 +622,8 @@ std::string DocumentStore::add(const std::string& name, const std::string& mime,
 
     sqlite3_stmt* st = nullptr;
     ok = sqlite3_prepare_v2(db_,
-                            "INSERT INTO documents (id, name, mime, scope, pages, chars, chunks, created_at) "
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            "INSERT INTO documents (id, name, mime, scope, pages, chars, chunks, created_at, digest) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                             -1, &st, nullptr) == SQLITE_OK;
     if (ok) {
         sqlite3_bind_text(st, 1, id.c_str(), -1, SQLITE_TRANSIENT);
@@ -453,6 +634,7 @@ std::string DocumentStore::add(const std::string& name, const std::string& mime,
         sqlite3_bind_int64(st, 6, static_cast<sqlite3_int64>(chars));
         sqlite3_bind_int(st, 7, static_cast<int>(chunks.size()));
         sqlite3_bind_text(st, 8, utc_now().c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(st, 9, build_digest(chunks, chars).c_str(), -1, SQLITE_TRANSIENT);
         ok = sqlite3_step(st) == SQLITE_DONE;
     }
     sqlite3_finalize(st);
@@ -851,6 +1033,55 @@ std::vector<DocumentExcerpt> DocumentStore::search(const std::string& query, con
         ex.text = cut_to(ex.text, max_chars - used);
         used += ex.text.size();
         out.push_back(std::move(ex));
+    }
+    return out;
+}
+
+std::string DocumentStore::digest(const std::string& doc_id) const {
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
+    if (!db_)
+        return "";
+    std::string digest;
+    size_t chars = 0;
+    sqlite3_stmt* st = nullptr;
+    if (sqlite3_prepare_v2(db_, "SELECT digest, chars FROM documents WHERE id = ?", -1, &st, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, doc_id.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(st) == SQLITE_ROW) {
+            digest = col_text(st, 0);
+            chars = static_cast<size_t>(sqlite3_column_int64(st, 1));
+        }
+    }
+    sqlite3_finalize(st);
+    if (!digest.empty())
+        return digest;
+
+    std::vector<DocumentChunk> chunks;
+    for (const auto& row : fetch_chunks(db_, doc_id, "ordinal BETWEEN ? AND ?", 0, std::numeric_limits<int>::max()))
+        chunks.push_back({row.page_start, row.page_end, row.heading, row.text, row.overlap});
+    digest = build_digest(chunks, chars);
+    if (!digest.empty() &&
+        sqlite3_prepare_v2(db_, "UPDATE documents SET digest = ? WHERE id = ?", -1, &st, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(st, 1, digest.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(st, 2, doc_id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(st);
+        sqlite3_finalize(st);
+    }
+    return digest;
+}
+
+std::vector<DocumentChunk> DocumentStore::sections(const std::string& doc_id) const {
+    std::lock_guard<std::recursive_mutex> lock(*mutex_);
+    std::vector<DocumentChunk> out;
+    if (!db_)
+        return out;
+    for (const auto& row : fetch_chunks(db_, doc_id, "ordinal BETWEEN ? AND ?", 0, std::numeric_limits<int>::max())) {
+        DocumentChunk chunk;
+        chunk.page_start = row.page_start;
+        chunk.page_end = row.page_end;
+        chunk.heading = row.heading;
+        const size_t skip = std::min(row.text.size(), static_cast<size_t>(std::max(0, row.overlap)));
+        chunk.text = row.text.substr(skip);
+        out.push_back(std::move(chunk));
     }
     return out;
 }

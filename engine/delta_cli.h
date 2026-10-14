@@ -1,6 +1,7 @@
 #ifndef DELTA_CLI_H
 #define DELTA_CLI_H
 
+#include <functional>
 #include <string>
 #include <vector>
 #include <map>
@@ -194,7 +195,11 @@ class ModelManager {
 
     // Request cancellation of one in-progress download by model name (checked via the
     // progress callback). Downloads are cancelled individually — several can run at once.
-    void cancel_download(const std::string& model_name);
+    static void cancel_download(const std::string& model_name);
+
+    // Downloads one file under `download_name`, which cancel_download() then stops.
+    static bool download_to(const std::string& download_name, const std::string& url, const std::string& dest_path,
+                            const std::function<void(long long, long long)>& progress);
 
     // ===== DEFAULT MODEL SUPPORT =====
 
@@ -233,7 +238,8 @@ class ModelManager {
     void save_context_overrides();
 
     // HTTP download helper using libcurl
-    bool download_file(const std::string& url, const std::string& dest_path, ProgressCallback progress = nullptr);
+    static bool download_file(const std::string& url, const std::string& dest_path,
+                              ProgressCallback progress = nullptr);
 
     // Construct Hugging Face URL
     std::string get_hf_url(const std::string& repo_id, const std::string& filename);

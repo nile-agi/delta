@@ -74,4 +74,13 @@ describe('segmentsText', () => {
 			])
 		).toBe('## One\na\n\n## Two\nb');
 	});
+
+	it('marks PDF pages so they can be cited and opened', () => {
+		expect(
+			segmentsText([
+				{ page: 1, text: 'a' },
+				{ page: 3, text: 'c' }
+			])
+		).toBe('[Page 1]\na\n\n[Page 3]\nc');
+	});
 });

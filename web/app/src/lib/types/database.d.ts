@@ -34,6 +34,7 @@ export interface DatabaseMessageExtraPdfFile {
 	content: string; // Text content extracted from PDF
 	images?: string[]; // Optional: PDF pages as base64 images
 	processedAsImages: boolean; // Whether PDF was processed as images
+	base64Data?: string; // Original bytes, for the preview and the citation viewer
 }
 
 /**

@@ -19,6 +19,7 @@
 #include "agent/memory_store.h"
 #include "agent/task_store.h"
 #include "agent/document_store.h"
+#include "agent/ocr_reader.h"
 #include "agent/policy.h"
 #include "agent/quick_add.h"
 #include "agent/time_compat.h"
@@ -29,6 +30,8 @@
 #include "vendor/llama.cpp/vendor/cpp-httplib/httplib.h"
 #include "api/note_routes.h"
 #include "api/document_routes.h"
+#include "api/ocr_routes.h"
+#include "api/openai_api.h"
 #include "vendor/json.hpp"
 
 #include <iostream>
@@ -192,10 +195,14 @@ static json build_hardware_json(const delta::HardwareMetrics& m) {
 namespace delta {
 
 // OpenAI-compatible SSE frames for /v1/chat/completions streaming.
-static json sse_content_chunk(const std::string& text) {
+// `model` is the registry name the picker shows, so a reply is labelled the same way.
+static json sse_content_chunk(const std::string& text, const std::string& model = "") {
     json delta{{"content", text}};
     json choice{{"index", 0}, {"delta", delta}, {"finish_reason", nullptr}};
-    return json{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
+    json chunk{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
+    if (!model.empty())
+        chunk["model"] = model;
+    return chunk;
 }
 
 // Delta's own SSE frames, carried on the same stream as the OpenAI chunks. Clients that do not
@@ -248,14 +255,30 @@ static const char* agent_event_name(delta::agent::EventType type) {
         return "status";
     case EventType::Error:
         return "error";
+    case EventType::Sources:
+        return "sources";
     }
     return "status";
 }
 
-static json sse_finish_chunk() {
+static json sse_finish_chunk(const std::string& model = "") {
     json choice{{"index", 0}, {"delta", json::object()}, {"finish_reason", "stop"}};
-    return json{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
+    json chunk{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
+    if (!model.empty())
+        chunk["model"] = model;
+    return chunk;
 }
+
+// Who may reach the API (Developer settings plus CLI flags), loaded on first start.
+static api::ApiAccess& api_access() {
+    static api::ApiAccess access(tools::FileOps::join_path(
+        tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli"), "api_server.json"));
+    static std::once_flag loaded;
+    std::call_once(loaded, [] { access.load(); });
+    return access;
+}
+
+static std::atomic<int> g_llama_port{0};
 
 // Forward declaration for model switch callback
 static ModelSwitchCallback* g_model_switch_callback = nullptr;
@@ -321,6 +344,45 @@ static std::mutex g_progress_mutex;
 thread_local std::shared_ptr<DownloadProgress> g_current_progress = nullptr;
 thread_local std::string g_current_model_name;
 
+static long long system_ram_bytes() {
+    long long total_ram_bytes = 0;
+#ifdef _WIN32
+    MEMORYSTATUSEX memInfo;
+    memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+    if (GlobalMemoryStatusEx(&memInfo)) {
+        total_ram_bytes = memInfo.ullTotalPhys;
+    }
+#elif defined(__APPLE__)
+    int64_t memsize = 0;
+    size_t len = sizeof(memsize);
+    int mib[2] = {CTL_HW, HW_MEMSIZE};
+    if (sysctl(mib, 2, &memsize, &len, NULL, 0) == 0) {
+        total_ram_bytes = memsize;
+    }
+#else
+    struct sysinfo info;
+    if (sysinfo(&info) == 0) {
+        total_ram_bytes = info.totalram * info.mem_unit;
+    }
+#endif
+    return total_ram_bytes;
+}
+
+// The text reader for scanned pages lives beside the models, so it never shows up as a chat model.
+static void configure_ocr_reader() {
+    const std::string root =
+        tools::FileOps::join_path(tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli"), "ocr");
+    const int ram_gb = static_cast<int>((system_ram_bytes() + (1LL << 30) - 1) >> 30);
+    agent::OcrReader::Hooks hooks;
+    hooks.download = [](const std::string& url, const std::string& dest,
+                        const std::function<void(long long, long long)>& progress) {
+        return ModelManager::download_to("ocr", url, dest, progress);
+    };
+    hooks.cancel = [] { ModelManager::cancel_download("ocr"); };
+    agent::OcrReader::instance().configure(root, agent::find_llama_server(tools::FileOps::get_executable_dir()), ram_gb,
+                                           hooks);
+}
+
 class ModelAPIServer {
   private:
     int port_;
@@ -329,6 +391,77 @@ class ModelAPIServer {
     std::thread server_thread_;
     std::atomic<bool> running_;
     ModelManager model_mgr_;
+    std::thread rebind_thread_;
+
+    int llama_port() const {
+        const int explicit_port = g_llama_port.load();
+        return explicit_port > 0 ? explicit_port : port_ - 1;
+    }
+
+    // The model llama-server should answer with: a registry name maps to its file's stem, and
+    // no name means the model that is loaded now.
+    std::string resolve_llama_model(const std::string& requested) {
+        if (!requested.empty() && requested != "default") {
+            auto reg = model_mgr_.get_registry_entry(requested);
+            if (!reg.name.empty() && !reg.filename.empty())
+                return std::filesystem::path(reg.filename).stem().string();
+            return requested;
+        }
+        {
+            std::lock_guard<std::mutex> lock(g_props_fallback_mutex);
+            if (!g_props_fallback_model_alias.empty())
+                return g_props_fallback_model_alias;
+        }
+        // Router mode: ask which of its models is running.
+        httplib::Client cli("127.0.0.1", llama_port());
+        cli.set_connection_timeout(1, 0);
+        cli.set_read_timeout(2, 0);
+        if (auto r = cli.Get("/v1/models"); r && r->status == 200) {
+            try {
+                for (const auto& m : json::parse(r->body).value("data", json::array())) {
+                    const auto& st = m.contains("status") ? m["status"] : json();
+                    if (st.is_object() && st.value("value", std::string()) == "loaded")
+                        return m.value("id", std::string());
+                }
+            } catch (...) {
+            }
+        }
+        return "";
+    }
+
+    json openai_model(const std::string& id, const std::string& display_name) const {
+        return json{{"id", id}, {"object", "model"}, {"created", 0}, {"owned_by", "delta"}, {"name", display_name}};
+    }
+
+    // Plain OpenAI calls go to llama-server as they are, with the model name translated.
+    void proxy_plain(httplib::Response& res, const std::string& path, json body) {
+        const std::string requested = body.value("model", std::string());
+        const std::string model = resolve_llama_model(requested);
+        if (!model.empty())
+            body["model"] = model;
+        // Replies name the model the way the client did (or by its registry name), not the file stem.
+        std::string reply_model = requested;
+        if (reply_model.empty() || reply_model == "default")
+            reply_model = model_mgr_.get_registry_entry(model).name;
+        api::proxy_openai(res, path, body, "127.0.0.1", llama_port(), reply_model == model ? "" : reply_model);
+    }
+
+    // Moves the listener to the address the settings now ask for. Runs off the request thread.
+    void rebind() {
+        if (rebind_thread_.joinable())
+            rebind_thread_.join();
+        rebind_thread_ = std::thread([this] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            if (!running_)
+                return;
+            server_->stop();
+            if (server_thread_.joinable())
+                server_thread_.join();
+            server_ = std::make_unique<httplib::Server>();
+            setup_routes();
+            server_thread_ = std::thread(&ModelAPIServer::server_loop, this);
+        });
+    }
 
     void write_props_fallback(httplib::Response& res) {
         std::string model_path;
@@ -418,14 +551,28 @@ class ModelAPIServer {
 
         server_->Options(".*", [](const httplib::Request&, httplib::Response&) { return; });
 
+        // Other devices reach only the OpenAI routes, and those need the key when one is set.
+        server_->set_pre_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+            const auto gate =
+                api::check_request(req.method, req.path, req.remote_addr, req.get_header_value("Authorization"),
+                                   req.get_header_value("X-Api-Key"), api_access().api_key());
+            if (gate.status == 0)
+                return httplib::Server::HandlerResponse::Unhandled;
+            res.status = gate.status;
+            res.set_content(gate.body.dump(), "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        });
+
+        api::register_developer_routes(*server_, {&api_access(), [this] { return port_; }, [this] { rebind(); }});
+
         server_->Get("/props", [this](const httplib::Request&, httplib::Response& res) { write_props_fallback(res); });
 
         api::register_document_routes(*server_);
+        api::register_ocr_routes(*server_);
 
         server_->Get("/api/props", [this](const httplib::Request&, httplib::Response& res) {
             try {
-                int llama_port = port_ - 1;
-                httplib::Client cli("127.0.0.1", llama_port);
+                httplib::Client cli("127.0.0.1", llama_port());
                 cli.set_connection_timeout(2, 0);
                 cli.set_read_timeout(2, 0);
                 auto proxy_res = cli.Get("/props");
@@ -452,6 +599,9 @@ class ModelAPIServer {
                                        {"size_bytes", model.size_bytes},
                                        {"installed", model.installed},
                                        {"supports_tools", model.supports_tools}};
+                    // The file stem llama-server answers with, so the app can map it back to a name.
+                    if (auto entry = model_mgr_.get_registry_entry(model.name); !entry.filename.empty())
+                        model_json["alias"] = std::filesystem::path(entry.filename).stem().string();
 
                     // DHATS: annotate with live compatibility
                     if (model.size_bytes > 0) {
@@ -489,6 +639,9 @@ class ModelAPIServer {
                                        {"quantization", model.quantization},
                                        {"size_bytes", model.size_bytes},
                                        {"supports_tools", model.supports_tools}};
+                    // The file stem llama-server answers with, so the app can map it back to a name.
+                    if (auto entry = model_mgr_.get_registry_entry(model.name); !entry.filename.empty())
+                        model_json["alias"] = std::filesystem::path(entry.filename).stem().string();
 
                     // DHATS: annotate with live compatibility
                     if (model.size_bytes > 0) {
@@ -944,7 +1097,7 @@ class ModelAPIServer {
         });
 
         server_->Post("/v1/chat/completions", [&](const httplib::Request& req, httplib::Response& res) {
-            int llama_port = port_ - 1;
+            const int llama_port = this->llama_port();
             {
                 httplib::Client probe("127.0.0.1", llama_port);
                 probe.set_connection_timeout(1, 0);
@@ -992,6 +1145,11 @@ class ModelAPIServer {
                         return;
                     }
                 }
+                // Other apps and SDKs get the model itself: their own tools, usage and stop reasons.
+                if (!api::is_delta_request(body)) {
+                    proxy_plain(res, "/v1/chat/completions", body);
+                    return;
+                }
                 bool stream = body.value("stream", false);
                 std::string model_name = body.value("model", std::string("default"));
 
@@ -999,6 +1157,9 @@ class ModelAPIServer {
                 bool model_supports_tools = false;
                 auto reg = model_mgr_.get_registry_entry(model_name);
                 std::string llama_model_name = model_name;
+                // Requests may name the file stem; replies always carry the registry name.
+                const std::string reported_model =
+                    !reg.name.empty() ? reg.name : (model_name == "default" ? "" : model_name);
                 if (!reg.name.empty()) {
                     model_supports_tools = reg.supports_tools;
                     if (!reg.filename.empty()) {
@@ -1081,7 +1242,7 @@ class ModelAPIServer {
 
                 if (stream) {
                     struct StreamJob {
-                        std::string llama_url, llama_model;
+                        std::string llama_url, llama_model, reported_model;
                         bool supports_tools = false;
                         agent::RunOptions options;
                         json messages;
@@ -1090,6 +1251,7 @@ class ModelAPIServer {
                     auto job = std::make_shared<StreamJob>();
                     job->llama_url = llama_url;
                     job->llama_model = llama_model_name;
+                    job->reported_model = reported_model;
                     job->supports_tools = model_supports_tools;
                     job->options = run_options;
                     job->messages = messages;
@@ -1125,7 +1287,7 @@ class ModelAPIServer {
                                         const std::string text = event.data.value("text", "");
                                         if (text.empty())
                                             return true;
-                                        return emit(sse_content_chunk(text));
+                                        return emit(sse_content_chunk(text, job->reported_model));
                                     }
                                     return emit(sse_agent_event(agent_event_name(event.type), event.data));
                                 });
@@ -1137,9 +1299,9 @@ class ModelAPIServer {
 
                                 if (!result.success) {
                                     std::cerr << "[delta-server] stream error: " << result.error << std::endl;
-                                    emit(sse_content_chunk(result.error));
+                                    emit(sse_content_chunk(result.error, job->reported_model));
                                 } else if (result.streamed_chars == 0 && !result.content.empty()) {
-                                    emit(sse_content_chunk(result.content));
+                                    emit(sse_content_chunk(result.content, job->reported_model));
                                 }
                                 // Always sent, not just when a tool ran: a turn where every call
                                 // was refused still has a transcript the client must keep, or the
@@ -1153,10 +1315,10 @@ class ModelAPIServer {
                                                         {"transcript", bounded_transcript(result.transcript_delta)}}));
                             } catch (const std::exception& e) {
                                 std::cerr << "[delta-server] exception in stream provider: " << e.what() << std::endl;
-                                emit(sse_content_chunk(std::string("Error: ") + e.what()));
+                                emit(sse_content_chunk(std::string("Error: ") + e.what(), job->reported_model));
                             }
 
-                            emit(sse_finish_chunk());
+                            emit(sse_finish_chunk(job->reported_model));
                             static const std::string done = "data: [DONE]\n\n";
                             sink.write(done.data(), done.size());
                             sink.done();
@@ -1187,6 +1349,7 @@ class ModelAPIServer {
                     json transcript = bounded_transcript(result.transcript_delta);
                     json response = {{"id", "chatcmpl-delta"},
                                      {"object", "chat.completion"},
+                                     {"model", reported_model},
                                      {"choices",
                                       {{{"index", 0},
                                         {"message", message},
@@ -1200,6 +1363,8 @@ class ModelAPIServer {
                     }
                     if (!transcript.empty())
                         response["transcript"] = transcript;
+                    if (!result.sources.empty())
+                        response["sources"] = result.sources;
                     res.set_content(response.dump(), "application/json");
                 }
             } catch (const json::parse_error&) {
@@ -1322,10 +1487,53 @@ class ModelAPIServer {
             res.set_content(json{{"ok", ok}}.dump(), "application/json");
         });
 
-        server_->Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
-            json out = {{"object", "list"}, {"data", json::array()}};
-            res.set_content(out.dump(), "application/json");
+        server_->Get("/v1/models", [this](const httplib::Request&, httplib::Response& res) {
+            json data = json::array();
+            try {
+                for (const auto& m : model_mgr_.get_friendly_model_list(false))
+                    data.push_back(openai_model(m.name, m.display_name));
+            } catch (const std::exception& e) {
+                std::cerr << "[delta-server] listing models: " << e.what() << std::endl;
+            }
+            res.set_content(json{{"object", "list"}, {"data", data}}.dump(), "application/json");
         });
+
+        server_->Get(R"(/v1/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+            const std::string id = req.matches[1];
+            try {
+                for (const auto& m : model_mgr_.get_friendly_model_list(false)) {
+                    if (m.name == id) {
+                        res.set_content(openai_model(m.name, m.display_name).dump(), "application/json");
+                        return;
+                    }
+                }
+            } catch (...) {
+            }
+            res.status = 404;
+            res.set_content(
+                api::openai_error("The model '" + id + "' does not exist", "invalid_request_error", "model_not_found")
+                    .dump(),
+                "application/json");
+        });
+
+        for (const char* path : {"/v1/completions", "/v1/embeddings"}) {
+            const std::string route = path;
+            server_->Post(route, [this, route](const httplib::Request& req, httplib::Response& res) {
+                json body;
+                try {
+                    body = json::parse(req.body);
+                } catch (...) {
+                }
+                if (!body.is_object()) {
+                    res.status = 400;
+                    res.set_content(
+                        api::openai_error("Request body must be a JSON object", "invalid_request_error").dump(),
+                        "application/json");
+                    return;
+                }
+                proxy_plain(res, route, body);
+            });
+        }
 
         server_->Post("/api/models/unload", [](const httplib::Request&, httplib::Response& res) {
             try {
@@ -1344,28 +1552,7 @@ class ModelAPIServer {
 
         server_->Get("/api/system/ram", [](const httplib::Request&, httplib::Response& res) {
             try {
-                long long total_ram_bytes = 0;
-
-#ifdef _WIN32
-                MEMORYSTATUSEX memInfo;
-                memInfo.dwLength = sizeof(MEMORYSTATUSEX);
-                if (GlobalMemoryStatusEx(&memInfo)) {
-                    total_ram_bytes = memInfo.ullTotalPhys;
-                }
-#elif defined(__APPLE__)
-                int64_t memsize = 0;
-                size_t len = sizeof(memsize);
-                int mib[2] = {CTL_HW, HW_MEMSIZE};
-                if (sysctl(mib, 2, &memsize, &len, NULL, 0) == 0) {
-                    total_ram_bytes = memsize;
-                }
-#else
-                struct sysinfo info;
-                if (sysinfo(&info) == 0) {
-                    total_ram_bytes = info.totalram * info.mem_unit;
-                }
-#endif
-
+                const long long total_ram_bytes = system_ram_bytes();
                 long long total_ram_gb = (total_ram_bytes + (1024LL * 1024 * 1024 - 1)) / (1024LL * 1024 * 1024);
 
                 json result = {{"total_ram_gb", total_ram_gb}, {"total_ram_bytes", total_ram_bytes}};
@@ -1941,9 +2128,16 @@ class ModelAPIServer {
     }
 
     void server_loop() {
-        if (!server_->bind_to_port("127.0.0.1", port_)) {
-            std::cerr << "Failed to bind model API server to port " << port_ << std::endl;
-            return;
+        std::string host = api_access().host();
+        if (!api::is_loopback(host) && api_access().api_key().empty()) {
+            std::cerr << "[delta-server] Network access needs an API key; listening on this computer only."
+                      << std::endl;
+            host = "127.0.0.1";
+        }
+        if (!server_->bind_to_port(host, port_)) {
+            std::cerr << "Failed to bind model API server to " << host << ":" << port_ << std::endl;
+            if (host == "127.0.0.1" || !server_->bind_to_port("127.0.0.1", port_))
+                return;
         }
 
         server_->listen_after_bind();
@@ -1967,6 +2161,7 @@ class ModelAPIServer {
             std::cerr << "[WARNING] Failed to initialize document search — attached files are sent whole" << std::endl;
         }
         agent::register_all_tools();
+        configure_ocr_reader();
         setup_routes();
     }
 
@@ -1977,6 +2172,8 @@ class ModelAPIServer {
 
     void stop() {
         running_ = false;
+        if (rebind_thread_.joinable() && rebind_thread_.get_id() != std::this_thread::get_id())
+            rebind_thread_.join();
         if (server_) {
             server_->stop();
         }
@@ -2022,6 +2219,22 @@ void start_model_api_server(int port, const std::string& webui_path) {
     stop_model_api_server();
     g_model_api_server = std::make_unique<ModelAPIServer>(port, webui_path);
     g_model_api_server->start();
+}
+
+void set_model_api_llama_port(int port) {
+    g_llama_port = port;
+}
+
+void set_model_api_overrides(const std::string& host, const std::string& api_key) {
+    api_access().set_overrides(host, api_key);
+}
+
+std::string model_api_host() {
+    return api_access().host();
+}
+
+std::string model_api_key() {
+    return api_access().api_key();
 }
 
 void stop_model_api_server() {

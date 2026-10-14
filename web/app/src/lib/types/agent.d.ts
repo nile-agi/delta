@@ -20,7 +20,8 @@ export type AgentEventName =
 	| 'compaction'
 	| 'status'
 	| 'error'
-	| 'run_summary';
+	| 'run_summary'
+	| 'sources';
 
 export interface AgentToolStartData {
 	/** The model's id for this call; ties the result and any approval back to this step. */
@@ -83,7 +84,27 @@ export type AgentEventData =
 	| AgentApprovalResolvedData
 	| AgentCompactionData
 	| AgentStatusData
-	| AgentRunSummaryData;
+	| AgentRunSummaryData
+	| AgentSourcesData;
+
+/** A passage of an attached file the answer was based on, with where it sits in the file. */
+export interface AgentSource {
+	document: string;
+	document_id: string;
+	/** "report.pdf, p.12-13" or "notes.md, section 4". */
+	source: string;
+	page_start?: number;
+	page_end?: number;
+	section_start?: number;
+	section_end?: number;
+	heading?: string;
+	/** The start of the passage, enough to find and highlight it. */
+	text: string;
+}
+
+export interface AgentSourcesData {
+	sources: AgentSource[];
+}
 
 export interface AgentEvent {
 	object: 'delta.agent.event';
@@ -128,6 +149,8 @@ export interface AgentActivity {
 	transcript?: ApiChatMessageData[];
 	/** The model's thinking this turn, when it streamed it on its own channel. */
 	reasoning?: string;
+	/** Passages of attached files the answer was based on. */
+	sources?: AgentSource[];
 }
 
 /** An existing calendar item a "move it to Friday" message may mean, and where it would go. */

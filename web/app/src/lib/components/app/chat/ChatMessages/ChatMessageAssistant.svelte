@@ -18,6 +18,10 @@
 	import { modelOptions, selectModel } from '$lib/stores/models.svelte';
 	import type { DatabaseMessageToolCall } from '$lib/types/database';
 	import { copyToClipboard } from '$lib/utils/copy';
+	import { findModelOption, modelDisplayName } from '$lib/utils/model-names';
+	import { resolveCitation, type CitationTarget } from '$lib/utils/citations';
+	import ChatMessageSources from './ChatMessageSources.svelte';
+	import DocumentViewer from './DocumentViewer.svelte';
 	import autoResizeTextarea from '$lib/utils/autoresize-textarea';
 
 	interface Props {
@@ -163,23 +167,11 @@
 	);
 
 	function getModelDisplayName(): string {
-		const modelId = message.model;
-		if (modelId) {
-			const opt = options.find((m) => m.id === modelId || m.model === modelId);
-			return (
-				opt?.name ??
-				modelId
-					.split(/[/\\]/)
-					.pop()
-					?.replace(/\.gguf$/i, '') ??
-				modelId
-			);
-		}
-		return 'Unknown model';
+		return modelDisplayName(message.model, options);
 	}
 
 	async function handleModelSelect(optionId: string) {
-		if (optionId === message.model) return;
+		if (findModelOption(message.model, options)?.id === optionId) return;
 		try {
 			await selectModel(optionId);
 			onRegenerate();
@@ -219,6 +211,14 @@
 
 	// Live during a run, then falls back to whatever was persisted with the message.
 	let agentActivity = $derived(agentStore.activities.get(message.id) ?? message.agent_activity);
+
+	// Opening a cited file at the page or section the answer drew on.
+	let viewerOpen = $state(false);
+	let viewerTarget = $state<CitationTarget | null>(null);
+	function openCitation(target: CitationTarget) {
+		viewerTarget = resolveCitation(target, agentActivity?.sources);
+		viewerOpen = true;
+	}
 </script>
 
 <div
@@ -291,7 +291,14 @@
 			{#if config().disableReasoningFormat}
 				<pre class="raw-output">{displayContent || ''}</pre>
 			{:else}
-				<MarkdownContent content={displayContent || ''} streaming={isActivelyStreaming} />
+				<MarkdownContent
+					content={displayContent || ''}
+					streaming={isActivelyStreaming}
+					onCitation={openCitation}
+				/>
+			{/if}
+			{#if !isActivelyStreaming}
+				<ChatMessageSources sources={agentActivity?.sources ?? []} onOpen={openCitation} />
 			{/if}
 		</div>
 	{:else}
@@ -381,6 +388,7 @@
 			{onShowDeleteDialogChange}
 		/>
 	{/if}
+	{#if viewerTarget}<DocumentViewer bind:open={viewerOpen} place={viewerTarget} />{/if}
 </div>
 
 <style>

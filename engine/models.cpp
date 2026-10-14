@@ -553,7 +553,7 @@ void ModelManager::init_model_registry() {
         2200LL * 1024 * 1024,
         "Ministral 3 3B Instruct",
         "Ministral 3 3B",
-        16384,
+        0,   // use model default (-c from model)
         true // supports_tools
     };
     model_registry_["ministral-3:8b"] = {
@@ -565,7 +565,7 @@ void ModelManager::init_model_registry() {
         5800LL * 1024 * 1024,
         "Ministral 3 8B Instruct",
         "Ministral 3 8B",
-        16384,
+        0,   // use model default (-c from model)
         true // supports_tools
     };
     model_registry_["ministral-3:14b"] = {
@@ -577,7 +577,7 @@ void ModelManager::init_model_registry() {
         10000LL * 1024 * 1024,
         "Ministral 3 14B Instruct",
         "Ministral 3 14B",
-        16384,
+        0,   // use models default (-c from model)
         true // supports_tools
     };
 
@@ -590,7 +590,7 @@ void ModelManager::init_model_registry() {
         15000LL * 1024 * 1024,
         "Devstral 2 24B Instruct",
         "Devstral 2 24B",
-        131072,
+        0,   // use models default (-c from model)
         true // supports_tools
     };
     model_registry_["devstral-2:123b"] = {
@@ -602,7 +602,7 @@ void ModelManager::init_model_registry() {
         78000LL * 1024 * 1024,
         "Devstral 2 123B Instruct",
         "Devstral 2 123B",
-        131072,
+        0,   // use models default (-c from model)
         true // supports_tools
     };
     model_registry_["nemotron-nano-3:30b-a3b"] = {
@@ -620,10 +620,10 @@ void ModelManager::init_model_registry() {
     model_registry_["gpt-oss:20b"] = {
         "gpt-oss:20b",
         "gpt-oss-20b",
-        "openai/gpt-oss-20b-GGUF",
+        "unsloth/gpt-oss-20b-GGUF",
         "gpt-oss-20b-Q4_K_M.gguf",
         "Q4_K_M",
-        12500LL * 1024 * 1024,
+        11600LL * 1024 * 1024,
         "GPT-OSS 20B",
         "GPT-OSS 20B",
         131072,
@@ -632,10 +632,10 @@ void ModelManager::init_model_registry() {
     model_registry_["gpt-oss:120b"] = {
         "gpt-oss:120b",
         "gpt-oss-120b",
-        "openai/gpt-oss-120b-GGUF",
-        "gpt-oss-120b-Q4_K_M.gguf",
+        "unsloth/gpt-oss-120b-GGUF",
+        "gpt-oss-120b-Q4_K_M-00001-of-00002.gguf",
         "Q4_K_M",
-        75000LL * 1024 * 1024,
+        49600LL * 1024 * 1024,
         "GPT-OSS 120B",
         "GPT-OSS 120B",
         131072,
@@ -1794,7 +1794,7 @@ void ModelManager::init_model_registry() {
         2150LL * 1024 * 1024, // 2.15 GB
         "Edge Instruct model",
         "mistral 3 3b",
-        262144,
+        0,   // use models default (-c from model)
         true // supports_tools
     };
 
@@ -1807,7 +1807,7 @@ void ModelManager::init_model_registry() {
         5200LL * 1024 * 1024, // 5.2 GB
         "Edge Instruct model",
         "mistral 3 8b",
-        262144,
+        0,   // use models default (-c from model)
         true // supports_tools
     };
 
@@ -1820,7 +1820,7 @@ void ModelManager::init_model_registry() {
         8240LL * 1024 * 1024, // 8.24 GB
         "Edge Instruct model",
         "mistral 3 14b",
-        262144,
+        0,   // use models default (-c from model)
         true // supports_tools
     };
 
@@ -1833,7 +1833,7 @@ void ModelManager::init_model_registry() {
         2150LL * 1024 * 1024, // 2.15 GB
         "Edge Reasoning model",
         "mistral 3 Reasoning 3b",
-        262144,
+        0,   // use models default (-c from model)
         true // supports_tools
     };
 
@@ -1846,7 +1846,7 @@ void ModelManager::init_model_registry() {
         5200LL * 1024 * 1024, // 5.2 GB
         "Edge Reasoning model",
         "mistral 3 Reasoning 8b",
-        262144,
+        0,   // use models default (-c from model)
         true // supports_tools
     };
 
@@ -1859,7 +1859,7 @@ void ModelManager::init_model_registry() {
         8240LL * 1024 * 1024, // 8.24 GB
         "Edge Reasoning model",
         "mistral 3 Reasoning 14b",
-        262144,
+        0,   // use models default (-c from model)
         true // supports_tools
     };
 
@@ -1872,7 +1872,7 @@ void ModelManager::init_model_registry() {
         4370LL * 1024 * 1024, // 4.37 GB
         "Edge Instruct model",
         "mistral Instruct 7b",
-        32768,
+        0,    // use models default (-c from model)
         false // supports_tools
     };
 
@@ -2888,6 +2888,20 @@ bool ModelManager::download_file(const std::string& url, const std::string& dest
     }
 
     return success;
+}
+
+static thread_local std::function<void(long long, long long)> t_bytes_progress;
+
+bool ModelManager::download_to(const std::string& download_name, const std::string& url, const std::string& dest_path,
+                               const std::function<void(long long, long long)>& progress) {
+    CurrentDownloadGuard current_download(download_name);
+    t_bytes_progress = progress;
+    const bool ok = download_file(url, dest_path, [](double, long long now, long long total) {
+        if (t_bytes_progress)
+            t_bytes_progress(now, total);
+    });
+    t_bytes_progress = nullptr;
+    return ok;
 }
 
 bool ModelManager::pull_model(const std::string& model_name, const std::string& quantization) {

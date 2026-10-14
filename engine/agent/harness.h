@@ -23,6 +23,7 @@ enum class EventType {
     TaskUpdate,       // {task_id, status, created}
     Status,           // {message} -- iteration and budget notices
     Error,            // {message}
+    Sources,          // {sources: [{document, document_id, source, page_start|section_start, ..., text}]}
 };
 
 struct HarnessEvent {
@@ -87,6 +88,9 @@ struct RunResult {
     size_t streamed_chars = 0;
     bool client_aborted = false;
     std::string task_id;
+    // Passages of attached files this run gave the model (injected or found by a tool), so the
+    // client can open each file at the page or section an answer came from.
+    nlohmann::json sources = nlohmann::json::array();
 };
 
 // The agent loop. One instance serves one run.
@@ -105,9 +109,15 @@ class Harness {
     RunResult run(const nlohmann::json& messages, const EventSink& sink);
 
   private:
+    RunResult run_loop(const nlohmann::json& messages, const EventSink& sink);
+    // Records document passages (excerpt JSON) as sources of this run's answer.
+    void note_sources(const nlohmann::json& excerpts) const;
     std::string build_system_prompt(const nlohmann::json& messages) const;
     // Passages from this conversation's attached files that match the latest message.
     std::string document_context(const nlohmann::json& messages, bool has_tools) const;
+    // Each attached file's stored overview, for a file sent with no question or a request for its
+    // highlights; `nothing_matched` when a real question found no passage.
+    std::string document_overview(const std::string& conversation, bool nothing_matched) const;
     nlohmann::json active_tools() const;
     // The one-line summary of every tool group the model could load but has not, so it always
     // knows the full extent of what it can do without paying for the schemas.
@@ -137,6 +147,8 @@ class Harness {
     int fit_level_ = 0;
     // Whether this conversation can use the document tools, decided once per run.
     bool documents_available_ = false;
+    // Sources gathered this run; mutable because document_context is const.
+    mutable nlohmann::json sources_ = nlohmann::json::array();
 
     mutable std::string context_cache_;
     mutable std::string context_cache_key_;

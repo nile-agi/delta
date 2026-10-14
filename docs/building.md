@@ -232,37 +232,42 @@ open src-tauri/target/release/bundle/macos/Delta.app
 
 ## Release Workflow
 
-The CI release is triggered by pushing a version tag:
+CI and releases run on CircleCI (`.circleci/`). A release is triggered by pushing a version tag:
 
 ```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The workflow (`.github/workflows/release.yml`) runs two parallel jobs:
+The `release` workflow in `.circleci/continue.yml` runs:
 
-| Job | Builds | Platforms |
-|-----|--------|-----------|
-| `build-cli` | CLI archives (delta + delta-server + llama-server) | macOS arm64/x86_64, Linux x86_64, Windows x64 |
-| `build-tauri` | Desktop installers (dmg, deb, AppImage, exe) | macOS arm64/x86_64, Linux x86_64, Windows x64 |
-
-After both complete, `attach-cli` uploads CLI archives + SHA-256 checksums, and `publish-release` takes the release out of draft.
+| Job | Does |
+|-----|------|
+| `release-prepare` | Checks `version.txt` against the tag and creates the draft release with generated notes |
+| `release-web` | Builds the web UI once and tests its production startup |
+| `release-macos-arm64`, `release-macos-x86_64`, `release-linux-x86_64`, `release-windows-x64` | Build the engine once per platform, then package the CLI archive (`scripts/package-cli.sh`) and the desktop installers (dmg, deb, rpm, AppImage, msi, exe) |
+| `release-publish` | Uploads every file plus the combined SHA-256 checksums, then takes the release out of draft |
 
 ### Where releases are published
 
 This repository is private, so releases go to the public
 [nile-agi/delta-release](https://github.com/nile-agi/delta-release/releases) repository; the website's
-download button, the README and the winget manifest all point there. The workflow still runs here, so
-the signing secrets stay here too. It needs one more secret:
+download button, the README and the winget manifest all point there. The GitHub calls are made by
+`scripts/github-release.cjs`, with these CircleCI project environment variables:
 
 - `RELEASE_REPO_TOKEN` -- a fine-grained personal access token with **Contents: read & write** on
-  `nile-agi/delta-release` only. Without it the release fails at its first step.
+  `nile-agi/delta-release`. Without it the release fails at its first step.
+- `SOURCE_REPO_TOKEN` -- a fine-grained token with **Contents: read & write** on `nile-agi/delta`, to
+  read the tag and generate the notes. If unset, `RELEASE_REPO_TOKEN` is used, so that token then
+  needs access to both repositories.
+- `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
+  `APPLE_PASSWORD`, `APPLE_TEAM_ID` -- sign and notarize the macOS app; without them it is unsigned.
 
 Release notes are generated from this repository's pull requests; links back into it are removed
 from the public copy, since readers outside the organization cannot open them. The tag is created in
 `delta-release` on its `main` branch.
 
-To rebuild an existing tag (after a failed run, say), run the Release workflow by hand with that tag.
+A failed job leaves the release in draft. To retry, use "Rerun workflow from failed" on CircleCI.
 
 ### Version bumping
 

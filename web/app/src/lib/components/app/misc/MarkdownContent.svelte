@@ -15,14 +15,17 @@
 	import { mode } from 'mode-watcher';
 	import { remarkLiteralHtml } from '$lib/markdown/literal-html';
 	import CodePreviewDialog from './CodePreviewDialog.svelte';
+	import { citationLabel, splitCitations, type CitationTarget } from '$lib/utils/citations';
 
 	interface Props {
 		content: string;
 		class?: string;
 		streaming?: boolean;
+		/** Turns [file.pdf, p.12] citations into buttons that call this. */
+		onCitation?: (target: CitationTarget) => void;
 	}
 
-	let { content, class: className = '', streaming = false }: Props = $props();
+	let { content, class: className = '', streaming = false, onCitation }: Props = $props();
 
 	let containerRef = $state<HTMLDivElement>();
 	let processedHtml = $state('');
@@ -387,11 +390,55 @@
 	$effect(() => {
 		if (containerRef && processedHtml) {
 			setupCodeBlockActions();
+			if (onCitation && !streaming) linkCitations(containerRef);
 		}
 	});
+
+	// Replaces citations in the rendered text (outside code and links) with buttons.
+	function linkCitations(root: HTMLElement) {
+		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+			acceptNode: (node) =>
+				node.parentElement?.closest('code, pre, a, button, .katex') || !node.nodeValue?.includes('[')
+					? NodeFilter.FILTER_REJECT
+					: NodeFilter.FILTER_ACCEPT
+		});
+		const nodes: Text[] = [];
+		while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+		for (const node of nodes) {
+			const parts = splitCitations(node.nodeValue ?? '');
+			if (parts.every((p) => typeof p === 'string')) continue;
+			const fragment = document.createDocumentFragment();
+			for (const part of parts) {
+				if (typeof part === 'string') {
+					fragment.append(part);
+					continue;
+				}
+				const button = document.createElement('button');
+				button.type = 'button';
+				button.className = 'citation-chip';
+				button.dataset.cite = JSON.stringify(part);
+				button.textContent = `${part.name}, ${citationLabel(part)}`;
+				button.title = `Open ${part.name} at ${citationLabel(part)}`;
+				fragment.append(button);
+			}
+			node.replaceWith(fragment);
+		}
+	}
+
+	function handleCitationClick(event: MouseEvent) {
+		const chip = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-cite]');
+		if (!chip || !onCitation) return;
+		event.preventDefault();
+		try {
+			onCitation(JSON.parse(chip.dataset.cite ?? '{}'));
+		} catch {
+			// A malformed chip is ignored.
+		}
+	}
 </script>
 
-<div bind:this={containerRef} class={className}>
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -- the citation buttons inside handle keys themselves -->
+<div bind:this={containerRef} class={className} onclick={handleCitationClick}>
 	<!-- eslint-disable-next-line no-at-html-tags -->
 	{@html processedHtml}
 </div>
@@ -839,5 +886,23 @@
 		div :global(blockquote:hover) {
 			background: var(--muted);
 		}
+	}
+	div :global(.citation-chip) {
+		display: inline;
+		margin: 0 0.1em;
+		padding: 0.05em 0.45em;
+		border-radius: 0.375rem;
+		border: 1px solid var(--border);
+		background: var(--muted);
+		font-size: 0.85em;
+		color: var(--foreground);
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	div :global(.citation-chip:hover),
+	div :global(.citation-chip:focus-visible) {
+		background: var(--accent);
+		outline: none;
 	}
 </style>

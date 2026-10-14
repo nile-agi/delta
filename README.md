@@ -28,10 +28,19 @@ The Delta desktop app is a single native application with a built-in web UI. Dow
 
 ### CLI
 
+Download `delta-cli-<os>-<arch>` from [Releases](https://github.com/nile-agi/delta-release/releases),
+then follow **Install the command-line tool (CLI)** on the release page (the text lives in
+[`.github/release-installation.md`](.github/release-installation.md)). In short, on macOS:
+
 ```bash
-delta                    # Launch web UI in browser
-delta server             # Start server on port 8080
-delta server -m model.gguf  # Start with a specific model
+mkdir -p ~/.local/share/delta-cli
+tar -xzf ~/Downloads/delta-cli-macos-arm64.tar.gz -C ~/.local/share/delta-cli --strip-components=1
+xattr -dr com.apple.quarantine ~/.local/share/delta-cli
+echo 'export PATH="$HOME/.local/share/delta-cli/bin:$PATH"' >> ~/.zshrc   # then open a new terminal
+
+delta pull qwen2.5:0.5b  # download a small model
+delta                    # chat in the browser (and the terminal)
+delta server             # web UI + OpenAI-compatible API
 ```
 
 ---
@@ -44,8 +53,38 @@ delta server -m model.gguf  # Start with a specific model
 - **GPU Accelerated** — Metal, CUDA, Vulkan, ROCm
 - **Model Management** — download, load, and switch models from the UI
 - **Web UI** — built-in chat interface served by the Delta server
-- **OpenAI-compatible API** — use with any client that speaks `/v1/chat/completions`
+- **OpenAI-compatible API** — point any OpenAI SDK or tool at your local models ([below](#openai-compatible-api))
 - **Any GGUF Model** — works with all quantized models from Hugging Face
+
+## OpenAI-compatible API
+
+While Delta runs (desktop app, `delta` or `delta server`), your models answer at
+`http://127.0.0.1:8081/v1` (the web UI port + 1). The desktop app shows the exact address,
+model ids and ready-to-copy examples under **Settings → Developer → API access**.
+
+| Endpoint | |
+|---|---|
+| `GET /v1/models` | Your downloaded models; use an `id` as `model` |
+| `POST /v1/chat/completions` | Chat, streaming, tools / function calling, JSON mode |
+| `POST /v1/completions` | Plain text completion |
+| `POST /v1/embeddings` | Embeddings (start with `--embedding`) |
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8081/v1", api_key="delta")
+reply = client.chat.completions.create(
+    model="qwen2.5:0.5b", messages=[{"role": "user", "content": "Hello"}])
+print(reply.choices[0].message.content)
+```
+
+- **On this computer** no key is needed; any `api_key` value works.
+- **Require a key:** `delta server --api-key KEY` (or `DELTA_API_KEY`), or create one in the app.
+  Clients send `Authorization: Bearer KEY`.
+- **Share on your network:** `delta server --host 0.0.0.0 --api-key KEY`, or tick
+  "Allow devices on my network" in the app. Other devices reach only `/v1`, and always need the key.
+- Settings are saved in `~/.delta-cli/api_server.json`; command-line flags override them for one run.
+- `delta server --help` lists every option with examples.
 
 ## Architecture
 

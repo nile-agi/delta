@@ -88,6 +88,11 @@ case "$(uname -s)" in
         ;;
 esac
 
+# CI sets DELTA_COMPILER_LAUNCHER=ccache to reuse the objects its engine builds cached.
+if [[ -n "${DELTA_COMPILER_LAUNCHER:-}" ]]; then
+    CMAKE_ARGS+=(-DCMAKE_C_COMPILER_LAUNCHER="$DELTA_COMPILER_LAUNCHER" -DCMAKE_CXX_COMPILER_LAUNCHER="$DELTA_COMPILER_LAUNCHER")
+fi
+
 bash "$PROJECT_ROOT/scripts/clean-stale-cmake-cache.sh" "$BUILDDIR"
 mkdir -p "$BUILDDIR"
 

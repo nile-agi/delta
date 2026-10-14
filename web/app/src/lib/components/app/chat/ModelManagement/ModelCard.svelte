@@ -38,8 +38,10 @@
 	const displayIcon = $derived(model.icon ?? familyIcon ?? '');
 	/* eslint-enable @typescript-eslint/no-unused-vars */
 
-	const isCompatible = $derived(model.required_ram_gb <= systemRAMGB);
-	const ramMismatch = $derived(systemRAMGB < model.required_ram_gb);
+	// 0 means the memory could not be read: show the model rather than guess it won't fit.
+	const ramKnown = $derived(systemRAMGB > 0);
+	const isCompatible = $derived(!ramKnown || model.required_ram_gb <= systemRAMGB);
+	const ramMismatch = $derived(ramKnown && systemRAMGB < model.required_ram_gb);
 	const quantizationSuggestions = $derived(
 		ramMismatch ? getQuantizationSuggestions(model, systemRAMGB) : []
 	);
@@ -116,13 +118,13 @@
 					<Tooltip.Trigger>
 						<div class="inline-flex cursor-help items-center gap-1 text-xs text-destructive">
 							<AlertCircle class="h-3 w-3" />
-							<span>Requires Mac with {model.required_ram_gb} GB+ of memory</span>
+							<span>Needs {model.required_ram_gb} GB+ of memory</span>
 						</div>
 					</Tooltip.Trigger>
 					<Tooltip.Content>
 						<div class="space-y-1 text-sm">
-							<p>This model requires {model.required_ram_gb} GB of RAM.</p>
-							<p>Your system has {systemRAMGB} GB available.</p>
+							<p>This model needs about {model.required_ram_gb} GB of memory.</p>
+							<p>This computer has {systemRAMGB} GB.</p>
 							{#if quantizationSuggestions.length > 0}
 								<p class="mt-2 font-medium">Consider these smaller variants:</p>
 								<ul class="list-inside list-disc text-xs">
@@ -203,8 +205,8 @@
 					</Tooltip.Trigger>
 					<Tooltip.Content>
 						<div class="space-y-1 text-sm">
-							<p>Requires {model.required_ram_gb} GB RAM</p>
-							<p>You have {systemRAMGB} GB available</p>
+							<p>Needs about {model.required_ram_gb} GB of memory</p>
+							<p>This computer has {systemRAMGB} GB</p>
 						</div>
 					</Tooltip.Content>
 				</Tooltip.Root>

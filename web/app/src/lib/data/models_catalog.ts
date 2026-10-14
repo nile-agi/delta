@@ -75,6 +75,60 @@ export const modelsCatalog: ModelFamily[] = [
 		]
 	},
 	{
+		id: 'ministral-3R',
+		name: 'Ministral 3R',
+		description:
+			"Mistral AI's compact Reasoning edge models with vision capabilities. Designed for complex problem-solving. Offers best cost-to-performance ratio for on-device deployment in 3B, 8B, 14B sizes.",
+		icon: 'mistral-color.svg',
+		models: [
+			{
+				name: 'ministral-3R:3b',
+				display_name: 'Ministral 3R 3B',
+				download_url:  'mistralai/Ministral-3-3B-Reasoning-2512-GGUF',
+				file_size_gb: 2.15,
+				context_size: 128000,
+				required_ram_gb: calculateRequiredRAM(2.15),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'ministral-3R:8b',
+				display_name: 'Ministral 3R 8B',
+				download_url: 'mistralai/Ministral-3-8B-Reasoning-2512-GGUF',
+				file_size_gb: 5.2,
+				context_size: 128000,
+				required_ram_gb: calculateRequiredRAM(5.2),
+				quantization: 'Q4_K_M'
+			},
+			{
+				name: 'ministral-3R:14b',
+				display_name: 'Ministral 3R 14B',
+				download_url: 'mistralai/Ministral-3-14B-Reasoning-2512-GGUF',
+				file_size_gb: 8.24,
+				context_size: 128000,
+				required_ram_gb: calculateRequiredRAM(8.24),
+				quantization: 'Q4_K_M'
+			}
+		]
+	},
+	// {
+	// 	id: 'mistral-7B',
+	// 	name: 'Mistral 7B',
+	// 	description:
+	// 		"Mistral AI's ",
+	// 	icon: 'mistral-color.svg',
+	// 	models: [
+	// 		{
+	// 			name: 'mistral 7b',
+	// 			display_name: 'Mistral 7B',
+	// 			download_url:  'TheBloke/Mistral-7B-Instruct-v0.2-GGUF',
+	// 			file_size_gb: 4.37,
+	// 			context_size: 128000,
+	// 			required_ram_gb: calculateRequiredRAM(4.37),
+	// 			quantization: 'Q4_K_M'
+	// 		}
+	// 	]
+	// },	
+	{
 		id: 'ministral-3',
 		name: 'Ministral 3',
 		description:
@@ -162,15 +216,15 @@ export const modelsCatalog: ModelFamily[] = [
 			"Google's multimodal models built from Gemini technology. Supports 140+ languages, vision, and text tasks with up to 128K context for edge to cloud deployment.",
 		icon: 'gemini-color.svg',
 		models: [
-			{
-				name: 'gemma3:270m',
-				display_name: 'Gemma 3 270M',
-				download_url: 'google/gemma-3-270m-it-GGUF',
-				file_size_gb: 0.2,
-				context_size: 32768,
-				required_ram_gb: calculateRequiredRAM(0.2),
-				quantization: 'Q8_0'
-			},
+			// {
+			// 	name: 'gemma3:270m',
+			// 	display_name: 'Gemma 3 270M',
+			// 	download_url: 'google/gemma-3-270m-it-GGUF',
+			// 	file_size_gb: 0.2,
+			// 	context_size: 32768,
+			// 	required_ram_gb: calculateRequiredRAM(0.2),
+			// 	quantization: 'Q8_0'
+			// },
 			{
 				name: 'gemma3:1b',
 				display_name: 'Gemma 3 1B',
@@ -342,24 +396,24 @@ export const modelsCatalog: ModelFamily[] = [
 			"Alibaba's hybrid reasoning models with thinking/non-thinking modes. Excels at coding, math, and multilingual tasks across 119 languages.",
 		icon: 'qwen-color.svg',
 		models: [
-			{
-				name: 'qwen3:0.6b',
-				display_name: 'Qwen3 0.6B',
-				download_url: 'Qwen/Qwen3-0.6B-GGUF',
-				file_size_gb: 1.5,
-				context_size: 32768,
-				required_ram_gb: calculateRequiredRAM(1.5),
-				quantization: 'F16'
-			},
-			{
-				name: 'qwen3:1.7b',
-				display_name: 'Qwen3 1.7B',
-				download_url: 'Qwen/Qwen3-1.7B-GGUF',
-				file_size_gb: 1.1,
-				context_size: 32768,
-				required_ram_gb: calculateRequiredRAM(1.1),
-				quantization: 'F16'
-			},
+			// {
+			// 	name: 'qwen3:0.6b',
+			// 	display_name: 'Qwen3 0.6B',
+			// 	download_url: 'Qwen/Qwen3-0.6B-GGUF',
+			// 	file_size_gb: 1.5,
+			// 	context_size: 32768,
+			// 	required_ram_gb: calculateRequiredRAM(1.5),
+			// 	quantization: 'F16'
+			// },
+			// {
+			// 	name: 'qwen3:1.7b',
+			// 	display_name: 'Qwen3 1.7B',
+			// 	download_url: 'Qwen/Qwen3-1.7B-GGUF',
+			// 	file_size_gb: 1.1,
+			// 	context_size: 32768,
+			// 	required_ram_gb: calculateRequiredRAM(1.1),
+			// 	quantization: 'F16'
+			// },
 			{
 				name: 'qwen3:4b',
 				display_name: 'Qwen3 4B',
@@ -406,15 +460,15 @@ export const modelsCatalog: ModelFamily[] = [
 			"Qwen 3.5 is a family of open-source multimodal models that delivers exceptional utility and performance.",
 		icon: 'qwen-color.svg',
 		models: [
-			{
-				name: 'qwen3.5:0.8b',
-				display_name: 'Qwen3.5 0.8B',
-				download_url: 'unsloth/Qwen3.5-0.8B-GGUF',
-				file_size_gb: 0.812,
-				context_size: 32768,
-				required_ram_gb: calculateRequiredRAM(0.812),
-				quantization: 'Q8_0'
-			},
+			// {
+			// 	name: 'qwen3.5:0.8b',
+			// 	display_name: 'Qwen3.5 0.8B',
+			// 	download_url: 'unsloth/Qwen3.5-0.8B-GGUF',
+			// 	file_size_gb: 0.812,
+			// 	context_size: 32768,
+			// 	required_ram_gb: calculateRequiredRAM(0.812),
+			// 	quantization: 'Q8_0'
+			// },
 			{
 				name: 'qwen3.5:2b',
 				display_name: 'Qwen3.5 2B',
@@ -536,19 +590,19 @@ export const modelsCatalog: ModelFamily[] = [
 			{
 				name: 'gpt-oss:20b',
 				display_name: 'GPT-OSS 20B',
-				download_url: 'openai/gpt-oss-20b-GGUF',
-				file_size_gb: 12.0,
+				download_url: 'unsloth/gpt-oss-20b-GGUF',
+				file_size_gb: 11.6,
 				context_size: 131072,
-				required_ram_gb: calculateRequiredRAM(12.0),
+				required_ram_gb: calculateRequiredRAM(11.0),
 				quantization: 'Q4_K_M'
 			},
 			{
 				name: 'gpt-oss:120b',
 				display_name: 'GPT-OSS 120B',
-				download_url: 'openai/gpt-oss-120b-GGUF',
-				file_size_gb: 70.0,
+				download_url: 'unsloth/gpt-oss-120b-GGUF',
+				file_size_gb: 49.6,
 				context_size: 131072,
-				required_ram_gb: calculateRequiredRAM(70.0),
+				required_ram_gb: calculateRequiredRAM(49.6),
 				quantization: 'Q4_K_M'
 			}
 		]
@@ -628,24 +682,24 @@ export const modelsCatalog: ModelFamily[] = [
 			}
 		]
 	},
-	{
-		id: 'deepseek-ocr',
-		name: 'DeepSeek OCR',
-		description:
-			"DeepSeek-OCR is a vision-language model that can perform token-efficient OCR.",
-		icon: 'deepseek-color.svg',
-		models: [
-			{
-				name: 'deepseek-ocr',
-				display_name: 'DeepSeek OCR',
-				download_url: 'NexaAI/DeepSeek-OCR-GGUF',
-				file_size_gb: 2.61,
-				context_size: 131072,
-				required_ram_gb: calculateRequiredRAM(2.61),
-				quantization: 'Q6_K'
-			}
-		]
-	},
+	// {
+	// 	id: 'deepseek-ocr',
+	// 	name: 'DeepSeek OCR',
+	// 	description:
+	// 		"DeepSeek-OCR is a vision-language model that can perform token-efficient OCR.",
+	// 	icon: 'deepseek-color.svg',
+	// 	models: [
+	// 		{
+	// 			name: 'deepseek-ocr',
+	// 			display_name: 'DeepSeek OCR',
+	// 			download_url: 'NexaAI/DeepSeek-OCR-GGUF',
+	// 			file_size_gb: 2.61,
+	// 			context_size: 131072,
+	// 			required_ram_gb: calculateRequiredRAM(2.61),
+	// 			quantization: 'Q6_K'
+	// 		}
+	// 	]
+	// },
 	{
 		id: 'deepseek-coder',
 		name: 'DeepSeek Coder',
@@ -825,15 +879,15 @@ export const modelsCatalog: ModelFamily[] = [
 				required_ram_gb: calculateRequiredRAM(1.8),
 				quantization: 'Q5_K_M'
 			},
-			{
-				name: 'lfm2.5-230m',
-				display_name: 'LFM2.5 230M',
-				download_url: 'LiquidAI/LFM2.5-230M-GGUF',
-				file_size_gb: 0.46,
-				context_size: 32768,
-				required_ram_gb: calculateRequiredRAM(0.46),
-				quantization: 'F16'
-			},
+			// {
+			// 	name: 'lfm2.5-230m',
+			// 	display_name: 'LFM2.5 230M',
+			// 	download_url: 'LiquidAI/LFM2.5-230M-GGUF',
+			// 	file_size_gb: 0.46,
+			// 	context_size: 32768,
+			// 	required_ram_gb: calculateRequiredRAM(0.46),
+			// 	quantization: 'F16'
+			// },
 			{
 				name: 'lfm2.5-8b-a1b',
 				display_name: 'LFM2.5 8B A1B',
@@ -843,15 +897,15 @@ export const modelsCatalog: ModelFamily[] = [
 				required_ram_gb: calculateRequiredRAM(5.1),
 				quantization: 'Q4_K_M'
 			},
-			{
-				name: 'lfm2.5-350m',
-				display_name: 'LFM2.5 350M',
-				download_url: 'LiquidAI/LFM2.5-350M-GGUF',
-				file_size_gb: 0.7,
-				context_size: 32768,
-				required_ram_gb: calculateRequiredRAM(0.7),
-				quantization: 'F16'
-			},
+			// {
+			// 	name: 'lfm2.5-350m',
+			// 	display_name: 'LFM2.5 350M',
+			// 	download_url: 'LiquidAI/LFM2.5-350M-GGUF',
+			// 	file_size_gb: 0.7,
+			// 	context_size: 32768,
+			// 	required_ram_gb: calculateRequiredRAM(0.7),
+			// 	quantization: 'F16'
+			// },
 			{
 				name: 'lfm2.5-1.2b-thinking',
 				display_name: 'LFM2.5 1.2B Thinking',

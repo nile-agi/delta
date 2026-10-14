@@ -14,17 +14,18 @@ type TextItem = {
 	transform?: number[];
 };
 
-if (browser) {
-	// Import worker as text and create blob URL for inline bundling
-	import('pdfjs-dist/build/pdf.worker.min.mjs?raw')
-		.then((workerModule) => {
-			const workerBlob = new Blob([workerModule.default], { type: 'application/javascript' });
-			pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
-		})
-		.catch(() => {
-			console.warn('Failed to load PDF.js worker, PDF processing may not work');
-		});
-}
+// The worker is bundled as text and loaded once; every PDF call waits for it, since a file
+// opened before it was ready used to fail with "No GlobalWorkerOptions.workerSrc specified".
+const workerReady: Promise<void> = browser
+	? import('pdfjs-dist/build/pdf.worker.min.mjs?raw')
+			.then((workerModule) => {
+				const workerBlob = new Blob([workerModule.default], { type: 'application/javascript' });
+				pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
+			})
+			.catch(() => {
+				console.warn('Failed to load PDF.js worker, PDF processing may not work');
+			})
+	: Promise.resolve();
 
 /**
  * Convert a File object to ArrayBuffer for PDF.js processing
@@ -87,7 +88,8 @@ export async function extractPDFPages(file: File): Promise<string[]> {
 
 	try {
 		const buffer = await getFileAsBuffer(file);
-		const pdf = await pdfjs.getDocument(buffer).promise;
+		await workerReady;
+		const pdf = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
 		const pages: Promise<string>[] = [];
 		for (let i = 1; i <= pdf.numPages; i++) {
 			pages.push(
@@ -129,7 +131,8 @@ export async function convertPDFToImage(file: File, scale: number = 1.5): Promis
 
 	try {
 		const buffer = await getFileAsBuffer(file);
-		const doc = await pdfjs.getDocument(buffer).promise;
+		await workerReady;
+		const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
 		const pages: Promise<string>[] = [];
 
 		for (let i = 1; i <= doc.numPages; i++) {
@@ -164,6 +167,92 @@ export async function convertPDFToImage(file: File, scale: number = 1.5): Promis
 			`Failed to convert PDF to images: ${error instanceof Error ? error.message : 'Unknown error'}`
 		);
 	}
+}
+
+/** A piece of page text and the box it occupies on the rendered page, in CSS pixels. */
+export interface PageTextBox {
+	str: string;
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+}
+
+export type OpenedPDF = Awaited<ReturnType<typeof pdfjs.getDocument>['promise']>;
+
+/** Opens a PDF from its base64 bytes, for showing pages one at a time. */
+export async function openPDF(base64Data: string): Promise<OpenedPDF> {
+	if (!browser) throw new Error('PDF processing is only available in the browser');
+	const binary = atob(base64Data);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+	await workerReady;
+	return pdfjs.getDocument({ data: bytes }).promise;
+}
+
+/** The size page `n` renders at, without drawing it. */
+export async function pageSize(pdf: OpenedPDF, n: number, scale: number) {
+	const viewport = (await pdf.getPage(n)).getViewport({ scale });
+	return { width: viewport.width, height: viewport.height };
+}
+
+/** The text of page `n`, without drawing it. */
+export async function pageText(pdf: OpenedPDF, n: number): Promise<string> {
+	const content = await (await pdf.getPage(n)).getTextContent();
+	return (content.items as TextItem[]).map((item) => item.str ?? '').join(' ');
+}
+
+/** Page `n` as a PNG data URL `longSide` pixels on its longer side, for the text reader. */
+export async function pageImage(pdf: OpenedPDF, n: number, longSide: number): Promise<string> {
+	const page = await pdf.getPage(n);
+	const base = page.getViewport({ scale: 1 });
+	const viewport = page.getViewport({ scale: longSide / Math.max(base.width, base.height) });
+	const canvas = document.createElement('canvas');
+	canvas.width = Math.floor(viewport.width);
+	canvas.height = Math.floor(viewport.height);
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('Failed to get 2D context from canvas');
+	await page.render({ canvasContext: ctx, canvas, viewport }).promise;
+	return canvas.toDataURL(MimeTypeImage.PNG);
+}
+
+/** Draws page `n` into `canvas` and returns where each piece of its text sits, for highlighting. */
+export async function renderPDFPage(
+	pdf: OpenedPDF,
+	n: number,
+	canvas: HTMLCanvasElement,
+	scale: number
+): Promise<PageTextBox[]> {
+	const page = await pdf.getPage(n);
+	const viewport = page.getViewport({ scale });
+	const ratio = window.devicePixelRatio || 1;
+	canvas.width = Math.floor(viewport.width * ratio);
+	canvas.height = Math.floor(viewport.height * ratio);
+	canvas.style.width = `${viewport.width}px`;
+	canvas.style.height = `${viewport.height}px`;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('Failed to get 2D context from canvas');
+	await page.render({
+		canvasContext: ctx,
+		canvas,
+		viewport,
+		transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : undefined
+	}).promise;
+	const content = await page.getTextContent();
+	const boxes: PageTextBox[] = [];
+	for (const item of content.items as Array<TextItem & { width?: number }>) {
+		if (!item.str || !item.transform) continue;
+		const tx = pdfjs.Util.transform(viewport.transform, item.transform);
+		const height = Math.hypot(tx[2], tx[3]);
+		boxes.push({
+			str: item.str,
+			left: tx[4],
+			top: tx[5] - height,
+			width: (item.width ?? 0) * scale,
+			height
+		});
+	}
+	return boxes;
 }
 
 /**
