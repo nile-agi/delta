@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Runs CI's checks on this machine, for when GitHub Actions cannot (or should not) spend minutes.
+# Runs CI's checks on this machine, the same ones CircleCI runs (.circleci/), without spending credits.
 #
 #   scripts/ci-local.sh                 # the areas changed since origin/dev, like CI on a PR
 #   scripts/ci-local.sh engine frontend release   # or name them
@@ -36,9 +36,9 @@ step() {
 changed_areas() {
   local files
   files="$(git diff --name-only "$(git merge-base "$BASE" HEAD)" HEAD; git diff --name-only HEAD)"
-  grep -qE '^(web/app/|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|\.github/workflows/ci.yml)' <<<"$files" && echo frontend
-  grep -qE '^(engine/|tests/|CMakeLists.txt|version.txt|\.gitmodules|\.github/workflows/ci.yml)' <<<"$files" && echo engine
-  grep -qE '^(scripts/|\.github/|dist/|src-tauri/|version.txt)' <<<"$files" && echo release
+  grep -qE '^(web/app/|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|\.circleci/)' <<<"$files" && echo frontend
+  grep -qE '^(engine/|tests/|CMakeLists.txt|version.txt|\.gitmodules|\.circleci/)' <<<"$files" && echo engine
+  grep -qE '^(scripts/|\.github/|\.circleci/|dist/|src-tauri/|version.txt)' <<<"$files" && echo release
 }
 
 engine_configure() {
@@ -104,14 +104,15 @@ run_frontend() {
 
 run_release() {
   step "release: node script tests" node --test scripts/release-notes.test.cjs scripts/bump-version.test.cjs \
-    scripts/update-package-manifests.test.cjs
+    scripts/update-package-manifests.test.cjs scripts/github-release.test.cjs
   local t
   for t in test-appimage-graphics-libs test-linux-webview-defaults test-repack-linux-appimage \
-    test-verify-linux-appimage test-tauri-release-build; do
+    test-verify-linux-appimage test-tauri-release-build test-release-packaging; do
     step "release: $t" bash "scripts/$t.sh"
   done
-  if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
-    step "release: actionlint" docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.12 -color
+  if command -v circleci >/dev/null; then
+    step "release: CircleCI config" bash -c 'circleci config validate .circleci/config.yml &&
+      circleci config validate .circleci/continue.yml'
   fi
   step "release: root lockfile matches package.json" "${PNPM[@]}" install --frozen-lockfile --lockfile-only
 }
