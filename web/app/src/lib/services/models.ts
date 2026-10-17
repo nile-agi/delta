@@ -372,7 +372,7 @@ export class ModelsService {
 
 	static async checkModelReady(
 		modelName: string
-	): Promise<{ ready: boolean; failed: boolean; needsLoad: boolean; routerModelName?: string }> {
+	): Promise<{ ready: boolean; failed: boolean; needsLoad: boolean; routerModelName?: string; exitCode?: number }> {
 		try {
 			const res = await fetch(`${getServerBaseUrl()}/v1/models`);
 			if (!res.ok) return { ready: false, failed: false, needsLoad: false };
@@ -403,7 +403,7 @@ export class ModelsService {
 				case 'loaded':
 					return { ready: true, failed: false, needsLoad: false, routerModelName };
 				case 'failed':
-					return { ready: false, failed: true, needsLoad: false, routerModelName };
+					return { ready: false, failed: true, needsLoad: false, routerModelName, exitCode: model.status?.exit_code ?? undefined };
 				case 'unloaded':
 					return { ready: false, failed: false, needsLoad: true, routerModelName };
 				default:

@@ -63,6 +63,12 @@ CMAKE_ARGS=(
     -DFORCE_SYSTEM_CLANG=OFF
 )
 
+if [[ "$BUILD_TYPE" == Release ]]; then
+    CMAKE_ARGS+=(-DDELTA_PORTABLE_RELEASE=ON)
+else
+    CMAKE_ARGS+=(-DDELTA_PORTABLE_RELEASE=OFF)
+fi
+
 case "$(uname -s)" in
     Darwin)
         # Force Apple's compiler; a Homebrew LLVM clang on PATH/CC can't build the macOS SDK.
@@ -167,6 +173,12 @@ else
         echo "  ERROR: llama-server binary not found anywhere in build tree"
         exit 1
     fi
+fi
+
+if [[ "$BUILD_TYPE" == Release ]]; then
+    python3 "$PROJECT_ROOT/scripts/verify-release-binaries.py" --target "$TARGET_TRIPLE" \
+        "$BINDIR/delta-server-${TARGET_TRIPLE}${EXE_SUFFIX}" "$BINDIR/llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
+    cp "$BUILDDIR/release-build-info.json" "$BINDIR/release-build-info.json"
 fi
 
 # Copy Metal shader library on macOS

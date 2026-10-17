@@ -1,3 +1,4 @@
+import { modelFailureMessage } from '$lib/utils/failure-reason';
 import { SvelteMap } from 'svelte/reactivity';
 import { ModelsService } from '$lib/services/models';
 import { slotsService } from '$lib/services/slots';
@@ -19,6 +20,8 @@ export class ModelsStore {
 	private _updating = $state(false);
 	private _loadingModelId = $state<string | null>(null);
 	private _error = $state<string | null>(null);
+	private _loadExitCode = $state<number | null>(null);
+	get loadExitCode(): number | null { return this._loadExitCode; }
 	private _selectedModelId = $state<string | null>(null);
 	private _selectedModelName = $state<string | null>(null);
 	/** True only when the backend has a model loaded (from select() loaded:true or main API /v1/models). */
@@ -82,6 +85,7 @@ export class ModelsStore {
 
 		this._loading = true;
 		this._error = null;
+		this._loadExitCode = null;
 
 		try {
 			// Fetch installed models from model management API (single source of truth for the list).
@@ -210,6 +214,7 @@ export class ModelsStore {
 		this._updating = true;
 		this._loadingModelId = modelId;
 		this._error = null;
+		this._loadExitCode = null;
 
 		const storedCtx =
 			typeof window !== 'undefined'
@@ -287,7 +292,8 @@ export class ModelsStore {
 							return;
 						}
 						if (modelStatus.failed) {
-							this._error = `Model "${option.name}" failed to load.`;
+							this._loadExitCode = modelStatus.exitCode ?? null;
+							this._error = modelFailureMessage(option.name, modelStatus.exitCode);
 							this._updating = false;
 							this._loadingModelId = null;
 							return;

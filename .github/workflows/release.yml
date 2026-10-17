@@ -127,6 +127,8 @@ jobs:
   build-cli:
     needs: [prepare-release, build-web]
     env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      DELTA_PORTABLE_RELEASE: "1"
       RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
     strategy:
       fail-fast: false
@@ -156,7 +158,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake libcurl4-openssl-dev
+          sudo apt-get install -y build-essential cmake libcurl4-openssl-dev qemu-user
 
       - name: Install Windows dependencies
         if: matrix.platform == 'windows-latest'
@@ -197,6 +199,7 @@ jobs:
 
           CMAKE_ARGS=(
             -DCMAKE_BUILD_TYPE=Release
+            -DDELTA_PORTABLE_RELEASE=ON
             -DBUILD_TESTS=OFF
             -DLLAMA_OPENSSL=OFF
             -DFORCE_SYSTEM_CLANG=OFF
@@ -268,6 +271,11 @@ jobs:
             cp "$LLAMA_SERVER" "$STAGE/bin/llama-server${EXT}"
           fi
 
+          python3 scripts/verify-release-binaries.py --target "$CLI_TARGET" "$STAGE/bin/delta${EXT}" "$STAGE/bin/delta-server${EXT}" "$STAGE/bin/llama-server${EXT}"
+          cp "$BUILD_DIR/release-build-info.json" "$STAGE/BUILD_INFO.json"
+
+          bash scripts/check-release-runtime.sh "$STAGE/bin/llama-server${EXT}" "$CLI_TARGET"
+
           # Include web UI
           if [[ -d public ]]; then
             cp -r public "$STAGE/webui"
@@ -324,6 +332,10 @@ jobs:
   # ---------------------------------------------------------------------------
   build-tauri:
     needs: [prepare-release, build-web]
+    env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      DELTA_PORTABLE_RELEASE: "1"
     permissions:
       contents: read
     strategy:
@@ -387,7 +399,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential cmake \
+            build-essential cmake qemu-user \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
@@ -430,6 +442,7 @@ jobs:
       - name: Build C++ sidecars
         shell: bash
         env:
+          RELEASE_TARGET: ${{ matrix.target }}
           DELTA_COMPILER_LAUNCHER: ${{ matrix.platform != 'windows-latest' && 'ccache' || '' }}
           CCACHE_BASEDIR: ${{ github.workspace }}
           CCACHE_COMPILERCHECK: content
@@ -437,6 +450,13 @@ jobs:
           chmod +x scripts/build-sidecars.sh
           scripts/build-sidecars.sh --release --target ${{ matrix.target }}
           scripts/verify-tauri-release-assets.sh ${{ matrix.target }}
+          EXE=""
+          if [[ "$RELEASE_TARGET" == *windows* ]]; then EXE=".exe"; fi
+          bash scripts/check-release-runtime.sh "src-tauri/binaries/llama-server-${{ matrix.target }}${EXE}" "${{ matrix.target }}"
+
+      - name: Test native startup and diagnostic handling
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --target ${{ matrix.target }}
 
       - name: Check signing availability
         id: signing
@@ -493,6 +513,18 @@ jobs:
           tagName: ${{ needs.prepare-release.outputs.tag }}
           tauriScript: ${{ matrix.platform == 'ubuntu-22.04' && './scripts/tauri-release-build.sh' || '' }}
           args: ${{ matrix.args }}
+
+      - name: Verify packaged macOS executables
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          MACOS_BIN="src-tauri/target/$RELEASE_TARGET/release/bundle/macos/Delta.app/Contents/MacOS"
+          test -d "$MACOS_BIN"
+          for binary in "$MACOS_BIN"/*; do
+            python3 scripts/verify-release-binaries.py --target "$RELEASE_TARGET" "$binary"
+          done
 
   # ---------------------------------------------------------------------------
   # Attach CLI binaries + checksums to the public release

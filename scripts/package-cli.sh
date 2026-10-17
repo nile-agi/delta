@@ -39,6 +39,9 @@ for candidate in "$BIN_ROOT/llama-server${EXT}" "$BUILD_DIR/bin/llama-server${EX
 done
 [[ -n "$LLAMA_SERVER" ]] || { echo "ERROR: llama-server not found in $BUILD_DIR" >&2; exit 1; }
 cp "$LLAMA_SERVER" "$STAGE/bin/llama-server${EXT}"
+if [[ -f "$BUILD_DIR/release-build-info.json" ]]; then
+  cp "$BUILD_DIR/release-build-info.json" "$STAGE/BUILD_INFO.json"
+fi
 
 [[ -f "$REPO_ROOT/public/index.html" ]] || { echo "ERROR: public/index.html not found; build the web UI first" >&2; exit 1; }
 cp -r "$REPO_ROOT/public" "$STAGE/webui"

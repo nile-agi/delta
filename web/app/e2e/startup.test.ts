@@ -169,3 +169,41 @@ test('Continue advances onboarding and finishing saves the selected preferences'
 	await expect(page.getByText('What are we working on?', { exact: true })).toBeVisible();
 	expect(errors).toEqual([]);
 });
+
+for (const fault of ['backend', 'bundle'] as const) {
+	test(`reviews a ${fault} failure before opening a public issue`, async ({ page }) => {
+		await page.addInitScript(() => {
+			Object.assign(window, {
+				__openedIssue: null,
+				__TAURI_INTERNALS__: {
+					metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
+					transformCallback: () => 1,
+					invoke: async (command: string, args: any) => {
+						if (command === 'get_server_status') return [8080, 8081, false, true, 'Backend exited with signal 4'];
+						if (command === 'get_diagnostic_report') return {
+							version: '1.0.18-rc.1', target: 'x86_64-apple-darwin', cpuPolicy: 'x86_64-baseline',
+							os: 'macOS 12', stage: args.stage, exitCode: 132,
+							message: 'Failed /Users/private-name/models/test.gguf hf_abcdefghijklmnop', logs: []
+						};
+						if (command === 'plugin:shell|open') (window as any).__openedIssue = args.path;
+						return null;
+					}
+				}
+			});
+		});
+		// The reporting fallback must also work without Svelte or any app modules.
+		if (fault === 'bundle') await page.route('**/_app/immutable/**', route => route.abort());
+		await page.goto('/');
+		await page.getByRole('button', { name: 'Review report', exact: true }).first().click();
+		const report = page.getByRole('textbox', { name: 'Diagnostic report contents' });
+		await expect(report).toHaveValue(/x86_64-baseline/);
+		expect(await report.inputValue()).not.toMatch(/private-name|abcdefghijklmnop/);
+		expect(await page.evaluate(() => (window as any).__openedIssue)).toBeNull();
+		const download = page.waitForEvent('download');
+		await page.getByRole('button', { name: 'Download report', exact: true }).click();
+		expect((await download).suggestedFilename()).toBe('delta-diagnostic-report.txt');
+		await page.getByRole('button', { name: 'Open GitHub issue', exact: true }).click();
+		await expect.poll(() => page.evaluate(() => (window as any).__openedIssue)).toMatch(/^https:\/\/github.com\/nile-agi\/delta-release\/issues\/new\?/);
+		expect((await page.evaluate(() => (window as any).__openedIssue)).length).toBeLessThanOrEqual(1800);
+	});
+}
