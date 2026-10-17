@@ -48,6 +48,9 @@ node_modules/
 public/_app/
 public/index.html
 public/index.html.gz
+public/startup-guard.js
+public/failure-report.js
+public/nileagi-logo.avif
 .svelte-kit/
 
 # Test artifacts
