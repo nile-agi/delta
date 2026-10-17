@@ -55,6 +55,7 @@ jobs:
               - 'engine/**'
               - 'tests/**'
               - 'CMakeLists.txt'
+              - 'cmake/**'
               - 'version.txt'
               - '.gitmodules'
               - '.github/workflows/ci.yml'
@@ -67,6 +68,7 @@ jobs:
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
             release:
+              - 'cmake/**'
               - 'scripts/**'
               - '.github/**'
               - 'dist/**'
@@ -176,6 +178,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Test portable release policy and binary checks
+        run: |
+          cmake -P scripts/test-release-policy.cmake
+          python3 scripts/test_verify_release_binaries.py
+          bash scripts/test-sidecar-debug.sh
 
       - name: Test release notes
         run: node --test scripts/release-notes.test.cjs

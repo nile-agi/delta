@@ -10,7 +10,9 @@ endif()
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" DELTA_VERSION_STRING)
 string(STRIP "${DELTA_VERSION_STRING}" DELTA_VERSION_STRING)
 
+include(cmake/DeltaReleasePolicy.cmake)
 project(delta-cli VERSION ${DELTA_VERSION_STRING} LANGUAGES C CXX)
+delta_configure_release_cpu()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

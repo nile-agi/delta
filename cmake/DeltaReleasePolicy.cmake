@@ -1,0 +1,32 @@
+option(DELTA_PORTABLE_RELEASE "Build redistributable binaries for the platform baseline" OFF)
+
+# Set this before project() so compiler probes use the same deployment contract.
+if(DELTA_PORTABLE_RELEASE AND APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum supported macOS" FORCE)
+    set(GGML_METAL_MACOSX_VERSION_MIN "11.0" CACHE STRING "Minimum Metal runtime" FORCE)
+endif()
+
+function(delta_configure_release_cpu)
+    if(NOT DELTA_PORTABLE_RELEASE)
+        return()
+    endif()
+    set(GGML_NATIVE OFF CACHE BOOL "Never target the release runner CPU" FORCE)
+    if(CMAKE_OSX_ARCHITECTURES)
+        set(arch "${CMAKE_OSX_ARCHITECTURES}")
+    else()
+        set(arch "${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+    if(arch MATCHES "^(x86_64|AMD64|amd64)$")
+        foreach(feature SSE42 AVX AVX2 AVX_VNNI AVX_VNNI_INT8 AVX512 AVX512_VBMI AVX512_VNNI AVX512_BF16 FMA F16C BMI2 AMX_TILE AMX_INT8 AMX_BF16)
+            set(GGML_${feature} OFF CACHE BOOL "Optional CPU feature disabled in portable releases" FORCE)
+        endforeach()
+        set(policy "x86-64-baseline")
+    else()
+        set(policy "${arch}-baseline")
+    endif()
+    execute_process(COMMAND git rev-parse HEAD WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        OUTPUT_VARIABLE commit OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    file(WRITE "${CMAKE_BINARY_DIR}/release-build-info.json"
+        "{\"commit\":\"${commit}\",\"tag\":\"$ENV{RELEASE_TAG}\",\"cpu_policy\":\"${policy}\",\"macos_minimum\":\"${CMAKE_OSX_DEPLOYMENT_TARGET}\"}\n")
+    message(STATUS "Delta portable release CPU policy: ${policy}")
+endfunction()
