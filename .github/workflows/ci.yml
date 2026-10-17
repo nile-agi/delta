@@ -193,7 +193,7 @@ jobs:
           /tmp/delta-startup-tests
 
       - name: Test release notes
-        run: node --test scripts/release-notes.test.cjs
+        run: node --test scripts/release-notes.test.cjs scripts/release-assets.test.cjs
 
       - name: Test version syncing
         run: node --test scripts/bump-version.test.cjs

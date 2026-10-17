@@ -223,3 +223,25 @@ test('publicNotes only removes links to the named repository', () => {
     '* Fix by @a in https://github.com/other/repo/pull/1\n* Fix by @b'
   );
 });
+
+test('rerunning a placeholder-tagged draft reuses its ID and desktop assets', async () => {
+  const f = crossRepoFixture([{ id: 7, tag_name: 'untagged-example', name: 'Delta v1.0.16', draft: true, assets: ['desktop.dmg'] }]);
+  assert.equal(await prepareRelease(f), 7);
+  assert.equal(f.records.length, 1);
+  assert.equal(f.records[0].tag_name, f.tag);
+  assert.deepEqual(f.records[0].assets, ['desktop.dmg']);
+});
+
+test('publication repairs only the expected placeholder draft and preserves its assets', async () => {
+  const f = crossRepoFixture([{ id: 7, tag_name: 'untagged-example', name: 'Delta v1.0.16', draft: true, assets: ['desktop.dmg'] }]);
+  await publishRelease({ ...f, releaseId: 7 });
+  assert.equal(f.records[0].tag_name, f.tag);
+  assert.equal(f.records[0].draft, false);
+  assert.deepEqual(f.records[0].assets, ['desktop.dmg']);
+});
+
+test('a placeholder for another release is never reused or published', async () => {
+  const f = crossRepoFixture([{ id: 7, tag_name: 'untagged-example', name: 'Delta v1.0.15', draft: true }]);
+  await assert.rejects(publishRelease({ ...f, releaseId: 7 }), /tag/);
+  assert.deepEqual(f.calls, []);
+});
