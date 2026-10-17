@@ -145,6 +145,8 @@ class Harness {
 
     // How far the request being built was shrunk to fit the window (kFit* in harness.cpp).
     int fit_level_ = 0;
+    // Large schema sets start with discovery, independently of history compaction.
+    bool progressive_tools_ = false;
     // Whether this conversation can use the document tools, decided once per run.
     bool documents_available_ = false;
     // Sources gathered this run; mutable because document_context is const.

@@ -259,9 +259,35 @@ nlohmann::json Harness::active_tools() const {
         offered.insert(category);
     }
     // An empty set means "everything" to get_tools_array, which is the opposite of what we want.
-    if (offered.empty())
-        return nlohmann::json::array();
-    return registry.get_tools_array(offered);
+    auto tools = offered.empty() ? nlohmann::json::array() : registry.get_tools_array(offered);
+    const bool discovery_allowed = options_.enabled_categories.empty() || options_.enabled_categories.count("task");
+    if (discovery_allowed) {
+        // Discovery is infrastructure: it must remain callable even while the task group is deferred.
+        nlohmann::json groups = nlohmann::json::array();
+        for (const auto& category : registry.get_categories()) {
+            if (!options_.enabled_categories.empty() && !options_.enabled_categories.count(category))
+                continue;
+            if (category == "documents" && !documents_available_)
+                continue;
+            if (is_deferred_category(category) && !loaded.count(category))
+                groups.push_back(category);
+        }
+        for (auto it = tools.begin(); it != tools.end();) {
+            if ((*it)["function"]["name"] == "load_tools")
+                it = tools.erase(it);
+            else
+                ++it;
+        }
+        if (!groups.empty()) {
+            const auto* loader = registry.get_definition("load_tools");
+            if (loader) {
+                auto schema = loader->to_openai_schema();
+                schema["function"]["parameters"]["properties"]["category"]["enum"] = groups;
+                tools.push_back(std::move(schema));
+            }
+        }
+    }
+    return tools;
 }
 
 std::string Harness::deferred_manifest() const {
@@ -332,10 +358,15 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
         return prompt + "\nAnswer the user briefly and helpfully from the conversation.\n";
     }
 
-    if (has_tools && fit_level_ >= kFitCompactInstructions) {
+    if (has_tools && (progressive_tools_ || fit_level_ >= kFitCompactInstructions)) {
         prompt += "\nHOW YOU WORK\n"
                   "Use tools for requested changes and saved information; answer conversation directly. Look up "
                   "records before editing and reuse their ids. Confirm only what tool results confirm.\n"
+                  "Use facts already in the conversation; retrieve only missing information. Loading a tool "
+                  "group does not perform the task: call its tools next and wait for their results. Never invent "
+                  "records or claim a search or change happened without a successful tool result.\n"
+                  "Preserve existing record contents and dates unless asked to change them. Saved user notes "
+                  "belong in notes; private plans belong in task. Stop after repeated errors or refused permission.\n"
                   "Keep day and time together ('tomorrow 5pm'). task = something the user must do; event = an "
                   "agreed meeting or appointment.\n";
         prompt += deferred_manifest();
@@ -381,7 +412,7 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
         prompt += "\nAnswer from the conversation and the context below. Keep responses brief and friendly.\n";
     }
 
-    if (fit_level_ >= kFitCompactInstructions)
+    if (progressive_tools_ || fit_level_ >= kFitCompactInstructions)
         prompt += "\nReply briefly. Keep record ids, tool names and raw JSON out of replies.\n";
     else
         prompt += "\nUSER REPLY\n"
@@ -721,6 +752,8 @@ RunResult Harness::run(const nlohmann::json& messages, const EventSink& sink) {
 RunResult Harness::run_loop(const nlohmann::json& messages, const EventSink& sink) {
     RunResult result;
     task_dossier_.clear();
+    progressive_tools_ = false;
+    fit_level_ = kFitFull;
     auto& registry = ToolRegistry::instance();
 
     const std::string pad = scratchpad_key();
@@ -788,6 +821,20 @@ RunResult Harness::run_loop(const nlohmann::json& messages, const EventSink& sin
     ContextManager context(n_ctx, options_.max_tokens);
     context.set_token_counter([this](const std::string& text) { return client_.count_tokens(text); });
     context.set_summarizer([this, n_ctx](const nlohmann::json& dropped) { return summarize(dropped, n_ctx); });
+
+    // A roomy window is not a reason to send thousands of unused schema tokens on every greeting.
+    // Use the tokenizer for this model, not its name or parameter-count heuristics.
+    if (supports_tools_ && options_.tools_enabled &&
+        (options_.enabled_categories.empty() || options_.enabled_categories.count("task"))) {
+        const auto initial = active_tools();
+        if (!initial.empty()) {
+            const auto serialized = initial.dump();
+            int cost = client_.count_tokens(serialized);
+            if (cost < 0)
+                cost = ContextManager::estimate_tokens(serialized);
+            progressive_tools_ = cost > std::min(1024, n_ctx / 4);
+        }
+    }
 
     auto persist_task_budget = [&] {
         if (result.task_id.empty() || !tasks.ready())
@@ -961,8 +1008,9 @@ RunResult Harness::run_loop(const nlohmann::json& messages, const EventSink& sin
         std::string system_prompt;
         nlohmann::json request_messages;
         for (fit_level_ = min_fit_level;; fit_level_++) {
-            defer_categories_for_fit(fit_level_ >= kFitFewerTools ? std::set<std::string>{"memory", "documents"}
-                                                                  : std::set<std::string>{});
+            defer_categories_for_fit(progressive_tools_             ? registry.get_categories()
+                                     : fit_level_ >= kFitFewerTools ? std::set<std::string>{"memory", "documents"}
+                                                                    : std::set<std::string>{});
             active = tools_disabled_by_error ? nlohmann::json::array() : active_tools();
             system_prompt = build_system_prompt(transcript);
             const int minimum_prompt_tokens = context.token_cost({{"content", system_prompt}}) +
