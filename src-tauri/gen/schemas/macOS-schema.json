@@ -393,6 +393,12 @@
           "markdownDescription": "Allows the abort_stream command for stopping a streaming chat request."
         },
         {
+          "description": "Read a sanitized local failure report in the main window.",
+          "type": "string",
+          "const": "allow-get-diagnostic-report",
+          "markdownDescription": "Read a sanitized local failure report in the main window."
+        },
+        {
           "description": "Allows the get_server_port command.",
           "type": "string",
           "const": "allow-get-server-port",

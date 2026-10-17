@@ -1,4 +1,6 @@
+mod diagnostics;
 mod startup;
+use diagnostics::DiagnosticState;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,6 +20,48 @@ struct ServerState {
 }
 
 type BackendDiagnostic = Arc<Mutex<Option<String>>>;
+
+#[tauri::command]
+async fn get_diagnostic_report(
+    window: tauri::Window,
+    state: tauri::State<'_, DiagnosticState>,
+    stage: String,
+    model: Option<String>,
+    error: Option<String>,
+    exit_code: Option<i64>,
+) -> Result<Option<diagnostics::Report>, String> {
+    if window.label() != "main" {
+        return Err("Reports are available only in the main window".into());
+    }
+    if ![
+        "startup",
+        "startup-timeout",
+        "backend",
+        "frontend",
+        "model-load",
+        "previous",
+    ]
+    .contains(&stage.as_str())
+    {
+        return Err("Unknown failure stage".into());
+    }
+    let store = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
+        if stage == "previous" {
+            store.previous()
+        } else {
+            Some(store.snapshot(
+                &stage,
+                model,
+                &error.unwrap_or_else(|| "Backend unavailable".into()),
+                exit_code,
+            ))
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 fn get_server_port(state: tauri::State<'_, Mutex<ServerState>>) -> u16 {
@@ -80,6 +124,11 @@ fn log_sidecar_events(
                     let line = String::from_utf8_lossy(&bytes);
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
+                        app_handle
+                            .state::<DiagnosticState>()
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .append(trimmed);
                         startup_info(&format!("delta-server stdout: {}", trimmed));
                     }
                 }
@@ -87,6 +136,11 @@ fn log_sidecar_events(
                     let line = String::from_utf8_lossy(&bytes);
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
+                        app_handle
+                            .state::<DiagnosticState>()
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .append(trimmed);
                         startup_warn(&format!("delta-server stderr: {}", trimmed));
                         if let Some(diagnostic) = classify_backend_diagnostic(trimmed) {
                             let mut current =
@@ -105,6 +159,12 @@ fn log_sidecar_events(
                     );
                 }
                 CommandEvent::Terminated(payload) => {
+                    {
+                        let store = app_handle.state::<DiagnosticState>();
+                        let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
+                        store.exit_code = payload.code.map(i64::from);
+                        store.signal = payload.signal;
+                    }
                     report_backend_exit(
                         &app_handle,
                         &backend_diagnostic,
@@ -129,6 +189,12 @@ fn report_backend_exit(app: &tauri::AppHandle, diagnostic: &BackendDiagnostic, r
         }
         state.ready = false;
         state.error = true;
+    }
+    {
+        let store = app.state::<DiagnosticState>();
+        let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
+        store.append(&reason);
+        store.snapshot("backend", None, &reason, None);
     }
     startup_error(&reason);
     *diagnostic.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason.clone());
@@ -309,6 +375,25 @@ pub fn run() {
     startup_info("Cleaning stale server processes before startup");
     kill_stale_server_processes();
 
+    let diagnostics = DiagnosticState::default();
+    let panic_diagnostics = diagnostics.clone();
+    let original_panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if let Ok(mut store) = panic_diagnostics.try_lock() {
+            let location = info
+                .location()
+                .map(|l| format!("{}:{}", l.file(), l.line()))
+                .unwrap_or_default();
+            store.snapshot(
+                "native",
+                None,
+                &format!("Native application panic at {}", location),
+                None,
+            );
+        }
+        original_panic_hook(info);
+    }));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
@@ -322,12 +407,17 @@ pub fn run() {
             stopping: false,
         }))
         .manage(BackendDiagnostic::default())
+        .manage(diagnostics.clone())
         .manage(StreamAbortFlags {
             flags: Mutex::new(HashMap::new()),
         })
-        .invoke_handler(tauri::generate_handler![get_server_port, get_server_status, stream_chat, abort_stream])
+        .invoke_handler(tauri::generate_handler![get_server_port, get_server_status, stream_chat, abort_stream, get_diagnostic_report])
         .setup(|app| {
             let app_handle = app.handle().clone();
+            if let Ok(directory) = app.path().app_log_dir() {
+                app.state::<DiagnosticState>().lock().unwrap_or_else(|e| e.into_inner()).set_path(directory.join("last-failure.json"));
+            }
+
             let server_port = find_available_port(8080);
             let model_api_port = find_available_port(server_port + 1);
             startup_info(&format!(

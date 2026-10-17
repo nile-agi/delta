@@ -1,4 +1,6 @@
 <script lang="ts">
+	import FailureReportButton from "$lib/components/app/server/FailureReportButton.svelte";
+	import { modelsStore, selectedModelName } from "$lib/stores/models.svelte";
 	import { onMount, tick } from 'svelte';
 	import { ChevronDown, Loader2, Box, Search, X, Power, AlertTriangle, Check, Settings, Zap } from '@lucide/svelte';
 	import { cn } from '$lib/components/ui/utils';
@@ -719,7 +721,7 @@
 	{/if}
 
 	{#if error}
-		<p class="text-xs text-destructive">{error}</p>
+		<div class="space-y-2"><p class="text-xs text-destructive">{error}</p><FailureReportButton stage="model-load" message={error} model={selectedModelName() ?? undefined} exitCode={modelsStore.loadExitCode ?? undefined} /></div>
 	{/if}
 </div>
 

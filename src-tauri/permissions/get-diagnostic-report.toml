@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-get-diagnostic-report"
+description = "Read a sanitized local failure report in the main window."
+commands.allow = ["get_diagnostic_report"]

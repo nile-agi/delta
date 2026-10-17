@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FailureReportButton from "$lib/components/app/server/FailureReportButton.svelte";
 	import {
 		Settings,
 		Info,
@@ -646,6 +647,7 @@
 							<section class="max-w-2xl space-y-6 rounded-xl border border-border/50 p-5 md:p-8">
 								<div>
 									<h2 class="text-2xl font-semibold">About Delta</h2>
+									<FailureReportButton stage="previous" label="Review last failure report" />
 									<p class="mt-2 text-sm text-muted-foreground">
 										Your assistant for conversations, notes, and everyday work.
 									</p>

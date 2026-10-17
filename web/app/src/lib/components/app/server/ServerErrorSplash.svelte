@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FailureReportButton from "./FailureReportButton.svelte";
 	import { AlertTriangle, RefreshCw, Key, CheckCircle, XCircle } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
@@ -245,6 +246,8 @@
 				</Button>
 			</div>
 		{/if}
+
+		<FailureReportButton stage="backend" message={error} />
 
 		{#if showTroubleshooting}
 			<div class="mt-4 text-left" in:fly={{ y: 10, duration: 300, delay: 400 }}>

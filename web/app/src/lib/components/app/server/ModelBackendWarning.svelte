@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FailureReportButton from "./FailureReportButton.svelte";
 	import { AlertTriangle } from '@lucide/svelte';
 
 	interface Props {
@@ -16,8 +17,8 @@
 	<div class="min-w-0">
 		<p class="font-medium">Model backend unavailable</p>
 		<p class="mt-0.5 break-words text-yellow-900/80 dark:text-yellow-100/80">
-			{error}. The app is ready for model management; fix the Linux graphics runtime or choose a
-			model to retry the backend.
+			{error}. The app is ready for model management; review the report for details or choose a model to retry.
 		</p>
+		<FailureReportButton stage="backend" message={error} />
 	</div>
 </div>

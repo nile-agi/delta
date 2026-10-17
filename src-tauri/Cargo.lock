@@ -666,6 +666,7 @@ name = "delta-app"
 version = "1.0.17"
 dependencies = [
  "log",
+ "regex",
  "serde",
  "serde_json",
  "tauri",
