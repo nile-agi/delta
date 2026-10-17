@@ -122,6 +122,12 @@ class DeltaServerWrapper {
     int heal_count_ = 0;
     std::string last_heal_reason_;
 
+    static void report_child_exit(long long code, int signal) {
+        // A bounded numeric record lets the desktop report child failures separately from its own exit.
+        std::fprintf(stderr, "[llama-server-exit] code=%lld signal=%d\n", code, signal);
+        std::fflush(stderr);
+    }
+
     void note_server_stderr(const std::string& line) {
         static const char* kOom[] = {"Insufficient Memory",
                                      "OutOfMemory",
@@ -659,11 +665,19 @@ class DeltaServerWrapper {
 #ifdef _WIN32
             DWORD exit_code;
             if (GetExitCodeProcess(process, &exit_code) && exit_code != STILL_ACTIVE) {
+                report_child_exit(static_cast<long long>(exit_code), 0);
                 return ServerReadyState::Exited;
             }
 #else
             int status;
-            if (waitpid(child_pid, &status, WNOHANG) != 0) {
+            const pid_t result = waitpid(child_pid, &status, WNOHANG);
+            if (result != 0) {
+                if (result == child_pid) {
+                    if (WIFEXITED(status))
+                        report_child_exit(WEXITSTATUS(status), 0);
+                    else if (WIFSIGNALED(status))
+                        report_child_exit(128 + WTERMSIG(status), WTERMSIG(status));
+                }
                 return ServerReadyState::Exited;
             }
 #endif
@@ -1083,6 +1097,7 @@ class DeltaServerWrapper {
             if (llama_server_process_ != NULL) {
                 DWORD exit_code;
                 if (GetExitCodeProcess(llama_server_process_, &exit_code) && exit_code != STILL_ACTIVE) {
+                    report_child_exit(static_cast<long long>(exit_code), 0);
                     CloseHandle(llama_server_process_);
                     llama_server_process_ = NULL;
                     llama_server_pid_ = 0;
@@ -1093,7 +1108,14 @@ class DeltaServerWrapper {
             if (llama_server_pid_ != 0) {
                 pid_t actual_pid = (llama_server_pid_ < 0) ? -llama_server_pid_ : llama_server_pid_;
                 int status;
-                if (waitpid(actual_pid, &status, WNOHANG) != 0) {
+                const pid_t result = waitpid(actual_pid, &status, WNOHANG);
+                if (result != 0) {
+                    if (result == actual_pid) {
+                        if (WIFEXITED(status))
+                            report_child_exit(WEXITSTATUS(status), 0);
+                        else if (WIFSIGNALED(status))
+                            report_child_exit(128 + WTERMSIG(status), WTERMSIG(status));
+                    }
                     llama_server_pid_ = 0;
                     llama_server_running_ = false;
                 }

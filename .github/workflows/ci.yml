@@ -309,6 +309,10 @@ jobs:
         shell: bash
         run: cmake --build build --config Release -j 4 --target delta --target delta-server
 
+      - name: Test wrapper child-process diagnostics
+        if: runner.os != 'Windows'
+        run: python3 scripts/test-wrapper-diagnostics.py --binary build/delta-server
+
       - name: Build and run engine tests
         if: runner.os != 'Windows'
         shell: bash
