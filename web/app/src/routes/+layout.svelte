@@ -92,7 +92,7 @@
 		if ((window as any).__DELTA_SERVER_ERROR__) {
 			serverError = true;
 			serverErrorMessage =
-				'Server failed to start. Check that no other instance is running and restart the app.';
+				(window as any).__DELTA_MODEL_BACKEND_ERROR__ || 'The backend process could not start.';
 			return;
 		}
 		const onReady = () => {
@@ -104,7 +104,7 @@
 			resetModelApiResolution();
 			serverError = true;
 			serverErrorMessage =
-				'Server failed to start. Check that no other instance is running and restart the app.';
+				(window as any).__DELTA_MODEL_BACKEND_ERROR__ || 'The backend process could not start.';
 		};
 		window.addEventListener('delta-server-ready', onReady);
 		window.addEventListener('delta-server-error', onError);
@@ -128,7 +128,7 @@
 				} else if (error) {
 					serverError = true;
 					serverErrorMessage =
-						'Server failed to start. Check that no other instance is running and restart the app.';
+						(window as any).__DELTA_MODEL_BACKEND_ERROR__ || 'The backend process could not start.';
 					clearInterval(poll);
 				}
 			} catch (e) {
@@ -185,6 +185,7 @@
 			return;
 		}
 		if ((serverReady && modelApiReady) || serverError) {
+			(window as any).__DELTA_STARTUP__?.mounted();
 			const el = document.getElementById('app-loading');
 			if (el) {
 				el.style.transition = 'opacity 0.3s';

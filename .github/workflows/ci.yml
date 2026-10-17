@@ -185,6 +185,12 @@ jobs:
           python3 scripts/test_verify_release_binaries.py
           bash scripts/test-sidecar-debug.sh
 
+      - name: Test startup watchdog and private diagnostic reports
+        run: |
+          node --test scripts/startup-guard.test.cjs
+          rustc --edition=2021 --test src-tauri/src/startup.rs -o /tmp/delta-startup-tests
+          /tmp/delta-startup-tests
+
       - name: Test release notes
         run: node --test scripts/release-notes.test.cjs
 

@@ -1,11 +1,12 @@
+mod startup;
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{Emitter, Manager};
 use tauri::ipc::Channel;
+use tauri::{Emitter, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
-
 
 struct ServerState {
     child: Option<CommandChild>,
@@ -13,6 +14,7 @@ struct ServerState {
     model_api_port: u16,
     ready: bool,
     error: bool,
+    stopping: bool,
 }
 
 type BackendDiagnostic = Arc<Mutex<Option<String>>>;
@@ -69,6 +71,7 @@ fn classify_backend_diagnostic(line: &str) -> Option<String> {
 fn log_sidecar_events(
     mut rx: tauri::async_runtime::Receiver<CommandEvent>,
     backend_diagnostic: BackendDiagnostic,
+    app_handle: tauri::AppHandle,
 ) {
     std::thread::spawn(move || {
         while let Some(event) = rx.blocking_recv() {
@@ -95,18 +98,48 @@ fn log_sidecar_events(
                     }
                 }
                 CommandEvent::Error(error) => {
-                    startup_error(&format!("delta-server event error: {}", error));
+                    report_backend_exit(
+                        &app_handle,
+                        &backend_diagnostic,
+                        format!("Backend process error: {}", error),
+                    );
                 }
                 CommandEvent::Terminated(payload) => {
-                    startup_warn(&format!(
-                        "delta-server terminated before app exit (code: {:?}, signal: {:?})",
-                        payload.code, payload.signal
-                    ));
+                    report_backend_exit(
+                        &app_handle,
+                        &backend_diagnostic,
+                        format!(
+                            "Backend exited (code: {:?}, signal: {:?})",
+                            payload.code, payload.signal
+                        ),
+                    );
                 }
                 _ => {}
             }
         }
     });
+}
+
+fn report_backend_exit(app: &tauri::AppHandle, diagnostic: &BackendDiagnostic, reason: String) {
+    {
+        let state = app.state::<Mutex<ServerState>>();
+        let mut state = state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.stopping {
+            return;
+        }
+        state.ready = false;
+        state.error = true;
+    }
+    startup_error(&reason);
+    *diagnostic.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason.clone());
+    let _ = app.emit(
+        "delta-server-error",
+        serde_json::json!({ "reason": reason }),
+    );
+    if let Some(window) = app.get_webview_window("main") {
+        let reason_json = serde_json::to_string(&reason).unwrap_or_default();
+        let _ = window.eval(&format!("window.__DELTA_MODEL_BACKEND_ERROR__={};window.__DELTA_SERVER_ERROR__=true;window.dispatchEvent(new CustomEvent('delta-server-error'))", reason_json));
+    }
 }
 
 #[cfg(test)]
@@ -198,13 +231,22 @@ async fn stream_chat(
     })
     .await;
 
-    state.flags.lock().unwrap_or_else(|e| e.into_inner()).remove(&stream_id);
+    state
+        .flags
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&stream_id);
     result.map_err(|_| "Stream task panicked".to_string())?
 }
 
 #[tauri::command]
 fn abort_stream(state: tauri::State<'_, StreamAbortFlags>, stream_id: String) {
-    if let Some(flag) = state.flags.lock().unwrap_or_else(|e| e.into_inner()).get(&stream_id) {
+    if let Some(flag) = state
+        .flags
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&stream_id)
+    {
         flag.store(true, Ordering::Relaxed);
     }
 }
@@ -243,24 +285,6 @@ fn dirs_next() -> Option<std::path::PathBuf> {
     }
 }
 
-fn wait_for_server(port: u16) -> bool {
-    for _ in 0..120 {
-        if let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", port)) {
-            stream
-                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
-                .ok();
-            use std::io::{Read, Write};
-            let _ = stream.write_all(b"GET /props HTTP/1.0\r\nHost: localhost\r\n\r\n");
-            let mut buf = [0u8; 64];
-            if stream.read(&mut buf).is_ok() {
-                return true;
-            }
-        }
-        std::thread::sleep(std::time::Duration::from_millis(250));
-    }
-    false
-}
-
 #[cfg(target_os = "windows")]
 fn kill_stale_server_processes() {
     use std::process::Command;
@@ -295,6 +319,7 @@ pub fn run() {
             model_api_port: 8081,
             ready: false,
             error: false,
+            stopping: false,
         }))
         .manage(BackendDiagnostic::default())
         .manage(StreamAbortFlags {
@@ -303,7 +328,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![get_server_port, get_server_status, stream_chat, abort_stream])
         .setup(|app| {
             let app_handle = app.handle().clone();
-
             let server_port = find_available_port(8080);
             let model_api_port = find_available_port(server_port + 1);
             startup_info(&format!(
@@ -344,14 +368,14 @@ pub fn run() {
                         server_port, model_api_port
                     ));
                     let backend_diagnostic = app.state::<BackendDiagnostic>().inner().clone();
-                    log_sidecar_events(rx, backend_diagnostic);
+                    log_sidecar_events(rx, backend_diagnostic, app_handle.clone());
                     let state = app.state::<Mutex<ServerState>>();
                     let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     s.child = Some(child);
                     true
                 }
                 Err(e) => {
-                    startup_error(&format!("Failed to spawn delta-server sidecar: {}", e));
+                    report_backend_exit(&app_handle, &app.state::<BackendDiagnostic>().inner().clone(), format!("Failed to spawn backend: {}", e));
                     false
                 }
             };
@@ -379,27 +403,18 @@ pub fn run() {
                 // Wait for Model API server (starts quickly, always available)
                 // rather than llama-server (may take 30s+ to load a model)
                 startup_info(&format!("Waiting for Model API readiness on port {}", mapi_port));
-                // if wait_for_server(mapi_port) {
-                //     startup_info(&format!("Model API is reachable on port {}", mapi_port));
-                //     if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
-                //         s.ready = true;
-                //     }
-                //     if let Some(window) = app_handle.get_webview_window("main") {
-                //         let js = format!(
-                //             "window.__DELTA_PORT__={};window.__DELTA_MODEL_API_PORT__={};window.dispatchEvent(new CustomEvent('delta-server-ready'))",
-                //             port, mapi_port
-                //         );
-                //         if let Err(e) = window.eval(&js) {
-                //             startup_error(&format!("Failed to inject ports: {}", e));
-                //         }
-                //     }
 
-                if wait_for_server(mapi_port) {
+                let outcome = startup::wait_for_server(mapi_port, std::time::Duration::from_secs(30), || {
+                    app_handle.state::<Mutex<ServerState>>().lock().map(|s| s.error || s.stopping).unwrap_or(true)
+                });
+                if outcome == startup::StartupOutcome::Interrupted { return; }
+                if outcome == startup::StartupOutcome::Ready {
                     startup_info(&format!("Model API is reachable on port {}", mapi_port));
                     if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
+                        if s.error || s.stopping { return; }
                         s.ready = true;
                     }
-                    
+
                     // ✅ Emit Tauri event for the frontend to listen to
                     let _ = app_handle.emit("delta-server-ready", serde_json::json!({
                         "port": port,
@@ -418,10 +433,7 @@ pub fn run() {
                         }
                     }
                 } else { // <--- ✅ Fixed: Only one closing brace before `else`
-                    startup_warn(&format!(
-                        "Model API did not respond within 30 seconds on port {}",
-                        mapi_port
-                    ));
+                    report_backend_exit(&app_handle, &app_handle.state::<BackendDiagnostic>().inner().clone(), "Backend did not become ready within 30 seconds".into());
 
                     if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
                         s.error = true;
@@ -440,21 +452,6 @@ pub fn run() {
 
             Ok(())
         })
-        // .on_window_event(|window, event| {
-        //     if let tauri::WindowEvent::CloseRequested { .. } = event {
-        //         let app = window.app_handle();
-        //         let state = app.state::<Mutex<ServerState>>();
-        //         let child = {
-        //             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-        //             s.child.take()
-        //         };
-        //         if let Some(child) = child {
-        //             log::info!("Shutting down delta-server...");
-        //             let _ = child.kill();
-        //         }
-        //         kill_stale_server_processes();
-        //     }
-        // })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 // Auxiliary windows (e.g. the "hardware-telemetry" OS window) must NOT
@@ -475,6 +472,7 @@ pub fn run() {
                 let state = app.state::<Mutex<ServerState>>();
                 let child = {
                     let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                    s.stopping = true;
                     s.child.take()
                 };
                 if let Some(child) = child {
@@ -490,6 +488,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 let state = app_handle.state::<Mutex<ServerState>>();
                 if let Ok(mut s) = state.lock() {
+                    s.stopping = true;
                     if let Some(child) = s.child.take() {
                         let _ = child.kill();
                     }

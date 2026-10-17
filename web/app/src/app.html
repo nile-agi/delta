@@ -26,41 +26,7 @@
 			</div>
 		</div>
 		<style>@keyframes splashIn{to{opacity:1}}</style>
-		<script>
-		(function() {
-			if (!window.location.hash) {
-				history.replaceState(null, '', window.location.pathname + window.location.search + '#/');
-			}
-			var el = document.querySelector('#app-loading p');
-			if (!('__TAURI_INTERNALS__' in window)) return;
-			var aux = document.documentElement.classList.contains('aux-window');
-			if (aux) { var splash = document.getElementById('app-loading'); if (splash) splash.remove(); }
-			else if (el) { el.textContent = 'Starting...'; el.style.opacity = '1'; }
-			function doPoll() {
-				window.__TAURI_INTERNALS__.invoke('get_server_status').then(function(r) {
-					window.__DELTA_MODEL_BACKEND_ERROR__ = r[4] || '';
-					if (r[2]) {
-						window.__DELTA_PORT__ = r[0];
-						window.__DELTA_MODEL_API_PORT__ = r[1];
-						window.dispatchEvent(new CustomEvent('delta-server-ready'));
-						setTimeout(function() {
-							var s = document.getElementById('app-loading');
-							if (s) { s.style.transition = 'opacity 0.3s'; s.style.opacity = '0'; }
-							setTimeout(function() { if (s) s.remove(); }, 400);
-						}, 1500);
-					} else if (r[3]) {
-						window.__DELTA_SERVER_ERROR__ = true;
-						window.dispatchEvent(new CustomEvent('delta-server-error'));
-					} else {
-						setTimeout(doPoll, 500);
-					}
-				}).catch(function() {
-					setTimeout(doPoll, 1000);
-				});
-			}
-			setTimeout(doPoll, 300);
-		})();
-		</script>
+		<script src="%sveltekit.assets%/startup-guard.js"></script>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>
