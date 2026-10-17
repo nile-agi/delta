@@ -92,6 +92,7 @@ class DeltaServerWrapper {
     int model_api_port_;
     int max_parallel_;
     int max_context_;
+    bool llama_server_is_router_ = false;
     bool enable_embedding_;
     bool enable_reranking_;
     std::string draft_model_;
@@ -720,11 +721,11 @@ class DeltaServerWrapper {
 
         // Skip restart if the same model is already loaded and running
         if (llama_server_running_ && !model_path_.empty() && !model_path_to_use.empty() &&
-            model_path_ == model_path_to_use) {
+            model_path_ == model_path_to_use && ctx_size == max_context_) {
             return probe_server_health(port_) ? ServerReadyState::Ready : ServerReadyState::StillLoading;
         }
 
-        if (llama_server_running_ && !models_dir_.empty() && !model_path_to_use.empty()) {
+        if (llama_server_running_ && llama_server_is_router_ && !models_dir_.empty() && !model_path_to_use.empty()) {
             try {
                 std::filesystem::path model_parent = std::filesystem::path(model_path_to_use).parent_path();
                 std::filesystem::path models_dir_p = std::filesystem::path(models_dir_);
@@ -736,7 +737,7 @@ class DeltaServerWrapper {
                     auto abs2 = std::filesystem::absolute(models_dir_p).lexically_normal();
                     same_dir = abs1 == abs2;
                 }
-                if (same_dir) {
+                if (same_dir && ctx_size == max_context_) {
                     if (!model_name.empty()) {
                         std::cout << "Selected model: " << model_name << std::endl;
                     }
@@ -744,6 +745,11 @@ class DeltaServerWrapper {
                     // Router mode loads on demand, so the router being up is all the readiness
                     // there is to report here; per-model status comes from /v1/models.
                     return probe_server_health(port_) ? ServerReadyState::Ready : ServerReadyState::StillLoading;
+                }
+                if (same_dir) {
+                    // Workers inherit the router's startup arguments. Recreate the router when
+                    // its context changes, rather than reporting a limit it never applied.
+                    model_path_to_use.clear();
                 }
             } catch (...) {
             }
@@ -809,8 +815,10 @@ class DeltaServerWrapper {
 
         model_path_ = model_path_to_use;
         max_context_ = ctx_size;
+        llama_server_is_router_ = model_path_to_use.empty() && !models_dir_.empty();
 
-        std::string cmd = build_llama_server_command(model_path_to_use, ctx_size, model_alias);
+        std::string cmd =
+            build_llama_server_command(model_path_to_use, ctx_size, llama_server_is_router_ ? "" : model_alias);
 
 #ifdef _WIN32
         STARTUPINFOA si = {0};

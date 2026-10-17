@@ -157,8 +157,8 @@ class ModelManager {
     // Check if model exists in registry
     bool is_in_registry(const std::string& model_name);
 
-    // Get max context size for llama-server (-c). Returns user override, else registry max_context, or 0 (use model
-    // default).
+    // Context for llama-server (-c): saved override, declared registry limit, then 8192.
+    // Empty or unregistered names return 0 for the caller to resolve.
     int get_max_context_for_model(const std::string& model_name);
 
     // Set user's context size override for a model (persisted to ~/.delta-cli/model_context_overrides.json).
