@@ -2439,7 +2439,8 @@ static void test_deferred_tools_are_announced_but_not_loaded() {
     if (requests.empty())
         return;
     const auto sent = offered_tools(requests[0]);
-    check(sent.count("create_event") == 1, "a core tool was sent");
+    check(sent.count("create_event") == 0, "large tool sets wait for discovery even in a roomy window");
+    check(sent.count("set_plan") == 0, "private planning schemas also wait until needed");
     check(sent.count("load_tools") == 1, "so was the way to ask for more");
     check(sent.count("write_file") == 0, "a deferred tool was held back");
     check(sent.count("run_command") == 0, "and so was the shell");
@@ -2448,6 +2449,40 @@ static void test_deferred_tools_are_announced_but_not_loaded() {
     check(prompt.find("files") != std::string::npos, "the prompt still tells the model about files");
     check(prompt.find("shell") != std::string::npos, "and about the shell");
     check(prompt.find("load_tools") != std::string::npos, "and how to get hold of them");
+    check(prompt.find("calendar") != std::string::npos, "calendar tools remain discoverable");
+    check(prompt.size() < 3000, "discovery uses compact instructions rather than the full tool manual");
+    for (const auto& tool : requests[0]["tools"]) {
+        if (tool["function"]["name"] == "load_tools") {
+            const auto& choices = tool["function"]["parameters"]["properties"]["category"]["enum"];
+            check(std::find(choices.begin(), choices.end(), json("calendar")) != choices.end(),
+                  "the discovery schema allows the calendar group it advertises");
+        }
+    }
+}
+
+static void test_discovery_loads_calendar_and_preserves_history() {
+    test("progressive discovery loads calendar tools without losing conversation history");
+    ScriptedServer server(std::vector<json>{assistant_calling("load_tools", {{"category", "calendar"}}, "load"),
+                                            assistant_calling("list_events", json::object(), "events"),
+                                            {{"role", "assistant"}, {"content", "Done."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", true);
+    harness.set_options(all_categories());
+    EventLog log;
+    auto result = harness.run(json::array({user("My project is Cedar."),
+                                           {{"role", "assistant"}, {"content", "Understood."}},
+                                           user("What events do I have?")}),
+                              log.sink());
+    server.stop();
+    check(result.success, "the run completed");
+    check_eq(result.tool_calls, 2, "both discovery and the requested tool executed");
+    auto requests = server.requests();
+    check_eq(requests.size(), size_t(3), "the model observed discovery and the tool result");
+    if (requests.size() < 3)
+        return;
+    check(offered_tools(requests[1]).count("list_events") == 1, "loaded calendar schemas reach the model");
+    check(requests[1]["messages"].dump().find("Cedar") != std::string::npos, "earlier user facts survive discovery");
+    check(!tool_messages(requests[2]).empty(), "the tool observation reaches the final answer turn");
 }
 
 static void test_load_tools_puts_a_category_in_front_of_the_model() {
@@ -2490,6 +2525,13 @@ static void test_load_tools_cannot_reach_a_category_the_user_turned_off() {
     check(requests.size() >= 2, "the model got another turn");
     if (requests.size() < 2)
         return;
+    for (const auto& tool : requests[0]["tools"]) {
+        if (tool["function"]["name"] == "load_tools") {
+            const auto& groups = tool["function"]["parameters"]["properties"]["category"]["enum"];
+            check(std::find(groups.begin(), groups.end(), json("shell")) == groups.end(),
+                  "disabled shell tools are not advertised by discovery");
+        }
+    }
     auto tools = tool_messages(requests[1]);
     check_eq(tools.size(), size_t(1), "the attempt was answered");
     if (!tools.empty())
@@ -3390,7 +3432,8 @@ static void test_document_tools_are_offered_only_with_documents() {
     test("the document tools are only offered when the chat has documents");
 
     auto tools_for = [](const std::string& conversation) {
-        ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "ok"}}});
+        ScriptedServer server(std::vector<json>{assistant_calling("load_tools", {{"category", "documents"}}, "docs"),
+                                                {{"role", "assistant"}, {"content", "ok"}}});
         server.set_router("test-model", 32768);
         server.start();
         Harness harness(server.url(), "test-model", true);
@@ -3652,6 +3695,7 @@ int main() {
     test_working_notes_are_capped_and_keep_the_newest();
     test_working_notes_are_cleared_when_the_job_finishes();
     test_deferred_tools_are_announced_but_not_loaded();
+    test_discovery_loads_calendar_and_preserves_history();
     test_load_tools_puts_a_category_in_front_of_the_model();
     test_load_tools_cannot_reach_a_category_the_user_turned_off();
     test_a_created_row_can_be_found_by_the_id_it_returns();

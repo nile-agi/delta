@@ -309,18 +309,27 @@ jobs:
         shell: bash
         run: cmake --build build --config Release -j 4 --target delta --target delta-server
 
+      - name: Test wrapper child-process diagnostics
+        if: runner.os != 'Windows'
+        run: |
+          python3 scripts/test-wrapper-diagnostics.py --binary build/delta-server
+          python3 scripts/test-wrapper-context.py --binary build/delta-server
+
       - name: Build and run engine tests
         if: runner.os != 'Windows'
         shell: bash
         run: |
           cmake --build build --config Release -j 4 \
             --target delta-document-tests --target delta-update-tests --target delta-harness-tests --target delta-openai-tests \
-            --target delta-ocr-tests
+            --target delta-ocr-tests --target delta-model-context-tests
           ./build/delta-document-tests
           ./build/delta-update-tests
           ./build/delta-harness-tests
           ./build/delta-openai-tests
           ./build/delta-ocr-tests
+          context_test_home=$(mktemp -d)
+          trap 'rm -rf "$context_test_home"' EXIT
+          HOME="$context_test_home" ./build/delta-model-context-tests
 
       - name: Compiler cache statistics
         if: always()

@@ -77,11 +77,36 @@ impl Diagnostics {
 
     pub fn append(&mut self, text: &str) {
         for line in text.lines() {
+            let line = line.trim();
+            if let Some(details) = line.strip_prefix("[llama-server-exit] code=") {
+                if let Some((code, signal)) = details.split_once(" signal=") {
+                    if let (Ok(code), Ok(signal)) = (code.parse::<i64>(), signal.parse::<i32>()) {
+                        self.exit_code = Some(code);
+                        self.signal = (signal > 0).then_some(signal);
+                        self.append(&format!(
+                            "llama_process: exited code={code} signal={signal}"
+                        ));
+                    }
+                }
+                continue;
+            }
+            let forwarded = line.strip_prefix("[llama-server] ");
+            let loader = forwarded
+                .and_then(|line| line.split_once(": error while loading shared libraries:"))
+                .map(|(_, detail)| {
+                    format!("llama_loader: error while loading shared libraries:{detail}")
+                });
+            let line = loader.as_deref().unwrap_or(forwarded.unwrap_or(line));
             let lower = line.to_ascii_lowercase();
             // Only model-runtime sources; never document indexing, tools, HTTP bodies or chat.
-            if !["llama_", "ggml_", "dyld:"]
-                .iter()
-                .any(|prefix| lower.starts_with(prefix))
+            let runtime_prefix = forwarded.is_some()
+                && (lower.starts_with("common_")
+                    || lower.starts_with("main:")
+                    || (lower.starts_with("srv ") && lower.contains(":")));
+            if !runtime_prefix
+                && !["llama_", "ggml_", "dyld:"]
+                    .iter()
+                    .any(|prefix| lower.starts_with(prefix))
             {
                 continue;
             }
@@ -283,6 +308,40 @@ mod tests {
         store.append("[delta-documents] indexing My private medical report failed: unavailable");
         store.append("[harness] tool error: My personal plans");
         assert!(store.logs.is_empty());
+    }
+
+    #[test]
+    fn captures_forwarded_runtime_errors_without_collecting_unrelated_logs() {
+        let mut store = Diagnostics::default();
+        store.append("[llama-server] llama_model_load: error loading /home/asha/private.gguf");
+        store.append("[llama-server] ggml_backend: failed to allocate memory");
+        store.append("[llama-server] /tmp/llama-server: error while loading shared libraries: libgomp.so.1: cannot open shared object file");
+        store.append("[llama-server] main: error loading model");
+        store.append("[llama-server] common_init_from_params: failed to initialize");
+        store.append("[llama-server] srv    load_model: failed to load");
+        store.append("[llama-server] [delta-documents] indexing private medical report failed");
+        store.append("[llama-server] llama_model_load: error prompt: private conversation");
+        let report = store.snapshot("backend", None, "Failed to start server", None);
+        assert_eq!(report.logs.len(), 6);
+        assert!(report.logs.iter().any(|line| line.contains("libgomp.so.1")));
+        assert!(!format!("{report:?}").contains("asha"));
+        assert!(!format!("{report:?}").contains("private medical"));
+        assert!(!format!("{report:?}").contains("private conversation"));
+    }
+
+    #[test]
+    fn captures_child_exit_status_before_the_failure_report_is_requested() {
+        let mut store = Diagnostics::default();
+        store.append("[llama-server-exit] code=132 signal=4");
+        let report = store.snapshot("backend", None, "Failed to start server", None);
+        assert_eq!(report.exit_code, Some(132));
+        assert_eq!(report.signal, Some(4));
+        store.append("[llama-server-exit] code=1 signal=0");
+        assert_eq!(store.exit_code, Some(1));
+        assert_eq!(store.signal, None);
+        store.append("[llama-server-exit] code=bad signal=private data");
+        assert_eq!(store.exit_code, Some(1));
+        assert_eq!(store.signal, None);
     }
 
     #[test]

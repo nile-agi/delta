@@ -92,6 +92,7 @@ class DeltaServerWrapper {
     int model_api_port_;
     int max_parallel_;
     int max_context_;
+    bool llama_server_is_router_ = false;
     bool enable_embedding_;
     bool enable_reranking_;
     std::string draft_model_;
@@ -121,6 +122,12 @@ class DeltaServerWrapper {
     int last_ngl_ = 0;
     int heal_count_ = 0;
     std::string last_heal_reason_;
+
+    static void report_child_exit(long long code, int signal) {
+        // A bounded numeric record lets the desktop report child failures separately from its own exit.
+        std::fprintf(stderr, "[llama-server-exit] code=%lld signal=%d\n", code, signal);
+        std::fflush(stderr);
+    }
 
     void note_server_stderr(const std::string& line) {
         static const char* kOom[] = {"Insufficient Memory",
@@ -659,11 +666,19 @@ class DeltaServerWrapper {
 #ifdef _WIN32
             DWORD exit_code;
             if (GetExitCodeProcess(process, &exit_code) && exit_code != STILL_ACTIVE) {
+                report_child_exit(static_cast<long long>(exit_code), 0);
                 return ServerReadyState::Exited;
             }
 #else
             int status;
-            if (waitpid(child_pid, &status, WNOHANG) != 0) {
+            const pid_t result = waitpid(child_pid, &status, WNOHANG);
+            if (result != 0) {
+                if (result == child_pid) {
+                    if (WIFEXITED(status))
+                        report_child_exit(WEXITSTATUS(status), 0);
+                    else if (WIFSIGNALED(status))
+                        report_child_exit(128 + WTERMSIG(status), WTERMSIG(status));
+                }
                 return ServerReadyState::Exited;
             }
 #endif
@@ -706,11 +721,11 @@ class DeltaServerWrapper {
 
         // Skip restart if the same model is already loaded and running
         if (llama_server_running_ && !model_path_.empty() && !model_path_to_use.empty() &&
-            model_path_ == model_path_to_use) {
+            model_path_ == model_path_to_use && ctx_size == max_context_) {
             return probe_server_health(port_) ? ServerReadyState::Ready : ServerReadyState::StillLoading;
         }
 
-        if (llama_server_running_ && !models_dir_.empty() && !model_path_to_use.empty()) {
+        if (llama_server_running_ && llama_server_is_router_ && !models_dir_.empty() && !model_path_to_use.empty()) {
             try {
                 std::filesystem::path model_parent = std::filesystem::path(model_path_to_use).parent_path();
                 std::filesystem::path models_dir_p = std::filesystem::path(models_dir_);
@@ -722,7 +737,7 @@ class DeltaServerWrapper {
                     auto abs2 = std::filesystem::absolute(models_dir_p).lexically_normal();
                     same_dir = abs1 == abs2;
                 }
-                if (same_dir) {
+                if (same_dir && ctx_size == max_context_) {
                     if (!model_name.empty()) {
                         std::cout << "Selected model: " << model_name << std::endl;
                     }
@@ -730,6 +745,11 @@ class DeltaServerWrapper {
                     // Router mode loads on demand, so the router being up is all the readiness
                     // there is to report here; per-model status comes from /v1/models.
                     return probe_server_health(port_) ? ServerReadyState::Ready : ServerReadyState::StillLoading;
+                }
+                if (same_dir) {
+                    // Workers inherit the router's startup arguments. Recreate the router when
+                    // its context changes, rather than reporting a limit it never applied.
+                    model_path_to_use.clear();
                 }
             } catch (...) {
             }
@@ -795,8 +815,10 @@ class DeltaServerWrapper {
 
         model_path_ = model_path_to_use;
         max_context_ = ctx_size;
+        llama_server_is_router_ = model_path_to_use.empty() && !models_dir_.empty();
 
-        std::string cmd = build_llama_server_command(model_path_to_use, ctx_size, model_alias);
+        std::string cmd =
+            build_llama_server_command(model_path_to_use, ctx_size, llama_server_is_router_ ? "" : model_alias);
 
 #ifdef _WIN32
         STARTUPINFOA si = {0};
@@ -1083,6 +1105,7 @@ class DeltaServerWrapper {
             if (llama_server_process_ != NULL) {
                 DWORD exit_code;
                 if (GetExitCodeProcess(llama_server_process_, &exit_code) && exit_code != STILL_ACTIVE) {
+                    report_child_exit(static_cast<long long>(exit_code), 0);
                     CloseHandle(llama_server_process_);
                     llama_server_process_ = NULL;
                     llama_server_pid_ = 0;
@@ -1093,7 +1116,14 @@ class DeltaServerWrapper {
             if (llama_server_pid_ != 0) {
                 pid_t actual_pid = (llama_server_pid_ < 0) ? -llama_server_pid_ : llama_server_pid_;
                 int status;
-                if (waitpid(actual_pid, &status, WNOHANG) != 0) {
+                const pid_t result = waitpid(actual_pid, &status, WNOHANG);
+                if (result != 0) {
+                    if (result == actual_pid) {
+                        if (WIFEXITED(status))
+                            report_child_exit(WEXITSTATUS(status), 0);
+                        else if (WIFSIGNALED(status))
+                            report_child_exit(128 + WTERMSIG(status), WTERMSIG(status));
+                    }
                     llama_server_pid_ = 0;
                     llama_server_running_ = false;
                 }

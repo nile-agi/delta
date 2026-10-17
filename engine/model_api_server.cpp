@@ -960,15 +960,12 @@ class ModelAPIServer {
                 }
 
                 auto registry_entry = model_mgr_.get_registry_entry(model_name);
+                const int ctx_size = ctx_override > 0 ? ctx_override : model_mgr_.get_max_context_for_model(model_name);
 
                 // ===== DHATS: Pre-flight resource check =====
                 if (!registry_entry.name.empty()) {
-                    int model_ctx = ctx_override > 0
-                                        ? ctx_override
-                                        : (registry_entry.max_context > 0 ? registry_entry.max_context : 8192);
-
                     auto compatibility = g_hardware_monitor.check_model_compatibility(
-                        registry_entry.size_bytes, estimate_model_layers(registry_entry.size_bytes), model_ctx);
+                        registry_entry.size_bytes, estimate_model_layers(registry_entry.size_bytes), ctx_size);
 
                     // BLOCK: Cannot run at all
                     if (!compatibility.can_run) {
@@ -1021,7 +1018,6 @@ class ModelAPIServer {
                 if (ctx_override > 0) {
                     model_mgr_.set_max_context_override(model_name, ctx_override);
                 }
-                int ctx_size = model_mgr_.get_max_context_for_model(model_name);
                 std::string model_alias = model_name;
                 {
                     std::filesystem::path mp(model_path);

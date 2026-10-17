@@ -2475,7 +2475,9 @@ int ModelManager::get_max_context_for_model(const std::string& model_name) {
     if (it != context_overrides_.end() && it->second > 0)
         return it->second;
     int ctx = get_registry_entry(key).max_context;
-    return ctx > 0 ? ctx : 0;
+    // Unspecified registry limits must not become the GGUF training window (often 128K+).
+    // This is the same bounded context the resource preflight and launch must both use.
+    return ctx > 0 ? ctx : 8192;
 }
 
 void ModelManager::set_max_context_override(const std::string& model_name, int ctx) {

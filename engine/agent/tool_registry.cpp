@@ -259,7 +259,7 @@ std::string category_summary(const std::string& category) {
         return "read, write, list and delete files under the home directory";
     if (category == "shell")
         return "run a command on this machine and read its output";
-    return "";
+    return "tools in this group";
 }
 
 void begin_tool_session(const std::set<std::string>& permitted) {
