@@ -184,6 +184,7 @@ jobs:
           cmake -P scripts/test-release-policy.cmake
           python3 scripts/test_verify_release_binaries.py
           bash scripts/test-sidecar-debug.sh
+          bash scripts/test-verify-tauri-web-assets.sh
 
       - name: Test startup watchdog and private diagnostic reports
         run: |

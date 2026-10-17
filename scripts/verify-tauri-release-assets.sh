@@ -46,9 +46,20 @@ find "$REPO_ROOT/public/_app" -type f -print -quit | grep -q . ||
   fail "public/_app is empty. The SvelteKit assets are missing; run the web UI build before building Tauri."
 grep -q 'id="app-loading"' "$WEB_INDEX" || fail "public/index.html is missing the startup loading surface. Rebuild web/app before packaging."
 
-for marker in "__DELTA_PORT__" "__DELTA_MODEL_API_PORT__" "delta-server-ready" "delta-server-error"; do
-  grep -q "$marker" "$WEB_INDEX" || fail "public/index.html is missing '$marker'. Rebuild web/app before packaging."
+# Startup and reporting run before Svelte mounts and are copied as static assets.
+# Check both the HTML references and their deployed files, rather than expecting inline code.
+for helper in startup-guard.js failure-report.js; do
+  grep -Eq "<script[^>]*src=[\"'][^\"']*/${helper//./\\.}[\"']" "$WEB_INDEX" ||
+    fail "public/index.html does not reference '$helper'. Rebuild web/app before packaging."
+  [[ -s "$REPO_ROOT/public/$helper" ]] ||
+    fail "public/$helper is missing or empty. Rebuild web/app before packaging."
 done
+
+for marker in "__DELTA_PORT__" "__DELTA_MODEL_API_PORT__" "delta-server-ready" "delta-server-error" "__DELTA_STARTUP__"; do
+  grep -q "$marker" "$REPO_ROOT/public/startup-guard.js" || fail "public/startup-guard.js is missing '$marker'. Rebuild web/app before packaging."
+done
+grep -q '__DELTA_DIAGNOSTICS__' "$REPO_ROOT/public/failure-report.js" ||
+  fail "public/failure-report.js is missing diagnostic reporting. Rebuild web/app before packaging."
 
 if [[ "$WEB_ONLY" == "1" ]]; then
   echo "Tauri web assets verified."
