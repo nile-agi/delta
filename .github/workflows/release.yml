@@ -534,6 +534,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
       RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+      RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -563,13 +564,25 @@ jobs:
           echo "CHECKSUMS_FILE=checksums-${VERSION}.sha256" >> "$GITHUB_ENV"
 
       - name: Attach CLI assets without changing release notes or draft status
-        run: |
-          gh release upload "$RELEASE_TAG" --repo "$RELEASE_REPO" --clobber \
-            delta-cli-macos-arm64.tar.gz \
-            delta-cli-macos-x86_64.tar.gz \
-            delta-cli-linux-x86_64.tar.gz \
-            delta-cli-windows-x64.zip \
-            "$CHECKSUMS_FILE"
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.RELEASE_REPO_TOKEN }}
+          script: |
+            const { uploadReleaseAssets } = require('./scripts/release-notes.cjs');
+            await uploadReleaseAssets({
+              github,
+              context,
+              tag: process.env.RELEASE_TAG,
+              releaseId: process.env.RELEASE_ID,
+              releaseRepo: process.env.RELEASE_REPO,
+              files: [
+                'delta-cli-macos-arm64.tar.gz',
+                'delta-cli-macos-x86_64.tar.gz',
+                'delta-cli-linux-x86_64.tar.gz',
+                'delta-cli-windows-x64.zip',
+                process.env.CHECKSUMS_FILE
+              ]
+            });
 
   # Default success gating keeps a new release in draft if any build or upload fails.
   publish-release:
