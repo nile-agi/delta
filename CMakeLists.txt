@@ -399,6 +399,10 @@ endif()
 # Harness tests: a standalone binary (no Catch2 dependency) that runs the agent loop against a
 # scripted stand-in for llama-server. Build and run with:
 #   cmake --build build --target delta-harness-tests && ./build/delta-harness-tests
+add_executable(delta-model-runtime-tests EXCLUDE_FROM_ALL tests/test_model_runtime.cpp engine/model_runtime.cpp)
+target_include_directories(delta-model-runtime-tests PRIVATE ${DELTA_INCLUDE_DIRS})
+target_link_libraries(delta-model-runtime-tests PRIVATE Threads::Threads)
+
 add_executable(delta-model-context-tests EXCLUDE_FROM_ALL
     tests/test_model_context.cpp engine/models.cpp engine/tools/file_ops.cpp engine/ui.cpp)
 target_include_directories(delta-model-context-tests PRIVATE ${DELTA_INCLUDE_DIRS})
