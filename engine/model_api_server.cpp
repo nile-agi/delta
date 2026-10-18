@@ -280,6 +280,32 @@ static api::ApiAccess& api_access() {
 
 static std::atomic<int> g_llama_port{0};
 
+static ModelRuntime* g_model_runtime = nullptr;
+static RuntimeConfigResolver g_runtime_config_resolver;
+static json runtime_json(const RuntimeSnapshot& s) {
+    const auto& c = s.config;
+    json result = {{"attempt_id", s.attempt_id},
+                   {"generation", s.generation},
+                   {"engine_state", to_string(s.engine_state)},
+                   {"state", to_string(s.state)},
+                   {"loaded", s.state == ModelLoadState::Ready},
+                   {"model_name", c.model_name},
+                   {"model_alias", c.model_alias},
+                   {"ctx_size", c.context},
+                   {"effective_config",
+                    {{"context", c.context},
+                     {"parallel", c.parallel},
+                     {"batch", c.batch},
+                     {"microbatch", c.microbatch},
+                     {"gpu_layers", c.gpu_layers}}}};
+    if (s.failure)
+        result["failure"] = {{"code", s.failure->code},
+                             {"message", s.failure->message},
+                             {"exit_code", s.failure->exit_code},
+                             {"signal", s.failure->signal}};
+    return result;
+}
+
 // Forward declaration for model switch callback
 static ModelSwitchCallback* g_model_switch_callback = nullptr;
 // Callback for unloading model / stopping llama-server
@@ -939,6 +965,45 @@ class ModelAPIServer {
             }
         });
 
+        server_->Get("/api/models/runtime", [](const httplib::Request& req, httplib::Response& res) {
+            const auto snapshot =
+                g_model_runtime ? (req.has_param("attempt_id") ? g_model_runtime->get(req.get_param_value("attempt_id"))
+                                                               : g_model_runtime->current())
+                                : std::nullopt;
+            if (!snapshot && req.has_param("attempt_id")) {
+                res.status = 404;
+                res.set_content(R"({"error":{"message":"Unknown model load attempt"}})", "application/json");
+            } else if (!g_model_runtime) {
+                res.status = 501;
+                res.set_content(R"({"error":{"message":"Runtime status unavailable in legacy CLI mode"}})",
+                                "application/json");
+            } else
+                res.set_content(snapshot ? runtime_json(*snapshot).dump()
+                                         : R"({"state":"idle","engine_state":"available","loaded":false})",
+                                "application/json");
+        });
+        server_->Post("/api/models/runtime/cancel", [](const httplib::Request& req, httplib::Response& res) {
+            try {
+                const auto body = json::parse(req.body);
+                const auto id = body.value("attempt_id", std::string());
+                if (id.empty()) {
+                    res.status = 400;
+                    res.set_content(R"({"error":{"message":"attempt_id is required"}})", "application/json");
+                    return;
+                }
+                auto snapshot = g_model_runtime ? g_model_runtime->cancel(id) : std::nullopt;
+                if (!snapshot) {
+                    res.status = 404;
+                    res.set_content(R"({"error":{"message":"Unknown model load attempt"}})", "application/json");
+                    return;
+                }
+                res.set_content(runtime_json(*snapshot).dump(), "application/json");
+            } catch (const json::exception&) {
+                res.status = 400;
+                res.set_content(R"({"error":{"message":"Invalid cancellation request"}})", "application/json");
+            }
+        });
+
         server_->Post("/api/models/use", [this](const httplib::Request& req, httplib::Response& res) {
             try {
                 json body = json::parse(req.body);
@@ -1015,9 +1080,6 @@ class ModelAPIServer {
                     return;
                 }
 
-                if (ctx_override > 0) {
-                    model_mgr_.set_max_context_override(model_name, ctx_override);
-                }
                 std::string model_alias = model_name;
                 {
                     std::filesystem::path mp(model_path);
@@ -1026,6 +1088,32 @@ class ModelAPIServer {
                         model_alias = stem;
                     }
                 }
+
+                if (ctx_override < 0)
+                    throw std::invalid_argument("Context must be positive.");
+                if (g_model_runtime) {
+                    RuntimeConfig config;
+                    config.model_name = model_name;
+                    config.model_path = model_path;
+                    config.model_alias = model_alias;
+                    config.context = ctx_size;
+                    if (g_runtime_config_resolver)
+                        config = g_runtime_config_resolver(config);
+                    validate_runtime_config(config);
+                    validate_model_file(model_path);
+                    if (ctx_override > 0)
+                        model_mgr_.set_max_context_override(model_name, ctx_override);
+                    set_props_fallback_model("", "");
+                    auto accepted = g_model_runtime->select(config);
+                    auto result = runtime_json(accepted);
+                    result["success"] = true;
+                    result["model_path"] = model_path;
+                    result["message"] = "Model is loading.";
+                    res.set_content(result.dump(), "application/json");
+                    return;
+                }
+                if (ctx_override > 0)
+                    model_mgr_.set_max_context_override(model_name, ctx_override);
 
                 bool model_loaded = false;
 
@@ -1081,6 +1169,9 @@ class ModelAPIServer {
                                                               : "Model selected. Restart server to use this model.")}};
 
                 res.set_content(result.dump(), "application/json");
+            } catch (const std::invalid_argument& e) {
+                res.status = 400;
+                res.set_content(json{{"error", {{"code", 400}, {"message", e.what()}}}}.dump(), "application/json");
             } catch (const json::parse_error& e) {
                 json error = {{"error", {{"code", 400}, {"message", "Invalid JSON in request body"}}}};
                 res.status = 400;
@@ -2193,6 +2284,11 @@ class ModelAPIServer {
 };
 
 static std::unique_ptr<ModelAPIServer> g_model_api_server;
+
+void set_model_runtime(ModelRuntime* runtime, RuntimeConfigResolver resolver) {
+    g_model_runtime = runtime;
+    g_runtime_config_resolver = std::move(resolver);
+}
 
 void set_model_switch_callback(ModelSwitchCallback callback) {
     static ModelSwitchCallback stored_callback = callback;

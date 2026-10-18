@@ -23,6 +23,9 @@
 #include <chrono>
 #include <mutex>
 #include <atomic>
+#include <memory>
+#include <optional>
+#include <stdexcept>
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -100,6 +103,9 @@ class DeltaServerWrapper {
     bool suppress_auto_draft_ = false; // set while retrying a launch that failed with one
     std::string grammar_file_;
 
+    std::unique_ptr<ModelRuntime> runtime_;
+    std::optional<RuntimeConfig> effective_config_;
+    ModelRuntime::Cancelled load_cancelled_;
     std::thread llama_server_thread_;
     std::atomic<bool> llama_server_running_;
     std::atomic<bool> should_stop_;
@@ -172,6 +178,9 @@ class DeltaServerWrapper {
     }
 
     ~DeltaServerWrapper() {
+        if (runtime_)
+            runtime_->shutdown();
+        stop_llama_server();
 #ifdef _WIN32
         if (job_object_) {
             CloseHandle(job_object_);
@@ -483,6 +492,14 @@ class DeltaServerWrapper {
             cmd += " -c " + std::to_string(ctx_size);
         }
 
+        if (effective_config_) {
+            cmd += " --parallel " + std::to_string(effective_config_->parallel);
+            cmd += " --batch-size " + std::to_string(effective_config_->batch);
+            cmd += " --ubatch-size " + std::to_string(effective_config_->microbatch);
+            cmd += " --gpu-layers " + std::to_string(effective_config_->gpu_layers);
+        } else
+            cmd += " --parallel " + std::to_string(max_parallel_);
+
         // Enable modern server features for the Delta UI
         cmd += " --jinja";        // Use Jinja2 templates for chat formatting
         cmd += " --metrics";      // Enable Prometheus metrics endpoint
@@ -576,7 +593,7 @@ class DeltaServerWrapper {
         } catch (...) {
         }
 
-        if (model_size_bytes > 0) {
+        if (model_size_bytes > 0 && !effective_config_) {
             auto plan = hw_monitor_.plan_tiered_offload(model_size_bytes, n_layers, ctx_size);
 
             int ngl = plan.ngl;
@@ -657,10 +674,13 @@ class DeltaServerWrapper {
 #else
     ServerReadyState wait_until_model_loaded(pid_t child_pid) {
 #endif
-        const int max_attempts = (MODEL_LOAD_TIMEOUT_SECONDS * 1000) / READY_POLL_INTERVAL_MS;
+        const int max_attempts =
+            ((effective_config_ ? 30 : MODEL_LOAD_TIMEOUT_SECONDS) * 1000) / READY_POLL_INTERVAL_MS;
         int next_progress_sec = PROGRESS_INTERVAL_SECONDS;
 
         for (int attempt = 0; attempt < max_attempts; ++attempt) {
+            if ((load_cancelled_ && load_cancelled_()) || should_stop_)
+                return ServerReadyState::StillLoading;
             std::this_thread::sleep_for(std::chrono::milliseconds(READY_POLL_INTERVAL_MS));
 
 #ifdef _WIN32
@@ -1032,14 +1052,6 @@ class DeltaServerWrapper {
         std::cout << std::endl;
 
         delta::set_model_api_llama_port(port_);
-        delta::start_model_api_server(model_api_port_);
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-        delta::set_model_switch_callback([this](const std::string& model_path, const std::string& model_name,
-                                                int ctx_size, const std::string& model_alias) -> bool {
-            return this->restart_llama_server(model_path, model_name, ctx_size, model_alias) == ServerReadyState::Ready;
-        });
-        delta::set_model_unload_callback([this]() { this->stop_llama_server(); });
 
         std::string path_to_load = model_path_;
         if (path_to_load.empty() && !models_dir_.empty()) {
@@ -1057,6 +1069,49 @@ class DeltaServerWrapper {
                          "on-demand model loading"
                       << std::endl;
         }
+
+        ModelRuntime::Hooks hooks;
+        hooks.stop = [this] { stop_llama_server(); };
+        hooks.launch = [this](const RuntimeConfig& config, const ModelRuntime::Cancelled& cancelled) {
+            effective_config_ = config;
+            max_parallel_ = config.parallel;
+            load_cancelled_ = cancelled;
+            const auto state = launch_llama_server(models_dir_.empty() ? config.model_path : "", config.model_name,
+                                                   config.context, models_dir_.empty() ? config.model_alias : "");
+            if (cancelled())
+                return;
+            if (state != ServerReadyState::Ready)
+                throw std::runtime_error("Engine did not become available within 30 seconds.");
+            // Confirm exact identity before sending a load request; no request should autoload another model.
+            if (llama_server_is_router_) {
+                auto initial = probe_model_worker(port_, config, true);
+                if (initial.failed)
+                    throw std::runtime_error(initial.failure.message);
+            }
+            if (!request_model_load(port_, config, llama_server_is_router_))
+                throw std::runtime_error("Engine rejected the selected model load request.");
+        };
+        hooks.probe = [this](const RuntimeConfig& config) {
+            return probe_model_worker(port_, config, llama_server_is_router_);
+        };
+        runtime_ = std::make_unique<ModelRuntime>(std::move(hooks));
+        set_model_runtime(runtime_.get(), [this](RuntimeConfig config) {
+            config.parallel = max_parallel_;
+            auto plan =
+                hw_monitor_.plan_tiered_offload(std::filesystem::file_size(config.model_path), 32, config.context);
+            config.batch = runtime_env_int("LLAMA_ARG_BATCH", plan.batch);
+            config.microbatch = runtime_env_int("LLAMA_ARG_UBATCH", plan.ubatch);
+            config.gpu_layers = runtime_env_int("LLAMA_ARG_N_GPU_LAYERS", plan.ngl);
+            config.draft_path = draft_model_;
+            return config;
+        });
+        delta::set_model_unload_callback([this]() {
+            if (auto s = runtime_->current())
+                runtime_->cancel(s->attempt_id);
+            this->stop_llama_server();
+        });
+
+        delta::start_model_api_server(model_api_port_);
 
 #ifdef _WIN32
         g_win_should_stop = &should_stop_;
@@ -1085,21 +1140,10 @@ class DeltaServerWrapper {
             // ====================================================================
             // DHATS Brain: self-heal watchdog
             // ====================================================================
-            int hp = heal_pending_.exchange(0);
-            if (hp && !model_path_.empty()) {
-                heal_count_++;
-                oom_hits_ = 0;
-                if (hp == 1) {
-                    ngl_override_ = std::max(0, last_ngl_ / 2);
-                    last_heal_reason_ = "GPU out-of-memory — halved GPU layers";
-                } else {
-                    ngl_override_ = 0;
-                    last_heal_reason_ = "GPU out-of-memory — fell back to CPU";
-                }
-                std::cout << "[DHATS] Self-heal #" << heal_count_ << ": restarting llama-server with -ngl "
-                          << ngl_override_ << std::endl;
-                restart_llama_server(model_path_, "", max_context_, "");
-            }
+            // ModelRuntime owns loading and retries. The legacy watchdog must not race it.
+            if (runtime_->current())
+                continue;
+            std::lock_guard<std::mutex> process_lock(llama_server_mutex_);
 
 #ifdef _WIN32
             if (llama_server_process_ != NULL) {
@@ -1132,6 +1176,7 @@ class DeltaServerWrapper {
         }
 
         std::cout << "\nStopping server..." << std::endl;
+        runtime_->shutdown();
         stop_llama_server();
 
 #ifdef _WIN32
@@ -1140,6 +1185,7 @@ class DeltaServerWrapper {
         g_wrapper_instance = nullptr;
 #endif
         delta::stop_model_api_server();
+        set_model_runtime(nullptr);
 
         return 0;
     }
