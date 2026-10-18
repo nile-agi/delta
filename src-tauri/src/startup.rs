@@ -52,12 +52,21 @@ pub fn wait_for_server(
 
 /// Ask this instance's local model API to release its child before killing the backend.
 pub fn unload_backend(port: u16) -> bool {
-    ureq::post(&format!("http://127.0.0.1:{port}/api/models/unload"))
-        .timeout(Duration::from_secs(3))
-        .set("Content-Type", "application/json")
-        .send_string("{}")
-        .map(|response| response.status() == 200)
-        .unwrap_or(false)
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(250)) else {
+        return false;
+    };
+    let remaining = || deadline.saturating_duration_since(Instant::now()).max(Duration::from_millis(1));
+    let _ = stream.set_write_timeout(Some(remaining()));
+    if stream.write_all(b"POST /api/models/unload HTTP/1.0\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}").is_err() {
+        return false;
+    }
+    let _ = stream.set_read_timeout(Some(remaining()));
+    let mut response = [0; 64];
+    stream.read(&mut response).map(|n| {
+        response[..n].starts_with(b"HTTP/1.1 200 ") || response[..n].starts_with(b"HTTP/1.0 200 ")
+    }).unwrap_or(false)
 }
 
 #[cfg(test)]
