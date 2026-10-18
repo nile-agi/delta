@@ -95,6 +95,13 @@ impl Diagnostics {
     pub fn append(&mut self, text: &str) {
         for line in text.lines() {
             let line = line.trim();
+            if line.strip_prefix("llama_runtime: generation=")
+                .and_then(|details| details.split_whitespace().next())
+                .and_then(|generation| generation.parse::<u64>().ok()).is_some()
+            {
+                self.exit_code = None;
+                self.signal = None;
+            }
             if let Some(details) = line.strip_prefix("[llama-server-exit] code=") {
                 if let Some((code, signal)) = details.split_once(" signal=") {
                     if let (Ok(code), Ok(signal)) = (code.parse::<i64>(), signal.parse::<i32>()) {
@@ -210,7 +217,7 @@ impl Diagnostics {
                     .collect()
             }),
             exit_code: model_exit.or(self.exit_code),
-            signal: self.signal,
+            signal: if model_exit.is_none() || model_exit == self.exit_code { self.signal } else { None },
             logs: self.logs.iter().cloned().collect(),
         };
         self.previous = Some(report.clone());
@@ -293,6 +300,23 @@ fn cpu_features() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_new_launch_cannot_inherit_an_old_kill_signal() {
+        let mut store = Diagnostics::default();
+        store.append("[llama-server-exit] code=137 signal=9");
+        store.append("llama_runtime: generation=2 model=gemma.gguf context=2048 parallel=1");
+        let report = store.snapshot("model-load", None, "Load failed", None);
+        assert_eq!(report.exit_code, None);
+        assert_eq!(report.signal, None);
+    }
+    #[test]
+    fn explicit_worker_exit_cannot_inherit_another_process_signal() {
+        let mut store = Diagnostics::default();
+        store.append("[llama-server-exit] code=137 signal=9");
+        let report = store.snapshot("model-load", None, "Worker failed", Some(1));
+        assert_eq!(report.exit_code, Some(1));
+        assert_eq!(report.signal, None);
+    }
     #[test]
     fn keeps_linux_abi_and_symbol_failures_without_private_paths() {
         // Synthetic loader output: these paths are fixtures, never executable locations.
@@ -406,6 +430,7 @@ mod tests {
     #[test]
     fn snapshot_preserves_exit_details_and_only_the_model_basename() {
         let mut store = Diagnostics::default();
+        store.exit_code = Some(132);
         store.signal = Some(4);
         let report = store.snapshot(
             "model-load",

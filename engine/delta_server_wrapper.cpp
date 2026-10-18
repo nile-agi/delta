@@ -103,6 +103,7 @@ class DeltaServerWrapper {
     std::atomic<bool> should_stop_;
     OwnedProcess owned_process_;
     uint64_t process_generation_ = 0;
+    bool intentional_stop_ = false;
     std::mutex llama_server_mutex_;
 
     // DHATS Brain: persistent hardware monitor (avoids re-probing NVML/ROCm every load)
@@ -430,7 +431,9 @@ class DeltaServerWrapper {
     }
 
     void stop_llama_server_locked() {
+        intentional_stop_ = owned_process_.alive();
         owned_process_.stop();
+        intentional_stop_ = false;
         llama_server_running_ = false;
     }
     void stop_llama_server() {
@@ -577,7 +580,7 @@ class DeltaServerWrapper {
                         std::cerr << "[llama-server] " << line << std::endl;
                 },
                 [this](uint64_t generation, ProcessExit exit) {
-                    if (generation == process_generation_)
+                    if (generation == process_generation_ && !intentional_stop_)
                         report_child_exit(exit.code, exit.signal);
                 });
             llama_server_running_ = true;
