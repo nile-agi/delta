@@ -5,7 +5,9 @@
 
 import { browser } from '$app/environment';
 import { MimeTypeApplication, MimeTypeImage } from '$lib/enums/files';
-import * as pdfjs from 'pdfjs-dist';
+// Desktop WebKit versions without Iterator must also be able to import the app.
+// PDF.js ships its supported compatibility build and matching worker for these runtimes.
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 type TextItem = {
 	str?: string;
@@ -17,7 +19,7 @@ type TextItem = {
 // The worker is bundled as text and loaded once; every PDF call waits for it, since a file
 // opened before it was ready used to fail with "No GlobalWorkerOptions.workerSrc specified".
 const workerReady: Promise<void> = browser
-	? import('pdfjs-dist/build/pdf.worker.min.mjs?raw')
+	? import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?raw')
 			.then((workerModule) => {
 				const workerBlob = new Blob([workerModule.default], { type: 'application/javascript' });
 				pdfjs.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);

@@ -44,8 +44,14 @@ The script creates temporary profiles and symlinks to the supplied weights, moni
 - Controller tests cover fresh/stale attempts, bounded retention, cancellation, post-ready failure, one CPU fallback, and an unchanged deadline/settings during recovery.
 - Process tests cover unrelated-process isolation, argument quoting without a shell, final stderr, exit status and bounded cleanup when another process retains the pipe.
 - Wrapper process tests cover exact alias/context/slots, malformed props, missing attempt IDs, confirmed GPU failure followed by one CPU retry, failed CPU fallback and temporary context changes that preserve saved overrides.
-- Native diagnostics/startup suite: 16 tests passed, including ABI/symbol preservation, private-path redaction and unloading before backend termination.
-- Frontend server suite: 187 tests passed across 27 files. Svelte check had zero errors and seven existing warnings. Browser/simulated desktop startup suite: six tests passed.
+- Native diagnostics/startup suite: 18 tests passed, including ABI/symbol preservation, private-path redaction, generation/exit correlation and unloading before backend termination. The standalone startup suite also passes all five tests without external crate dependencies.
+- Frontend server suite: 187 tests passed across 27 files. Svelte check had zero errors and seven existing warnings. Browser/simulated desktop startup suite: eight tests passed.
+
+## Missing Iterator during desktop startup
+
+The modern PDF.js bundle referenced `Iterator.prototype` while being imported through the application's PDF helper. On a WebKit runtime without the global `Iterator`, this prevented the app from starting before the user opened a PDF. Iterator helpers were added in [Safari 18.4](https://webkit.org/blog/16574/webkit-features-in-safari-18-4/); the reported macOS 15.3.1 failure is consistent with that compatibility gap.
+
+The helper now imports PDF.js's maintained legacy build and its matching legacy worker. A production-startup regression removes `globalThis.Iterator` before initialization in both browser and simulated desktop modes; these failed before the import change and now pass. Three browser tests also pass real PDF extraction and rendering checks. These tests exercise compatibility behavior in Chromium, not the affected Mac's actual WebKit installation; native Intel/M2 confirmation remains required.
 
 ## Release acceptance still required
 
