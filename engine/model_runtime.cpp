@@ -46,6 +46,7 @@ RuntimeSnapshot ModelRuntime::select(const RuntimeConfig& config) {
     s.attempt_id =
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" + std::to_string(generation_);
     s.config = config;
+    s.config.generation = s.generation;
     attempts_.push_back(s);
     while (attempts_.size() > 16)
         attempts_.pop_front();
@@ -70,7 +71,7 @@ std::optional<RuntimeSnapshot> ModelRuntime::cancel(const std::string& id) {
     std::lock_guard<std::mutex> lock(mutex_);
     for (auto& s : attempts_)
         if (s.attempt_id == id) {
-            if (s.state == ModelLoadState::Loading)
+            if (s.state == ModelLoadState::Loading || s.state == ModelLoadState::Ready)
                 s.state = ModelLoadState::Cancelled;
             wake_.notify_all();
             return s;
@@ -80,15 +81,16 @@ std::optional<RuntimeSnapshot> ModelRuntime::cancel(const std::string& id) {
 bool ModelRuntime::cancelled(uint64_t generation) const {
     std::lock_guard<std::mutex> lock(mutex_);
     return stopping_ || attempts_.empty() || attempts_.back().generation != generation ||
-           attempts_.back().state != ModelLoadState::Loading || clock_() >= deadline_;
+           (attempts_.back().state != ModelLoadState::Loading && attempts_.back().state != ModelLoadState::Ready) ||
+           (attempts_.back().state == ModelLoadState::Loading && clock_() >= deadline_);
 }
 void ModelRuntime::finish(uint64_t gen, ModelLoadState state, std::optional<RuntimeFailure> failure) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (stopping_ || attempts_.empty() || attempts_.back().generation != gen ||
-        attempts_.back().state != ModelLoadState::Loading)
+        (attempts_.back().state != ModelLoadState::Loading && attempts_.back().state != ModelLoadState::Ready))
         return;
     auto& s = attempts_.back();
-    if (clock_() >= deadline_) {
+    if (s.state == ModelLoadState::Loading && clock_() >= deadline_) {
         state = ModelLoadState::TimedOut;
         failure = RuntimeFailure{"timeout", "Model took too long to load. Retry or choose a smaller model."};
     }
@@ -137,12 +139,11 @@ void ModelRuntime::run() {
                 }
                 if (p.ready) {
                     finish(s.generation, ModelLoadState::Ready);
-                    break;
                 }
                 std::unique_lock<std::mutex> lock(mutex_);
                 if (!attempts_.empty() && attempts_.back().generation == s.generation)
                     attempts_.back().engine_state = p.engine_available ? EngineState::Available : EngineState::Starting;
-                wake_.wait_for(lock, std::chrono::milliseconds(50));
+                wake_.wait_for(lock, std::chrono::milliseconds(p.ready ? 1000 : 250));
             }
             finish(s.generation, ModelLoadState::TimedOut);
         } catch (const std::exception& e) {

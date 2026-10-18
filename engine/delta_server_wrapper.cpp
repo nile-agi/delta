@@ -7,6 +7,7 @@
 #include "model_api_server.h"
 #include "api/openai_api.h"
 #include "server_health.h"
+#include "owned_process.h"
 #include "agent/agent_database.h"
 #include "tools/hardware_monitor.h"
 #include <iostream>
@@ -109,13 +110,8 @@ class DeltaServerWrapper {
     std::thread llama_server_thread_;
     std::atomic<bool> llama_server_running_;
     std::atomic<bool> should_stop_;
-#ifdef _WIN32
-    HANDLE llama_server_process_;
-    DWORD llama_server_pid_;
-    HANDLE job_object_;
-#else
-    pid_t llama_server_pid_;
-#endif
+    OwnedProcess owned_process_;
+    uint64_t process_generation_ = 0;
     std::mutex llama_server_mutex_;
 
     // DHATS Brain: persistent hardware monitor (avoids re-probing NVML/ROCm every load)
@@ -158,35 +154,12 @@ class DeltaServerWrapper {
   public:
     DeltaServerWrapper()
         : port_(8080), model_api_port_(8081), max_parallel_(4), max_context_(0), enable_embedding_(false),
-          enable_reranking_(false), llama_server_running_(false), should_stop_(false)
-#ifdef _WIN32
-          ,
-          llama_server_process_(NULL), llama_server_pid_(0), job_object_(NULL)
-#else
-          ,
-          llama_server_pid_(0)
-#endif
-    {
-#ifdef _WIN32
-        job_object_ = CreateJobObjectA(NULL, NULL);
-        if (job_object_) {
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = {};
-            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            SetInformationJobObject(job_object_, JobObjectExtendedLimitInformation, &info, sizeof(info));
-        }
-#endif
-    }
+          enable_reranking_(false), llama_server_running_(false), should_stop_(false) {}
 
     ~DeltaServerWrapper() {
         if (runtime_)
             runtime_->shutdown();
         stop_llama_server();
-#ifdef _WIN32
-        if (job_object_) {
-            CloseHandle(job_object_);
-            job_object_ = NULL;
-        }
-#endif
     }
 
     std::string get_executable_path() {
@@ -470,250 +443,88 @@ class DeltaServerWrapper {
         return best;
     }
 
-    std::string build_llama_server_command(const std::string& model_path, int ctx_size,
-                                           const std::string& model_alias) {
-        std::string cmd;
-#ifdef _WIN32
-        cmd = "\"" + llama_server_path_ + "\"";
-#else
-        cmd = llama_server_path_;
-#endif
-        if (!model_path.empty()) {
-            cmd += " -m \"" + model_path + "\"";
-        } else if (!models_dir_.empty()) {
-            std::string dir_arg = delta::tools::FileOps::absolute_path(models_dir_);
-            if (dir_arg.empty())
-                dir_arg = models_dir_;
-            cmd += " --models-dir \"" + dir_arg + "\"";
+    std::vector<std::string> build_llama_server_arguments(const std::string& model_path, int ctx_size,
+                                                          const std::string& model_alias) {
+        std::vector<std::string> args{std::filesystem::absolute(llama_server_path_).string()};
+        auto add = [&](const std::string& key, const std::string& value) {
+            args.push_back(key);
+            args.push_back(value);
+        };
+        if (!model_path.empty())
+            add("-m", model_path);
+        else if (!models_dir_.empty())
+            add("--models-dir", std::filesystem::absolute(models_dir_).string());
+        add("--host", "127.0.0.1");
+        add("--port", std::to_string(port_));
+        RuntimeConfig config;
+        if (effective_config_)
+            config = *effective_config_;
+        else {
+            config.context = ctx_size > 0 ? ctx_size : 8192;
+            config.parallel = max_parallel_;
+            config.batch = runtime_env_int("LLAMA_ARG_BATCH", 512);
+            config.microbatch = runtime_env_int("LLAMA_ARG_UBATCH", 128);
+            config.gpu_layers = runtime_env_int("LLAMA_ARG_N_GPU_LAYERS", 0);
         }
-        cmd += " --host 127.0.0.1";
-        cmd += " --port " + std::to_string(port_);
-        if (ctx_size > 0) {
-            cmd += " -c " + std::to_string(ctx_size);
-        }
-
-        if (effective_config_) {
-            cmd += " --parallel " + std::to_string(effective_config_->parallel);
-            cmd += " --batch-size " + std::to_string(effective_config_->batch);
-            cmd += " --ubatch-size " + std::to_string(effective_config_->microbatch);
-            cmd += " --gpu-layers " + std::to_string(effective_config_->gpu_layers);
-        } else
-            cmd += " --parallel " + std::to_string(max_parallel_);
-
-        // Enable modern server features for the Delta UI
-        cmd += " --jinja";        // Use Jinja2 templates for chat formatting
-        cmd += " --metrics";      // Enable Prometheus metrics endpoint
-        cmd += " --slots";        // Enable slot monitoring (UI can show server load)
-        cmd += " --props";        // Allow UI to change sampling params via POST /props
-        cmd += " --cache-prompt"; // Cache prompt KV for faster subsequent requests
-
-        if (ctx_size > 16384) {
-            cmd += " --flash-attn off";
-            if (ctx_size > 32768) {
-                cmd += " --gpu-layers 0";
-            }
-        } else {
-            cmd += " --flash-attn auto";
-        }
-
-        if (!model_alias.empty()) {
-            cmd += " --alias \"" + model_alias + "\"";
-        }
-        std::string webui_path = find_webui_path();
-        if (!webui_path.empty()) {
-            cmd += " --path \"" + webui_path + "\"";
-        }
+        validate_runtime_config(config);
+        add("-c", std::to_string(config.context));
+        add("--parallel", std::to_string(config.parallel));
+        add("--batch-size", std::to_string(config.batch));
+        add("--ubatch-size", std::to_string(config.microbatch));
+        add("--gpu-layers", std::to_string(config.gpu_layers));
+        add("--flash-attn", config.context > 16384 ? "off" : "auto");
+        for (const char* flag : {"--jinja", "--metrics", "--slots", "--props", "--cache-prompt"})
+            args.push_back(flag);
+        if (!model_alias.empty())
+            add("--alias", model_alias);
+        auto webui = find_webui_path();
+        if (!webui.empty())
+            add("--path", webui);
         if (enable_embedding_)
-            cmd += " --embedding";
+            args.push_back("--embedding");
         if (enable_reranking_)
-            cmd += " --reranking";
-
-        // ============================================================================
-        // ENHANCEMENT D: Model Context Protocol (MCP) Integration
-        // llama-server natively supports MCP via the --tools directory argument.
-        // ============================================================================
-        std::string config_dir = get_executable_dir();
-        std::string mcp_dir = config_dir + "/mcp_servers";
-        if (!std::filesystem::exists(mcp_dir)) {
-            mcp_dir = config_dir + "/tools";
-        }
-        if (std::filesystem::exists(mcp_dir) && std::filesystem::is_directory(mcp_dir)) {
-            cmd += " --tools \"" + mcp_dir + "\"";
-            std::cout << "[MCP] Injecting external tools from directory: " << mcp_dir << std::endl;
-        }
-
-        // ============================================================================
-        // ENHANCEMENT B: Speculative Decoding for Tool Loops
-        // A draft only helps when it shares the main model's tokenizer and is much smaller. The
-        // old scan took the first small file it found, so gemma-270m was paired with a larger qwen.
-        // ============================================================================
-        std::string draft = draft_model_;
+            args.push_back("--reranking");
+        auto draft = effective_config_ ? config.draft_path : draft_model_;
         used_auto_draft_ = false;
-        if (draft.empty() && !model_path.empty() && !suppress_auto_draft_) {
-            std::string models_dir_path = models_dir_.empty() ? (get_executable_dir() + "/models") : models_dir_;
-            draft = find_draft_model(models_dir_path, model_path);
-            used_auto_draft_ = !draft.empty();
-            if (used_auto_draft_)
-                std::cout << "[Speculative] Auto-detected draft model: " << draft << std::endl;
-        }
         if (!draft.empty()) {
-            cmd += " --model-draft \"" + draft + "\"";
-            // --draft-max was removed upstream; llama-server refuses to start when it is passed.
-            cmd += " --spec-draft-n-max 16";
+            add("--model-draft", draft);
+            add("--spec-draft-n-max", "16");
         }
-
         if (!grammar_file_.empty())
-            cmd += " --grammar-file \"" + grammar_file_ + "\"";
-
-        // ============================================================================
-        // DHATS: Inject RPC Arguments
-        // ============================================================================
-        auto rpc_nodes = agent::AgentDatabase::instance().get_enabled_rpc_nodes();
-        if (!rpc_nodes.empty()) {
-            std::string rpc_arg = " --rpc ";
-            for (size_t i = 0; i < rpc_nodes.size(); ++i) {
-                rpc_arg += rpc_nodes[i].endpoint;
-                if (i < rpc_nodes.size() - 1)
-                    rpc_arg += ",";
-            }
-            cmd += rpc_arg;
-            std::cout << "[DHATS] Injecting " << rpc_nodes.size() << " RPC worker node(s) into llama-server context."
-                      << std::endl;
+            add("--grammar-file", grammar_file_);
+        const auto nodes = agent::AgentDatabase::instance().get_enabled_rpc_nodes();
+        std::string rpc;
+        for (const auto& node : nodes) {
+            if (!rpc.empty())
+                rpc += ",";
+            rpc += node.endpoint;
         }
-
-        // ============================================================================
-        // DHATS Brain: Intelligent multi-tier distribution
-        // ============================================================================
-        long long model_size_bytes = 0;
-        int n_layers = 32;
-        try {
-            if (!model_path.empty() && std::filesystem::exists(model_path)) {
-                model_size_bytes = std::filesystem::file_size(model_path);
-            }
-        } catch (...) {
-        }
-
-        if (model_size_bytes > 0 && !effective_config_) {
-            auto plan = hw_monitor_.plan_tiered_offload(model_size_bytes, n_layers, ctx_size);
-
-            int ngl = plan.ngl;
-            if (ngl_override_ >= 0) {
-                ngl = std::min(ngl, ngl_override_);
-            }
-            last_ngl_ = ngl;
-
-            if (plan.cpu_only && ngl == 0) {
-                cmd += " -ngl 0";
-                std::cout << "[DHATS] CPU-only mode (no GPU available or insufficient VRAM)." << std::endl;
-            } else if (plan.all_layers) {
-                cmd += " -ngl 999";
-                cmd += " --batch-size " + std::to_string(plan.batch);
-                cmd += " --ubatch-size " + std::to_string(plan.ubatch);
-                std::cout << "[DHATS] All layers on GPU (" << plan.gpu_layers << " layers, " << std::fixed
-                          << std::setprecision(1) << plan.gpu_mem_needed << "GB)" << std::endl;
-            } else {
-                cmd += " -ngl " + std::to_string(ngl);
-                cmd += " --batch-size " + std::to_string(plan.batch);
-                cmd += " --ubatch-size " + std::to_string(plan.ubatch);
-                std::cout << "[DHATS] Split offload: " << plan.gpu_layers << " layers on GPU (" << std::fixed
-                          << std::setprecision(1) << plan.gpu_mem_needed << "GB), " << plan.cpu_layers
-                          << " layers on CPU (" << plan.cpu_mem_needed << "GB)" << std::endl;
-            }
-
-            // Log efficiency warning
-            if (!plan.efficient && !plan.efficiency_warning.empty()) {
-                std::cerr << "[DHATS] ⚠ " << plan.efficiency_warning << std::endl;
-                if (!plan.recommendation.empty()) {
-                    std::cerr << "[DHATS] Recommendation: " << plan.recommendation << std::endl;
-                }
-                delta::report_heal(heal_count_, ngl, plan.efficiency_warning);
-            } else {
-                delta::report_heal(heal_count_, ngl, "");
-            }
-        }
-
-        return cmd;
+        if (!rpc.empty())
+            add("--rpc", rpc);
+        return args;
     }
 
     void stop_llama_server_locked() {
-#ifdef _WIN32
-        if (llama_server_process_ != NULL) {
-            TerminateProcess(llama_server_process_, 0);
-            WaitForSingleObject(llama_server_process_, 5000);
-            CloseHandle(llama_server_process_);
-            llama_server_process_ = NULL;
-            llama_server_pid_ = 0;
-            llama_server_running_ = false;
-        }
-#else
-        if (llama_server_pid_ != 0) {
-            pid_t pid_to_kill = (llama_server_pid_ < 0) ? llama_server_pid_ : llama_server_pid_;
-            kill(pid_to_kill, SIGTERM);
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            int status;
-            pid_t actual_pid = (llama_server_pid_ < 0) ? -llama_server_pid_ : llama_server_pid_;
-            if (waitpid(actual_pid, &status, WNOHANG) == 0) {
-                kill(pid_to_kill, SIGKILL);
-                waitpid(actual_pid, &status, 0);
-            }
-            llama_server_pid_ = 0;
-            llama_server_running_ = false;
-        }
-#endif
+        owned_process_.stop();
+        llama_server_running_ = false;
     }
-
     void stop_llama_server() {
         std::lock_guard<std::mutex> lock(llama_server_mutex_);
         stop_llama_server_locked();
     }
-
-    // Poll /health until the model is resident, the process dies, or we run out of patience.
-    // Reports progress so a long load looks like progress rather than a hang.
-#ifdef _WIN32
-    ServerReadyState wait_until_model_loaded(HANDLE process) {
-#else
-    ServerReadyState wait_until_model_loaded(pid_t child_pid) {
-#endif
-        const int max_attempts =
-            ((effective_config_ ? 30 : MODEL_LOAD_TIMEOUT_SECONDS) * 1000) / READY_POLL_INTERVAL_MS;
-        int next_progress_sec = PROGRESS_INTERVAL_SECONDS;
-
-        for (int attempt = 0; attempt < max_attempts; ++attempt) {
+    ServerReadyState wait_until_model_loaded() {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        while (std::chrono::steady_clock::now() < deadline) {
             if ((load_cancelled_ && load_cancelled_()) || should_stop_)
                 return ServerReadyState::StillLoading;
-            std::this_thread::sleep_for(std::chrono::milliseconds(READY_POLL_INTERVAL_MS));
-
-#ifdef _WIN32
-            DWORD exit_code;
-            if (GetExitCodeProcess(process, &exit_code) && exit_code != STILL_ACTIVE) {
-                report_child_exit(static_cast<long long>(exit_code), 0);
+            if (!owned_process_.alive()) {
+                stop_llama_server_locked(); // Drain final stderr before reporting failure.
                 return ServerReadyState::Exited;
             }
-#else
-            int status;
-            const pid_t result = waitpid(child_pid, &status, WNOHANG);
-            if (result != 0) {
-                if (result == child_pid) {
-                    if (WIFEXITED(status))
-                        report_child_exit(WEXITSTATUS(status), 0);
-                    else if (WIFSIGNALED(status))
-                        report_child_exit(128 + WTERMSIG(status), WTERMSIG(status));
-                }
-                return ServerReadyState::Exited;
-            }
-#endif
-
-            if (probe_server_health(port_)) {
+            if (probe_server_health(port_, 1))
                 return ServerReadyState::Ready;
-            }
-
-            const int elapsed_sec = ((attempt + 1) * READY_POLL_INTERVAL_MS) / 1000;
-            if (elapsed_sec >= next_progress_sec) {
-                next_progress_sec = elapsed_sec + PROGRESS_INTERVAL_SECONDS;
-                std::cout << "  Loading model... " << elapsed_sec << "s" << std::endl;
-            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-
         return ServerReadyState::StillLoading;
     }
 
@@ -824,11 +635,7 @@ class DeltaServerWrapper {
         }
         // ===== end DHATS block =====
 
-#ifdef _WIN32
-        if (llama_server_running_ && llama_server_process_ != NULL) {
-#else
-        if (llama_server_running_ && llama_server_pid_ != 0) {
-#endif
+        if (llama_server_running_) {
             stop_llama_server_locked();
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
@@ -837,169 +644,39 @@ class DeltaServerWrapper {
         max_context_ = ctx_size;
         llama_server_is_router_ = model_path_to_use.empty() && !models_dir_.empty();
 
-        std::string cmd =
-            build_llama_server_command(model_path_to_use, ctx_size, llama_server_is_router_ ? "" : model_alias);
-
-#ifdef _WIN32
-        STARTUPINFOA si = {0};
-        PROCESS_INFORMATION pi = {0};
-        si.cb = sizeof(si);
-        si.dwFlags = STARTF_USESTDHANDLES;
-        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-        si.hStdOutput = NULL;
-        si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
-
-        std::vector<char> cmd_line(cmd.begin(), cmd.end());
-        cmd_line.push_back('\0');
-
-        std::string work_dir = get_executable_dir();
-        const char* work_dir_p = work_dir.empty() ? NULL : work_dir.c_str();
-
-        if (CreateProcessA(NULL, cmd_line.data(), NULL, NULL, TRUE, CREATE_NO_WINDOW | DETACHED_PROCESS, NULL,
-                           work_dir_p, &si, &pi)) {
-            CloseHandle(pi.hThread);
-            llama_server_process_ = pi.hProcess;
-            llama_server_pid_ = pi.dwProcessId;
-            llama_server_running_ = true;
-            if (job_object_) {
-                AssignProcessToJobObject(job_object_, pi.hProcess);
-            }
-
-            ServerReadyState state = wait_until_model_loaded(pi.hProcess);
-
-            if (state == ServerReadyState::Ready) {
-                std::cout << "Server ready" << std::endl;
-                return state;
-            }
-            if (state == ServerReadyState::StillLoading) {
-                std::cout << "Model is still loading after " << MODEL_LOAD_TIMEOUT_SECONDS
-                          << "s; it will keep loading in the background." << std::endl;
-                return state;
-            }
-
-            std::cerr << "Failed to start server: llama-server exited while loading the model" << std::endl;
-            CloseHandle(pi.hProcess);
-            llama_server_process_ = NULL;
-            llama_server_pid_ = 0;
-            llama_server_running_ = false;
-            return ServerReadyState::Exited;
-        } else {
-            std::cerr << "Failed to create process" << std::endl;
-            return ServerReadyState::Exited;
-        }
-#else
-        int out_pipe[2] = {-1, -1};
-        bool has_pipe = (pipe(out_pipe) == 0);
-
-        pid_t pid = fork();
-        if (pid == 0) {
-            if (has_pipe)
-                close(out_pipe[0]);
-            setsid();
-            if (has_pipe) {
-                dup2(out_pipe[1], STDOUT_FILENO);
-                dup2(out_pipe[1], STDERR_FILENO);
-                close(out_pipe[1]);
-            } else {
-                int dn = open("/dev/null", O_WRONLY);
-                if (dn >= 0) {
-                    dup2(dn, STDOUT_FILENO);
-                    dup2(dn, STDERR_FILENO);
-                    close(dn);
-                }
-            }
-            execl("/bin/sh", "sh", "-c", cmd.c_str(), (char*)NULL);
-            _exit(1);
-        } else if (pid > 0) {
-            if (has_pipe)
-                close(out_pipe[1]);
-            llama_server_pid_ = -pid;
-            llama_server_running_ = true;
-
-            if (has_pipe) {
-                int stats_fd = out_pipe[0];
-                DeltaServerWrapper* self = this;
-                std::thread([stats_fd, self]() {
-                    FILE* f = fdopen(stats_fd, "r");
-                    if (!f) {
-                        close(stats_fd);
+        auto args =
+            build_llama_server_arguments(model_path_to_use, ctx_size, llama_server_is_router_ ? "" : model_alias);
+        process_generation_ = effective_config_ ? effective_config_->generation : 0;
+        try {
+            owned_process_.start(
+                {args, get_executable_dir(), process_generation_},
+                [this](uint64_t generation, const std::string& line) {
+                    if (generation != process_generation_)
                         return;
-                    }
-                    char line[4096];
-                    double prompt_ms = 0;
-                    int prompt_tokens = 0;
-                    double gen_ms = 0;
-                    int gen_tokens = 0;
-                    while (fgets(line, sizeof(line), f)) {
-                        if (std::strstr(line, "prompt eval time") && std::strstr(line, "=")) {
-                            char* eq = std::strstr(line, "=");
-                            double ms;
-                            int tokens;
-                            if (std::sscanf(eq, "= %lf ms / %d tokens", &ms, &tokens) == 2) {
-                                prompt_ms = ms;
-                                prompt_tokens = tokens;
-                            }
-                        } else if (std::strstr(line, "eval time") && !std::strstr(line, "prompt eval time") &&
-                                   std::strstr(line, "=")) {
-                            char* eq = std::strstr(line, "=");
-                            double ms;
-                            int tokens;
-                            if (std::sscanf(eq, "= %lf ms / %d tokens", &ms, &tokens) == 2) {
-                                gen_ms = ms;
-                                gen_tokens = tokens;
-                            }
-                        } else if (std::strstr(line, "total time") && std::strstr(line, "=")) {
-                            if (gen_tokens > 0) {
-                                double ttft_s = prompt_ms / 1000.0;
-                                double tps = (gen_ms > 0) ? (gen_tokens * 1000.0 / gen_ms) : 0;
-                                char buf[256];
-                                std::snprintf(buf, sizeof(buf), "  %d in / %d out | ttft %.2fs | %.1f tok/s",
-                                              prompt_tokens, gen_tokens, ttft_s, tps);
-                                std::puts(buf);
-                                std::fflush(stdout);
-                            }
-                            prompt_ms = 0;
-                            prompt_tokens = 0;
-                            gen_ms = 0;
-                            gen_tokens = 0;
-                        } else {
-                            std::string s(line);
-                            // DHATS Brain: feed stderr to OOM detector
-                            self->note_server_stderr(s);
-
-                            if (s.find("error") != std::string::npos || s.find("Error") != std::string::npos ||
-                                s.find("unknown") != std::string::npos || s.find("fail") != std::string::npos ||
-                                s.find("Fail") != std::string::npos || s.find("warning") != std::string::npos ||
-                                s.find("Warning") != std::string::npos) {
-                                std::cerr << "[llama-server] " << line << std::flush;
-                            }
-                        }
-                    }
-                    std::fclose(f);
-                }).detach();
-            }
-
-            ServerReadyState state = wait_until_model_loaded(pid);
-
-            if (state == ServerReadyState::Ready) {
+                    note_server_stderr(line);
+                    // Runtime-native records are filtered/redacted again at the desktop boundary.
+                    if (line.find("error") != std::string::npos || line.find("Error") != std::string::npos ||
+                        line.find("fail") != std::string::npos || line.find("Fail") != std::string::npos ||
+                        line.find("warning") != std::string::npos || line.find("not found") != std::string::npos ||
+                        line.find("symbol lookup") != std::string::npos || line.find("dyld:") != std::string::npos)
+                        std::cerr << "[llama-server] " << line << std::endl;
+                },
+                [this](uint64_t generation, ProcessExit exit) {
+                    if (generation == process_generation_)
+                        report_child_exit(exit.code, exit.signal);
+                });
+            llama_server_running_ = true;
+            const auto state = wait_until_model_loaded();
+            if (state == ServerReadyState::Ready)
                 std::cout << "Server ready" << std::endl;
-                return state;
-            }
-            if (state == ServerReadyState::StillLoading) {
-                std::cout << "Model is still loading after " << MODEL_LOAD_TIMEOUT_SECONDS
-                          << "s; it will keep loading in the background." << std::endl;
-                return state;
-            }
-
-            std::cerr << "Failed to start server: llama-server exited while loading the model" << std::endl;
-            llama_server_running_ = false;
-            llama_server_pid_ = 0;
-            return ServerReadyState::Exited;
-        } else {
-            std::cerr << "Failed to fork process" << std::endl;
+            else if (state == ServerReadyState::Exited)
+                std::cerr << "Failed to start server: llama-server exited while loading the model" << std::endl;
+            return state;
+        } catch (const std::exception& error) {
+            std::cerr << "Failed to start server: " << error.what() << std::endl;
+            stop_llama_server_locked();
             return ServerReadyState::Exited;
         }
-#endif
     }
 
     int start_server() {
@@ -1074,7 +751,10 @@ class DeltaServerWrapper {
         hooks.stop = [this] { stop_llama_server(); };
         hooks.launch = [this](const RuntimeConfig& config, const ModelRuntime::Cancelled& cancelled) {
             effective_config_ = config;
-            max_parallel_ = config.parallel;
+            std::cerr << "llama_runtime: generation=" << config.generation
+                      << " model=" << std::filesystem::path(config.model_path).filename().string()
+                      << " context=" << config.context << " parallel=" << config.parallel << " batch=" << config.batch
+                      << " microbatch=" << config.microbatch << " gpu_layers=" << config.gpu_layers << std::endl;
             load_cancelled_ = cancelled;
             const auto state = launch_llama_server(models_dir_.empty() ? config.model_path : "", config.model_name,
                                                    config.context, models_dir_.empty() ? config.model_alias : "");
@@ -1092,6 +772,17 @@ class DeltaServerWrapper {
                 throw std::runtime_error("Engine rejected the selected model load request.");
         };
         hooks.probe = [this](const RuntimeConfig& config) {
+            std::lock_guard<std::mutex> lock(llama_server_mutex_);
+            if (!owned_process_.alive()) {
+                stop_llama_server_locked();
+                auto exit = owned_process_.exit_status();
+                WorkerProbeResult failed;
+                failed.failed = true;
+                failed.engine_available = false;
+                failed.failure = {"worker_exit", "Model process exited. Copy the report for details.", exit.code,
+                                  exit.signal};
+                return failed;
+            }
             return probe_model_worker(port_, config, llama_server_is_router_);
         };
         runtime_ = std::make_unique<ModelRuntime>(std::move(hooks));
@@ -1145,34 +836,8 @@ class DeltaServerWrapper {
                 continue;
             std::lock_guard<std::mutex> process_lock(llama_server_mutex_);
 
-#ifdef _WIN32
-            if (llama_server_process_ != NULL) {
-                DWORD exit_code;
-                if (GetExitCodeProcess(llama_server_process_, &exit_code) && exit_code != STILL_ACTIVE) {
-                    report_child_exit(static_cast<long long>(exit_code), 0);
-                    CloseHandle(llama_server_process_);
-                    llama_server_process_ = NULL;
-                    llama_server_pid_ = 0;
-                    llama_server_running_ = false;
-                }
-            }
-#else
-            if (llama_server_pid_ != 0) {
-                pid_t actual_pid = (llama_server_pid_ < 0) ? -llama_server_pid_ : llama_server_pid_;
-                int status;
-                const pid_t result = waitpid(actual_pid, &status, WNOHANG);
-                if (result != 0) {
-                    if (result == actual_pid) {
-                        if (WIFEXITED(status))
-                            report_child_exit(WEXITSTATUS(status), 0);
-                        else if (WIFSIGNALED(status))
-                            report_child_exit(128 + WTERMSIG(status), WTERMSIG(status));
-                    }
-                    llama_server_pid_ = 0;
-                    llama_server_running_ = false;
-                }
-            }
-#endif
+            if (!owned_process_.alive())
+                stop_llama_server_locked();
         }
 
         std::cout << "\nStopping server..." << std::endl;

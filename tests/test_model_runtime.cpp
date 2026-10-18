@@ -50,6 +50,9 @@ int main() {
         probe_state = 1;
         eventually([&] { return runtime.current()->state == ModelLoadState::Ready; });
         require(runtime.current()->attempt_id == second.attempt_id, "stale completion cannot replace newer attempt");
+        probe_state = 2;
+        eventually([&] { return runtime.current()->state == ModelLoadState::Failed; });
+        require(runtime.current()->failure->code == "worker_exit", "post-ready child exit must be observable");
         probe_state = 0;
         auto third = runtime.select(config);
         eventually([&] { return starts >= 3; });

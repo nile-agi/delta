@@ -4,6 +4,7 @@
 #include <cstdint>
 namespace delta {
 struct RuntimeConfig {
+    uint64_t generation = 0;
     std::string model_name, model_path, model_alias, draft_path;
     int context = 8192;
     int parallel = 1;

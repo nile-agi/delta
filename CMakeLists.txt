@@ -187,6 +187,7 @@ set(DELTA_SOURCES
     engine/server_health.cpp
     engine/model_runtime.cpp
     engine/runtime_config.cpp
+    engine/owned_process.cpp
     engine/tools/hardware_monitor.cpp
     engine/tools/file_ops.cpp
     engine/tools/dep_protocol.cpp
@@ -288,6 +289,7 @@ add_executable(delta-server
     engine/server_health.cpp
     engine/model_runtime.cpp
     engine/runtime_config.cpp
+    engine/owned_process.cpp
     engine/tools/hardware_monitor.cpp
     engine/tools/file_ops.cpp
     engine/ui.cpp
@@ -404,6 +406,10 @@ endif()
 # scripted stand-in for llama-server. Build and run with:
 #   cmake --build build --target delta-harness-tests && ./build/delta-harness-tests
 find_package(Threads REQUIRED)
+add_executable(delta-owned-process-tests EXCLUDE_FROM_ALL tests/test_owned_process.cpp engine/owned_process.cpp)
+target_include_directories(delta-owned-process-tests PRIVATE ${DELTA_INCLUDE_DIRS})
+target_link_libraries(delta-owned-process-tests PRIVATE Threads::Threads)
+
 add_executable(delta-runtime-config-tests EXCLUDE_FROM_ALL tests/test_runtime_config.cpp engine/runtime_config.cpp)
 target_include_directories(delta-runtime-config-tests PRIVATE ${DELTA_INCLUDE_DIRS})
 

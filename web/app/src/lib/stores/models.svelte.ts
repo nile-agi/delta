@@ -34,7 +34,7 @@ export class ModelsStore {
 				if (generation !== this._selectionGeneration || this._attemptId !== attemptId) return;
 				if (snapshot.attempt_id !== attemptId) throw new Error('Model load status belongs to a different attempt.');
 				this.applyRuntime(snapshot);
-				if (snapshot.state !== 'loading') return;
+				if (snapshot.state !== 'loading' && snapshot.state !== 'ready') return;
 			} catch {
 				if (generation !== this._selectionGeneration) return;
 				this._modelLoadedOnServer = false;
@@ -215,7 +215,7 @@ export class ModelsStore {
 						this._attemptId = runtime.attempt_id;
 						this._persistedSelection.value = { id: matched.id, model: this._selectedModelName };
 						this.applyRuntime(runtime);
-						if (runtime.state === 'loading') this.followRuntime(runtime.attempt_id, ++this._selectionGeneration);
+						if (runtime.state === 'loading' || runtime.state === 'ready') this.followRuntime(runtime.attempt_id, ++this._selectionGeneration);
 					} else {
 						this._selectedModelId = null;
 						this._selectedModelName = null;
