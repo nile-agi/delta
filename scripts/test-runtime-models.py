@@ -26,6 +26,8 @@ def main():
     parser.add_argument('--output', required=True, type=pathlib.Path)
     parser.add_argument('--context', type=int, default=2048)
     parser.add_argument('--rss-limit-mib', type=int, default=2048)
+    parser.add_argument('--library-dir', action='append', default=[], type=pathlib.Path,
+                        help='Only explicitly approved extracted-package library directories')
     args = parser.parse_args()
     source = (args.model_dir / FILES[args.model]).resolve(strict=True)
     binary = args.binary.resolve(strict=True)
@@ -67,6 +69,8 @@ def main():
                'LLAMA_ARG_THREADS': '2', 'LLAMA_ARG_N_GPU_LAYERS': '0',
                'LLAMA_ARG_BATCH': '64', 'LLAMA_ARG_UBATCH': '64',
                'OMP_NUM_THREADS': '2', 'VECLIB_MAXIMUM_THREADS': '2'}
+        if args.library_dir:
+            env['LD_LIBRARY_PATH'] = ':'.join(str(path.resolve(strict=True)) for path in args.library_dir)
         stopped = threading.Event()
         owned = set()
         with args.output.with_suffix('.log').open('wb') as log:

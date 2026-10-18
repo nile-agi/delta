@@ -183,6 +183,7 @@ jobs:
         run: |
           cmake -P scripts/test-release-policy.cmake
           python3 scripts/test_verify_release_binaries.py
+          python3 scripts/test-packaged-runtime.py
           bash scripts/test-sidecar-debug.sh
           bash scripts/test-verify-tauri-web-assets.sh
 
@@ -314,6 +315,19 @@ jobs:
         run: |
           python3 scripts/test-wrapper-diagnostics.py --binary build/delta-server
           python3 scripts/test-wrapper-context.py --binary build/delta-server
+          python3 scripts/test-wrapper-readiness.py --binary build/delta-server
+
+      - name: Test model runtime and owned process lifecycle
+        shell: bash
+        run: |
+          cmake --build build --config Release -j 4 --target delta-model-runtime-tests \
+            --target delta-runtime-config-tests --target delta-runtime-failure-tests --target delta-owned-process-tests
+          exe=""
+          if [ "$RUNNER_OS" = Windows ]; then exe=".exe"; fi
+          ./build/delta-model-runtime-tests$exe
+          ./build/delta-runtime-config-tests$exe "$RUNNER_TEMP/runtime-header.gguf"
+          ./build/delta-runtime-failure-tests$exe
+          ./build/delta-owned-process-tests$exe
 
       - name: Build and run engine tests
         if: runner.os != 'Windows'

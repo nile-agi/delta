@@ -49,4 +49,4 @@ The script creates temporary profiles and symlinks to the supplied weights, moni
 
 ## Release acceptance still required
 
-Run the final-package Linux gates in CI and collect confirmation or a complete failure report from the affected Mint machine. The local results do not establish that the reported Mint regression is resolved. Linux package execution is unavailable on this local macOS host until a Linux/container runtime is provided.
+Run the final-package Linux gates in CI and collect confirmation or a complete failure report from the affected Mint machine. The local results do not establish that the reported Mint regression is resolved. Docker became available for the subsequent [Fedora and Ubuntu container investigation](2026-10-18-linux-container-validation.md); its engine results are recorded separately from the macOS runs above.
