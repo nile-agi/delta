@@ -27,6 +27,23 @@ pub fn redact(input: &str) -> String {
     clean.chars().take(4096).collect()
 }
 
+// Keep only tightly matched loader metadata before the general path redactor runs.
+fn loader_details(line: &str) -> Option<String> {
+    static ABI: OnceLock<Regex> = OnceLock::new();
+    static SYMBOL: OnceLock<Regex> = OnceLock::new();
+    let abi = ABI.get_or_init(|| Regex::new(r"(?:^|[:\s])(?:[^\s:]+/)?([A-Za-z0-9_.+-]+\.so(?:\.[0-9]+)*): version [`']([A-Za-z0-9_.+-]{1,100})['`] not found").unwrap());
+    let symbol = SYMBOL.get_or_init(|| Regex::new(r"symbol lookup error: (?:[^\s:]+/)?([A-Za-z0-9_.+-]+\.so(?:\.[0-9]+)*): undefined symbol: ([A-Za-z0-9_@.$]{1,200})").unwrap());
+    if let Some(c) = abi.captures(line) {
+        return Some(format!("llama_loader: {}: version {} not found", &c[1], &c[2]));
+    }
+    if let Some(c) = symbol.captures(line) {
+        return Some(format!("llama_loader: {}: undefined symbol {}", &c[1], &c[2]));
+    }
+    line.split_once(": error while loading shared libraries:").map(|(_, detail)| {
+        format!("llama_loader: error while loading shared libraries:{detail}")
+    })
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Report {
@@ -91,11 +108,7 @@ impl Diagnostics {
                 continue;
             }
             let forwarded = line.strip_prefix("[llama-server] ");
-            let loader = forwarded
-                .and_then(|line| line.split_once(": error while loading shared libraries:"))
-                .map(|(_, detail)| {
-                    format!("llama_loader: error while loading shared libraries:{detail}")
-                });
+            let loader = forwarded.and_then(loader_details);
             let line = loader.as_deref().unwrap_or(forwarded.unwrap_or(line));
             let lower = line.to_ascii_lowercase();
             // Only model-runtime sources; never document indexing, tools, HTTP bodies or chat.
@@ -280,6 +293,18 @@ fn cpu_features() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn keeps_linux_abi_and_symbol_failures_without_private_paths() {
+        // Synthetic loader output: these paths are fixtures, never executable locations.
+        let mut store = Diagnostics::default();
+        store.append("[llama-server] /home/asha/bin/llama-server: /home/asha/lib/libstdc++.so.6: version `GLIBCXX_3.4.30' not found (required by /home/asha/bin/llama-server)");
+        store.append("[llama-server] /home/asha/bin/llama-server: symbol lookup error: /home/asha/lib/libfoo.so: undefined symbol: ggml_backend_init");
+        let report = store.snapshot("backend", None, "Loader failed", None);
+        assert!(report.logs.iter().any(|s| s.contains("GLIBCXX_3.4.30")));
+        assert!(report.logs.iter().any(|s| s.contains("libstdc++.so.6")));
+        assert!(report.logs.iter().any(|s| s.contains("ggml_backend_init")));
+        assert!(!format!("{report:?}").contains("asha"));
+    }
     #[test]
     fn reports_never_include_credentials_or_personal_paths() {
         let clean = redact(

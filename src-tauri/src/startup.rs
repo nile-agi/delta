@@ -50,8 +50,33 @@ pub fn wait_for_server(
     }
 }
 
+/// Ask this instance's local model API to release its child before killing the backend.
+pub fn unload_backend(port: u16) -> bool {
+    ureq::post(&format!("http://127.0.0.1:{port}/api/models/unload"))
+        .timeout(Duration::from_secs(3))
+        .set("Content-Type", "application/json")
+        .send_string("{}")
+        .map(|response| response.status() == 200)
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shutdown_unloads_owned_models_before_the_backend_is_killed() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let size = stream.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..size]).starts_with("POST /api/models/unload "));
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").unwrap();
+        });
+        assert!(super::unload_backend(port));
+        server.join().unwrap();
+    }
     use super::*;
     use std::net::TcpListener;
 
