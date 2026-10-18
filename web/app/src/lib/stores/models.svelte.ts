@@ -1,6 +1,6 @@
 import { modelFailureMessage } from '$lib/utils/failure-reason';
 import { SvelteMap } from 'svelte/reactivity';
-import { ModelsService } from '$lib/services/models';
+import { ModelsService, type ModelRuntimeSnapshot } from '$lib/services/models';
 import { slotsService } from '$lib/services/slots';
 import { persisted } from '$lib/stores/persisted.svelte';
 import { SELECTED_MODEL_LOCALSTORAGE_KEY } from '$lib/constants/localstorage-keys';
@@ -15,6 +15,67 @@ type PersistedModelSelection = {
 };
 
 export class ModelsStore {
+	private _attemptId = $state<string | null>(null);
+	private _selectionGeneration = 0;
+	private _runtimeTimer: ReturnType<typeof setTimeout> | null = null;
+	get attemptId(): string | null { return this._attemptId; }
+
+	private stopRuntimePolling(): void {
+		if (this._runtimeTimer) clearTimeout(this._runtimeTimer);
+		this._runtimeTimer = null;
+	}
+
+	private followRuntime(attemptId: string, generation: number): void {
+		this._attemptId = attemptId;
+		const poll = async () => {
+			if (generation !== this._selectionGeneration || this._attemptId !== attemptId) return;
+			try {
+				const snapshot = await ModelsService.getRuntime(attemptId);
+				if (generation !== this._selectionGeneration || this._attemptId !== attemptId) return;
+				if (snapshot.attempt_id !== attemptId) throw new Error('Model load status belongs to a different attempt.');
+				this.applyRuntime(snapshot);
+				if (snapshot.state !== 'loading') return;
+			} catch {
+				if (generation !== this._selectionGeneration) return;
+				this._modelLoadedOnServer = false;
+				this._error = 'Connection lost while checking the model. Reconnecting…';
+			}
+			if (generation === this._selectionGeneration)
+				this._runtimeTimer = setTimeout(poll, 1000);
+		};
+		this._runtimeTimer = setTimeout(poll, 1000);
+	}
+
+	private applyRuntime(snapshot: ModelRuntimeSnapshot): void {
+		this._modelLoadedOnServer = snapshot.state === 'ready';
+		this._updating = snapshot.state === 'loading';
+		this._loadingModelId = this._updating ? this._selectedModelId : null;
+		this._error = null;
+		if (snapshot.state === 'ready' && snapshot.effective_config) {
+			slotsService.setLoadedContextTotal(snapshot.effective_config.context);
+		} else if (snapshot.state === 'failed' || snapshot.state === 'timed_out') {
+			this._loadExitCode = snapshot.failure?.exit_code ?? null;
+			this._error = snapshot.failure?.message ?? 'Model could not load. Try again or choose another model.';
+		}
+	}
+
+	async cancelLoad(): Promise<void> {
+		if (!this._attemptId) return;
+		const generation = this._selectionGeneration;
+		try {
+			const result = await ModelsService.cancelRuntime(this._attemptId);
+			if (generation !== this._selectionGeneration) return;
+			this.stopRuntimePolling();
+			this.applyRuntime(result);
+		} catch {
+			if (generation === this._selectionGeneration) this._error = 'Could not confirm cancellation. Checking the model…';
+		}
+	}
+
+	async retryLoad(): Promise<void> {
+		if (this._selectedModelId) await this.select(this._selectedModelId);
+	}
+
 	private _models = $state<ModelOption[]>([]);
 	private _loading = $state(false);
 	private _updating = $state(false);
@@ -144,6 +205,26 @@ export class ModelsStore {
 				);
 
 			if (!force) {
+				try {
+					const runtime = await ModelsService.getRuntime();
+					const matched = models.find((model) => model.model === runtime.model_name);
+					this._modelLoadedOnServer = false;
+					if (runtime.attempt_id && matched) {
+						this._selectedModelId = matched.id;
+						this._selectedModelName = runtime.model_alias ?? matched.model;
+						this._attemptId = runtime.attempt_id;
+						this._persistedSelection.value = { id: matched.id, model: this._selectedModelName };
+						this.applyRuntime(runtime);
+						if (runtime.state === 'loading') this.followRuntime(runtime.attempt_id, ++this._selectionGeneration);
+					} else {
+						this._selectedModelId = null;
+						this._selectedModelName = null;
+					}
+					return;
+				} catch { /* Legacy servers have no runtime endpoint; retain their loaded-model detection. */ }
+			}
+
+			if (!force) {
 				// Initial load: only set selection when the main API reports a model is loaded (llama-server running).
 				// Otherwise leave selection empty so the user must choose a model.
 				// Router mode lists every model in the models dir, so the per-model status decides.
@@ -198,13 +279,12 @@ export class ModelsStore {
 	}
 
 	async select(modelId: string): Promise<void> {
-		if (!modelId || this._updating) {
-			return;
-		}
-
-		if (this._selectedModelId === modelId) {
-			return;
-		}
+		if (!modelId) return;
+		if (this._selectedModelId === modelId && this._modelLoadedOnServer) return;
+		const generation = ++this._selectionGeneration;
+		this.stopRuntimePolling();
+		this._attemptId = null;
+		this._modelLoadedOnServer = false;
 
 		const option = this._models.find((model) => model.id === modelId);
 		if (!option) {
@@ -231,6 +311,7 @@ export class ModelsStore {
 				option.model,
 				storedCtx != null && storedCtx > 0 ? storedCtx : undefined
 			);
+			if (generation !== this._selectionGeneration) return;
 			const modelForRequests =
 				useResponse.model_alias ?? useResponse.model_name ?? useResponse.model_path ?? option.model;
 
@@ -239,6 +320,12 @@ export class ModelsStore {
 			this._persistedSelection.value = { id: option.id, model: modelForRequests };
 			this._modelLoadedOnServer = false;
 
+			if (useResponse.attempt_id) {
+				this.followRuntime(useResponse.attempt_id, generation);
+				return;
+			}
+
+			// Older embedded CLI servers do not implement tracked loading yet.
 			if (typeof window !== 'undefined') {
 				const pollInterval = useResponse.loaded ? 1000 : 2000;
 				const maxAttempts = useResponse.loaded ? 120 : 60;
@@ -265,12 +352,12 @@ export class ModelsStore {
 				};
 
 				const checkReady = async () => {
-					if (this._selectedModelId !== expectedModelId) return;
+					if (generation !== this._selectionGeneration || this._selectedModelId !== expectedModelId) return;
 					attempts++;
 					try {
 						if (!healthPassed) {
 							const healthy = await ModelsService.checkHealth();
-							if (this._selectedModelId !== expectedModelId) return;
+							if (generation !== this._selectionGeneration || this._selectedModelId !== expectedModelId) return;
 							if (!healthy) {
 								if (attempts < maxAttempts && this._selectedModelId === expectedModelId) {
 									setTimeout(checkReady, pollInterval);
@@ -285,7 +372,7 @@ export class ModelsStore {
 						}
 
 						const modelStatus = await ModelsService.checkModelReady(modelNameForCheck);
-						if (this._selectedModelId !== expectedModelId) return;
+						if (generation !== this._selectionGeneration || this._selectedModelId !== expectedModelId) return;
 
 						if (modelStatus.ready) {
 							await onReady();
@@ -321,6 +408,7 @@ export class ModelsStore {
 				this._loadingModelId = null;
 			}
 		} catch (error) {
+			if (generation !== this._selectionGeneration) return;
 			console.warn('Failed to switch model:', error);
 			const rawMessage = error instanceof Error ? error.message : String(error);
 			this._error =
@@ -348,6 +436,9 @@ export class ModelsStore {
 	 * Unloads the current model (clears selection). User must select a model again to send messages.
 	 */
 	unload(): void {
+		++this._selectionGeneration;
+		this.stopRuntimePolling();
+		this._attemptId = null;
 		this._selectedModelId = null;
 		this._selectedModelName = null;
 		this._persistedSelection.value = null;
