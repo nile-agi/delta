@@ -16,6 +16,8 @@ type PersistedModelSelection = {
 
 export class ModelsStore {
 	private _attemptId = $state<string | null>(null);
+	private _suggestedContext = $state<number | null>(null);
+	get suggestedContext(): number | null { return this._suggestedContext; }
 	private _selectionGeneration = 0;
 	private _runtimeTimer: ReturnType<typeof setTimeout> | null = null;
 	get attemptId(): string | null { return this._attemptId; }
@@ -51,9 +53,12 @@ export class ModelsStore {
 		this._updating = snapshot.state === 'loading';
 		this._loadingModelId = this._updating ? this._selectedModelId : null;
 		this._error = null;
+		this._suggestedContext = null;
 		if (snapshot.state === 'ready' && snapshot.effective_config) {
 			slotsService.setLoadedContextTotal(snapshot.effective_config.context);
 		} else if (snapshot.state === 'failed' || snapshot.state === 'timed_out') {
+			if (snapshot.failure?.action === 'smaller_context' && Number.isInteger(snapshot.failure.suggested_context) && (snapshot.failure.suggested_context ?? 0) >= 512)
+				this._suggestedContext = snapshot.failure.suggested_context!;
 			this._loadExitCode = snapshot.failure?.exit_code ?? null;
 			this._error = snapshot.failure?.message ?? 'Model could not load. Try again or choose another model.';
 		}
@@ -70,6 +75,11 @@ export class ModelsStore {
 		} catch {
 			if (generation === this._selectionGeneration) this._error = 'Could not confirm cancellation. Checking the model…';
 		}
+	}
+
+	async retryWithSmallerContext(): Promise<void> {
+		if (this._selectedModelId && this._suggestedContext)
+			await this.select(this._selectedModelId, this._suggestedContext, false);
 	}
 
 	async retryLoad(): Promise<void> {
@@ -278,7 +288,7 @@ export class ModelsStore {
 		}
 	}
 
-	async select(modelId: string): Promise<void> {
+	async select(modelId: string, contextOverride?: number, persistContext = true): Promise<void> {
 		if (!modelId) return;
 		if (this._selectedModelId === modelId && this._modelLoadedOnServer) return;
 		const generation = ++this._selectionGeneration;
@@ -309,7 +319,7 @@ export class ModelsStore {
 		try {
 			const useResponse = await ModelsService.use(
 				option.model,
-				storedCtx != null && storedCtx > 0 ? storedCtx : undefined
+				contextOverride ?? (storedCtx != null && storedCtx > 0 ? storedCtx : undefined), persistContext
 			);
 			if (generation !== this._selectionGeneration) return;
 			const modelForRequests =

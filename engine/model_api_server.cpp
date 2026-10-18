@@ -299,10 +299,9 @@ static json runtime_json(const RuntimeSnapshot& s) {
                      {"microbatch", c.microbatch},
                      {"gpu_layers", c.gpu_layers}}}};
     if (s.failure)
-        result["failure"] = {{"code", s.failure->code},
-                             {"message", s.failure->message},
-                             {"exit_code", s.failure->exit_code},
-                             {"signal", s.failure->signal}};
+        result["failure"] = {{"code", s.failure->code},           {"message", s.failure->message},
+                             {"exit_code", s.failure->exit_code}, {"signal", s.failure->signal},
+                             {"action", s.failure->action},       {"suggested_context", s.failure->suggested_context}};
     return result;
 }
 
@@ -1101,7 +1100,7 @@ class ModelAPIServer {
                         config = g_runtime_config_resolver(config);
                     validate_runtime_config(config);
                     validate_model_file(model_path);
-                    if (ctx_override > 0)
+                    if (ctx_override > 0 && body.value("persist_ctx", true))
                         model_mgr_.set_max_context_override(model_name, ctx_override);
                     set_props_fallback_model("", "");
                     auto accepted = g_model_runtime->select(config);

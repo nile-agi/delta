@@ -31,3 +31,9 @@ it('cancels the exact attempt', async () => {
 	expect((await ModelsService.cancelRuntime('a')).state).toBe('cancelled');
 	expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ attempt_id: 'a' });
 });
+it('can retry a smaller context without overwriting saved preferences', async () => {
+	const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(snapshot)));
+	vi.stubGlobal('fetch', fetch);
+	await ModelsService.use('gemma3:270m', 1024, false);
+	expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ model: 'gemma3:270m', ctx_size: 1024, persist_ctx: false });
+});

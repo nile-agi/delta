@@ -30,14 +30,15 @@ with tempfile.TemporaryDirectory(prefix='delta-readiness-') as directory:
     worker.write_text('#!' + sys.executable + '\n' + '''import http.server,json,pathlib,sys,urllib.parse
 args=sys.argv[1:]; root=pathlib.Path(__file__).parent
 ctx=int(args[args.index('-c')+1]) if '-c' in args else 131072
-port=int(args[args.index('--port')+1]); loaded=False
+port=int(args[args.index('--port')+1]); loaded=False; failed=False
+gpu=int(args[args.index('--gpu-layers')+1]) if '--gpu-layers' in args else 0
 alias='MiniCPM5-1B-Q6_K'
 class Handler(http.server.BaseHTTPRequestHandler):
  def do_GET(self):
   mode=(root/'mode').read_text()
   path=urllib.parse.urlsplit(self.path).path
   if path in ['/models','/v1/models']:
-   data={'data':[{'id':alias if mode!='alias' else 'wrong-alias','status':{'value':'loaded' if loaded else 'unloaded'}}]}
+   data={'data':[{'id':alias if mode!='alias' else 'wrong-alias','status':{'value':'loaded' if loaded else 'unloaded','failed':failed,'exit_code':1 if failed else 0}}]}
   elif path=='/props':
    data={'model_path':alias+'.gguf','total_slots':1,'default_generation_settings':{'n_ctx':ctx+(1024 if mode=='context' else 0)}}
    if mode=='props':data={}
@@ -46,11 +47,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
   else:data={'status':'ok'}
   self.send_response(200);self.end_headers();self.wfile.write(json.dumps(data).encode())
  def do_POST(self):
-  global loaded
+  global loaded,failed
   body=json.loads(self.rfile.read(int(self.headers.get('Content-Length',0))) or '{}')
   if self.path=='/models/load':
    with (root/'loads').open('a') as out:out.write(json.dumps(body)+'\\n')
-   loaded=True
+   mode=(root/'mode').read_text()
+   failed=(mode=='gpu' and gpu>0) or mode=='gpu-always'
+   loaded=not failed
+   if failed:print('ggml_cuda: cudaMalloc failed: out of memory',file=sys.stderr,flush=True)
   self.send_response(200);self.end_headers();self.wfile.write(b'{"success":true}')
  def log_message(self,*args):pass
 http.server.ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
@@ -66,7 +70,7 @@ http.server.ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
     (root / 'mode').write_text('ok')
     engine_port, api_port = port(), port()
     import os
-    env = {'PATH': os.defpath, 'HOME': str(home), 'LLAMA_ARG_N_PARALLEL': '1'}
+    env = {'PATH': os.defpath, 'HOME': str(home), 'LLAMA_ARG_N_PARALLEL': '1', 'LLAMA_ARG_N_GPU_LAYERS':'20'}
     with (root / 'log').open('wb') as log:
         child = subprocess.Popen([str(binary), '--models-dir', str(models), '--parallel', '1',
                                   '--port', str(engine_port), '--model-api-port', str(api_port)],
@@ -91,18 +95,19 @@ http.server.ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
                     call('/api/models/list')
                     break
                 except OSError: time.sleep(.1)
-            for mode in ['ok', 'context', 'props', 'json', 'alias']:
+            for mode in ['ok', 'context', 'props', 'json', 'alias', 'gpu', 'gpu-always']:
                 (root / 'mode').write_text(mode)
                 response = call('/api/models/use', {'model': 'MiniCPM5:1b', 'ctx_size': 2048})
                 assert response['loaded'] is False, f'Idle router was advertised as loaded: {response}'
                 assert response['state'] == 'loading' and response['attempt_id'], response
                 snapshot = wait_ready(response['attempt_id'])
-                assert snapshot['state'] == ('ready' if mode == 'ok' else 'failed'), snapshot
+                assert snapshot['state'] == ('ready' if mode in ['ok','gpu'] else 'failed'), snapshot
+                if mode == 'gpu': assert snapshot['effective_config']['gpu_layers'] == 0, snapshot
                 if mode == 'ok':
                     assert snapshot['effective_config']['context'] == 2048, snapshot
                     assert snapshot['effective_config']['parallel'] == 1, snapshot
             loads = [json.loads(line) for line in (root / 'loads').read_text().splitlines()]
-            assert len(loads) == 4 and all(x['model'] == 'MiniCPM5-1B-Q6_K' for x in loads), loads
+            assert len(loads) == 8 and all(x['model'] == 'MiniCPM5-1B-Q6_K' for x in loads), loads
             try: call('/api/models/runtime?attempt_id=unknown')
             except urllib.error.HTTPError as error: assert error.code == 404
             else: raise AssertionError('Unknown attempt accepted')

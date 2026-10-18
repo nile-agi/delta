@@ -20,6 +20,40 @@ template <class F> void eventually(F fn) {
 }
 int main() {
     try {
+        for (int scenario = 0; scenario < 3; ++scenario) {
+            std::atomic<int> launches{0}, active_gpu{0};
+            std::atomic<long long> elapsed{0};
+            auto origin = std::chrono::steady_clock::now();
+            ModelRuntime::Hooks recovery;
+            recovery.stop = [] {};
+            recovery.launch = [&](const RuntimeConfig& config, const ModelRuntime::Cancelled&) {
+                ++launches;
+                active_gpu = config.gpu_layers;
+                if (scenario == 2 && launches == 2)
+                    elapsed = 180;
+            };
+            recovery.probe = [&](const RuntimeConfig&) {
+                WorkerProbeResult result;
+                if (active_gpu > 0 || scenario == 1) {
+                    result.failed = true;
+                    result.failure = {"gpu_memory", "GPU allocation failed"};
+                } else
+                    result.ready = true;
+                return result;
+            };
+            ModelRuntime retrying(recovery, [&] { return origin + std::chrono::seconds(elapsed.load()); });
+            RuntimeConfig config;
+            config.gpu_layers = 20;
+            retrying.select(config);
+            eventually([&] { return retrying.current()->state != ModelLoadState::Loading; });
+            require(launches == 2, "only one CPU retry is allowed");
+            require(config.gpu_layers == 20, "recovery cannot mutate caller settings");
+            require(retrying.current()->config.gpu_layers == 0, "effective CPU fallback must be visible");
+            require(retrying.current()->state == (scenario == 0   ? ModelLoadState::Ready
+                                                  : scenario == 1 ? ModelLoadState::Failed
+                                                                  : ModelLoadState::TimedOut),
+                    "recovery must retain its original deadline");
+        }
         std::atomic<int> probe_state{0}, starts{0}, stops{0};
         std::atomic<long long> seconds{0};
         ModelRuntime::Hooks hooks;

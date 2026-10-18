@@ -129,16 +129,47 @@ void ModelRuntime::run() {
         stop();
         try {
             auto interrupted = [this, gen = s.generation] { return cancelled(gen); };
-            if (!interrupted())
-                hooks_.launch(s.config, interrupted);
+            bool launch_needed = true, was_ready = false;
+            unsigned retries = 0;
             while (!interrupted()) {
-                const auto p = hooks_.probe(s.config);
+                WorkerProbeResult p;
+                try {
+                    if (launch_needed) {
+                        hooks_.launch(s.config, interrupted);
+                        launch_needed = false;
+                    }
+                    if (interrupted())
+                        break;
+                    p = hooks_.probe(s.config);
+                } catch (const std::exception& error) {
+                    p.failed = true;
+                    p.failure = {"runtime", error.what()};
+                }
                 if (p.failed) {
-                    finish(s.generation, ModelLoadState::Failed, p.failure);
+                    stop(); // Drain final native errors before classifying or publishing failure.
+                    auto failure = hooks_.classify ? hooks_.classify(p.failure) : p.failure;
+                    if (!was_ready && !interrupted() &&
+                        recovery_action(failure, s.config, retries) == RecoveryAction::RetryCpu) {
+                        ++retries;
+                        s.config.gpu_layers = 0;
+                        {
+                            std::lock_guard<std::mutex> lock(mutex_);
+                            if (!attempts_.empty() && attempts_.back().generation == s.generation) {
+                                attempts_.back().config = s.config;
+                                attempts_.back().engine_state = EngineState::Starting;
+                            }
+                        }
+                        launch_needed = true;
+                        continue;
+                    }
+                    if (failure.action == "smaller_context" && s.config.context / s.config.parallel >= 1024)
+                        failure.suggested_context = (s.config.context / 2 / s.config.parallel) * s.config.parallel;
+                    finish(s.generation, ModelLoadState::Failed, failure);
                     break;
                 }
                 if (p.ready) {
                     finish(s.generation, ModelLoadState::Ready);
+                    was_ready = true;
                 }
                 std::unique_lock<std::mutex> lock(mutex_);
                 if (!attempts_.empty() && attempts_.back().generation == s.generation)
@@ -146,10 +177,12 @@ void ModelRuntime::run() {
                 wake_.wait_for(lock, std::chrono::milliseconds(p.ready ? 1000 : 250));
             }
             finish(s.generation, ModelLoadState::TimedOut);
-        } catch (const std::exception& e) {
-            finish(s.generation, ModelLoadState::Failed, RuntimeFailure{"runtime", e.what()});
+        } catch (const std::exception&) {
+            finish(s.generation, ModelLoadState::Failed,
+                   RuntimeFailure{"runtime", "Unexpected model runtime failure. Copy the report for details."});
         } catch (...) {
-            finish(s.generation, ModelLoadState::Failed, RuntimeFailure{"runtime", "Unexpected model load failure"});
+            finish(s.generation, ModelLoadState::Failed,
+                   RuntimeFailure{"runtime", "Unexpected model runtime failure. Copy the report for details."});
         }
         auto current_state = current();
         if (!current_state || current_state->generation != s.generation ||

@@ -37,6 +37,7 @@ class ModelRuntime {
         std::function<void(const RuntimeConfig&, const Cancelled&)> launch;
         std::function<WorkerProbeResult(const RuntimeConfig&)> probe;
         std::function<void()> stop;
+        std::function<RuntimeFailure(const RuntimeFailure&)> classify;
     };
     explicit ModelRuntime(Hooks, Clock clock = std::chrono::steady_clock::now);
     ~ModelRuntime();

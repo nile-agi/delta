@@ -187,6 +187,7 @@ set(DELTA_SOURCES
     engine/server_health.cpp
     engine/model_runtime.cpp
     engine/runtime_config.cpp
+    engine/runtime_failure.cpp
     engine/owned_process.cpp
     engine/tools/hardware_monitor.cpp
     engine/tools/file_ops.cpp
@@ -289,6 +290,7 @@ add_executable(delta-server
     engine/server_health.cpp
     engine/model_runtime.cpp
     engine/runtime_config.cpp
+    engine/runtime_failure.cpp
     engine/owned_process.cpp
     engine/tools/hardware_monitor.cpp
     engine/tools/file_ops.cpp
@@ -410,10 +412,13 @@ add_executable(delta-owned-process-tests EXCLUDE_FROM_ALL tests/test_owned_proce
 target_include_directories(delta-owned-process-tests PRIVATE ${DELTA_INCLUDE_DIRS})
 target_link_libraries(delta-owned-process-tests PRIVATE Threads::Threads)
 
+add_executable(delta-runtime-failure-tests EXCLUDE_FROM_ALL tests/test_runtime_failure.cpp engine/runtime_failure.cpp)
+target_include_directories(delta-runtime-failure-tests PRIVATE ${DELTA_INCLUDE_DIRS})
+
 add_executable(delta-runtime-config-tests EXCLUDE_FROM_ALL tests/test_runtime_config.cpp engine/runtime_config.cpp)
 target_include_directories(delta-runtime-config-tests PRIVATE ${DELTA_INCLUDE_DIRS})
 
-add_executable(delta-model-runtime-tests EXCLUDE_FROM_ALL tests/test_model_runtime.cpp engine/model_runtime.cpp)
+add_executable(delta-model-runtime-tests EXCLUDE_FROM_ALL tests/test_model_runtime.cpp engine/model_runtime.cpp engine/runtime_failure.cpp)
 target_include_directories(delta-model-runtime-tests PRIVATE ${DELTA_INCLUDE_DIRS})
 target_link_libraries(delta-model-runtime-tests PRIVATE Threads::Threads)
 

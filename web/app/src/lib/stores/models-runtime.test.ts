@@ -31,6 +31,15 @@ it('resumes a running attempt after reloading the UI', async () => {
 	expect(store.selectedModelId).toBe('gemma3:270m');
 	expect(store.modelLoadedOnServer).toBe(false);
 });
+it('offers a smaller context only on memory failure and applies it only when requested', async () => {
+	const store = new ModelsStore(); await store.fetch(); await store.select('gemma3:270m');
+	api.getRuntime.mockResolvedValue({ ...status('a', 'failed'), failure: { code: 'system_memory', message: 'Not enough RAM', action: 'smaller_context', suggested_context: 1024 } });
+	await vi.advanceTimersByTimeAsync(1000);
+	expect(store.suggestedContext).toBe(1024);
+	api.use.mockClear();
+	await store.retryWithSmallerContext();
+	expect(api.use).toHaveBeenCalledWith('gemma3:270m', 1024, false);
+});
 it('ignores a late response from an earlier attempt for the same model', async () => {
 	const store = new ModelsStore(); await store.fetch();
 	let complete!: (value: unknown) => void;

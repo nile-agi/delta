@@ -68,8 +68,8 @@ http.server.HTTPServer(('127.0.0.1',port),Handler).serve_forever()
                     time.sleep(.1)
             else:
                 raise RuntimeError('Wrapper did not start: ' + (root / 'wrapper.log').read_text(errors='replace')[-4000:])
-            for requested, expected in [(None, 8192), (4096, 4096), (None, 4096)]:
-                body = {'model': 'MiniCPM5:1b'}
+            for requested, expected, persist in [(None,8192,True),(4096,4096,True),(None,4096,True),(2048,2048,False),(None,4096,True)]:
+                body = {'model': 'MiniCPM5:1b', 'persist_ctx':persist}
                 if requested is not None:
                     body['ctx_size'] = requested
                 request = urllib.request.Request(f'http://127.0.0.1:{api_port}/api/models/use',
@@ -89,7 +89,7 @@ http.server.HTTPServer(('127.0.0.1',port),Handler).serve_forever()
                 actual = read_context()
                 assert actual == expected, f'API reported {expected}, but child actually uses {actual}'
             launches = [json.loads(line) for line in (root / 'launches.jsonl').read_text().splitlines()]
-            assert [launch['ctx'] for launch in launches][-3:] == [8192,4096,4096], launches
+            assert [launch['ctx'] for launch in launches][-5:] == [8192,4096,4096,2048,4096], launches
             assert all('--models-dir' in launch['args'] for launch in launches), launches
             print('Fresh selection and same-model context changes reach the actual child process')
         finally:

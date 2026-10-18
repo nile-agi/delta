@@ -724,6 +724,11 @@
 		<Button size="sm" variant="ghost" onclick={() => modelsStore.cancelLoad()}>Cancel loading</Button>
 	{/if}
 	{#if error && !updating && modelsStore.attemptId}
+		{#if modelsStore.suggestedContext}
+			<Button size="sm" variant="ghost" onclick={() => modelsStore.retryWithSmallerContext()}>
+				Try {modelsStore.suggestedContext.toLocaleString()}-token context for this run
+			</Button>
+		{/if}
 		<Button size="sm" variant="ghost" onclick={() => modelsStore.retryLoad()}>Try again</Button>
 	{/if}
 

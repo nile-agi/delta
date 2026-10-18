@@ -27,7 +27,7 @@ export interface ModelRuntimeSnapshot {
 	model_alias?: string;
 	loaded: boolean;
 	effective_config?: { context: number; parallel: number; batch: number; microbatch: number; gpu_layers: number };
-	failure?: { code: string; message: string; exit_code?: number; signal?: number };
+	failure?: { code: string; message: string; exit_code?: number; signal?: number; action?: string; suggested_context?: number };
 }
 
 function runtimeSnapshot(value: unknown): ModelRuntimeSnapshot {
@@ -334,8 +334,9 @@ export class ModelsService {
 	 * Switch to a model (returns model path, but server restart is required).
 	 * Optional ctxSize: user's context length choice; persisted on backend and used for -c when loading.
 	 */
-	static async use(modelName: string, ctxSize?: number): Promise<ModelOperationResponse> {
-		const body: { model: string; ctx_size?: number } = { model: modelName };
+	static async use(modelName: string, ctxSize?: number, persistContext = true): Promise<ModelOperationResponse> {
+		const body: { model: string; ctx_size?: number; persist_ctx?: boolean } = { model: modelName };
+		if (!persistContext) body.persist_ctx = false;
 		if (ctxSize != null && ctxSize > 0) {
 			body.ctx_size = ctxSize;
 		}

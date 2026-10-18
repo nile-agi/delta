@@ -83,12 +83,6 @@ typedef DWORD pid_t;
 
 class DeltaServerWrapper {
   private:
-    // Loading a large model off a cold disk can take minutes; give it room before giving up,
-    // but stop short of the point where a caller waiting on the HTTP response would time out.
-    static constexpr int MODEL_LOAD_TIMEOUT_SECONDS = 180;
-    static constexpr int READY_POLL_INTERVAL_MS = 250;
-    static constexpr int PROGRESS_INTERVAL_SECONDS = 10;
-
     std::string llama_server_path_;
     std::string model_path_;
     std::string models_dir_;
@@ -100,14 +94,11 @@ class DeltaServerWrapper {
     bool enable_embedding_;
     bool enable_reranking_;
     std::string draft_model_;
-    bool used_auto_draft_ = false;     // the last command carried a draft the user did not ask for
-    bool suppress_auto_draft_ = false; // set while retrying a launch that failed with one
     std::string grammar_file_;
 
     std::unique_ptr<ModelRuntime> runtime_;
     std::optional<RuntimeConfig> effective_config_;
     ModelRuntime::Cancelled load_cancelled_;
-    std::thread llama_server_thread_;
     std::atomic<bool> llama_server_running_;
     std::atomic<bool> should_stop_;
     OwnedProcess owned_process_;
@@ -117,13 +108,8 @@ class DeltaServerWrapper {
     // DHATS Brain: persistent hardware monitor (avoids re-probing NVML/ROCm every load)
     delta::HardwareMonitor hw_monitor_;
 
-    // DHATS Brain: self-heal watchdog state
-    std::atomic<int> heal_pending_{0}; // 1 = halve GPU layers, 2 = go CPU-only
-    std::atomic<int> oom_hits_{0};     // consecutive OOM errors seen in stderr
-    int ngl_override_ = -1;            // -1 = trust planner; >=0 = forced override
-    int last_ngl_ = 0;
-    int heal_count_ = 0;
-    std::string last_heal_reason_;
+    std::mutex errors_mutex_;
+    std::string recent_errors_;
 
     static void report_child_exit(long long code, int signal) {
         // A bounded numeric record lets the desktop report child failures separately from its own exit.
@@ -132,23 +118,10 @@ class DeltaServerWrapper {
     }
 
     void note_server_stderr(const std::string& line) {
-        static const char* kOom[] = {"Insufficient Memory",
-                                     "OutOfMemory",
-                                     "failed to fit params",
-                                     "error state from a previous command buffer",
-                                     "Compute error",
-                                     "common_fit_params: failed",
-                                     "ggml_metal_synchronize: error"};
-        for (const char* s : kOom) {
-            if (line.find(s) != std::string::npos) {
-                int hits = ++oom_hits_;
-                if (hits >= 3 && heal_pending_ == 0) {
-                    // First OOM burst: halve GPU layers. Second: force CPU-only.
-                    heal_pending_ = (heal_count_ == 0) ? 1 : 2;
-                }
-                return;
-            }
-        }
+        std::lock_guard<std::mutex> lock(errors_mutex_);
+        recent_errors_ += line.substr(0, 4096) + "\n";
+        if (recent_errors_.size() > 16384)
+            recent_errors_.erase(0, recent_errors_.size() - 16384);
     }
 
   public:
@@ -396,53 +369,6 @@ class DeltaServerWrapper {
 
     // The model family a GGUF belongs to, version included, since generations of one family can
     // change tokenizer: "qwen2.5-0.5b..." -> "qwen2.5", "gemma-3-270m..." -> "gemma-3".
-    static std::string model_family(const std::string& path) {
-        std::string name = std::filesystem::path(path).filename().string();
-        for (auto& c : name)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        const size_t dash = name.find('-');
-        std::string family = name.substr(0, dash);
-        if (dash != std::string::npos) {
-            const size_t next = name.find('-', dash + 1);
-            const std::string segment =
-                name.substr(dash + 1, next == std::string::npos ? std::string::npos : next - dash - 1);
-            if (!segment.empty() && segment.find_first_not_of("0123456789.") == std::string::npos)
-                family += "-" + segment;
-        }
-        return family;
-    }
-
-    // A same-family GGUF in `dir` at most a third the size of `model_path`, or "" when none fits.
-    // The smallest match wins, since a draft is only worth running if it is cheap.
-    static std::string find_draft_model(const std::string& dir, const std::string& model_path) {
-        std::error_code ec;
-        if (!std::filesystem::is_directory(dir, ec))
-            return "";
-        const auto main_size = std::filesystem::file_size(model_path, ec);
-        if (ec || main_size == 0)
-            return "";
-        const std::string family = model_family(model_path);
-        if (family.empty())
-            return "";
-        std::string best;
-        std::uintmax_t best_size = 0;
-        for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
-            const std::string path = entry.path().string();
-            if (entry.path().extension() != ".gguf" || std::filesystem::equivalent(path, model_path, ec))
-                continue;
-            if (model_family(path) != family)
-                continue;
-            const auto size = entry.file_size(ec);
-            if (ec || size == 0 || size * 3 > main_size)
-                continue;
-            if (best.empty() || size < best_size) {
-                best = path;
-                best_size = size;
-            }
-        }
-        return best;
-    }
-
     std::vector<std::string> build_llama_server_arguments(const std::string& model_path, int ctx_size,
                                                           const std::string& model_alias) {
         std::vector<std::string> args{std::filesystem::absolute(llama_server_path_).string()};
@@ -485,7 +411,6 @@ class DeltaServerWrapper {
         if (enable_reranking_)
             args.push_back("--reranking");
         auto draft = effective_config_ ? config.draft_path : draft_model_;
-        used_auto_draft_ = false;
         if (!draft.empty()) {
             add("--model-draft", draft);
             add("--spec-draft-n-max", "16");
@@ -530,17 +455,7 @@ class DeltaServerWrapper {
 
     ServerReadyState restart_llama_server(const std::string& new_model_path, const std::string& model_name,
                                           int ctx_size, const std::string& model_alias) {
-        ServerReadyState state = launch_llama_server(new_model_path, model_name, ctx_size, model_alias);
-        // A draft picked automatically is an optimisation; if the server would not start with it,
-        // start the model without one rather than failing the load.
-        if (state == ServerReadyState::Exited && used_auto_draft_) {
-            std::cerr << "[Speculative] llama-server failed with the auto-detected draft; retrying without it"
-                      << std::endl;
-            suppress_auto_draft_ = true;
-            state = launch_llama_server(new_model_path, model_name, ctx_size, model_alias);
-            suppress_auto_draft_ = false;
-        }
-        return state;
+        return launch_llama_server(new_model_path, model_name, ctx_size, model_alias);
     }
 
     ServerReadyState launch_llama_server(const std::string& new_model_path, const std::string& model_name, int ctx_size,
@@ -750,6 +665,10 @@ class DeltaServerWrapper {
         ModelRuntime::Hooks hooks;
         hooks.stop = [this] { stop_llama_server(); };
         hooks.launch = [this](const RuntimeConfig& config, const ModelRuntime::Cancelled& cancelled) {
+            {
+                std::lock_guard<std::mutex> lock(errors_mutex_);
+                recent_errors_.clear();
+            }
             effective_config_ = config;
             std::cerr << "llama_runtime: generation=" << config.generation
                       << " model=" << std::filesystem::path(config.model_path).filename().string()
@@ -784,6 +703,26 @@ class DeltaServerWrapper {
                 return failed;
             }
             return probe_model_worker(port_, config, llama_server_is_router_);
+        };
+        hooks.classify = [this](const RuntimeFailure& original) {
+            if (original.code != "worker_exit" && original.code != "runtime")
+                return original;
+            ProcessEvidence evidence;
+            {
+                std::lock_guard<std::mutex> lock(errors_mutex_);
+                evidence.errors = recent_errors_;
+            }
+            evidence.exit_code = original.exit_code;
+            evidence.signal = original.signal;
+            if (evidence.exit_code == 0 && evidence.signal == 0) {
+                auto exit = owned_process_.exit_status();
+                evidence.exit_code = exit.code;
+                evidence.signal = exit.signal;
+            }
+            auto failure = classify_runtime_failure(evidence);
+            if (failure.code == "unknown_exit" && original.code == "runtime")
+                failure.message = original.message;
+            return failure;
         };
         runtime_ = std::make_unique<ModelRuntime>(std::move(hooks));
         set_model_runtime(runtime_.get(), [this](RuntimeConfig config) {
