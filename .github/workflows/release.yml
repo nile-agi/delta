@@ -336,6 +336,7 @@ jobs:
       RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
       MACOSX_DEPLOYMENT_TARGET: "11.0"
       DELTA_PORTABLE_RELEASE: "1"
+      DELTA_VERIFY_PACKAGED_RUNTIME: ${{ matrix.platform == 'ubuntu-22.04' && '1' || '0' }}
     permissions:
       contents: read
     strategy:
@@ -487,6 +488,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+          DELTA_RUNTIME_REPORT_DIR: ${{ runner.temp }}/delta-runtime-reports
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -506,6 +508,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+          DELTA_RUNTIME_REPORT_DIR: ${{ runner.temp }}/delta-runtime-reports
         with:
           owner: nile-agi
           repo: delta-release
@@ -513,6 +516,14 @@ jobs:
           tagName: ${{ needs.prepare-release.outputs.tag }}
           tauriScript: ${{ matrix.platform == 'ubuntu-22.04' && './scripts/tauri-release-build.sh' || '' }}
           args: ${{ matrix.args }}
+
+      - name: Keep final Linux runtime reports
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-linux-runtime-reports
+          path: ${{ runner.temp }}/delta-runtime-reports
+          if-no-files-found: ignore
 
       - name: Verify packaged macOS executables
         if: runner.os == 'macOS'

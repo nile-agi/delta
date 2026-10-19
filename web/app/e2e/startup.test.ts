@@ -12,33 +12,42 @@ test.beforeEach(async ({ page }) => {
 
 // Exercise the production root layout, including the settings/server effects.
 // Component tests alone do not mount this startup path.
-for (const desktop of [false, true]) {
-	test(`starts with model defaults in ${desktop ? 'desktop' : 'browser'} mode`, async ({
+for (const { desktop, missingIterator } of [
+	{ desktop: false, missingIterator: false },
+	{ desktop: true, missingIterator: false },
+	{ desktop: false, missingIterator: true },
+	{ desktop: true, missingIterator: true }
+]) {
+	test(`starts with model defaults in ${desktop ? 'desktop' : 'browser'} mode${missingIterator ? ' without Iterator' : ''}`, async ({
 		page
 	}) => {
 		const errors: string[] = [];
 		page.on('pageerror', (error) => errors.push(error.message));
-		await page.addInitScript((desktop) => {
-			localStorage.setItem(
-				'config',
-				JSON.stringify({
-					onboardingCompleted: true,
-					userName: 'Asha',
-					top_p: 0.7
-				})
-			);
-			localStorage.setItem('userOverrides', JSON.stringify(['top_p']));
-			if (desktop) {
-				Object.assign(window, {
-					__TAURI_INTERNALS__: {
-						metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
-						invoke: async (command: string) =>
-							command === 'get_server_status' ? [8080, 8081, true, false, ''] : null,
-						transformCallback: () => 1
-					}
-				});
-			}
-		}, desktop);
+		await page.addInitScript(
+			({ desktop, missingIterator }) => {
+				if (missingIterator) Reflect.deleteProperty(globalThis, 'Iterator');
+				localStorage.setItem(
+					'config',
+					JSON.stringify({
+						onboardingCompleted: true,
+						userName: 'Asha',
+						top_p: 0.7
+					})
+				);
+				localStorage.setItem('userOverrides', JSON.stringify(['top_p']));
+				if (desktop) {
+					Object.assign(window, {
+						__TAURI_INTERNALS__: {
+							metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
+							invoke: async (command: string) =>
+								command === 'get_server_status' ? [8080, 8081, true, false, ''] : null,
+							transformCallback: () => 1
+						}
+					});
+				}
+			},
+			{ desktop, missingIterator }
+		);
 		await page.route('**/api/**', (route) =>
 			route.fulfill({
 				json: { models: [], downloads: [], events: [], reminders: [] }
@@ -179,12 +188,19 @@ for (const fault of ['backend', 'bundle'] as const) {
 					metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main' } },
 					transformCallback: () => 1,
 					invoke: async (command: string, args: any) => {
-						if (command === 'get_server_status') return [8080, 8081, false, true, 'Backend exited with signal 4'];
-						if (command === 'get_diagnostic_report') return {
-							version: '1.0.18-rc.1', target: 'x86_64-apple-darwin', cpuPolicy: 'x86_64-baseline',
-							os: 'macOS 12', stage: args.stage, exitCode: 132,
-							message: 'Failed /Users/private-name/models/test.gguf hf_abcdefghijklmnop', logs: []
-						};
+						if (command === 'get_server_status')
+							return [8080, 8081, false, true, 'Backend exited with signal 4'];
+						if (command === 'get_diagnostic_report')
+							return {
+								version: '1.0.18-rc.1',
+								target: 'x86_64-apple-darwin',
+								cpuPolicy: 'x86_64-baseline',
+								os: 'macOS 12',
+								stage: args.stage,
+								exitCode: 132,
+								message: 'Failed /Users/private-name/models/test.gguf hf_abcdefghijklmnop',
+								logs: []
+							};
 						if (command === 'plugin:shell|open') (window as any).__openedIssue = args.path;
 						return null;
 					}
@@ -192,7 +208,7 @@ for (const fault of ['backend', 'bundle'] as const) {
 			});
 		});
 		// The reporting fallback must also work without Svelte or any app modules.
-		if (fault === 'bundle') await page.route('**/_app/immutable/**', route => route.abort());
+		if (fault === 'bundle') await page.route('**/_app/immutable/**', (route) => route.abort());
 		await page.goto('/');
 		await page.getByRole('button', { name: 'Review report', exact: true }).first().click();
 		const report = page.getByRole('textbox', { name: 'Diagnostic report contents' });
@@ -203,7 +219,11 @@ for (const fault of ['backend', 'bundle'] as const) {
 		await page.getByRole('button', { name: 'Download report', exact: true }).click();
 		expect((await download).suggestedFilename()).toBe('delta-diagnostic-report.txt');
 		await page.getByRole('button', { name: 'Open GitHub issue', exact: true }).click();
-		await expect.poll(() => page.evaluate(() => (window as any).__openedIssue)).toMatch(/^https:\/\/github.com\/nile-agi\/delta-release\/issues\/new\?/);
-		expect((await page.evaluate(() => (window as any).__openedIssue)).length).toBeLessThanOrEqual(1800);
+		await expect
+			.poll(() => page.evaluate(() => (window as any).__openedIssue))
+			.toMatch(/^https:\/\/github.com\/nile-agi\/delta-release\/issues\/new\?/);
+		expect((await page.evaluate(() => (window as any).__openedIssue)).length).toBeLessThanOrEqual(
+			1800
+		);
 	});
 }

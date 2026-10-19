@@ -7,6 +7,7 @@
 
 #include <string>
 #include <functional>
+#include "model_runtime.h"
 
 namespace delta {
 void start_model_api_server(int port = 8081);
@@ -21,6 +22,10 @@ void set_model_api_overrides(const std::string& host, const std::string& api_key
 std::string model_api_host();
 std::string model_api_key();
 
+using RuntimeConfigResolver = std::function<RuntimeConfig(RuntimeConfig)>;
+void set_model_runtime(ModelRuntime* runtime, RuntimeConfigResolver resolver = {});
+
+// Legacy embedded CLI callback; the packaged wrapper uses ModelRuntime.
 // Callback function type for model switching
 // Parameters: model_path, model_name, ctx_size, model_alias
 using ModelSwitchCallback = std::function<bool(const std::string&, const std::string&, int, const std::string&)>;
