@@ -20,7 +20,32 @@ export interface ModelListResponse {
 	models: ModelInfo[];
 }
 
+export interface ModelRuntimeSnapshot {
+	attempt_id?: string;
+	state: 'idle' | 'loading' | 'ready' | 'failed' | 'cancelled' | 'timed_out';
+	model_name?: string;
+	model_alias?: string;
+	loaded: boolean;
+	effective_config?: { context: number; parallel: number; batch: number; microbatch: number; gpu_layers: number };
+	failure?: { code: string; message: string; exit_code?: number; signal?: number; action?: string; suggested_context?: number };
+}
+
+function runtimeSnapshot(value: unknown): ModelRuntimeSnapshot {
+	if (!value || typeof value !== 'object') throw new Error('Invalid model runtime response');
+	const s = value as ModelRuntimeSnapshot;
+	if (!['idle', 'loading', 'ready', 'failed', 'cancelled', 'timed_out'].includes(s.state) ||
+		(s.state !== 'idle' && (typeof s.attempt_id !== 'string' || !s.attempt_id)) ||
+		(s.state === 'ready' && (!s.effective_config || !Number.isInteger(s.effective_config.context) ||
+			s.effective_config.context < 512 || !Number.isInteger(s.effective_config.parallel) || s.effective_config.parallel < 1))) {
+		throw new Error('Invalid model runtime response');
+	}
+	return s;
+}
+
 export interface ModelOperationResponse {
+	attempt_id?: string;
+	state?: ModelRuntimeSnapshot['state'];
+	effective_config?: ModelRuntimeSnapshot['effective_config'];
 	success: boolean;
 	message?: string;
 	model_path?: string;
@@ -63,6 +88,22 @@ export interface ActiveDownload {
 }
 
 export class ModelsService {
+	static async getRuntime(attemptId?: string): Promise<ModelRuntimeSnapshot> {
+		const query = attemptId ? `?attempt_id=${encodeURIComponent(attemptId)}` : '';
+		const response = await fetch(`${getModelApiBaseUrl()}/api/models/runtime${query}`, { signal: AbortSignal.timeout(3000) });
+		if (!response.ok) throw new ModelApiError('Cannot check model loading status.', response.status);
+		return runtimeSnapshot(await response.json());
+	}
+
+	static async cancelRuntime(attemptId: string): Promise<ModelRuntimeSnapshot> {
+		const response = await fetch(`${getModelApiBaseUrl()}/api/models/runtime/cancel`, {
+			method: 'POST', headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ attempt_id: attemptId }), signal: AbortSignal.timeout(3000)
+		});
+		if (!response.ok) throw new ModelApiError('Cannot cancel model loading.', response.status);
+		return runtimeSnapshot(await response.json());
+	}
+
 	/**
 	 * List models from main server (llama-server).
 	 * Uses /v1/models (OpenAI compat). When server is in router mode, this returns multiple models.
@@ -293,8 +334,9 @@ export class ModelsService {
 	 * Switch to a model (returns model path, but server restart is required).
 	 * Optional ctxSize: user's context length choice; persisted on backend and used for -c when loading.
 	 */
-	static async use(modelName: string, ctxSize?: number): Promise<ModelOperationResponse> {
-		const body: { model: string; ctx_size?: number } = { model: modelName };
+	static async use(modelName: string, ctxSize?: number, persistContext = true): Promise<ModelOperationResponse> {
+		const body: { model: string; ctx_size?: number; persist_ctx?: boolean } = { model: modelName };
+		if (!persistContext) body.persist_ctx = false;
 		if (ctxSize != null && ctxSize > 0) {
 			body.ctx_size = ctxSize;
 		}
@@ -312,26 +354,16 @@ export class ModelsService {
 		let response: Response;
 		try {
 			response = await doRequest();
-		} catch (e) {
-			const isNetworkError =
-				e instanceof TypeError && (e.message === 'Failed to fetch' || e.message.includes('fetch'));
-			if (isNetworkError) {
-				// Retry once after a short delay (server may be restarting during migration)
-				await new Promise((r) => setTimeout(r, 2500));
-				try {
-					response = await doRequest();
-				} catch {
-					throw new Error(
-						"Cannot reach the server while loading the model. Make sure Delta is running (run 'delta' in terminal). If you just selected a model, the server may be restarting — wait a few seconds and try again."
-					);
+		} catch (error) {
+			// The server may have accepted the request before the connection disappeared.
+			// Recover its identity instead of sending a second load request.
+			try {
+				const current = await this.getRuntime();
+				if (current.attempt_id && current.model_name === modelName) {
+					return { ...current, success: true, ctx_size: current.effective_config?.context };
 				}
-			} else {
-				throw new Error(
-					e instanceof Error
-						? e.message
-						: 'Connection error while loading the model. Please try again.'
-				);
-			}
+			} catch { /* Keep the original connection failure. */ }
+			throw new Error(error instanceof Error ? error.message : 'Cannot confirm whether the model started loading. Try again.');
 		}
 
 		if (!response.ok) {

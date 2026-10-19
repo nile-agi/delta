@@ -185,6 +185,10 @@ set(DELTA_SOURCES
     engine/commands.cpp
     engine/history.cpp
     engine/server_health.cpp
+    engine/model_runtime.cpp
+    engine/runtime_config.cpp
+    engine/runtime_failure.cpp
+    engine/owned_process.cpp
     engine/tools/hardware_monitor.cpp
     engine/tools/file_ops.cpp
     engine/tools/dep_protocol.cpp
@@ -284,6 +288,10 @@ add_executable(delta-server
     engine/api/openai_api.cpp
     engine/models.cpp
     engine/server_health.cpp
+    engine/model_runtime.cpp
+    engine/runtime_config.cpp
+    engine/runtime_failure.cpp
+    engine/owned_process.cpp
     engine/tools/hardware_monitor.cpp
     engine/tools/file_ops.cpp
     engine/ui.cpp
@@ -399,6 +407,21 @@ endif()
 # Harness tests: a standalone binary (no Catch2 dependency) that runs the agent loop against a
 # scripted stand-in for llama-server. Build and run with:
 #   cmake --build build --target delta-harness-tests && ./build/delta-harness-tests
+find_package(Threads REQUIRED)
+add_executable(delta-owned-process-tests EXCLUDE_FROM_ALL tests/test_owned_process.cpp engine/owned_process.cpp)
+target_include_directories(delta-owned-process-tests PRIVATE ${DELTA_INCLUDE_DIRS})
+target_link_libraries(delta-owned-process-tests PRIVATE Threads::Threads)
+
+add_executable(delta-runtime-failure-tests EXCLUDE_FROM_ALL tests/test_runtime_failure.cpp engine/runtime_failure.cpp)
+target_include_directories(delta-runtime-failure-tests PRIVATE ${DELTA_INCLUDE_DIRS})
+
+add_executable(delta-runtime-config-tests EXCLUDE_FROM_ALL tests/test_runtime_config.cpp engine/runtime_config.cpp)
+target_include_directories(delta-runtime-config-tests PRIVATE ${DELTA_INCLUDE_DIRS})
+
+add_executable(delta-model-runtime-tests EXCLUDE_FROM_ALL tests/test_model_runtime.cpp engine/model_runtime.cpp engine/runtime_failure.cpp)
+target_include_directories(delta-model-runtime-tests PRIVATE ${DELTA_INCLUDE_DIRS})
+target_link_libraries(delta-model-runtime-tests PRIVATE Threads::Threads)
+
 add_executable(delta-model-context-tests EXCLUDE_FROM_ALL
     tests/test_model_context.cpp engine/models.cpp engine/tools/file_ops.cpp engine/ui.cpp)
 target_include_directories(delta-model-context-tests PRIVATE ${DELTA_INCLUDE_DIRS})

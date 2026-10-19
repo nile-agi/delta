@@ -351,30 +351,7 @@ fn dirs_next() -> Option<std::path::PathBuf> {
     }
 }
 
-#[cfg(target_os = "windows")]
-fn kill_stale_server_processes() {
-    use std::process::Command;
-    let _ = Command::new("taskkill")
-        .args(["/F", "/IM", "llama-server*"])
-        .output();
-    let _ = Command::new("taskkill")
-        .args(["/F", "/IM", "delta-server*"])
-        .output();
-    std::thread::sleep(std::time::Duration::from_millis(500));
-}
-
-#[cfg(not(target_os = "windows"))]
-fn kill_stale_server_processes() {
-    use std::process::Command;
-    let _ = Command::new("pkill").args(["-9", "llama-server"]).output();
-    let _ = Command::new("pkill").args(["-9", "delta-server"]).output();
-    std::thread::sleep(std::time::Duration::from_millis(500));
-}
-
 pub fn run() {
-    startup_info("Cleaning stale server processes before startup");
-    kill_stale_server_processes();
-
     let diagnostics = DiagnosticState::default();
     let panic_diagnostics = diagnostics.clone();
     let original_panic_hook = std::panic::take_hook();
@@ -560,16 +537,16 @@ pub fn run() {
                 }
 
                 let state = app.state::<Mutex<ServerState>>();
-                let child = {
+                let (child, model_api_port) = {
                     let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                     s.stopping = true;
-                    s.child.take()
+                    (s.child.take(), s.model_api_port)
                 };
                 if let Some(child) = child {
                     log::info!("Shutting down delta-server...");
+                    startup::unload_backend(model_api_port);
                     let _ = child.kill();
                 }
-                kill_stale_server_processes();
             }
         })
         .build(tauri::generate_context!())
@@ -577,13 +554,16 @@ pub fn run() {
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 let state = app_handle.state::<Mutex<ServerState>>();
-                if let Ok(mut s) = state.lock() {
+                let owned = state.lock().ok().and_then(|mut s| {
                     s.stopping = true;
-                    if let Some(child) = s.child.take() {
-                        let _ = child.kill();
-                    }
+                    let port = s.model_api_port;
+                    s.child.take().map(|child| (child, port))
+                });
+                if let Some((child, port)) = owned {
+                    startup::unload_backend(port);
+                    let _ = child.kill();
                 }
-                kill_stale_server_processes();
+
             }
         });
 }
