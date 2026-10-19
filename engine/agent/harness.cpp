@@ -336,14 +336,18 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
 
     // Plain chats (no tools) get a short prompt. Tiny models otherwise parrot the long agent
     // identity line or invent a "busy day" from calendar scaffolding meant for tool runs.
+    // Keep "requested level of detail" so follow-ups like "explain deeper" are honored.
     if (!has_tools) {
-        std::string prompt = "You are Delta, a helpful assistant.\n";
+        std::string prompt = "You are Delta, a helpful assistant.\n"
+                             "Follow the user's requested level of detail.\n";
         prompt += "CURRENT TIME: " + std::string(iso_buf) + " (" + day_buf + ")\n";
         prompt += "TODAY: " + std::string(today_buf) + "\n";
-        prompt += "\nAnswer the user's latest message helpfully from the conversation. "
+        prompt += "\nAnswer the user's latest message from the conversation. "
+                  "When they ask for more depth or detail, expand with clearer explanation and examples; "
+                  "do not repeat a shorter paraphrase of your previous reply. "
                   "Do not invent personal circumstances they did not state. "
                   "Do not claim to have created, moved, or changed saved records. "
-                  "The user can use the calendar or a Quick Add suggestion for those changes.\n";
+                  "For calendar or task changes, the user can use the calendar or a Quick Add suggestion.\n";
         if (!task_dossier_.empty())
             prompt += task_dossier_;
         prompt += document_context(messages, false);

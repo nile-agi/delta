@@ -2964,6 +2964,10 @@ static void test_no_tools_prompt_stays_short() {
     check(system.find("NEXT 7 DAYS") == std::string::npos, "the week list is for tool runs only");
     check(system.find("runs entirely on the user's own machine") == std::string::npos,
           "the long identity line is not offered to parrot");
+    check(system.find("Follow the user's requested level of detail") != std::string::npos,
+          "detail preferences are still honored on plain chats");
+    check(system.find("do not repeat a shorter paraphrase") != std::string::npos,
+          "follow-ups asking for depth are steered away from shorter restatements");
     check(system.find("Do not invent personal circumstances") != std::string::npos,
           "plain chats are told not to invent a backstory");
     check(system.find("HOW YOU WORK") == std::string::npos, "tool instructions stay off");
