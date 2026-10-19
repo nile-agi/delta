@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify model selection applies context limits to the child, including same-model changes."""
 import argparse
+import http.server
 import json
 import os
 import pathlib
@@ -12,6 +13,8 @@ import sys
 import tempfile
 import time
 import urllib.request
+from unittest.mock import patch
+from wrapper_fixture import LoopbackHTTPServer
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary', required=True)
@@ -24,6 +27,9 @@ def free_port():
 
 def verify_fixture_concurrency(worker):
     """An idle connection must not block the wrapper's concurrent health probes."""
+    with patch('socket.getfqdn', side_effect=AssertionError('Loopback fixture must not use reverse DNS')):
+        with LoopbackHTTPServer(('127.0.0.1', 0), http.server.BaseHTTPRequestHandler):
+            pass
     port = free_port()
     child = subprocess.Popen([str(worker), '-c', '2048', '--port', str(port)],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -49,8 +55,10 @@ with tempfile.TemporaryDirectory(prefix='delta-wrapper-context-') as work:
     root = pathlib.Path(work)
     binary = root / 'delta-server'
     shutil.copy2(pathlib.Path(args.binary).resolve(), binary)
+    shutil.copy2(pathlib.Path(__file__).with_name('wrapper_fixture.py'), root / 'wrapper_fixture.py')
     worker = root / 'llama-server'
     worker.write_text('#!' + sys.executable + '\n' + '''import http.server,json,pathlib,sys
+from wrapper_fixture import LoopbackHTTPServer
 args=sys.argv[1:]
 ctx=int(args[args.index('-c')+1]) if '-c' in args else 131072
 port=int(args[args.index('--port')+1])
@@ -64,7 +72,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
   self.rfile.read(int(self.headers.get('Content-Length',0)))
   self.send_response(200);self.end_headers();self.wfile.write(b'{"success":true}')
  def log_message(self,*args):pass
-http.server.ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
+LoopbackHTTPServer(('127.0.0.1',port),Handler).serve_forever()
 ''')
     worker.chmod(0o755)
     verify_fixture_concurrency(worker)
@@ -84,15 +92,19 @@ http.server.ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
                 return json.load(response)['default_generation_settings']['n_ctx']
         try:
             deadline = time.monotonic() + 20
+            startup_error = None
             while time.monotonic() < deadline:
+                startup_stage = 'worker /props'
                 try:
                     read_context()
+                    startup_stage = 'model API /api/models/list'
                     with urllib.request.urlopen(f'http://127.0.0.1:{api_port}/api/models/list', timeout=1):
                         break
-                except OSError:
+                except OSError as error:
+                    startup_error = f'{startup_stage}: {error!r}'
                     time.sleep(.1)
             else:
-                raise RuntimeError('Wrapper did not start: ' + (root / 'wrapper.log').read_text(errors='replace')[-4000:])
+                raise RuntimeError(f'Wrapper did not start; last probe: {startup_error}\n' + (root / 'wrapper.log').read_text(errors='replace')[-4000:])
             for requested, expected, persist in [(None,8192,True),(4096,4096,True),(None,4096,True),(2048,2048,False),(None,4096,True)]:
                 body = {'model': 'MiniCPM5:1b', 'persist_ctx':persist}
                 if requested is not None:
