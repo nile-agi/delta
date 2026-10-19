@@ -2832,6 +2832,43 @@ static void test_system_prompt_spells_out_the_week() {
     check(system.find(label) != std::string::npos, "with each day's real weekday and date");
 }
 
+static void test_no_tools_prompt_omits_scratchpad() {
+    test("a plain (no-tools) turn does not inject the conversation scratchpad plan or notes");
+
+    auto& memory = MemoryStore::instance();
+    const std::string convo = "conv_no_tools_plain";
+    memory.clear_plan(convo);
+    memory.clear_notes(convo);
+    memory.set_plan(convo, "move the task to Friday",
+                    json::array({{{"step", "reschedule Friday October 26th at 2pm"}, {"status", "pending"}}}));
+    memory.add_note(convo, "working note about the Friday move");
+
+    ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "Sounds good."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", false);
+    RunOptions options = test_options();
+    options.tools_enabled = false;
+    options.scratchpad_id = convo;
+    options.memory_scope = convo;
+    harness.set_options(options);
+    EventLog log;
+    harness.run(json::array({user("Today i will be attending women in ai event at around noon")}), log.sink());
+    server.stop();
+
+    auto requests = server.requests();
+    check(!requests.empty(), "a request was made");
+    std::string system;
+    if (!requests.empty() && requests[0].contains("messages") && !requests[0]["messages"].empty())
+        system = requests[0]["messages"][0].value("content", "");
+    check(system.find("reschedule Friday October 26th") == std::string::npos,
+          "the seeded plan is not in the system prompt");
+    check(system.find("working note about the Friday move") == std::string::npos,
+          "scratchpad notes are not in the system prompt");
+    check(system.find("Quick Add") != std::string::npos, "the no-tools reply still points at Quick Add");
+    memory.clear_plan(convo);
+    memory.clear_notes(convo);
+}
+
 static void test_moving_to_a_day_keeps_the_time() {
     test("update_event given only a day keeps the item's own time and length");
 
@@ -3716,6 +3753,7 @@ int main() {
 
     test_multi_step_loop();
     test_system_prompt_spells_out_the_week();
+    test_no_tools_prompt_omits_scratchpad();
     test_moving_to_a_day_keeps_the_time();
     test_calendar_reschedule_preserves_duration_and_validates_ranges();
     test_calendar_edits_require_consistent_targets_and_return_ids();

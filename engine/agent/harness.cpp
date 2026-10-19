@@ -433,9 +433,10 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
     std::string context_block;
 
     // The plan and the working notes change as tools run, so they are rendered fresh every
-    // iteration; the rest of the context is cached per user turn.
+    // iteration; the rest of the context is cached per user turn. Plain (no-tools) chats stay
+    // plain: leftover scratchpad from an earlier agent turn must not prime regenerates.
     std::string plan_block;
-    if (memory.ready()) {
+    if (memory.ready() && has_tools) {
         auto notes = memory.get_notes(scratchpad_key());
         if (notes.is_array() && !notes.empty()) {
             plan_block += "\nWhat you have worked out so far on this job:\n";
