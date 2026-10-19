@@ -2869,6 +2869,32 @@ static void test_no_tools_prompt_omits_scratchpad() {
     memory.clear_notes(convo);
 }
 
+static void test_no_tools_prompt_stays_short() {
+    test("a plain turn skips agent calendar scaffolding and the long on-device identity line");
+
+    ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "AI is pattern-matching software."}}});
+    server.start();
+    Harness harness(server.url(), "test-model", false);
+    RunOptions options = test_options();
+    options.tools_enabled = false;
+    harness.set_options(options);
+    EventLog log;
+    harness.run(json::array({user("what is ai")}), log.sink());
+    server.stop();
+
+    auto requests = server.requests();
+    check(!requests.empty(), "a request was made");
+    std::string system;
+    if (!requests.empty() && requests[0].contains("messages") && !requests[0]["messages"].empty())
+        system = requests[0]["messages"][0].value("content", "");
+    check(system.find("NEXT 7 DAYS") == std::string::npos, "the week list is for tool runs only");
+    check(system.find("runs entirely on the user's own machine") == std::string::npos,
+          "the long identity line is not offered to parrot");
+    check(system.find("Do not invent personal circumstances") != std::string::npos,
+          "plain chats are told not to invent a backstory");
+    check(system.find("HOW YOU WORK") == std::string::npos, "tool instructions stay off");
+}
+
 static void test_moving_to_a_day_keeps_the_time() {
     test("update_event given only a day keeps the item's own time and length");
 
@@ -3754,6 +3780,7 @@ int main() {
     test_multi_step_loop();
     test_system_prompt_spells_out_the_week();
     test_no_tools_prompt_omits_scratchpad();
+    test_no_tools_prompt_stays_short();
     test_moving_to_a_day_keeps_the_time();
     test_calendar_reschedule_preserves_duration_and_validates_ranges();
     test_calendar_edits_require_consistent_targets_and_return_ids();

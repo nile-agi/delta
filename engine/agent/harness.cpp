@@ -334,6 +334,22 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
 
     const bool has_tools = !active_tools().empty();
 
+    // Plain chats (no tools) get a short prompt. Tiny models otherwise parrot the long agent
+    // identity line or invent a "busy day" from calendar scaffolding meant for tool runs.
+    if (!has_tools) {
+        std::string prompt = "You are Delta, a helpful assistant.\n";
+        prompt += "CURRENT TIME: " + std::string(iso_buf) + " (" + day_buf + ")\n";
+        prompt += "TODAY: " + std::string(today_buf) + "\n";
+        prompt += "\nAnswer the user's latest message helpfully from the conversation. "
+                  "Do not invent personal circumstances they did not state. "
+                  "Do not claim to have created, moved, or changed saved records. "
+                  "The user can use the calendar or a Quick Add suggestion for those changes.\n";
+        if (!task_dossier_.empty())
+            prompt += task_dossier_;
+        prompt += document_context(messages, false);
+        return prompt;
+    }
+
     std::string prompt = "You are Delta, an AI assistant that runs entirely on the user's own machine.\n"
                          "Follow the user's requested level of detail.\n\n";
     prompt += "CURRENT TIME: " + std::string(iso_buf) + " (" + day_buf + ")\n";
@@ -409,15 +425,11 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
                       " on this task. Finish what you can and tell the user where you got to.\n";
         }
         prompt += deferred_manifest();
-    } else {
-        prompt += "\nAnswer from the conversation and the context below. Tools are not available for this response. "
-                  "Do not claim to have created, moved, or changed saved records. The user can use the calendar "
-                  "or a Quick Add suggestion to make those changes.\n";
     }
 
-    if (has_tools && (progressive_tools_ || fit_level_ >= kFitCompactInstructions))
+    if (progressive_tools_ || fit_level_ >= kFitCompactInstructions)
         prompt += "\nKeep record ids, tool names and raw JSON out of replies.\n";
-    else if (has_tools)
+    else
         prompt += "\nUSER REPLY\n"
                   "Report the requested outcome clearly, using readable record titles and confirmed details. "
                   "Internal record ids, UUIDs and tool names are addressing metadata for tool calls; keep them "
@@ -433,10 +445,9 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
     std::string context_block;
 
     // The plan and the working notes change as tools run, so they are rendered fresh every
-    // iteration; the rest of the context is cached per user turn. Plain (no-tools) chats stay
-    // plain: leftover scratchpad from an earlier agent turn must not prime regenerates.
+    // iteration; the rest of the context is cached per user turn.
     std::string plan_block;
-    if (memory.ready() && has_tools) {
+    if (memory.ready()) {
         auto notes = memory.get_notes(scratchpad_key());
         if (notes.is_array() && !notes.empty()) {
             plan_block += "\nWhat you have worked out so far on this job:\n";
@@ -466,10 +477,9 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
         return prompt;
     }
 
-    // Plain chats (no tools) stay plain: memories and calendar items are for the agent.
-    if (memory.ready() && has_tools) {
-        // Scoped to this conversation plus the general ones, so an unrelated job's details never
-        // turn up in the prompt.
+    // Scoped to this conversation plus the general ones, so an unrelated job's details never
+    // turn up in the prompt.
+    if (memory.ready()) {
         auto pinned_memories = memory.pinned(5, memory_key());
         auto relevant = memory.search(last_user_text(messages), 5, memory_key());
         std::set<std::string> seen;
@@ -487,7 +497,7 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
     }
 
     const bool calendar_on =
-        has_tools && (options_.enabled_categories.empty() || options_.enabled_categories.count("calendar") > 0);
+        options_.enabled_categories.empty() || options_.enabled_categories.count("calendar") > 0;
     if (calendar_on) {
         auto& db = AgentDatabase::instance();
         char week_buf[16];
