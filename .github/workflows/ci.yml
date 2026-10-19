@@ -54,6 +54,8 @@ jobs:
             engine:
               - 'engine/**'
               - 'tests/**'
+              - 'scripts/test-wrapper-*.py'
+              - 'scripts/wrapper_fixture.py'
               - 'CMakeLists.txt'
               - 'cmake/**'
               - 'version.txt'

@@ -26,8 +26,10 @@ with tempfile.TemporaryDirectory(prefix='delta-readiness-') as directory:
     root = pathlib.Path(directory)
     binary = root / 'delta-server'
     shutil.copy2(pathlib.Path(args.binary).resolve(), binary)
+    shutil.copy2(pathlib.Path(__file__).with_name('wrapper_fixture.py'), root / 'wrapper_fixture.py')
     worker = root / 'llama-server'
     worker.write_text('#!' + sys.executable + '\n' + '''import http.server,json,pathlib,sys,urllib.parse
+from wrapper_fixture import LoopbackHTTPServer
 args=sys.argv[1:]; root=pathlib.Path(__file__).parent
 ctx=int(args[args.index('-c')+1]) if '-c' in args else 131072
 port=int(args[args.index('--port')+1]); loaded=False; failed=False
@@ -57,7 +59,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
    if failed:print('ggml_cuda: cudaMalloc failed: out of memory',file=sys.stderr,flush=True)
   self.send_response(200);self.end_headers();self.wfile.write(b'{"success":true}')
  def log_message(self,*args):pass
-http.server.ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
+LoopbackHTTPServer(('127.0.0.1',port),Handler).serve_forever()
 ''')
     worker.chmod(0o755)
     home = root / 'home'
