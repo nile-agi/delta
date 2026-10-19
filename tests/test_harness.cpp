@@ -404,6 +404,67 @@ static std::vector<json> tool_messages(const json& request) {
     return out;
 }
 
+/** Runs one harness turn and returns the system prompt from the first model request. */
+static std::string capture_system_prompt(bool supports_tools, const RunOptions& options, const json& messages) {
+    ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "ok"}}});
+    server.start();
+    Harness harness(server.url(), "test-model", supports_tools);
+    harness.set_options(options);
+    EventLog log;
+    harness.run(messages, log.sink());
+    server.stop();
+    const auto requests = server.requests();
+    if (requests.empty() || !requests[0].contains("messages") || requests[0]["messages"].empty())
+        return "";
+    return requests[0]["messages"][0].value("content", "");
+}
+
+// Seeds shared across the tools vs no-tools prompt inventory matrix.
+struct PromptInventorySeeds {
+    std::string convo = "conv_prompt_inventory";
+    std::string memory_id;
+    std::string event_id;
+    std::string task_id;
+    static constexpr const char* kPlanStep = "reschedule Friday October 26th at 2pm";
+    static constexpr const char* kNote = "working note about the Friday move";
+    static constexpr const char* kMemory = "InventoryCatNameIsMochi";
+    static constexpr const char* kEventTitle = "Inventory Week Event Unique";
+    static constexpr const char* kTaskTitle = "Inventory Active Task Unique";
+
+    void seed() {
+        auto& memory = MemoryStore::instance();
+        memory.clear_plan(convo);
+        memory.clear_notes(convo);
+        memory.set_plan(convo, "move the task to Friday",
+                        json::array({{{"step", kPlanStep}, {"status", "pending"}}}));
+        memory.add_note(convo, kNote);
+        memory_id = memory.remember(kMemory, "fact", "pets", 3, "test", convo);
+
+        auto& db = AgentDatabase::instance();
+        const std::string start = resolve_datetime("tomorrow 10:00");
+        const std::string end = resolve_datetime("tomorrow 11:00");
+        event_id = db.create_event(
+            {{"title", kEventTitle}, {"type", "event"}, {"start_time", start}, {"end_time", end}});
+        task_id = db.create_event({{"title", kTaskTitle},
+                                   {"type", "task"},
+                                   {"status", "upcoming"},
+                                   {"start_time", resolve_datetime("tomorrow 16:00")}});
+    }
+
+    void cleanup() {
+        auto& memory = MemoryStore::instance();
+        memory.clear_plan(convo);
+        memory.clear_notes(convo);
+        if (!memory_id.empty())
+            memory.forget(memory_id);
+        auto& db = AgentDatabase::instance();
+        if (!event_id.empty())
+            db.delete_event(event_id);
+        if (!task_id.empty())
+            db.delete_event(task_id);
+    }
+};
+
 // --------------------------------------------------------------------- tests
 
 static void test_multi_step_loop() {
@@ -2832,67 +2893,97 @@ static void test_system_prompt_spells_out_the_week() {
     check(system.find(label) != std::string::npos, "with each day's real weekday and date");
 }
 
-static void test_no_tools_prompt_omits_scratchpad() {
-    test("a plain (no-tools) turn does not inject the conversation scratchpad plan or notes");
+static void test_no_tools_prompt_omits_agent_context() {
+    test("a plain (no-tools) turn omits scratchpad, memories, calendar lists, and agent scaffolding");
 
-    auto& memory = MemoryStore::instance();
-    const std::string convo = "conv_no_tools_plain";
-    memory.clear_plan(convo);
-    memory.clear_notes(convo);
-    memory.set_plan(convo, "move the task to Friday",
-                    json::array({{{"step", "reschedule Friday October 26th at 2pm"}, {"status", "pending"}}}));
-    memory.add_note(convo, "working note about the Friday move");
+    PromptInventorySeeds seeds;
+    seeds.seed();
 
-    ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "Sounds good."}}});
-    server.start();
-    Harness harness(server.url(), "test-model", false);
     RunOptions options = test_options();
     options.tools_enabled = false;
-    options.scratchpad_id = convo;
-    options.memory_scope = convo;
-    harness.set_options(options);
-    EventLog log;
-    harness.run(json::array({user("Today i will be attending women in ai event at around noon")}), log.sink());
-    server.stop();
+    options.scratchpad_id = seeds.convo;
+    options.memory_scope = seeds.convo;
+    options.n_ctx = 16384;
 
-    auto requests = server.requests();
-    check(!requests.empty(), "a request was made");
-    std::string system;
-    if (!requests.empty() && requests[0].contains("messages") && !requests[0]["messages"].empty())
-        system = requests[0]["messages"][0].value("content", "");
-    check(system.find("reschedule Friday October 26th") == std::string::npos,
-          "the seeded plan is not in the system prompt");
-    check(system.find("working note about the Friday move") == std::string::npos,
-          "scratchpad notes are not in the system prompt");
+    const std::string system = capture_system_prompt(
+        false, options, json::array({user("Today i will be attending women in ai event at around noon")}));
+    check(!system.empty(), "a request was made");
+    check(system.find(PromptInventorySeeds::kPlanStep) == std::string::npos, "the seeded plan is omitted");
+    check(system.find(PromptInventorySeeds::kNote) == std::string::npos, "scratchpad notes are omitted");
+    check(system.find(PromptInventorySeeds::kMemory) == std::string::npos, "pinned memories are omitted");
+    check(system.find(PromptInventorySeeds::kEventTitle) == std::string::npos, "upcoming events are omitted");
+    check(system.find(PromptInventorySeeds::kTaskTitle) == std::string::npos, "active tasks are omitted");
+    check(system.find("What you remember") == std::string::npos, "the memory block header is omitted");
+    check(system.find("Upcoming events") == std::string::npos, "the events block header is omitted");
+    check(system.find("Active tasks") == std::string::npos, "the tasks block header is omitted");
+    check(system.find("NEXT 7 DAYS") == std::string::npos, "the week list is for tool runs only");
+    check(system.find("HOW YOU WORK") == std::string::npos, "tool instructions stay off");
+    check(system.find("runs entirely on the user's own machine") == std::string::npos,
+          "the long identity line is not offered to parrot");
     check(system.find("Quick Add") != std::string::npos, "the no-tools reply still points at Quick Add");
-    memory.clear_plan(convo);
-    memory.clear_notes(convo);
+    check(system.find("Do not invent personal circumstances") != std::string::npos,
+          "plain chats are told not to invent a backstory");
+
+    seeds.cleanup();
+}
+
+static void test_tools_prompt_includes_agent_context() {
+    test("a tool-capable turn keeps week scaffolding, HOW YOU WORK, and seeded agent context");
+
+    PromptInventorySeeds seeds;
+    seeds.seed();
+
+    RunOptions options = test_options();
+    options.tools_enabled = true;
+    options.enabled_categories = {"calendar", "memory", "task", "testing"};
+    options.scratchpad_id = seeds.convo;
+    options.memory_scope = seeds.convo;
+    options.n_ctx = 16384;
+
+    const std::string system =
+        capture_system_prompt(true, options, json::array({user("What do I have coming up?")}));
+    check(!system.empty(), "a request was made");
+    check(system.find("NEXT 7 DAYS") != std::string::npos, "the week list is present");
+    check(system.find("HOW YOU WORK") != std::string::npos, "tool instructions are present");
+    check(system.find(PromptInventorySeeds::kPlanStep) != std::string::npos, "the seeded plan is present");
+    check(system.find(PromptInventorySeeds::kNote) != std::string::npos, "scratchpad notes are present");
+    check(system.find(PromptInventorySeeds::kMemory) != std::string::npos, "pinned memory is present");
+    check(system.find(PromptInventorySeeds::kEventTitle) != std::string::npos, "upcoming event is present");
+    check(system.find(PromptInventorySeeds::kTaskTitle) != std::string::npos, "active task is present");
+
+    seeds.cleanup();
 }
 
 static void test_no_tools_prompt_stays_short() {
     test("a plain turn skips agent calendar scaffolding and the long on-device identity line");
 
-    ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "AI is pattern-matching software."}}});
-    server.start();
-    Harness harness(server.url(), "test-model", false);
     RunOptions options = test_options();
     options.tools_enabled = false;
-    harness.set_options(options);
-    EventLog log;
-    harness.run(json::array({user("what is ai")}), log.sink());
-    server.stop();
-
-    auto requests = server.requests();
-    check(!requests.empty(), "a request was made");
-    std::string system;
-    if (!requests.empty() && requests[0].contains("messages") && !requests[0]["messages"].empty())
-        system = requests[0]["messages"][0].value("content", "");
+    const std::string system = capture_system_prompt(false, options, json::array({user("what is ai")}));
+    check(!system.empty(), "a request was made");
     check(system.find("NEXT 7 DAYS") == std::string::npos, "the week list is for tool runs only");
     check(system.find("runs entirely on the user's own machine") == std::string::npos,
           "the long identity line is not offered to parrot");
     check(system.find("Do not invent personal circumstances") != std::string::npos,
           "plain chats are told not to invent a backstory");
     check(system.find("HOW YOU WORK") == std::string::npos, "tool instructions stay off");
+}
+
+static void test_client_system_name_reaches_plain_chat() {
+    test("a client system name line is merged into the plain-chat system prompt");
+
+    RunOptions options = test_options();
+    options.tools_enabled = false;
+    const json history = json::array(
+        {{{"role", "system"},
+          {"content", "The user's name is Jovine. Address them by name naturally, not in every sentence."}},
+         user("hello")});
+    const std::string system = capture_system_prompt(false, options, history);
+    check(!system.empty(), "a request was made");
+    check(system.find("The user's name is Jovine.") != std::string::npos,
+          "the client name line reaches the model");
+    check(system.find("Address them by name naturally") != std::string::npos,
+          "the addressing guidance is kept");
 }
 
 static void test_moving_to_a_day_keeps_the_time() {
@@ -3779,8 +3870,10 @@ int main() {
 
     test_multi_step_loop();
     test_system_prompt_spells_out_the_week();
-    test_no_tools_prompt_omits_scratchpad();
+    test_no_tools_prompt_omits_agent_context();
+    test_tools_prompt_includes_agent_context();
     test_no_tools_prompt_stays_short();
+    test_client_system_name_reaches_plain_chat();
     test_moving_to_a_day_keeps_the_time();
     test_calendar_reschedule_preserves_duration_and_validates_ranges();
     test_calendar_edits_require_consistent_targets_and_return_ids();
