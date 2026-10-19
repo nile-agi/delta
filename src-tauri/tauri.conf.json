@@ -7,7 +7,7 @@
     "frontendDist": "../public",
     "devUrl": "http://localhost:5177",
     "beforeBuildCommand": "",
-    "beforeDevCommand": "cd web/app && pnpm run dev"
+    "beforeDevCommand": "cd web/app && pnpm --config.verify-deps-before-run=error run dev"
   },
   "app": {
     "windows": [

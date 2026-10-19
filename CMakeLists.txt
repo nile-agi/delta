@@ -20,8 +20,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Ensure consistent C++ standard library linking (macOS)
 if(APPLE)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
+    foreach(flag_variable CMAKE_CXX_FLAGS CMAKE_EXE_LINKER_FLAGS)
+        if(NOT "${${flag_variable}}" MATCHES "(^| )-stdlib=libc\\+\\+($| )")
+            set(${flag_variable} "${${flag_variable}} -stdlib=libc++")
+        endif()
+    endforeach()
 endif()
 
 # Options for llama-cpp features
@@ -89,7 +92,6 @@ endif()
 
 # Detect platform
 if(APPLE)
-    set(GGML_METAL ON)
     add_compile_definitions(TARGET_OS_MAC=1)
     if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         add_compile_definitions(TARGET_OS_IOS=1)
@@ -119,12 +121,6 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(GGML_METAL ${GGML_METAL} CACHE BOOL "" FORCE)
 set(GGML_CCACHE ${GGML_CCACHE} CACHE BOOL "" FORCE)
 set(GGML_OPENMP ${GGML_OPENMP} CACHE BOOL "" FORCE)
-
-# Ensure llama.cpp uses the same C++ standard library (macOS)
-if(APPLE)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++" CACHE STRING "" FORCE)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++" CACHE STRING "" FORCE)
-endif()
 
 add_subdirectory(engine/vendor/llama.cpp)
 
