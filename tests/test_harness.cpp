@@ -3583,7 +3583,109 @@ static void test_a_tool_call_cut_off_by_the_limit_is_not_an_error() {
     check(result.content.find("continue") != std::string::npos, "the user gets a plain-language answer");
 }
 
+static void test_reply_detail_is_not_overridden_by_the_harness() {
+    test("reply detail preferences survive harness prompt construction");
+    for (bool tools : {false, true}) {
+        ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "An explanation."}}});
+        server.start();
+        Harness harness(server.url(), "test-model", tools);
+        auto options = test_options();
+        options.n_ctx = 8192;
+        options.tools_enabled = tools;
+        harness.set_options(options);
+        const auto result = harness.run(
+            json::array({{{"role", "system"},
+                          {"content", "Give thorough answers with the reasoning and relevant context included."}},
+                         user("Explain AI.")}),
+            {});
+        server.stop();
+        check(result.success, "the detailed request completes");
+        const auto prompt = server.requests()[0]["messages"][0].value("content", "");
+        check(prompt.find("Give thorough answers") != std::string::npos, "the current preference reaches the model");
+        check(prompt.find("Keep responses brief") == std::string::npos &&
+                  prompt.find("Reply briefly") == std::string::npos &&
+                  prompt.find("Report the requested outcome briefly") == std::string::npos,
+              "the harness does not contradict the requested detail");
+    }
+}
+
+static void test_continuation_only_forwards_new_text() {
+    test("Continue appends only new text, including workers that echo the prefill");
+    for (const auto& returned : {std::string("Hello"), std::string("Hello world"), std::string(" world")}) {
+        ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", returned}}});
+        server.start();
+        Harness harness(server.url(), "test-model", false);
+        auto options = test_options();
+        options.tools_enabled = false;
+        options.extra_sampling["continue_final_message"] = true;
+        harness.set_options(options);
+        EventLog log;
+        const auto result =
+            harness.run(json::array({user("greet me"), {{"role", "assistant"}, {"content", "Hello"}}}), log.sink());
+        server.stop();
+        check(result.success, "continuation succeeds even when the completed reply has no new text");
+        const auto expected = returned == "Hello" ? std::string() : std::string(" world");
+        check_eq(result.content, expected, "the original reply is not appended again");
+        check_eq(log.text(), expected, "only new text is streamed");
+        const auto requests = server.requests();
+        check_eq(requests.size(), size_t(1), "an already finished reply is not regenerated");
+        check(!requests.empty() && requests[0].value("continue_final_message", false) &&
+                  !requests[0].value("add_generation_prompt", true),
+              "the native continuation contract is explicit");
+    }
+}
+
+static void test_stream_terminal_frames_release_the_next_turn() {
+    test("stream completion does not depend on connection closure");
+    httplib::Server server;
+    server.Post("/v1/chat/completions", [](const httplib::Request& req, httplib::Response& res) {
+        const auto body = json::parse(req.body);
+        const auto prompt = body["messages"][0].value("content", "");
+        const std::string frame =
+            "data: " +
+            json{{"choices", json::array({{{"delta", {{"content", "Hello"}}}, {"finish_reason", "stop"}}})}}.dump() +
+            "\n\n";
+        if (prompt == "truncated") {
+            res.set_content(frame, "text/event-stream");
+        } else if (prompt == "error") {
+            res.set_content("data: {\"error\":{\"message\":\"worker failed\"}}\n\ndata: [DONE]\n\n",
+                            "text/event-stream");
+        } else {
+            res.set_chunked_content_provider("text/event-stream", [frame](size_t, httplib::DataSink& sink) {
+                const auto data = frame + "data: [DONE]\r\n\r\n";
+                sink.write(data.data(), data.size());
+                std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+                sink.done();
+                return true;
+            });
+        }
+    });
+    const int port = server.bind_to_any_port("127.0.0.1");
+    std::thread thread([&] { server.listen_after_bind(); });
+    server.wait_until_ready();
+    LlmClient client("http://127.0.0.1:" + std::to_string(port), "test");
+    size_t forwarded = 0;
+    bool aborted = false;
+    for (int turn = 0; turn < 2; ++turn) {
+        const auto start = std::chrono::steady_clock::now();
+        const auto reply =
+            client.chat_stream(json::array({user("hello")}), json::array(), "auto", {}, forwarded, aborted);
+        check(!reply.contains("error") && !aborted, "a completed turn succeeds");
+        check(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(800),
+              "DONE releases the request before the connection closes");
+    }
+    const auto truncated =
+        client.chat_stream(json::array({user("truncated")}), json::array(), "auto", {}, forwarded, aborted);
+    check(truncated.contains("error") && !aborted, "a truncated stream fails instead of claiming success");
+    const auto error = client.chat_stream(json::array({user("error")}), json::array(), "auto", {}, forwarded, aborted);
+    check(error.contains("error") && error["error"].dump().find("worker failed") != std::string::npos,
+          "a streamed worker error reaches the caller");
+    server.stop();
+    thread.join();
+}
+
 int main() {
+    test_stream_terminal_frames_release_the_next_turn();
     std::cout << "Delta harness tests\n===================\n";
 
     // A scratch database, so tests never touch the user's real one.
@@ -3608,6 +3710,9 @@ int main() {
     }
     register_test_tools();
     register_all_tools();
+
+    test_continuation_only_forwards_new_text();
+    test_reply_detail_is_not_overridden_by_the_harness();
 
     test_multi_step_loop();
     test_system_prompt_spells_out_the_week();

@@ -28,6 +28,19 @@ afterEach(() => {
 });
 
 describe('chat request guidance and history', () => {
+	for (const [style, guidance] of [
+		['concise', 'Keep answers short'],
+		['balanced', 'Answer the main points clearly'],
+		['detailed', 'Give thorough answers']
+	]) {
+		it(`sends the current ${style} preference on each request`, async () => {
+			configState.current.replyStyle = style;
+			const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: 'Done.' } }] })));
+			vi.stubGlobal('fetch', fetch);
+			await new ChatService().sendMessage([{ role: 'user', content: 'Explain AI.' }], { stream: false });
+			expect(JSON.parse(fetch.mock.calls[0][1].body).messages[0].content).toContain(guidance);
+		});
+	}
 	it('does not allow custom JSON to turn on the disabled agent loop', async () => {
 		const fetch = vi
 			.fn()

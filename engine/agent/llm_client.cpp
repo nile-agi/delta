@@ -46,9 +46,12 @@ struct SseContext {
     std::string buffer; // partial line carried across curl callbacks
     std::string raw;    // bounded copy of the body, for non-SSE error responses
     std::string content;
+    std::string continuation_prefix, pending_content;
     nlohmann::json tool_calls = nlohmann::json::array();
     std::string finish_reason = "stop";
     bool saw_sse = false;
+    bool completed = false;
+    nlohmann::json error;
     bool aborted = false;
     size_t forwarded = 0;
     const ContentCallback* forward = nullptr;
@@ -89,18 +92,54 @@ void merge_tool_call_delta(nlohmann::json& acc, const nlohmann::json& fragment) 
             slot["function"]["arguments"].get<std::string>() + fn["arguments"].get<std::string>();
 }
 
+void forward_content(SseContext* ctx, std::string text) {
+    // Older workers echo the assistant prefill. Continue appends only the new suffix.
+    if (!ctx->continuation_prefix.empty()) {
+        ctx->pending_content += text;
+        const auto n = std::min(ctx->pending_content.size(), ctx->continuation_prefix.size());
+        const bool matches = ctx->pending_content.compare(0, n, ctx->continuation_prefix, 0, n) == 0;
+        if (matches && ctx->pending_content.size() < ctx->continuation_prefix.size())
+            return;
+        if (matches)
+            ctx->pending_content.erase(0, ctx->continuation_prefix.size());
+        ctx->continuation_prefix.clear();
+        text = std::move(ctx->pending_content);
+        ctx->pending_content.clear();
+    }
+    if (text.empty())
+        return;
+    ctx->content += text;
+    if (ctx->forward) {
+        if (!(*ctx->forward)(text)) {
+            ctx->aborted = true;
+            return;
+        }
+        ctx->forwarded += text.size();
+    }
+}
+
 void handle_sse_line(SseContext* ctx, const std::string& line) {
     if (line.rfind("data: ", 0) != 0)
         return;
     ctx->saw_sse = true;
     std::string payload = line.substr(6);
-    if (payload == "[DONE]")
+    if (payload == "[DONE]") {
+        ctx->continuation_prefix.clear();
+        const auto pending = std::move(ctx->pending_content);
+        ctx->pending_content.clear();
+        forward_content(ctx, pending);
+        ctx->completed = true;
         return;
+    }
 
     nlohmann::json chunk;
     try {
         chunk = nlohmann::json::parse(payload);
     } catch (...) {
+        return;
+    }
+    if (chunk.is_object() && chunk.contains("error")) {
+        ctx->error = chunk["error"];
         return;
     }
     if (!chunk.is_object() || !chunk.contains("choices") || !chunk["choices"].is_array() || chunk["choices"].empty())
@@ -132,19 +171,9 @@ void handle_sse_line(SseContext* ctx, const std::string& line) {
         }
     }
     if (delta.contains("content") && delta["content"].is_string()) {
-        const std::string text = delta["content"].get<std::string>();
-        if (text.empty())
-            return;
-        ctx->content += text;
         // Unlike the old agent loop, text is forwarded even when the same turn also produces a tool
         // call: the harness shows the model's reasoning before it acts instead of discarding it.
-        if (ctx->forward) {
-            if (!(*ctx->forward)(text)) {
-                ctx->aborted = true;
-                return;
-            }
-            ctx->forwarded += text.size();
-        }
+        forward_content(ctx, delta["content"].get<std::string>());
     }
 }
 
@@ -167,7 +196,7 @@ size_t sse_write_callback(void* contents, size_t size, size_t nmemb, void* userd
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
         handle_sse_line(ctx, line);
-        if (ctx->aborted)
+        if (ctx->aborted || ctx->completed)
             return 0;
         start = i + 1;
     }
@@ -229,6 +258,12 @@ nlohmann::json LlmClient::build_request_body(const nlohmann::json& messages, con
             if (!body.contains(it.key()))
                 body[it.key()] = it.value();
         }
+    }
+    if (body.value("continue_final_message", false)) {
+        if (!clean_messages.empty() && clean_messages.back().value("role", "") == "assistant")
+            body["add_generation_prompt"] = false;
+        else
+            body.erase("continue_final_message"); // Summaries and later tool turns are fresh responses.
     }
     // Sent whether or not tools are offered: how the model thinks should not depend on that.
     body["chat_template_kwargs"] = {{"enable_thinking", config_.enable_thinking}};
@@ -303,6 +338,8 @@ nlohmann::json LlmClient::chat_stream(const nlohmann::json& messages, const nloh
         return {{"error", "Failed to init curl"}};
 
     SseContext ctx;
+    if (request_body.value("continue_final_message", false))
+        ctx.continuation_prefix = message_text(messages.back());
     if (on_content)
         ctx.forward = &on_content;
     if (reasoning_sink_)
@@ -340,7 +377,9 @@ nlohmann::json LlmClient::chat_stream(const nlohmann::json& messages, const nloh
         out_client_aborted = true;
         return {{"error", "client disconnected"}};
     }
-    if (res != CURLE_OK)
+    // A protocol terminator ends the turn even if the peer keeps its connection open.
+    const bool completed_transfer = ctx.completed && res == CURLE_WRITE_ERROR;
+    if (res != CURLE_OK && !completed_transfer)
         return {{"error", std::string("HTTP request failed: ") + curl_easy_strerror(res)}};
 
     // Not an SSE body (e.g. an HTTP error) -- parse it as-is so callers can inspect the error.
@@ -359,6 +398,11 @@ nlohmann::json LlmClient::chat_stream(const nlohmann::json& messages, const nloh
             return {{"error", "Failed to parse LLM response"}, {"http_status", http_code}};
         }
     }
+
+    if (!ctx.error.is_null())
+        return {{"error", ctx.error}};
+    if (!ctx.completed)
+        return {{"error", "Model response stream ended before completion. Please try again."}};
 
     // Drop tool-call slots the stream never named -- llama-server rejects a tool_calls entry with an
     // empty function name on the next turn.

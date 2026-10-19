@@ -6,6 +6,33 @@ const event = (name: string, data: Record<string, unknown>) =>
 	({ object: 'delta.agent.event', event: name, data }) as unknown as AgentEvent;
 
 describe('agent store', () => {
+	it('keeps prior tool results and extended text when continuing an existing reply', () => {
+		const previous: AgentActivity = {
+			steps: [],
+			notices: [],
+			transcript: [
+				{ role: 'tool', content: 'saved event', tool_call_id: 'c1' },
+				{ role: 'assistant', content: 'Created the event.' }
+			]
+		};
+		agentStore.begin('continued', previous);
+		agentStore.handleEvent('continued', event('status', { message: 'More context' }));
+		agentStore.handleEvent(
+			'continued',
+			event('run_summary', {
+				stop_reason: 'stop',
+				iterations: 1,
+				transcript: [{ role: 'assistant', content: ' It starts at noon.' }]
+			})
+		);
+		const activity = agentStore.finish('continued', 'Created the event. It starts at noon.');
+		expect(activity?.transcript).toEqual([
+			previous.transcript![0],
+			{ role: 'assistant', content: 'Created the event. It starts at noon.' }
+		]);
+		expect(activity?.notices).toEqual(['More context']);
+		expect(previous.transcript![1].content).toBe('Created the event.');
+	});
 	it('keeps the run transcript through finish() so it can be persisted', () => {
 		agentStore.begin('m1');
 		agentStore.handleEvent('m1', event('tool_start', { call_id: 'c1', name: 'read_file', arguments: {}, risk: 'caution' }));

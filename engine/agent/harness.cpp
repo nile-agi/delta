@@ -334,7 +334,8 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
 
     const bool has_tools = !active_tools().empty();
 
-    std::string prompt = "You are Delta, an AI assistant that runs entirely on the user's own machine.\n\n";
+    std::string prompt = "You are Delta, an AI assistant that runs entirely on the user's own machine.\n"
+                         "Follow the user's requested level of detail.\n\n";
     prompt += "CURRENT TIME: " + std::string(iso_buf) + " (" + day_buf + ")\n";
     prompt += "TODAY: " + std::string(today_buf) + "\nTOMORROW: " + tom_buf + " (" + tom_day_buf + ")\n";
     // Small models get weekday arithmetic wrong ("Friday, September 28th" on a Monday), so spell
@@ -355,7 +356,7 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
 
     if (fit_level_ >= kFitMinimal) {
         // Room for little more than the conversation: answer it plainly.
-        return prompt + "\nAnswer the user briefly and helpfully from the conversation.\n";
+        return prompt + "\nAnswer the user helpfully from the conversation.\n";
     }
 
     if (has_tools && (progressive_tools_ || fit_level_ >= kFitCompactInstructions)) {
@@ -409,14 +410,16 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
         }
         prompt += deferred_manifest();
     } else {
-        prompt += "\nAnswer from the conversation and the context below. Keep responses brief and friendly.\n";
+        prompt += "\nAnswer from the conversation and the context below. Tools are not available for this response. "
+                  "Do not claim to have created, moved, or changed saved records. The user can use the calendar "
+                  "or a Quick Add suggestion to make those changes.\n";
     }
 
-    if (progressive_tools_ || fit_level_ >= kFitCompactInstructions)
-        prompt += "\nReply briefly. Keep record ids, tool names and raw JSON out of replies.\n";
-    else
+    if (has_tools && (progressive_tools_ || fit_level_ >= kFitCompactInstructions))
+        prompt += "\nKeep record ids, tool names and raw JSON out of replies.\n";
+    else if (has_tools)
         prompt += "\nUSER REPLY\n"
-                  "Report the requested outcome briefly, using readable record titles and confirmed details. "
+                  "Report the requested outcome clearly, using readable record titles and confirmed details. "
                   "Internal record ids, UUIDs and tool names are addressing metadata for tool calls; keep them "
                   "out of normal replies. Keep raw JSON and storage metadata out of confirmations. "
                   "When confirming record details, use only facts supplied by the user or returned by tools. "
@@ -1211,7 +1214,9 @@ RunResult Harness::run_loop(const nlohmann::json& messages, const EventSink& sin
             }
             // Nothing at all: no answer, no action. Ending the turn here would leave the user
             // staring at an empty reply, so take one more sample before giving up.
-            if (content.empty() && empty_replies == 0) {
+            if (content.empty() && empty_replies == 0 &&
+                !(options_.extra_sampling.value("continue_final_message", false) && !messages.empty() &&
+                  messages.back().value("role", "") == "assistant")) {
                 empty_replies++;
                 emit(EventType::Status, {{"message", "The model replied with nothing; asking again."}});
                 continue;
