@@ -22,6 +22,29 @@ def free_port():
         sock.bind(('127.0.0.1', 0))
         return sock.getsockname()[1]
 
+def verify_fixture_concurrency(worker):
+    """An idle connection must not block the wrapper's concurrent health probes."""
+    port = free_port()
+    child = subprocess.Popen([str(worker), '-c', '2048', '--port', str(port)],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    idle = None
+    try:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                idle = socket.create_connection(('127.0.0.1', port), timeout=1)
+                break
+            except OSError:
+                time.sleep(.05)
+        assert idle is not None, 'Context fixture did not start'
+        with urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=1) as response:
+            assert response.status == 200
+    finally:
+        if idle is not None:
+            idle.close()
+        child.terminate()
+        child.wait(timeout=5)
+
 with tempfile.TemporaryDirectory(prefix='delta-wrapper-context-') as work:
     root = pathlib.Path(work)
     binary = root / 'delta-server'
@@ -41,9 +64,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
   self.rfile.read(int(self.headers.get('Content-Length',0)))
   self.send_response(200);self.end_headers();self.wfile.write(b'{"success":true}')
  def log_message(self,*args):pass
-http.server.HTTPServer(('127.0.0.1',port),Handler).serve_forever()
+http.server.ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
 ''')
     worker.chmod(0o755)
+    verify_fixture_concurrency(worker)
+    (root / 'launches.jsonl').unlink()
     home = root / 'home'
     models = home / '.delta-cli' / 'models'
     models.mkdir(parents=True)
@@ -85,13 +110,19 @@ http.server.HTTPServer(('127.0.0.1',port),Handler).serve_forever()
                     if snapshot['state']=='ready':break
                     assert snapshot['state']=='loading',snapshot
                     time.sleep(.1)
-                else:raise AssertionError('Context selection did not become ready')
+                else:raise AssertionError('Context selection did not become ready: '+json.dumps(snapshot))
                 actual = read_context()
                 assert actual == expected, f'API reported {expected}, but child actually uses {actual}'
             launches = [json.loads(line) for line in (root / 'launches.jsonl').read_text().splitlines()]
             assert [launch['ctx'] for launch in launches][-5:] == [8192,4096,4096,2048,4096], launches
             assert all('--models-dir' in launch['args'] for launch in launches), launches
             print('Fresh selection and same-model context changes reach the actual child process')
+        except Exception:
+            print((root / 'wrapper.log').read_text(errors='replace')[-6000:], file=sys.stderr)
+            launches = root / 'launches.jsonl'
+            if launches.exists():
+                print('Worker launches: ' + launches.read_text(), file=sys.stderr)
+            raise
         finally:
             process.terminate()
             try:
