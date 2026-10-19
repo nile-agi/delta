@@ -184,6 +184,7 @@ jobs:
           cmake -P scripts/test-release-policy.cmake
           python3 scripts/test_verify_release_binaries.py
           python3 scripts/test-packaged-runtime.py
+          python3 scripts/test-ci-vcpkg.py
           bash scripts/test-sidecar-debug.sh
           bash scripts/test-verify-tauri-web-assets.sh
 
@@ -256,7 +257,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$GITHUB_WORKSPACE/../vcpkg-cache"
-          vcpkg install curl:x64-windows-static-md
+          bash scripts/install-ci-vcpkg.sh install curl:x64-windows-static-md
 
       - name: Save vcpkg packages
         if: runner.os == 'Windows' && github.event_name == 'push' && steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -269,6 +270,7 @@ jobs:
       # files. Saved from dev and main only; PRs read that cache instead of each storing their own
       # copy against the repository's 10 GB limit.
       - name: Compiler cache
+        id: compiler-cache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: engine-${{ runner.os }}
@@ -346,7 +348,13 @@ jobs:
           HOME="$context_test_home" ./build/delta-model-context-tests
 
       - name: Compiler cache statistics
-        if: always()
+        if: always() && steps.compiler-cache.outcome == 'success'
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then sccache --show-stats; else ccache --show-stats; fi
+          cache=ccache
+          if [ "$RUNNER_OS" = "Windows" ]; then cache=sccache; fi
+          if command -v "$cache" >/dev/null 2>&1; then
+            "$cache" --show-stats
+          else
+            printf '::notice::%s is unavailable; skipping compiler cache statistics.\n' "$cache"
+          fi
