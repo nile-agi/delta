@@ -1059,7 +1059,9 @@ export class ChatService {
 		} else if (replyStyle === 'balanced') {
 			parts.push('Answer the main points clearly, with enough context to be useful.');
 		} else if (replyStyle === 'detailed') {
-			parts.push('Give thorough answers with the reasoning and relevant context included.');
+			parts.push(
+				'Give thorough answers. Start with the answer. For broad topics, give a definition, explain how it works and why it matters, and include a concrete example. Do not announce or quote these instructions.'
+			);
 		}
 
 		if (messages[0]?.role === 'system' && typeof messages[0].content === 'string') {
@@ -1077,6 +1079,8 @@ export class ChatService {
 						line === 'Keep answers short and to the point. Skip preamble.' ||
 						line === 'Answer the main points clearly, with enough context to be useful.' ||
 						line === 'Give thorough answers with the reasoning and relevant context included.' ||
+						line ===
+							'Give thorough answers. Start with the answer. For broad topics, give a definition, explain how it works and why it matters, and include a concrete example. Do not announce or quote these instructions.' ||
 						(line.startsWith("The user's name is ") &&
 							line.endsWith('Address them by name naturally, not in every sentence.'))
 					);

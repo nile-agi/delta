@@ -41,6 +41,17 @@ describe('chat request guidance and history', () => {
 			expect(JSON.parse(fetch.mock.calls[0][1].body).messages[0].content).toContain(guidance);
 		});
 	}
+	it('asks detailed replies to answer directly without announcing the style instruction', async () => {
+		configState.current.replyStyle = 'detailed';
+		const fetch = vi
+			.fn()
+			.mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: 'Done.' } }] })));
+		vi.stubGlobal('fetch', fetch);
+		await new ChatService().sendMessage([{ role: 'user', content: 'What is AI?' }], { stream: false });
+		const system = JSON.parse(fetch.mock.calls[0][1].body).messages[0].content;
+		expect(system).toContain('Start with the answer');
+		expect(system).toContain('Do not announce or quote these instructions');
+	});
 	it('does not allow custom JSON to turn on the disabled agent loop', async () => {
 		const fetch = vi
 			.fn()
