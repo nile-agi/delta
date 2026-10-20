@@ -29,9 +29,10 @@ class AgentStore {
 		return this.activities.get(messageId);
 	}
 
-	/** Clears anything left from a previous run of the same message (a regeneration). */
-	begin(messageId: string): void {
+	/** Regeneration starts fresh; continuation restores the existing tool history. */
+	begin(messageId: string, previous?: AgentActivity): void {
 		this.activities.delete(messageId);
+		if (previous) this.hydrate(messageId, previous);
 		if (this.pendingApproval?.messageId === messageId) {
 			this.pendingApproval = null;
 		}
@@ -232,7 +233,7 @@ class AgentStore {
 	 * Closes out a run: any step still marked running was cut short by an abort or a stream error.
 	 * Returns the activity so the caller can persist it with the message.
 	 */
-	finish(messageId: string): AgentActivity | undefined {
+	finish(messageId: string, continuedContent?: string): AgentActivity | undefined {
 		if (this.pendingApproval?.messageId === messageId) {
 			this.pendingApproval = null;
 			this.isRespondingToApproval = false;
@@ -240,6 +241,16 @@ class AgentStore {
 		const activity = this.activities.get(messageId);
 		if (!activity) return undefined;
 		this.mutate(messageId, (next) => {
+			if (continuedContent !== undefined && next.transcript?.length) {
+				const transcript = [...next.transcript];
+				const last = transcript[transcript.length - 1];
+				if (last.role === 'assistant' && !last.tool_calls?.length) {
+					transcript[transcript.length - 1] = { ...last, content: continuedContent };
+				} else {
+					transcript.push({ role: 'assistant', content: continuedContent });
+				}
+				next.transcript = transcript;
+			}
 			for (const step of next.steps) {
 				if (step.status === 'running' || step.status === 'awaiting-approval') {
 					step.status = 'failed';

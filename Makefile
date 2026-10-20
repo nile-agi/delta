@@ -5,7 +5,7 @@ help:
 	@echo "make engine   - Build C++ engine only (into build/, not used directly by the app)"
 	@echo "make web      - Build SvelteKit web UI"
 	@echo "make preview  - Build web + serve it WITH the engine at http://localhost:8080 (browser)"
-	@echo "make dev      - Run Tauri desktop app (auto-builds sidecars if missing)"
+	@echo "make dev      - Refresh engine sidecars, then run the Tauri desktop app"
 	@echo "make run      - Full rebuild then run"
 	@echo "make test     - Build and run the agent harness tests (scripted model server, no GPU needed)"
 	@echo "make clean    - Remove build artifacts"
@@ -69,16 +69,7 @@ preview: ensure-submodules web
 	@echo ""
 	./build/delta --server
 
-dev:
-	@TRIPLE=$$(rustc -vV 2>/dev/null | grep host | cut -d' ' -f2); \
-	TRIPLE=$${TRIPLE:-$$(uname -m | sed 's/arm64/aarch64/')-$$(case $$(uname -s) in Darwin) echo apple-darwin;; Linux) echo unknown-linux-gnu;; *) echo pc-windows-msvc;; esac)}; \
-	if [ ! -f src-tauri/binaries/delta-server-$$TRIPLE ] || [ ! -f src-tauri/binaries/llama-server-$$TRIPLE ]; then \
-		echo ""; \
-		echo ">>> Sidecar binaries missing for $$TRIPLE -- building them now ('make sidecars')."; \
-		echo ">>> ('make engine' builds into build/ but does not populate src-tauri/binaries/.)"; \
-		echo ""; \
-		$(MAKE) sidecars; \
-	fi
+dev: sidecars
 	cd src-tauri && cargo tauri dev
 
 run: all dev

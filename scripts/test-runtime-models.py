@@ -26,6 +26,9 @@ def main():
     parser.add_argument('--output', required=True, type=pathlib.Path)
     parser.add_argument('--context', type=int, default=2048)
     parser.add_argument('--rss-limit-mib', type=int, default=2048)
+    parser.add_argument('--turns', type=int, default=2, choices=range(2, 6))
+    parser.add_argument('--stream', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--tools', action='store_true', help='Exercise the tool-enabled harness too')
     parser.add_argument('--library-dir', action='append', default=[], type=pathlib.Path,
                         help='Only explicitly approved extracted-package library directories')
     args = parser.parse_args()
@@ -45,6 +48,24 @@ def main():
                                      headers={'Content-Type': 'application/json'})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as response:
+                if response.headers.get('Content-Type', '').startswith('text/event-stream'):
+                    content, events, completed = '', [], False
+                    for line in response:
+                        if not line.startswith(b'data: '):
+                            continue
+                        data = line[6:].strip()
+                        if data == b'[DONE]':
+                            completed = True
+                            break
+                        chunk = json.loads(data)
+                        assert 'error' not in chunk, chunk
+                        if chunk.get('object') == 'delta.agent.event':
+                            assert chunk.get('event') != 'error', chunk
+                            events.append(chunk)
+                        for choice in chunk.get('choices', []):
+                            content += choice.get('delta', {}).get('content') or ''
+                    assert completed, 'Response stream ended without DONE'
+                    return response.status, {'choices': [{'message': {'content': content}}], 'events': events}
                 return response.status, json.load(response)
         except urllib.error.HTTPError as error:
             return error.code, error.read(8192).decode(errors='replace')
@@ -123,16 +144,31 @@ def main():
                 assert props_status == 200 and props['total_slots'] == 1, props
                 assert props['default_generation_settings']['n_ctx'] == args.context, props
                 result['checks']['actual_context_and_slots'] = True
-                start = time.monotonic()
-                status, generation = request('/v1/chat/completions', {'model': args.model,
-                    'messages': [{'role': 'user', 'content': 'Say hello in one short sentence.'}],
-                    'max_tokens': 32, 'temperature': 0, 'stream': False, 'use_tools': False,
-                    'use_documents': False, 'use_files_tools': False, 'use_shell_tools': False}, timeout=90)
-                assert status == 200, generation
-                text = generation['choices'][0]['message']['content']
-                assert text.strip(), generation
-                result.update(generation_seconds=round(time.monotonic() - start, 3), reply=text)
+                history = []
+                result['turns'] = []
+                prompts = ['My name is Asha. Say hello in one short sentence.', 'What name did I give you?',
+                           'What is two plus three?', 'Say the number five.', 'What name did I give you?']
+                for turn, prompt in enumerate(prompts[:args.turns], 1):
+                    history.append({'role': 'user', 'content': prompt})
+                    start = time.monotonic()
+                    status, generation = request('/v1/chat/completions', {'model': args.model,
+                        'messages': history, 'conversation_id': 'runtime-multiturn-test',
+                        'max_tokens': 32, 'temperature': 0, 'stream': args.stream, 'use_tools': args.tools,
+                        'use_documents': False, 'use_files_tools': False, 'use_shell_tools': False}, timeout=90)
+                    assert status == 200, generation
+                    text = generation['choices'][0]['message']['content']
+                    assert text.strip(), generation
+                    transcript = next((event['data'].get('transcript') for event in generation.get('events', [])
+                                       if event.get('event') == 'run_summary'), None)
+                    history.extend(transcript or [{'role': 'assistant', 'content': text}])
+                    result['turns'].append({'turn': turn, 'seconds': round(time.monotonic() - start, 3), 'reply': text})
+                    print(json.dumps(result['turns'][-1]), flush=True)
+                    runtime_status, current = request('/api/models/runtime')
+                    assert runtime_status == 200 and current['state'] == 'ready', current
+                    assert current['attempt_id'] == accepted['attempt_id'], current
+                result.update(generation_seconds=sum(turn['seconds'] for turn in result['turns']), reply=text)
                 result['checks']['generated_text'] = True
+                result['checks']['consecutive_turns_same_worker'] = True
                 assert request('/api/models/use', {'model': 'not-installed-test-model'})[0] == 404
                 assert request('/health', engine=True)[0] == 200
                 result['checks']['invalid_selection_preserves_engine'] = True

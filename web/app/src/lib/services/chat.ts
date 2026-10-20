@@ -204,6 +204,7 @@ export class ChatService {
 			})),
 			stream
 		};
+		if (options.continueFinalMessage) requestBody.continue_final_message = true;
 
 		const selectedOption = selectedModelOption();
 		const activeModel = selectedModelName() ?? selectedOption?.model ?? null;
@@ -309,7 +310,8 @@ export class ChatService {
 						if (tauriErr instanceof Error && tauriErr.name === 'AbortError') throw tauriErr;
 						// Never retry an agent turn: the harness runs tools as it goes, so a second
 						// attempt repeats every write, delete and shell command it already made.
-						if (useTools) throw tauriErr;
+						if (useTools || (tauriErr instanceof Error && tauriErr.name === 'StreamError'))
+							throw tauriErr;
 						console.warn('[Delta] Tauri IPC streaming failed, falling back to XHR:', tauriErr);
 					}
 				}
@@ -340,7 +342,7 @@ export class ChatService {
 					throw await this.parseErrorResponse(response);
 				}
 
-				return this.handleNonStreamResponse(response, onComplete, onModel);
+				return await this.handleNonStreamResponse(response, onComplete, onModel);
 			}
 		} catch (error) {
 			if (error instanceof Error && error.name === 'AbortError') {
@@ -376,7 +378,9 @@ export class ChatService {
 			}
 			throw userFriendlyError;
 		} finally {
-			this.abortControllers.delete(requestId);
+			if (this.abortControllers.get(requestId) === abortController) {
+				this.abortControllers.delete(requestId);
+			}
 		}
 	}
 
@@ -420,6 +424,9 @@ export class ChatService {
 			let firstValidChunkEmitted = false;
 			let lastProcessedIndex = 0;
 			let partialLine = '';
+			let settled = false;
+			let receivedDone = false;
+			let streamError: Error | undefined;
 
 			const processNewData = (responseText: string) => {
 				const newData = responseText.substring(lastProcessedIndex);
@@ -435,11 +442,15 @@ export class ChatService {
 
 					if (line.startsWith('data: ')) {
 						const data = line.slice(6);
-						if (data === '[DONE]') continue;
-						if (!data.includes('"choices"')) continue; // ignore named agent events (tool_update/reasoning)
+						if (data.trim() === '[DONE]') {
+							receivedDone = true;
+							complete();
+							break;
+						}
 
 						try {
 							const raw: unknown = JSON.parse(data);
+							streamError ??= this.streamError(raw);
 							if (this.consumeAgentEvent(raw, onAgentEvent)) {
 								// A harness event is a real response. Treating it as silence made a
 								// tool-only turn look like a dead stream.
@@ -455,9 +466,9 @@ export class ChatService {
 								}
 							}
 
-							const content = parsed.choices[0]?.delta?.content;
-							const reasoningContent = parsed.choices[0]?.delta?.reasoning_content;
-							const deltaToolCalls = parsed.choices[0]?.delta?.tool_calls;
+							const content = parsed.choices?.[0]?.delta?.content;
+							const reasoningContent = parsed.choices?.[0]?.delta?.reasoning_content;
+							const deltaToolCalls = parsed.choices?.[0]?.delta?.tool_calls;
 							if (deltaToolCalls?.length) mergeToolCallDeltas(collectedToolCalls, deltaToolCalls);
 							const timings = parsed.timings;
 							const promptProgress = parsed.prompt_progress;
@@ -504,16 +515,46 @@ export class ChatService {
 				abortSignal?.removeEventListener('abort', onAbort);
 			};
 
+			const complete = () => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				if (receivedDone) xhr.abort();
+				if (streamError) {
+					reject(streamError);
+					return;
+				}
+				if (!receivedDone) {
+					reject(new Error('Response stream ended before completion. Please try again.'));
+					return;
+				}
+				if (!hasReceivedData) {
+					reject(new Error('No response received from server. Please try again.'));
+					return;
+				}
+				Promise.resolve()
+					.then(() =>
+						onComplete?.(
+							aggregatedContent,
+							fullReasoningContent || undefined,
+							lastTimings,
+							collectedToolCalls.length > 0 ? collectedToolCalls : undefined
+						)
+					)
+					.then(() => resolve(), reject);
+			};
+
 			xhr.onprogress = () => {
-				if (abortSignal?.aborted) return;
+				if (settled || abortSignal?.aborted || xhr.status >= 400) return;
 				processNewData(xhr.responseText);
 			};
 
 			xhr.onload = () => {
-				processNewData(xhr.responseText);
-				cleanup();
+				if (settled) return;
 
 				if (xhr.status < 200 || xhr.status >= 300) {
+					settled = true;
+					cleanup();
 					let error: Error;
 					try {
 						const errorData = JSON.parse(xhr.responseText);
@@ -528,22 +569,13 @@ export class ChatService {
 					return;
 				}
 
-				if (!hasReceivedData && aggregatedContent.length === 0) {
-					const error = new Error('No response received from server. Please try again.');
-					reject(error);
-					return;
-				}
-
-				onComplete?.(
-					aggregatedContent,
-					fullReasoningContent || undefined,
-					lastTimings,
-					collectedToolCalls.length > 0 ? collectedToolCalls : undefined
-				);
-				resolve();
+				processNewData(xhr.responseText);
+				complete();
 			};
 
 			xhr.onerror = () => {
+				if (settled) return;
+				settled = true;
 				cleanup();
 				const error = new Error(
 					'Unable to connect to server - please check if the server is running'
@@ -553,6 +585,8 @@ export class ChatService {
 			};
 
 			xhr.ontimeout = () => {
+				if (settled) return;
+				settled = true;
 				cleanup();
 				const error = new Error('Request timed out - the server took too long to respond');
 				error.name = 'TimeoutError';
@@ -560,6 +594,8 @@ export class ChatService {
 			};
 
 			xhr.onabort = () => {
+				if (settled) return;
+				settled = true;
 				cleanup();
 				const error = new Error('Request aborted');
 				error.name = 'AbortError';
@@ -594,7 +630,7 @@ export class ChatService {
 		const { invoke, Channel } = await import('@tauri-apps/api/core');
 
 		const absoluteUrl = url.startsWith('/') ? `${getServerBaseUrl()}${url}` : url;
-		const streamId = conversationId || crypto.randomUUID();
+		const streamId = crypto.randomUUID();
 		let aggregatedContent = '';
 		let fullReasoningContent = '';
 		const collectedToolCalls: DatabaseMessageToolCall[] = [];
@@ -602,6 +638,8 @@ export class ChatService {
 		let lastTimings: ChatMessageTimings | undefined;
 		let modelEmitted = false;
 		let firstValidChunkEmitted = false;
+		let receivedDone = false;
+		let streamError: Error | undefined;
 
 		const onAbort = () => {
 			invoke('abort_stream', { streamId }).catch(() => {});
@@ -614,10 +652,14 @@ export class ChatService {
 
 			if (!line.startsWith('data: ')) return;
 			const data = line.slice(6);
-			if (data === '[DONE]') return;
+			if (data.trim() === '[DONE]') {
+				receivedDone = true;
+				return;
+			}
 
 			try {
 				const raw: unknown = JSON.parse(data);
+				streamError ??= this.streamError(raw);
 				if (this.consumeAgentEvent(raw, onAgentEvent)) {
 					// See the XHR transport: an agent event counts as data, otherwise the desktop
 					// path throws, falls back to XHR, and runs every tool a second time.
@@ -631,9 +673,9 @@ export class ChatService {
 					onFirstValidChunk?.();
 				}
 
-				const content = parsed.choices[0]?.delta?.content;
-				const reasoningContent = parsed.choices[0]?.delta?.reasoning_content;
-				const deltaToolCalls = parsed.choices[0]?.delta?.tool_calls;
+				const content = parsed.choices?.[0]?.delta?.content;
+				const reasoningContent = parsed.choices?.[0]?.delta?.reasoning_content;
+				const deltaToolCalls = parsed.choices?.[0]?.delta?.tool_calls;
 				if (deltaToolCalls?.length) mergeToolCallDeltas(collectedToolCalls, deltaToolCalls);
 				const timings = parsed.timings;
 				const promptProgress = parsed.prompt_progress;
@@ -687,12 +729,15 @@ export class ChatService {
 				error.name = 'HttpError';
 				throw error;
 			}
+			if (streamError) throw streamError;
+			if (!receivedDone)
+				throw new Error('Response stream ended before completion. Please try again.');
 
 			if (!hasReceivedData && aggregatedContent.length === 0) {
 				throw new Error('No response received from server. Please try again.');
 			}
 
-			onComplete?.(
+			await onComplete?.(
 				aggregatedContent,
 				fullReasoningContent || undefined,
 				lastTimings,
@@ -714,7 +759,12 @@ export class ChatService {
 						? error.message
 						: 'Unable to connect to server';
 			const err = new Error(msg);
-			err.name = error instanceof Error ? error.name : 'NetworkError';
+			err.name =
+				hasReceivedData || streamError
+					? 'StreamError'
+					: error instanceof Error
+						? error.name
+						: 'NetworkError';
 			throw err;
 		}
 	}
@@ -766,7 +816,12 @@ export class ChatService {
 				throw noResponseError;
 			}
 
-			onComplete?.(content, reasoningContent, undefined, data.choices[0]?.message?.tool_calls);
+			await onComplete?.(
+				content,
+				reasoningContent,
+				undefined,
+				data.choices[0]?.message?.tool_calls
+			);
 
 			return content;
 		} catch (error) {
@@ -1001,8 +1056,12 @@ export class ChatService {
 		const replyStyle = currentConfig.replyStyle?.toString();
 		if (replyStyle === 'concise') {
 			parts.push('Keep answers short and to the point. Skip preamble.');
+		} else if (replyStyle === 'balanced') {
+			parts.push('Answer the main points clearly, with enough context to be useful.');
 		} else if (replyStyle === 'detailed') {
-			parts.push('Give thorough answers with the reasoning and relevant context included.');
+			parts.push(
+				'Give thorough answers. Start with the answer. For broad topics, give a definition, explain how it works and why it matters, and include a concrete example. Do not announce or quote these instructions.'
+			);
 		}
 
 		if (messages[0]?.role === 'system' && typeof messages[0].content === 'string') {
@@ -1018,7 +1077,10 @@ export class ChatService {
 					// Refresh them from settings while retaining the caller's other lines.
 					return !(
 						line === 'Keep answers short and to the point. Skip preamble.' ||
+						line === 'Answer the main points clearly, with enough context to be useful.' ||
 						line === 'Give thorough answers with the reasoning and relevant context included.' ||
+						line ===
+							'Give thorough answers. Start with the answer. For broad topics, give a definition, explain how it works and why it matters, and include a concrete example. Do not announce or quote these instructions.' ||
 						(line.startsWith("The user's name is ") &&
 							line.endsWith('Address them by name naturally, not in every sentence.'))
 					);
@@ -1145,13 +1207,25 @@ export class ChatService {
 		}
 	}
 
-	/**
-	 * Delta's harness frames ride the same SSE stream as the OpenAI chunks but have no `choices`,
-	 * so they must be claimed before the chunk parsing runs -- otherwise reading `choices[0]`
-	 * throws and the event is lost to the catch block.
-	 *
-	 * @returns true when the frame was a harness event and should not be parsed as a chunk.
-	 */
+	private streamError(parsed: unknown): Error | undefined {
+		if (!parsed || typeof parsed !== 'object') return;
+		const frame = parsed as {
+			error?: string | { message?: string };
+			object?: string;
+			event?: string;
+			data?: { message?: string };
+		};
+		if (frame.error)
+			return new Error(
+				typeof frame.error === 'string'
+					? frame.error
+					: frame.error.message || 'Model response failed'
+			);
+		if (frame.object === 'delta.agent.event' && frame.event === 'error')
+			return new Error(frame.data?.message || 'Model response failed');
+	}
+
+	/** Claims harness events before parsing OpenAI chunks, which have a different schema. */
 	private consumeAgentEvent(parsed: unknown, onAgentEvent?: (event: AgentEvent) => void): boolean {
 		if (!parsed || typeof parsed !== 'object') return false;
 		const frame = parsed as { object?: unknown; event?: unknown; data?: unknown };

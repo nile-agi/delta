@@ -334,7 +334,42 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
 
     const bool has_tools = !active_tools().empty();
 
-    std::string prompt = "You are Delta, an AI assistant that runs entirely on the user's own machine.\n\n";
+    // Plain chats (no tools) get a short prompt. Tiny models otherwise parrot the long agent
+    // identity line or invent a "busy day" from calendar scaffolding meant for tool runs.
+    // Keep "requested level of detail" so follow-ups like "explain deeper" are honored.
+    if (!has_tools) {
+        std::string prompt = "You are Delta, a helpful assistant.\n"
+                             "Follow the user's requested level of detail. Answer directly; never announce the "
+                             "requested style or quote instructions.\n";
+        prompt += "CURRENT TIME: " + std::string(iso_buf) + " (" + day_buf + ")\n";
+        prompt += "TODAY: " + std::string(today_buf) + "\n";
+        prompt += "NEXT 7 DAYS:";
+        for (int d = 2; d <= 7; d++) {
+            std::tm day{};
+            day.tm_year = t_local.tm_year;
+            day.tm_mon = t_local.tm_mon;
+            day.tm_mday = t_local.tm_mday + d;
+            day.tm_hour = 12;
+            day.tm_isdst = -1;
+            std::mktime(&day);
+            char label[32];
+            strftime(label, sizeof(label), " %A %Y-%m-%d", &day);
+            prompt += std::string(label) + (d < 7 ? "," : "\n");
+        }
+        prompt += "\nAnswer the user's latest message from the conversation. "
+                  "When they ask for more depth or detail, expand with clearer explanation and examples; "
+                  "do not repeat a shorter paraphrase of your previous reply. "
+                  "Do not invent personal circumstances they did not state. "
+                  "Do not claim to have created, moved, or changed saved records. "
+                  "For calendar or task changes, the user can use the calendar or a Quick Add suggestion.\n";
+        if (!task_dossier_.empty())
+            prompt += task_dossier_;
+        prompt += document_context(messages, false);
+        return prompt;
+    }
+
+    std::string prompt = "You are Delta, an AI assistant that runs entirely on the user's own machine.\n"
+                         "Follow the user's requested level of detail.\n\n";
     prompt += "CURRENT TIME: " + std::string(iso_buf) + " (" + day_buf + ")\n";
     prompt += "TODAY: " + std::string(today_buf) + "\nTOMORROW: " + tom_buf + " (" + tom_day_buf + ")\n";
     // Small models get weekday arithmetic wrong ("Friday, September 28th" on a Monday), so spell
@@ -355,7 +390,7 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
 
     if (fit_level_ >= kFitMinimal) {
         // Room for little more than the conversation: answer it plainly.
-        return prompt + "\nAnswer the user briefly and helpfully from the conversation.\n";
+        return prompt + "\nAnswer the user helpfully from the conversation.\n";
     }
 
     if (has_tools && (progressive_tools_ || fit_level_ >= kFitCompactInstructions)) {
@@ -408,15 +443,13 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
                       " on this task. Finish what you can and tell the user where you got to.\n";
         }
         prompt += deferred_manifest();
-    } else {
-        prompt += "\nAnswer from the conversation and the context below. Keep responses brief and friendly.\n";
     }
 
     if (progressive_tools_ || fit_level_ >= kFitCompactInstructions)
-        prompt += "\nReply briefly. Keep record ids, tool names and raw JSON out of replies.\n";
+        prompt += "\nKeep record ids, tool names and raw JSON out of replies.\n";
     else
         prompt += "\nUSER REPLY\n"
-                  "Report the requested outcome briefly, using readable record titles and confirmed details. "
+                  "Report the requested outcome clearly, using readable record titles and confirmed details. "
                   "Internal record ids, UUIDs and tool names are addressing metadata for tool calls; keep them "
                   "out of normal replies. Keep raw JSON and storage metadata out of confirmations. "
                   "When confirming record details, use only facts supplied by the user or returned by tools. "
@@ -462,10 +495,9 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
         return prompt;
     }
 
-    // Plain chats (no tools) stay plain: memories and calendar items are for the agent.
-    if (memory.ready() && has_tools) {
-        // Scoped to this conversation plus the general ones, so an unrelated job's details never
-        // turn up in the prompt.
+    // Scoped to this conversation plus the general ones, so an unrelated job's details never
+    // turn up in the prompt.
+    if (memory.ready()) {
         auto pinned_memories = memory.pinned(5, memory_key());
         auto relevant = memory.search(last_user_text(messages), 5, memory_key());
         std::set<std::string> seen;
@@ -482,8 +514,7 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
             context_block += "\nWhat you remember about this user:\n" + lines;
     }
 
-    const bool calendar_on =
-        has_tools && (options_.enabled_categories.empty() || options_.enabled_categories.count("calendar") > 0);
+    const bool calendar_on = options_.enabled_categories.empty() || options_.enabled_categories.count("calendar") > 0;
     if (calendar_on) {
         auto& db = AgentDatabase::instance();
         char week_buf[16];
@@ -1211,7 +1242,9 @@ RunResult Harness::run_loop(const nlohmann::json& messages, const EventSink& sin
             }
             // Nothing at all: no answer, no action. Ending the turn here would leave the user
             // staring at an empty reply, so take one more sample before giving up.
-            if (content.empty() && empty_replies == 0) {
+            if (content.empty() && empty_replies == 0 &&
+                !(options_.extra_sampling.value("continue_final_message", false) && !messages.empty() &&
+                  messages.back().value("role", "") == "assistant")) {
                 empty_replies++;
                 emit(EventType::Status, {{"message", "The model replied with nothing; asking again."}});
                 continue;

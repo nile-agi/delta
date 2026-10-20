@@ -1260,6 +1260,10 @@ class ModelAPIServer {
                 // Off unless asked for. A plain OpenAI client pointed at this port used to get the
                 // whole agent, shell and file tools included, without ever requesting it.
                 run_options.tools_enabled = model_supports_tools && body.value("use_tools", false);
+                if (body.value("continue_final_message", false)) {
+                    run_options.extra_sampling["continue_final_message"] = true;
+                    run_options.tools_enabled = false;
+                }
                 run_options.max_tokens = body.value("max_tokens", 2048);
                 // The UI sends -1 for "no limit". Taken literally that reserves no output room at
                 // all, so the budget under-reserves and the wrap-up's length cap is defeated.

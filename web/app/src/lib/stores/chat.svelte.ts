@@ -5,6 +5,7 @@ import { serverStore } from '$lib/stores/server.svelte';
 import { normalizeModelName } from '$lib/utils/model-names';
 import {
 	agentToolsActive,
+	modelLoadedOnServer,
 	selectedModelName,
 	requestModelSelection
 } from '$lib/stores/models.svelte';
@@ -457,8 +458,8 @@ class ChatStore {
 		onError?: (error: Error) => void,
 		options?: { initialContent?: string; initialThinking?: string; useTools?: boolean }
 	): Promise<void> {
-		// A regeneration reuses the message id, so drop whatever the previous run recorded.
-		agentStore.begin(assistantMessage.id);
+		const isContinuation = options?.initialContent !== undefined;
+		agentStore.begin(assistantMessage.id, isContinuation ? assistantMessage.agent_activity : undefined);
 
 		// A model without tools cannot put anything on the calendar itself, so offer the user's
 		// message as a one-tap change. Here rather than in sendMessage so a regenerate or an edited
@@ -474,7 +475,6 @@ class ChatStore {
 				void this.offerQuickAdd(lastUser);
 		}
 
-		const isContinuation = Boolean(options?.initialContent);
 		let streamedContent = options?.initialContent ?? '';
 		let streamedReasoningContent = options?.initialThinking ?? '';
 		const chunkQueue: string[] = [];
@@ -591,6 +591,7 @@ class ChatStore {
 			allMessages,
 			{
 				...this.getApiOptions(options?.useTools),
+				continueFinalMessage: isContinuation,
 
 				onFirstValidChunk: () => {
 					refreshServerPropsOnce();
@@ -648,7 +649,10 @@ class ChatStore {
 
 						// Keep the tool activity with the message so reopening the conversation still
 						// shows what the harness actually did.
-						const agentActivity = agentStore.finish(assistantMessage.id);
+						const agentActivity = agentStore.finish(
+							assistantMessage.id,
+							isContinuation ? updateData.content : undefined
+						);
 						if (
 							agentActivity?.steps.length ||
 							agentActivity?.notices.length ||
@@ -711,8 +715,17 @@ class ChatStore {
 
 				onError: (error: Error) => {
 					slotsService.stopStreaming();
+					chunkQueue.length = 0;
 					// Nothing will answer a parked approval now that the stream is gone.
 					agentStore.finish(assistantMessage.id);
+					if (isContinuation) {
+						// A failed append must not remove the reply that was already saved.
+						this.updateMessageAtIndex(this.findMessageIndex(assistantMessage.id), {
+							content: options?.initialContent ?? '',
+							thinking: options?.initialThinking ?? ''
+						});
+						agentStore.begin(assistantMessage.id, assistantMessage.agent_activity);
+					}
 
 					if (this.isAbortError(error)) {
 						this.setConversationLoading(assistantMessage.convId, false);
@@ -730,7 +743,7 @@ class ChatStore {
 						(m: DatabaseMessage) => m.id === assistantMessage.id
 					);
 
-					if (messageIndex !== -1) {
+					if (messageIndex !== -1 && !isContinuation) {
 						const [failedMessage] = this.activeMessages.splice(messageIndex, 1);
 
 						if (failedMessage) {
@@ -776,7 +789,7 @@ class ChatStore {
 			return;
 		}
 		// No model selected -- open the model selector instead of showing an error
-		if (lower.includes('model') && lower.includes('missing')) {
+		if (lower.includes('model') && (lower.includes('missing') || lower.includes('not found'))) {
 			requestModelSelection();
 			return;
 		}
@@ -815,7 +828,7 @@ class ChatStore {
 	}
 
 	private requireModel(): boolean {
-		if (this.resolveCurrentModelName()) return true;
+		if (modelLoadedOnServer() && this.resolveCurrentModelName()) return true;
 		requestModelSelection();
 		return false;
 	}
@@ -1275,7 +1288,8 @@ class ChatStore {
 					undefined,
 					{
 						initialContent: assistantMessage.content,
-						initialThinking: assistantMessage.thinking ?? ''
+						initialThinking: assistantMessage.thinking ?? '',
+						useTools: false
 					}
 				);
 			} finally {

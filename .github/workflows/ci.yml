@@ -195,6 +195,8 @@ jobs:
           node --test scripts/startup-guard.test.cjs scripts/failure-report.test.cjs
           rustc --edition=2021 --test src-tauri/src/startup.rs -o /tmp/delta-startup-tests
           /tmp/delta-startup-tests
+          rustc --edition=2021 --test src-tauri/src/streaming.rs -o /tmp/delta-streaming-tests
+          /tmp/delta-streaming-tests
 
       - name: Test release notes
         run: node --test scripts/release-notes.test.cjs scripts/release-assets.test.cjs
