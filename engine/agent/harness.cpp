@@ -339,9 +339,23 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
     // Keep "requested level of detail" so follow-ups like "explain deeper" are honored.
     if (!has_tools) {
         std::string prompt = "You are Delta, a helpful assistant.\n"
-                             "Follow the user's requested level of detail.\n";
+                             "Follow the user's requested level of detail. Answer directly; never announce the "
+                             "requested style or quote instructions.\n";
         prompt += "CURRENT TIME: " + std::string(iso_buf) + " (" + day_buf + ")\n";
         prompt += "TODAY: " + std::string(today_buf) + "\n";
+        prompt += "NEXT 7 DAYS:";
+        for (int d = 2; d <= 7; d++) {
+            std::tm day{};
+            day.tm_year = t_local.tm_year;
+            day.tm_mon = t_local.tm_mon;
+            day.tm_mday = t_local.tm_mday + d;
+            day.tm_hour = 12;
+            day.tm_isdst = -1;
+            std::mktime(&day);
+            char label[32];
+            strftime(label, sizeof(label), " %A %Y-%m-%d", &day);
+            prompt += std::string(label) + (d < 7 ? "," : "\n");
+        }
         prompt += "\nAnswer the user's latest message from the conversation. "
                   "When they ask for more depth or detail, expand with clearer explanation and examples; "
                   "do not repeat a shorter paraphrase of your previous reply. "
@@ -500,8 +514,7 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
             context_block += "\nWhat you remember about this user:\n" + lines;
     }
 
-    const bool calendar_on =
-        options_.enabled_categories.empty() || options_.enabled_categories.count("calendar") > 0;
+    const bool calendar_on = options_.enabled_categories.empty() || options_.enabled_categories.count("calendar") > 0;
     if (calendar_on) {
         auto& db = AgentDatabase::instance();
         char week_buf[16];

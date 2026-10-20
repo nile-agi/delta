@@ -435,16 +435,15 @@ struct PromptInventorySeeds {
         auto& memory = MemoryStore::instance();
         memory.clear_plan(convo);
         memory.clear_notes(convo);
-        memory.set_plan(convo, "move the task to Friday",
-                        json::array({{{"step", kPlanStep}, {"status", "pending"}}}));
+        memory.set_plan(convo, "move the task to Friday", json::array({{{"step", kPlanStep}, {"status", "pending"}}}));
         memory.add_note(convo, kNote);
         memory_id = memory.remember(kMemory, "fact", "pets", 3, "test", convo);
 
         auto& db = AgentDatabase::instance();
         const std::string start = resolve_datetime("tomorrow 10:00");
         const std::string end = resolve_datetime("tomorrow 11:00");
-        event_id = db.create_event(
-            {{"title", kEventTitle}, {"type", "event"}, {"start_time", start}, {"end_time", end}});
+        event_id =
+            db.create_event({{"title", kEventTitle}, {"type", "event"}, {"start_time", start}, {"end_time", end}});
         task_id = db.create_event({{"title", kTaskTitle},
                                    {"type", "task"},
                                    {"status", "upcoming"},
@@ -2916,7 +2915,7 @@ static void test_no_tools_prompt_omits_agent_context() {
     check(system.find("What you remember") == std::string::npos, "the memory block header is omitted");
     check(system.find("Upcoming events") == std::string::npos, "the events block header is omitted");
     check(system.find("Active tasks") == std::string::npos, "the tasks block header is omitted");
-    check(system.find("NEXT 7 DAYS") == std::string::npos, "the week list is for tool runs only");
+    check(system.find("NEXT 7 DAYS") != std::string::npos, "the week list contains only the current calendar dates");
     check(system.find("HOW YOU WORK") == std::string::npos, "tool instructions stay off");
     check(system.find("runs entirely on the user's own machine") == std::string::npos,
           "the long identity line is not offered to parrot");
@@ -2940,8 +2939,7 @@ static void test_tools_prompt_includes_agent_context() {
     options.memory_scope = seeds.convo;
     options.n_ctx = 16384;
 
-    const std::string system =
-        capture_system_prompt(true, options, json::array({user("What do I have coming up?")}));
+    const std::string system = capture_system_prompt(true, options, json::array({user("What do I have coming up?")}));
     check(!system.empty(), "a request was made");
     check(system.find("NEXT 7 DAYS") != std::string::npos, "the week list is present");
     check(system.find("HOW YOU WORK") != std::string::npos, "tool instructions are present");
@@ -2955,13 +2953,27 @@ static void test_tools_prompt_includes_agent_context() {
 }
 
 static void test_no_tools_prompt_stays_short() {
-    test("a plain turn skips agent calendar scaffolding and the long on-device identity line");
+    test("a plain turn skips agent context but gets the coming weekday dates");
 
     RunOptions options = test_options();
     options.tools_enabled = false;
     const std::string system = capture_system_prompt(false, options, json::array({user("what is ai")}));
     check(!system.empty(), "a request was made");
-    check(system.find("NEXT 7 DAYS") == std::string::npos, "the week list is for tool runs only");
+    check(system.find("NEXT 7 DAYS:") != std::string::npos, "weekday dates are available without tools");
+    std::time_t now = std::time(nullptr);
+    std::tm today{};
+    local_time(&now, &today);
+    int days_to_friday = (5 - today.tm_wday + 7) % 7;
+    std::tm friday = today;
+    friday.tm_mday += days_to_friday;
+    friday.tm_hour = 12;
+    friday.tm_min = 0;
+    friday.tm_sec = 0;
+    friday.tm_isdst = -1;
+    std::mktime(&friday);
+    char friday_label[32];
+    std::strftime(friday_label, sizeof(friday_label), "%A %Y-%m-%d", &friday);
+    check(system.find(friday_label) != std::string::npos, "the Friday date is explicit");
     check(system.find("runs entirely on the user's own machine") == std::string::npos,
           "the long identity line is not offered to parrot");
     check(system.find("Follow the user's requested level of detail") != std::string::npos,
@@ -2978,16 +2990,14 @@ static void test_client_system_name_reaches_plain_chat() {
 
     RunOptions options = test_options();
     options.tools_enabled = false;
-    const json history = json::array(
-        {{{"role", "system"},
-          {"content", "The user's name is Jovine. Address them by name naturally, not in every sentence."}},
-         user("hello")});
+    const json history =
+        json::array({{{"role", "system"},
+                      {"content", "The user's name is Jovine. Address them by name naturally, not in every sentence."}},
+                     user("hello")});
     const std::string system = capture_system_prompt(false, options, history);
     check(!system.empty(), "a request was made");
-    check(system.find("The user's name is Jovine.") != std::string::npos,
-          "the client name line reaches the model");
-    check(system.find("Address them by name naturally") != std::string::npos,
-          "the addressing guidance is kept");
+    check(system.find("The user's name is Jovine.") != std::string::npos, "the client name line reaches the model");
+    check(system.find("Address them by name naturally") != std::string::npos, "the addressing guidance is kept");
 }
 
 static void test_moving_to_a_day_keeps_the_time() {
