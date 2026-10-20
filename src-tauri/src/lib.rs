@@ -1,5 +1,6 @@
 mod diagnostics;
 mod startup;
+mod streaming;
 use diagnostics::DiagnosticState;
 
 use std::collections::HashMap;
@@ -265,27 +266,8 @@ async fn stream_chat(
         match req.send_string(&body) {
             Ok(response) => {
                 let status = response.status();
-                use std::io::BufRead;
                 let reader = std::io::BufReader::new(response.into_reader());
-                for line_result in reader.lines() {
-                    if abort.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    match line_result {
-                        Ok(line) => {
-                            if on_chunk.send(line).is_err() {
-                                break;
-                            }
-                        }
-                        Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
-                            if abort.load(Ordering::Relaxed) {
-                                break;
-                            }
-                            continue;
-                        }
-                        Err(_) => break,
-                    }
-                }
+                streaming::forward_lines(reader, &abort, |line| on_chunk.send(line).is_ok())?;
                 Ok(status)
             }
             Err(ureq::Error::Status(code, response)) => {

@@ -112,6 +112,12 @@ class DeltaServerWrapper {
     std::mutex errors_mutex_;
     std::string recent_errors_;
 
+    // Accumulates llama-server print_timings lines into a short stdout summary.
+    double timing_prompt_ms_ = 0;
+    int timing_prompt_tokens_ = 0;
+    double timing_gen_ms_ = 0;
+    int timing_gen_tokens_ = 0;
+
     static void report_child_exit(long long code, int signal) {
         // A bounded numeric record lets the desktop report child failures separately from its own exit.
         std::fprintf(stderr, "[llama-server-exit] code=%lld signal=%d\n", code, signal);
@@ -123,6 +129,52 @@ class DeltaServerWrapper {
         recent_errors_ += line.substr(0, 4096) + "\n";
         if (recent_errors_.size() > 16384)
             recent_errors_.erase(0, recent_errors_.size() - 16384);
+    }
+
+    void reset_timing_stats() {
+        timing_prompt_ms_ = 0;
+        timing_prompt_tokens_ = 0;
+        timing_gen_ms_ = 0;
+        timing_gen_tokens_ = 0;
+    }
+
+    // Returns true when the line was a timing record (not an error/warning to forward).
+    bool note_server_timing_line(const std::string& line) {
+        if (line.find("prompt eval time") != std::string::npos && line.find('=') != std::string::npos) {
+            auto eq = line.find('=');
+            double ms = 0;
+            int tokens = 0;
+            if (std::sscanf(line.c_str() + eq, "= %lf ms / %d tokens", &ms, &tokens) == 2) {
+                timing_prompt_ms_ = ms;
+                timing_prompt_tokens_ = tokens;
+            }
+            return true;
+        }
+        if (line.find("eval time") != std::string::npos && line.find("prompt eval time") == std::string::npos &&
+            line.find('=') != std::string::npos) {
+            auto eq = line.find('=');
+            double ms = 0;
+            int tokens = 0;
+            if (std::sscanf(line.c_str() + eq, "= %lf ms / %d tokens", &ms, &tokens) == 2) {
+                timing_gen_ms_ = ms;
+                timing_gen_tokens_ = tokens;
+            }
+            return true;
+        }
+        if (line.find("total time") != std::string::npos && line.find('=') != std::string::npos) {
+            if (timing_gen_tokens_ > 0) {
+                const double ttft_s = timing_prompt_ms_ / 1000.0;
+                const double tps = (timing_gen_ms_ > 0) ? (timing_gen_tokens_ * 1000.0 / timing_gen_ms_) : 0;
+                char buf[256];
+                std::snprintf(buf, sizeof(buf), "  %d in / %d out | ttft %.2fs | %.1f tok/s", timing_prompt_tokens_,
+                              timing_gen_tokens_, ttft_s, tps);
+                std::puts(buf);
+                std::fflush(stdout);
+            }
+            reset_timing_stats();
+            return true;
+        }
+        return false;
     }
 
   public:
@@ -565,11 +617,14 @@ class DeltaServerWrapper {
         auto args =
             build_llama_server_arguments(model_path_to_use, ctx_size, llama_server_is_router_ ? "" : model_alias);
         process_generation_ = effective_config_ ? effective_config_->generation : 0;
+        reset_timing_stats();
         try {
             owned_process_.start(
                 {args, get_executable_dir(), process_generation_},
                 [this](uint64_t generation, const std::string& line) {
                     if (generation != process_generation_)
+                        return;
+                    if (note_server_timing_line(line))
                         return;
                     note_server_stderr(line);
                     // Runtime-native records are filtered/redacted again at the desktop boundary.

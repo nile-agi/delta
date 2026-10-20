@@ -20,6 +20,12 @@
 
 	const when = $derived(describeWhen(suggestion.start_time, suggestion.all_day));
 	const isTask = $derived(suggestion.type === 'task');
+	const suggestionIsPast = $derived.by(() => {
+		const start = new Date(suggestion.start_time).getTime();
+		const earliest = new Date();
+		if (suggestion.all_day) earliest.setHours(0, 0, 0, 0);
+		return !Number.isFinite(start) || start < earliest.getTime();
+	});
 	// The suggestion's own `status` is chip state, not the calendar's, so only the item fields go in.
 	const draft = $derived<Partial<CalendarEvent>>({
 		title: suggestion.title,
@@ -49,6 +55,14 @@
 	}
 
 	function addAsSuggested() {
+		const start = new Date(suggestion.start_time).getTime();
+		const earliest = new Date();
+		if (suggestion.all_day) earliest.setHours(0, 0, 0, 0);
+		if (!Number.isFinite(start) || start < earliest.getTime()) {
+			editing = true;
+			toast.info('Check the date and time before adding. This suggestion may already be in the past.');
+			return;
+		}
 		void add({ ...draft, reminder_minutes: isTask ? REMINDER_NONE : 15 });
 	}
 
@@ -65,14 +79,20 @@
 			class="flex min-w-0 items-center gap-1.5 rounded-full px-2 py-1 text-left transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-60"
 			disabled={saving}
 			onclick={addAsSuggested}
-			title={isTask ? 'Add this task to your calendar' : 'Add this event to your calendar'}
+			title={suggestionIsPast
+				? 'Review the suggested date and time before adding it'
+				: isTask
+					? 'Add this task to your calendar'
+					: 'Add this event to your calendar'}
 		>
 			{#if isTask}
 				<ListTodo class="h-3.5 w-3.5 shrink-0" />
 			{:else}
 				<CalendarPlus class="h-3.5 w-3.5 shrink-0" />
 			{/if}
-			<span class="shrink-0 font-medium text-foreground">{isTask ? 'Add task' : 'Add to calendar'}</span>
+			<span class="shrink-0 font-medium text-foreground">
+				{suggestionIsPast ? 'Review date' : isTask ? 'Add task' : 'Add to calendar'}
+			</span>
 			<span class="truncate">· {suggestion.title} · {when}</span>
 		</button>
 		<button

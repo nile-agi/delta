@@ -20,6 +20,7 @@ export interface SettingsFieldConfig {
 
 export interface SettingsChatServiceOptions {
 	stream?: boolean;
+	continueFinalMessage?: boolean;
 	// Generation parameters
 	temperature?: number;
 	max_tokens?: number;

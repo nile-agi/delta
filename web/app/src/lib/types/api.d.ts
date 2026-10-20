@@ -165,6 +165,7 @@ export interface ApiLlamaCppServerProps {
 }
 
 export interface ApiChatCompletionRequest {
+	continue_final_message?: boolean;
 	messages: Array<{
 		role: ChatRole;
 		content: string | ApiChatMessageContentPart[];
