@@ -883,7 +883,7 @@ RunResult Harness::run_loop(const nlohmann::json& messages, const EventSink& sin
     // Counting is an HTTP round trip, so the result is cached until the tool set actually changes.
     int cached_tool_tokens = -1;
     size_t cached_tool_hash = 0;
-    auto charge_tools = [&](const nlohmann::json& active_tools_json, int minimum_prompt_tokens) {
+    auto charge_tools = [&](const nlohmann::json& active_tools_json, int prompt_tokens) {
         const std::string dumped = active_tools_json.empty() ? std::string() : active_tools_json.dump();
         const size_t hash = std::hash<std::string>{}(dumped);
         if (cached_tool_tokens < 0 || hash != cached_tool_hash) {
@@ -901,7 +901,7 @@ RunResult Harness::run_loop(const nlohmann::json& messages, const EventSink& sin
         // The reply gets what the window has left, between a floor and the caller's max_tokens.
         // Recomputed per attempt so a shrunk prompt gives the reply its room back.
         const int floor = std::min(256, std::max(64, n_ctx / 4));
-        const int spare = n_ctx - cached_tool_tokens - minimum_prompt_tokens - context.safety_margin();
+        const int spare = n_ctx - cached_tool_tokens - prompt_tokens - context.safety_margin();
         // The floor stops the harness shrinking the reply too far; it never raises the caller's limit.
         const int reply = std::max(std::min(floor, options_.max_tokens), std::min(options_.max_tokens, spare));
         LlmConfig cfg = client_.config();
@@ -1044,9 +1044,12 @@ RunResult Harness::run_loop(const nlohmann::json& messages, const EventSink& sin
                                                                     : std::set<std::string>{});
             active = tools_disabled_by_error ? nlohmann::json::array() : active_tools();
             system_prompt = build_system_prompt(transcript);
-            const int minimum_prompt_tokens = context.token_cost({{"content", system_prompt}}) +
-                                              context.token_cost({{"content", last_user_text(transcript)}});
-            charge_tools(active, minimum_prompt_tokens);
+            // The reply gets what the whole conversation leaves; counting only the latest message
+            // let it claim the history's room, so every follow-up in a small window was compacted.
+            int prompt_tokens = context.token_cost({{"content", system_prompt}});
+            for (const auto& msg : transcript)
+                prompt_tokens += context.token_cost(msg);
+            charge_tools(active, prompt_tokens);
             request_messages = context.build(system_prompt, transcript);
             // Conversation facts outrank optional prompt parts: free room until dropped history fits a summary.
             const bool fits =
