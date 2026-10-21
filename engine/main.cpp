@@ -250,6 +250,9 @@ class CliRunPrinter {
             return true;
         }
 
+        case EventType::Progress: // the CLI prints the reply as it arrives instead
+            return true;
+
         case EventType::Sources: {
             std::string list;
             for (const auto& source : event.data.value("sources", nlohmann::json::array()))

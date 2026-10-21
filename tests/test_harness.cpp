@@ -201,12 +201,22 @@ class ScriptedServer {
     // tool-call arguments across two frames so the client's reassembly is exercised too.
     static std::string sse_for(const json& message) {
         std::string out;
-        auto frame = [&out](const json& delta, const char* finish) {
+        auto frame = [&out, &message](const json& delta, const char* finish) {
             json choice{{"index", 0}, {"delta", delta}};
             choice["finish_reason"] = finish ? json(finish) : json(nullptr);
-            out += "data: " + json{{"object", "chat.completion.chunk"}, {"choices", json::array({choice})}}.dump() +
-                   "\n\n";
+            json chunk{{"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
+            if (finish && message.contains("timings"))
+                chunk["timings"] = message["timings"];
+            out += "data: " + chunk.dump() + "\n\n";
         };
+        // llama-server reports prompt processing in frames with no choices.
+        if (message.contains("prompt_progress"))
+            out += "data: " +
+                   json{{"object", "chat.completion.chunk"},
+                        {"choices", json::array()},
+                        {"prompt_progress", message["prompt_progress"]}}
+                       .dump() +
+                   "\n\n";
 
         const std::string reasoning = message.value("reasoning_content", "");
         if (!reasoning.empty())
@@ -3633,6 +3643,31 @@ static void test_a_follow_up_in_a_small_window_keeps_the_conversation() {
           "the reply limit leaves room for the conversation (max_tokens " + std::to_string(max_tokens) + ")");
 }
 
+static void test_progress_and_timings_reach_the_client() {
+    test("prompt progress and the reply's timings are passed on, not dropped");
+
+    const json timings = {{"prompt_n", 120}, {"prompt_ms", 80.5}, {"predicted_n", 12}, {"predicted_ms", 240.0}};
+    const json progress = {{"total", 120}, {"cache", 0}, {"processed", 60}, {"time_ms", 40}};
+    ScriptedServer server(std::vector<json>{
+        {{"role", "assistant"}, {"content", "Hello!"}, {"timings", timings}, {"prompt_progress", progress}}});
+    server.start();
+    Harness harness(server.url(), "test-model", false);
+    harness.set_options(desktop_options("conv-timings"));
+    EventLog log;
+    auto result = harness.run(json::array({user("hi")}), log.sink());
+    server.stop();
+
+    check(result.success, "the run succeeds");
+    auto requests = server.requests();
+    check(!requests.empty() && requests[0].value("return_progress", false), "llama-server is asked for progress");
+    json seen;
+    for (const auto& [type, data] : log.events)
+        if (type == EventType::Progress)
+            seen = data;
+    check(seen == progress, "the progress frame is passed on as it came");
+    check(result.timings == timings, "the reply's timings are kept for the client");
+}
+
 static void test_document_tools_are_offered_only_with_documents() {
     test("the document tools are only offered when the chat has documents");
 
@@ -4025,6 +4060,7 @@ int main() {
     test_router_mode_reports_the_real_context_window();
     test_a_new_chat_never_reports_the_context_error();
     test_a_follow_up_in_a_small_window_keeps_the_conversation();
+    test_progress_and_timings_reach_the_client();
     test_document_tools_are_offered_only_with_documents();
     test_answers_report_their_sources();
     test_a_file_sent_without_a_question_gets_its_highlights();

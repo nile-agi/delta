@@ -57,6 +57,8 @@ struct SseContext {
     const ContentCallback* forward = nullptr;
     std::string reasoning;
     const ReasoningCallback* forward_reasoning = nullptr;
+    const ProgressCallback* forward_progress = nullptr;
+    nlohmann::json timings; // from the final chunk
     const std::function<bool()>* abort_check = nullptr;
 };
 
@@ -142,6 +144,12 @@ void handle_sse_line(SseContext* ctx, const std::string& line) {
         ctx->error = chunk["error"];
         return;
     }
+    // Progress frames carry no choices; timings ride on the last chunk.
+    if (chunk.is_object() && chunk.contains("timings") && chunk["timings"].is_object())
+        ctx->timings = chunk["timings"];
+    if (chunk.is_object() && chunk.contains("prompt_progress") && chunk["prompt_progress"].is_object() &&
+        ctx->forward_progress && *ctx->forward_progress)
+        (*ctx->forward_progress)(chunk["prompt_progress"]);
     if (!chunk.is_object() || !chunk.contains("choices") || !chunk["choices"].is_array() || chunk["choices"].empty())
         return;
 
@@ -248,6 +256,8 @@ nlohmann::json LlmClient::build_request_body(const nlohmann::json& messages, con
 
     nlohmann::json body = {
         {"messages", clean_messages}, {"stream", stream}, {"model", model_name_}, {"max_tokens", config_.max_tokens}};
+    if (stream)
+        body["return_progress"] = true; // prompt_progress frames, so a client can show real progress
     if (config_.temperature >= 0.0)
         body["temperature"] = config_.temperature;
     if (config_.top_p >= 0.0)
@@ -344,6 +354,8 @@ nlohmann::json LlmClient::chat_stream(const nlohmann::json& messages, const nloh
         ctx.forward = &on_content;
     if (reasoning_sink_)
         ctx.forward_reasoning = &reasoning_sink_;
+    if (progress_sink_)
+        ctx.forward_progress = &progress_sink_;
     if (abort_check_)
         ctx.abort_check = &abort_check_;
 
@@ -423,7 +435,11 @@ nlohmann::json LlmClient::chat_stream(const nlohmann::json& messages, const nloh
     // nobody, so when there is nothing else to show, the thinking is the answer.
     if (ctx.content.empty() && named_calls.empty() && !ctx.reasoning.empty())
         message["content"] = ctx.reasoning;
-    return {{"choices", {{{"index", 0}, {"message", message}, {"finish_reason", ctx.finish_reason}}}}};
+    nlohmann::json response = {
+        {"choices", {{{"index", 0}, {"message", message}, {"finish_reason", ctx.finish_reason}}}}};
+    if (!ctx.timings.is_null())
+        response["timings"] = ctx.timings;
+    return response;
 }
 
 namespace {

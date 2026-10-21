@@ -921,6 +921,7 @@ RunResult Harness::run_loop(const nlohmann::json& messages, const EventSink& sin
     // client can show or hide it without it ever being mistaken for the answer.
     client_.set_reasoning_sink(
         [&](const std::string& delta) -> bool { return emit(EventType::Reasoning, {{"text", delta}}); });
+    client_.set_progress_sink([&](const nlohmann::json& progress) { emit(EventType::Progress, progress); });
 
     // Everything after this index was added by this run and goes back to the caller.
     const size_t history_size = transcript.size();
@@ -1100,6 +1101,8 @@ RunResult Harness::run_loop(const nlohmann::json& messages, const EventSink& sin
             [&](const std::string& delta) -> bool { return emit(EventType::Content, {{"text", delta}}); }, forwarded,
             client_aborted);
         result.streamed_chars += forwarded;
+        if (response.is_object() && response.contains("timings"))
+            result.timings = response["timings"];
 
         if (client_aborted) {
             result.client_aborted = true;
