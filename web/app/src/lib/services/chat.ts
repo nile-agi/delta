@@ -5,6 +5,9 @@ import { getModelApiBaseUrl } from '$lib/utils/model-api-url';
 import { getServerBaseUrl } from '$lib/utils/server-base-url';
 import { slotsService } from './slots';
 
+// Matches the desktop transport's read timeout (src-tauri/src/lib.rs).
+const STREAM_IDLE_MS = 180_000;
+
 const IS_TAURI =
 	typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 
@@ -511,7 +514,23 @@ export class ChatService {
 			const onAbort = () => xhr.abort();
 			abortSignal?.addEventListener('abort', onAbort);
 
+			// No bytes for this long means the server is gone; the desktop transport has the same limit.
+			let idleTimer: ReturnType<typeof setTimeout> | undefined;
+			const resetIdleTimer = () => {
+				clearTimeout(idleTimer);
+				idleTimer = setTimeout(() => {
+					if (settled) return;
+					settled = true;
+					cleanup();
+					xhr.abort();
+					const error = new Error('The model stopped responding. Please try again.');
+					error.name = 'TimeoutError';
+					reject(error);
+				}, STREAM_IDLE_MS);
+			};
+
 			const cleanup = () => {
+				clearTimeout(idleTimer);
 				abortSignal?.removeEventListener('abort', onAbort);
 			};
 
@@ -546,6 +565,7 @@ export class ChatService {
 
 			xhr.onprogress = () => {
 				if (settled || abortSignal?.aborted || xhr.status >= 400) return;
+				resetIdleTimer();
 				processNewData(xhr.responseText);
 			};
 
@@ -603,6 +623,7 @@ export class ChatService {
 			};
 
 			xhr.send(body);
+			resetIdleTimer();
 		});
 	}
 
@@ -941,7 +962,8 @@ export class ChatService {
 		for (const doc of documentFiles) {
 			// An indexed file stays out of the request: the engine adds the passages that match
 			// each question, so a 300-page PDF costs a few thousand tokens instead of the window.
-			const size = doc.pages > 0 ? `${doc.pages} pages` : `${doc.chars.toLocaleString()} characters`;
+			const size =
+				doc.pages > 0 ? `${doc.pages} pages` : `${doc.chars.toLocaleString()} characters`;
 			contentParts.push({
 				type: 'text',
 				text: doc.docId
