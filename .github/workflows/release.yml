@@ -280,7 +280,7 @@ jobs:
             done
             test -f "$STAGE/bin/llama-server-v3${EXT}"
             python3 scripts/verify-release-binaries.py --target "$CLI_TARGET" "$STAGE/bin/llama-server-v3${EXT}"
-            bash scripts/check-release-runtime.sh "$STAGE/bin/llama-server-v3${EXT}" "$CLI_TARGET"
+            bash scripts/check-release-runtime.sh "$STAGE/bin/llama-server-v3${EXT}" "$CLI_TARGET" native
           fi
 
           python3 scripts/verify-release-binaries.py --target "$CLI_TARGET" "$STAGE/bin/delta${EXT}" "$STAGE/bin/delta-server${EXT}" "$STAGE/bin/llama-server${EXT}"
