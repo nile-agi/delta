@@ -8,6 +8,12 @@ if grep -q 'set_var("WEBKIT_DISABLE_COMPOSITING_MODE"' "$REPO_ROOT/src-tauri/src
   exit 1
 fi
 
+grep -q 'var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()' "$REPO_ROOT/src-tauri/src/lib.rs" &&
+  grep -q 'set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1")' "$REPO_ROOT/src-tauri/src/lib.rs" || {
+  echo "FAIL: Linux startup does not default to WebKit's shared-memory renderer" >&2
+  exit 1
+}
+
 grep -q 'libwayland-client\.so\.0' "$REPO_ROOT/scripts/check-linux-runtime.sh" || {
   echo "FAIL: Linux runtime check does not verify the required host Wayland client" >&2
   exit 1

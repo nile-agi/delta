@@ -333,7 +333,18 @@ fn dirs_next() -> Option<std::path::PathBuf> {
     }
 }
 
+// WebKitGTK's DMABUF renderer stops painting on some GNOME/Wayland drivers: the window freezes or
+// goes blank mid-chat. Shared-memory buffers keep GPU compositing; a value the user set wins.
+#[cfg(target_os = "linux")]
+fn linux_webview_defaults() {
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+}
+
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    linux_webview_defaults();
     let diagnostics = DiagnosticState::default();
     let panic_diagnostics = diagnostics.clone();
     let original_panic_hook = std::panic::take_hook();
