@@ -113,6 +113,30 @@ describe('stream lifecycle', () => {
 		expect(onComplete).not.toHaveBeenCalled();
 	});
 
+	it('gives up on a stream that goes silent, and keeps waiting while data arrives', async () => {
+		vi.useFakeTimers();
+		try {
+			const onComplete = vi.fn();
+			const pending = new ChatService().sendMessage([{ role: 'user', content: 'hello' }], {
+				stream: true,
+				onComplete
+			});
+			const rejected = expect(pending).rejects.toThrow(/stopped responding/i);
+			const xhr = TestXHR.requests[0];
+			const close = vi.spyOn(xhr, 'abort');
+			vi.advanceTimersByTime(170_000);
+			xhr.push(content('still working'));
+			vi.advanceTimersByTime(170_000);
+			expect(close).not.toHaveBeenCalled();
+			vi.advanceTimersByTime(10_001);
+			await rejected;
+			expect(close).toHaveBeenCalled();
+			expect(onComplete).not.toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('awaits persistence and reports a failure in the completion callback', async () => {
 		const onError = vi.fn();
 		vi.stubGlobal(
@@ -137,16 +161,23 @@ describe('stream lifecycle', () => {
 
 	it('reports failure while saving a streamed reply so loading can clear', async () => {
 		const onError = vi.fn();
-		const pending = new ChatService().sendMessage([{ role: 'user', content: 'can you code calc in ruby' }], {
-			stream: true,
-			onComplete: async () => { throw new Error('Could not save reply'); },
-			onError
-		});
+		const pending = new ChatService().sendMessage(
+			[{ role: 'user', content: 'can you code calc in ruby' }],
+			{
+				stream: true,
+				onComplete: async () => {
+					throw new Error('Could not save reply');
+				},
+				onError
+			}
+		);
 		const rejected = expect(pending).rejects.toThrow('Could not save reply');
 		TestXHR.requests[0].push(content('```ruby\ndef calculate_result(data)\n```'));
 		TestXHR.requests[0].push('[DONE]');
 		await rejected;
-		expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'Could not save reply' }));
+		expect(onError).toHaveBeenCalledWith(
+			expect.objectContaining({ message: 'Could not save reply' })
+		);
 	});
 
 	it('does not retry a desktop response after it has already streamed content', async () => {

@@ -12,6 +12,8 @@ namespace agent {
 using ContentCallback = std::function<bool(const std::string& delta)>;
 // Receives each reasoning delta, for models that stream their thinking on a separate channel.
 using ReasoningCallback = std::function<bool(const std::string& delta)>;
+// Receives llama-server's prompt_progress objects while a streamed prompt is processed.
+using ProgressCallback = std::function<void(const nlohmann::json&)>;
 
 struct LlmConfig {
     int max_tokens = 2048;
@@ -41,6 +43,7 @@ class LlmClient {
     // Where `reasoning_content` deltas go. Thinking models (Qwen3, DeepSeek-R1) and Gemma 4 with
     // thinking on stream there instead of `content`; without a sink it is captured but not forwarded.
     void set_reasoning_sink(ReasoningCallback sink) { reasoning_sink_ = std::move(sink); }
+    void set_progress_sink(ProgressCallback sink) { progress_sink_ = std::move(sink); }
 
     // Blocking call. Returns the parsed response, or {"error": "..."} on failure.
     nlohmann::json chat(const nlohmann::json& messages, const nlohmann::json& tools,
@@ -66,6 +69,7 @@ class LlmClient {
     LlmConfig config_;
     std::function<bool()> abort_check_;
     ReasoningCallback reasoning_sink_;
+    ProgressCallback progress_sink_;
     int tokenize_supported_ = -1; // -1 unknown, 0 no, 1 yes
 };
 

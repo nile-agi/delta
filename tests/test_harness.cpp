@@ -201,12 +201,22 @@ class ScriptedServer {
     // tool-call arguments across two frames so the client's reassembly is exercised too.
     static std::string sse_for(const json& message) {
         std::string out;
-        auto frame = [&out](const json& delta, const char* finish) {
+        auto frame = [&out, &message](const json& delta, const char* finish) {
             json choice{{"index", 0}, {"delta", delta}};
             choice["finish_reason"] = finish ? json(finish) : json(nullptr);
-            out += "data: " + json{{"object", "chat.completion.chunk"}, {"choices", json::array({choice})}}.dump() +
-                   "\n\n";
+            json chunk{{"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
+            if (finish && message.contains("timings"))
+                chunk["timings"] = message["timings"];
+            out += "data: " + chunk.dump() + "\n\n";
         };
+        // llama-server reports prompt processing in frames with no choices.
+        if (message.contains("prompt_progress"))
+            out += "data: " +
+                   json{{"object", "chat.completion.chunk"},
+                        {"choices", json::array()},
+                        {"prompt_progress", message["prompt_progress"]}}
+                       .dump() +
+                   "\n\n";
 
         const std::string reasoning = message.value("reasoning_content", "");
         if (!reasoning.empty())
@@ -3596,6 +3606,68 @@ static void test_a_new_chat_never_reports_the_context_error() {
     }
 }
 
+// A follow-up in a small window keeps the conversation: the reply gets what the history leaves,
+// not the history's room (Gemma 3 270M: 8192 tokens over 4 slots is a 2048-token window).
+static void test_a_follow_up_in_a_small_window_keeps_the_conversation() {
+    test("a short follow-up at a 2048-token window keeps the earlier turns and is not shortened");
+
+    ScriptedServer server(std::vector<json>{{{"role", "assistant"}, {"content", "I'm well, thanks!"}}});
+    server.set_router("test-model", 2048);
+    server.start();
+    Harness harness(server.url(), "test-model", false); // a tiny model with no tool support
+    harness.set_options(desktop_options("conv-follow-up"));
+    EventLog log;
+    const std::string first_reply =
+        "Hello! I'm Delta. I can answer questions, explain ideas, help you write or plan, and work through "
+        "problems step by step. What would you like to talk about today?";
+    auto result = harness.run(
+        json::array({user("hi"), {{"role", "assistant"}, {"content", first_reply}}, user("how are you")}), log.sink());
+    server.stop();
+
+    check(result.success, "the follow-up gets a reply");
+    auto requests = server.requests();
+    check(!requests.empty(), "the model was called");
+    if (requests.empty())
+        return;
+    const std::string sent = requests.back()["messages"].dump();
+    check(sent.find("What would you like to talk about today?") != std::string::npos,
+          "the previous reply is still in the request");
+    check(sent.find("how are you") != std::string::npos, "the follow-up is sent whole");
+    bool told_shortened = false;
+    for (const auto& [type, data] : log.events)
+        if (type == EventType::Status && data.value("message", "").find("longer than this model") != std::string::npos)
+            told_shortened = true;
+    check(!told_shortened, "the user is not told a three-word message was too long");
+    const int max_tokens = requests.back().value("max_tokens", 0);
+    check(max_tokens > 0 && max_tokens + static_cast<int>(sent.size() / 4) <= 2048,
+          "the reply limit leaves room for the conversation (max_tokens " + std::to_string(max_tokens) + ")");
+}
+
+static void test_progress_and_timings_reach_the_client() {
+    test("prompt progress and the reply's timings are passed on, not dropped");
+
+    const json timings = {{"prompt_n", 120}, {"prompt_ms", 80.5}, {"predicted_n", 12}, {"predicted_ms", 240.0}};
+    const json progress = {{"total", 120}, {"cache", 0}, {"processed", 60}, {"time_ms", 40}};
+    ScriptedServer server(std::vector<json>{
+        {{"role", "assistant"}, {"content", "Hello!"}, {"timings", timings}, {"prompt_progress", progress}}});
+    server.start();
+    Harness harness(server.url(), "test-model", false);
+    harness.set_options(desktop_options("conv-timings"));
+    EventLog log;
+    auto result = harness.run(json::array({user("hi")}), log.sink());
+    server.stop();
+
+    check(result.success, "the run succeeds");
+    auto requests = server.requests();
+    check(!requests.empty() && requests[0].value("return_progress", false), "llama-server is asked for progress");
+    json seen;
+    for (const auto& [type, data] : log.events)
+        if (type == EventType::Progress)
+            seen = data;
+    check(seen == progress, "the progress frame is passed on as it came");
+    check(result.timings == timings, "the reply's timings are kept for the client");
+}
+
 static void test_document_tools_are_offered_only_with_documents() {
     test("the document tools are only offered when the chat has documents");
 
@@ -3987,6 +4059,8 @@ int main() {
     test_passages_fit_a_small_window_with_a_long_history();
     test_router_mode_reports_the_real_context_window();
     test_a_new_chat_never_reports_the_context_error();
+    test_a_follow_up_in_a_small_window_keeps_the_conversation();
+    test_progress_and_timings_reach_the_client();
     test_document_tools_are_offered_only_with_documents();
     test_answers_report_their_sources();
     test_a_file_sent_without_a_question_gets_its_highlights();

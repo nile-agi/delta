@@ -3,6 +3,7 @@
  * Uses Delta web UI from public/ directory (built from assets/)
  */
 
+#include "cpu_level.h"
 #include "delta_cli.h"
 #include "model_api_server.h"
 #include "api/openai_api.h"
@@ -258,8 +259,9 @@ class DeltaServerWrapper {
             try {
                 for (const auto& entry : std::filesystem::directory_iterator(exe_dir)) {
                     std::string fname = entry.path().filename().string();
+                    // The AVX2 build is chosen below, only for a CPU that can run it.
                     if ((fname.find("llama-server-") == 0 || fname.find("server-") == 0) &&
-                        fname.find("delta-server") == std::string::npos) {
+                        fname.find("delta-server") == std::string::npos && !is_v3_llama_server(fname)) {
                         possible_paths.push_back(entry.path().string());
                     }
                 }
@@ -285,7 +287,9 @@ class DeltaServerWrapper {
             std::string resolved = resolve_path(path);
             if (!resolved.empty() && resolved == self_path)
                 continue;
-            llama_server_path_ = path;
+            llama_server_path_ = fastest_llama_server(path);
+            if (llama_server_path_ != path)
+                std::cout << "[delta-server] this CPU supports AVX2: using " << llama_server_path_ << std::endl;
             return true;
         }
         return false;

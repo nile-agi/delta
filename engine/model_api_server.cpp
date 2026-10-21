@@ -257,16 +257,36 @@ static const char* agent_event_name(delta::agent::EventType type) {
         return "error";
     case EventType::Sources:
         return "sources";
+    case EventType::Progress:
+        return "progress";
     }
     return "status";
 }
 
-static json sse_finish_chunk(const std::string& model = "") {
+// `timings` is llama-server's own for the last reply, so clients show real speed and token counts.
+static json sse_finish_chunk(const std::string& model = "", const json& timings = nullptr) {
     json choice{{"index", 0}, {"delta", json::object()}, {"finish_reason", "stop"}};
     json chunk{{"id", "chatcmpl-delta"}, {"object", "chat.completion.chunk"}, {"choices", json::array({choice})}};
     if (!model.empty())
         chunk["model"] = model;
+    if (timings.is_object())
+        chunk["timings"] = timings;
     return chunk;
+}
+
+// Prompt processing, in llama-server's own frame shape (no choices) so clients read it the same way.
+static json sse_progress_chunk(const json& progress) {
+    return json{{"id", "chatcmpl-delta"},
+                {"object", "chat.completion.chunk"},
+                {"choices", json::array()},
+                {"prompt_progress", progress}};
+}
+
+// OpenAI usage from llama-server's timings; zeros when the server sent none.
+static json usage_from(const json& timings) {
+    const int prompt = timings.is_object() ? timings.value("prompt_n", 0) : 0;
+    const int completion = timings.is_object() ? timings.value("predicted_n", 0) : 0;
+    return {{"prompt_tokens", prompt}, {"completion_tokens", completion}, {"total_tokens", prompt + completion}};
 }
 
 // Who may reach the API (Developer settings plus CLI flags), loaded on first start.
@@ -1362,6 +1382,7 @@ class ModelAPIServer {
                                 return sink.write(frame.data(), frame.size());
                             };
 
+                            json final_timings;
                             try {
                                 agent::Harness harness(job->llama_url, job->llama_model, job->supports_tools);
                                 // A closed connection stops the run even while the model is silent.
@@ -1379,6 +1400,8 @@ class ModelAPIServer {
                                             return true;
                                         return emit(sse_content_chunk(text, job->reported_model));
                                     }
+                                    if (event.type == agent::EventType::Progress)
+                                        return emit(sse_progress_chunk(event.data));
                                     return emit(sse_agent_event(agent_event_name(event.type), event.data));
                                 });
 
@@ -1386,6 +1409,7 @@ class ModelAPIServer {
                                     sink.done();
                                     return true;
                                 }
+                                final_timings = result.timings;
 
                                 if (!result.success) {
                                     std::cerr << "[delta-server] stream error: " << result.error << std::endl;
@@ -1408,7 +1432,7 @@ class ModelAPIServer {
                                 emit(sse_content_chunk(std::string("Error: ") + e.what(), job->reported_model));
                             }
 
-                            emit(sse_finish_chunk(job->reported_model));
+                            emit(sse_finish_chunk(job->reported_model, final_timings));
                             static const std::string done = "data: [DONE]\n\n";
                             sink.write(done.data(), done.size());
                             sink.done();
@@ -1444,7 +1468,9 @@ class ModelAPIServer {
                                       {{{"index", 0},
                                         {"message", message},
                                         {"finish_reason", result.stop_reason == "length" ? "length" : "stop"}}}},
-                                     {"usage", {{"prompt_tokens", 0}, {"completion_tokens", 0}, {"total_tokens", 0}}}};
+                                     {"usage", usage_from(result.timings)}};
+                    if (result.timings.is_object())
+                        response["timings"] = result.timings;
                     if (result.tool_calls > 0) {
                         response["tool_calls_made"] = result.tool_calls;
                         response["tools_run"] = result.executed_tools;

@@ -2,6 +2,7 @@
  * Interactive Commands - Slash command system implementation
  */
 
+#include "cpu_level.h"
 #include "commands.h"
 #include "agent/memory_store.h"
 #include "agent/tool_registry.h"
@@ -186,7 +187,7 @@ bool Commands::launch_server_auto(const std::string& model_path, int port, int c
     std::string server_bin;
     for (const auto& candidate : server_candidates) {
         if (tools::FileOps::file_exists(candidate)) {
-            server_bin = candidate;
+            server_bin = fastest_llama_server(candidate);
             break;
         }
     }
@@ -922,7 +923,7 @@ bool Commands::restart_llama_server(const std::string& model_path, const std::st
     std::string server_bin;
     for (const auto& candidate : server_candidates) {
         if (tools::FileOps::file_exists(candidate)) {
-            server_bin = candidate;
+            server_bin = fastest_llama_server(candidate);
             break;
         }
     }

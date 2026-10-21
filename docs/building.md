@@ -199,8 +199,10 @@ and Mesa interface libraries that can conflict with newer host drivers.
 
 **Blank screen on Ubuntu / Linux:**
 Current AppImages remove bundled display and Mesa interface libraries before release. Delta uses
-normal WebKit GPU rendering by default. If a driver-specific rendering problem remains, software
-compositing is available as an explicit fallback:
+WebKit GPU rendering with shared-memory buffers by default (`WEBKIT_DISABLE_DMABUF_RENDERER=1`),
+since the DMABUF renderer can freeze or blank the window on some GNOME/Wayland drivers; set it to
+`0` to opt back in. If a driver-specific rendering problem remains, software compositing is
+available as an explicit fallback:
 
 ```bash
 # Driver-specific software rendering fallback

@@ -1,4 +1,5 @@
 import { DatabaseStore } from '$lib/stores/database';
+import { nextFrame } from '$lib/utils/next-frame';
 import { chatService, slotsService } from '$lib/services';
 import { config } from '$lib/stores/settings.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
@@ -459,7 +460,10 @@ class ChatStore {
 		options?: { initialContent?: string; initialThinking?: string; useTools?: boolean }
 	): Promise<void> {
 		const isContinuation = options?.initialContent !== undefined;
-		agentStore.begin(assistantMessage.id, isContinuation ? assistantMessage.agent_activity : undefined);
+		agentStore.begin(
+			assistantMessage.id,
+			isContinuation ? assistantMessage.agent_activity : undefined
+		);
 
 		// A model without tools cannot put anything on the calendar itself, so offer the user's
 		// message as a one-tap change. Here rather than in sendMessage so a regenerate or an edited
@@ -499,7 +503,7 @@ class ChatStore {
 				content: streamedContent,
 				...(streamedReasoningContent ? { thinking: streamedReasoningContent } : {})
 			});
-			requestAnimationFrame(drainChunkQueue);
+			nextFrame(drainChunkQueue);
 		};
 
 		let resolvedModel: string | null = null;

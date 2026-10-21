@@ -1,4 +1,7 @@
 option(DELTA_PORTABLE_RELEASE "Build redistributable binaries for the platform baseline" OFF)
+# x86_64 ships two llama-servers: the baseline runs anywhere, x86-64-v3 (AVX2, FMA, F16C, BMI2;
+# Intel Haswell / AMD Excavator, 2013 on) is several times faster and is picked at launch when supported.
+set(DELTA_CPU_LEVEL "baseline" CACHE STRING "x86_64 release CPU level: baseline or x86-64-v3")
 
 # Set this before project() so compiler probes use the same deployment contract.
 if(DELTA_PORTABLE_RELEASE AND APPLE)
@@ -21,6 +24,14 @@ function(delta_configure_release_cpu)
             set(GGML_${feature} OFF CACHE BOOL "Optional CPU feature disabled in portable releases" FORCE)
         endforeach()
         set(policy "x86-64-baseline")
+        if(DELTA_CPU_LEVEL STREQUAL "x86-64-v3")
+            foreach(feature SSE42 AVX AVX2 FMA F16C BMI2)
+                set(GGML_${feature} ON CACHE BOOL "x86-64-v3 CPU feature" FORCE)
+            endforeach()
+            set(policy "x86-64-v3")
+        elseif(NOT DELTA_CPU_LEVEL STREQUAL "baseline")
+            message(FATAL_ERROR "DELTA_CPU_LEVEL must be baseline or x86-64-v3, not ${DELTA_CPU_LEVEL}")
+        endif()
     else()
         set(policy "${arch}-baseline")
     endif()

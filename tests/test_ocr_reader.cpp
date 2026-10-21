@@ -7,6 +7,7 @@
 
 #include "agent/ocr_reader.h"
 #include "api/ocr_routes.h"
+#include "cpu_level.h"
 
 #include <cpp-httplib/httplib.h>
 
@@ -139,6 +140,37 @@ static void binary_tests() {
     fs::remove_all(dir);
 }
 
+static void cpu_level_tests() {
+    section("picking the AVX2 llama-server");
+    const fs::path dir = scratch("cpu");
+#ifdef _WIN32
+    const std::string ext = ".exe";
+#else
+    const std::string ext;
+#endif
+    const std::string base = (dir / ("llama-server" + ext)).string();
+    write_file(base, "x");
+    check(delta::fastest_llama_server(base, true) == base, "no AVX2 build shipped: the baseline is used");
+    write_file(dir / ("llama-server-v3" + ext), "x");
+    check(fs::path(delta::fastest_llama_server(base, true)) == dir / ("llama-server-v3" + ext),
+          "a CPU with AVX2 gets the fast build");
+    check(delta::fastest_llama_server(base, false) == base, "an older CPU keeps the baseline");
+    const std::string dev = (dir / ("llama-server-x86_64-unknown-linux-gnu" + ext)).string();
+    write_file(dev, "x");
+    write_file(dir / ("llama-server-v3-x86_64-unknown-linux-gnu" + ext), "x");
+    check(fs::path(delta::fastest_llama_server(dev, true)) == dir / ("llama-server-v3-x86_64-unknown-linux-gnu" + ext),
+          "Tauri's target-suffixed names map to their AVX2 build");
+    check(delta::is_v3_llama_server("llama-server-v3") && !delta::is_v3_llama_server("llama-server-x86_64"),
+          "the AVX2 build is told apart from the baseline");
+    fs::remove_all(dir);
+
+    const fs::path only_v3 = scratch("cpu-only-v3");
+    write_file(only_v3 / ("llama-server-v3-x86_64-unknown-linux-gnu" + ext), "x");
+    check(find_llama_server(only_v3.string()).find("llama-server-v3") == std::string::npos,
+          "the AVX2 build is never picked as the baseline");
+    fs::remove_all(only_v3);
+}
+
 static void route_tests() {
     section("downloading the reader");
     auto& reader = OcrReader::instance();
@@ -233,6 +265,7 @@ int main() {
     cleanup_tests();
     request_tests();
     binary_tests();
+    cpu_level_tests();
     route_tests();
     std::cout << "\n" << (g_checks - g_failures) << "/" << g_checks << " checks passed\n";
     return g_failures == 0 ? 0 : 1;

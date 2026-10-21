@@ -39,6 +39,14 @@ for candidate in "$BIN_ROOT/llama-server${EXT}" "$BUILD_DIR/bin/llama-server${EX
 done
 [[ -n "$LLAMA_SERVER" ]] || { echo "ERROR: llama-server not found in $BUILD_DIR" >&2; exit 1; }
 cp "$LLAMA_SERVER" "$STAGE/bin/llama-server${EXT}"
+
+# The AVX2 build that build-sidecars.sh makes next to the baseline, on x86_64 Linux and Windows.
+for candidate in "${BUILD_DIR}_v3/bin/llama-server${EXT}" "${BUILD_DIR}_v3/bin/Release/llama-server${EXT}"; do
+  if [[ -f "$candidate" ]]; then
+    cp "$candidate" "$STAGE/bin/llama-server-v3${EXT}"
+    break
+  fi
+done
 if [[ -f "$BUILD_DIR/release-build-info.json" ]]; then
   cp "$BUILD_DIR/release-build-info.json" "$STAGE/BUILD_INFO.json"
 fi
