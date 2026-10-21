@@ -1,4 +1,5 @@
 #include "ocr_reader.h"
+#include "../cpu_level.h"
 
 #include <cpp-httplib/httplib.h>
 
@@ -117,7 +118,8 @@ std::string find_llama_server(const std::string& exe_dir) {
         std::error_code ec;
         for (const auto& entry : fs::directory_iterator(dir, ec)) {
             // Tauri's sidecar keeps the target triple: llama-server-aarch64-apple-darwin.
-            if (entry.path().filename().string().rfind("llama-server-", 0) == 0)
+            const std::string name = entry.path().filename().string();
+            if (name.rfind("llama-server-", 0) == 0 && !is_v3_llama_server(name))
                 candidates.push_back(entry.path());
         }
     }
@@ -129,7 +131,7 @@ std::string find_llama_server(const std::string& exe_dir) {
     for (const auto& c : candidates) {
         std::error_code ec;
         if (fs::is_regular_file(c, ec))
-            return c.string();
+            return delta::fastest_llama_server(c.string());
     }
     return "";
 }

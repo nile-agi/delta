@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "externalBin": [
+      "binaries/delta-server",
+      "binaries/llama-server",
+      "binaries/llama-server-v3"
+    ]
+  }
+}

@@ -181,6 +181,27 @@ if [[ "$BUILD_TYPE" == Release ]]; then
     cp "$BUILDDIR/release-build-info.json" "$BINDIR/release-build-info.json"
 fi
 
+# x86_64 Linux and Windows releases also ship an AVX2 (x86-64-v3) llama-server; delta-server runs
+# it on CPUs that support it and the portable one everywhere else.
+if [[ "$BUILD_TYPE" == Release && "$TARGET_TRIPLE" == x86_64-* && "$(uname -s)" != Darwin ]]; then
+    V3DIR="${BUILDDIR}_v3"
+    bash "$PROJECT_ROOT/scripts/clean-stale-cmake-cache.sh" "$V3DIR"
+    cmake -S "$PROJECT_ROOT" -B "$V3DIR" "${CMAKE_ARGS[@]}" -DDELTA_CPU_LEVEL=x86-64-v3
+    cmake --build "$V3DIR" --config "$BUILD_TYPE" -j "$NPROC" --target llama-server
+    V3=""
+    for candidate in "$V3DIR/bin/llama-server${EXE_SUFFIX}" "$V3DIR/bin/Release/llama-server${EXE_SUFFIX}"; do
+        [[ -f "$candidate" ]] && { V3="$candidate"; break; }
+    done
+    [[ -n "$V3" ]] || { echo "  ERROR: AVX2 llama-server not found in $V3DIR"; exit 1; }
+    cp "$V3" "$BINDIR/llama-server-v3-${TARGET_TRIPLE}${EXE_SUFFIX}"
+    python3 "$PROJECT_ROOT/scripts/verify-release-binaries.py" --target "$TARGET_TRIPLE" \
+        "$BINDIR/llama-server-v3-${TARGET_TRIPLE}${EXE_SUFFIX}"
+    echo "  llama-server (AVX2) -> llama-server-v3-${TARGET_TRIPLE}${EXE_SUFFIX}"
+elif [[ "$(uname -s)" != Darwin ]]; then
+    # The Linux and Windows bundles list llama-server-v3; dev and non-x86 builds ship the baseline in its place.
+    cp "$BINDIR/llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}" "$BINDIR/llama-server-v3-${TARGET_TRIPLE}${EXE_SUFFIX}"
+fi
+
 # Copy Metal shader library on macOS
 if [[ "$(uname -s)" == "Darwin" ]]; then
     METALLIB=$(find "$BUILDDIR" -name "*.metallib" 2>/dev/null | head -1)

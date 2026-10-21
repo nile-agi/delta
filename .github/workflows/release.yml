@@ -271,6 +271,18 @@ jobs:
             cp "$LLAMA_SERVER" "$STAGE/bin/llama-server${EXT}"
           fi
 
+          # x86_64 Linux and Windows also ship an AVX2 llama-server, used on CPUs that support it.
+          if [[ "$CLI_TARGET" == x86_64-* && "$CLI_PLATFORM" != macos-* ]]; then
+            cmake -S . -B "${BUILD_DIR}_v3" "${CMAKE_ARGS[@]}" -DDELTA_CPU_LEVEL=x86-64-v3
+            cmake --build "${BUILD_DIR}_v3" --config Release -j "$NPROC" --target llama-server
+            for candidate in "${BUILD_DIR}_v3/bin/llama-server${EXT}" "${BUILD_DIR}_v3/bin/Release/llama-server${EXT}"; do
+              [[ -f "$candidate" ]] && { cp "$candidate" "$STAGE/bin/llama-server-v3${EXT}"; break; }
+            done
+            test -f "$STAGE/bin/llama-server-v3${EXT}"
+            python3 scripts/verify-release-binaries.py --target "$CLI_TARGET" "$STAGE/bin/llama-server-v3${EXT}"
+            bash scripts/check-release-runtime.sh "$STAGE/bin/llama-server-v3${EXT}" "$CLI_TARGET"
+          fi
+
           python3 scripts/verify-release-binaries.py --target "$CLI_TARGET" "$STAGE/bin/delta${EXT}" "$STAGE/bin/delta-server${EXT}" "$STAGE/bin/llama-server${EXT}"
           cp "$BUILD_DIR/release-build-info.json" "$STAGE/BUILD_INFO.json"
 

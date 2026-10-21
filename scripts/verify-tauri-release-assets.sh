@@ -79,6 +79,10 @@ if [[ -n "$TARGET_TRIPLE" ]]; then
     fail "missing delta-server sidecar for $TARGET_TRIPLE"
   [[ -f "$BINDIR/llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}" ]] ||
     fail "missing llama-server sidecar for $TARGET_TRIPLE"
+  if [[ "$TARGET_TRIPLE" != *apple-darwin ]]; then
+    [[ -f "$BINDIR/llama-server-v3-${TARGET_TRIPLE}${EXE_SUFFIX}" ]] ||
+      fail "missing AVX2 llama-server-v3 sidecar for $TARGET_TRIPLE"
+  fi
 else
   find "$BINDIR" -maxdepth 1 -type f -name 'delta-server-*' | grep -q . ||
     fail "missing delta-server sidecar in src-tauri/binaries"

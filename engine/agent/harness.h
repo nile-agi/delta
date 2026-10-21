@@ -24,6 +24,7 @@ enum class EventType {
     Status,           // {message} -- iteration and budget notices
     Error,            // {message}
     Sources,          // {sources: [{document, document_id, source, page_start|section_start, ..., text}]}
+    Progress,         // llama-server's prompt_progress {total, cache, processed, time_ms}, as it came
 };
 
 struct HarnessEvent {
@@ -91,6 +92,8 @@ struct RunResult {
     // Passages of attached files this run gave the model (injected or found by a tool), so the
     // client can open each file at the page or section an answer came from.
     nlohmann::json sources = nlohmann::json::array();
+    // llama-server's timings for the last reply (prompt_n, predicted_n, ..._ms), for the client's stats.
+    nlohmann::json timings;
 };
 
 // The agent loop. One instance serves one run.
