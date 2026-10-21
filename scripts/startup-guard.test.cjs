@@ -26,6 +26,8 @@ function boot(status) {
 test('a rejected native bridge becomes a visible bounded startup failure', async () => {
   const app = boot(() => Promise.reject(new Error('IPC unavailable')));
   await app.advance(31000);
+  assert.equal(app.window.__DELTA_STARTUP__.failure, null, 'a slow first launch is not failed at 30 s');
+  await app.advance(60000);
   assert.match(app.window.__DELTA_STARTUP__.failure.message, /start|communicat/i);
   assert.equal(app.splash.style.opacity, '1');
 });
@@ -37,7 +39,7 @@ test('backend termination shows its reason immediately', async () => {
 test('mounting cancels the startup watchdog', async () => {
   const app = boot();
   app.window.__DELTA_STARTUP__.mounted();
-  await app.advance(31000);
+  await app.advance(91000);
   assert.equal(app.window.__DELTA_STARTUP__.failure, null);
 });
 test('an early JavaScript exception is shown even if the app never mounts', () => {
