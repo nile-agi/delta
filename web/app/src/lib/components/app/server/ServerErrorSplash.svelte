@@ -247,7 +247,9 @@
 			</div>
 		{/if}
 
-		<FailureReportButton stage="backend" message={error} />
+		<div class="mt-3">
+			<FailureReportButton stage="backend" message={error} />
+		</div>
 
 		{#if showTroubleshooting}
 			<div class="mt-4 text-left" in:fly={{ y: 10, duration: 300, delay: 400 }}>

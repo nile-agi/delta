@@ -1,9 +1,11 @@
 /* Runs before the app bundle, including on older system WebViews. */
 (function () {
+  // A first launch can wait on macOS checking the newly installed binaries; a crashed backend still fails at once.
+  var STARTUP_MS = 90000;
   var splash = document.getElementById('app-loading');
   var auxiliary = document.documentElement.classList.contains('aux-window');
   var complete = false;
-  var deadline = Date.now() + 30000;
+  var deadline = Date.now() + STARTUP_MS;
   var guard = { failure: null, mounted: function () { complete = true; clearTimeout(watchdog); } };
   window.__DELTA_STARTUP__ = guard;
   if (!window.location.hash) history.replaceState(null, '', window.location.pathname + window.location.search + '#/');
@@ -26,7 +28,7 @@
     window.dispatchEvent(new CustomEvent('delta-server-error', { detail: guard.failure }));
   }
   guard.fail = fail;
-  var watchdog = setTimeout(function () { fail('Delta could not finish starting. Restart the app or review the diagnostic report.', 'startup-timeout'); }, 30000);
+  var watchdog = setTimeout(function () { fail('Delta could not finish starting. Restart the app or review the diagnostic report.', 'startup-timeout'); }, STARTUP_MS);
   window.addEventListener('error', function (event) { if (event.message) fail(event.message, 'frontend'); });
   window.addEventListener('unhandledrejection', function (event) {
     var reason = event.reason; fail(reason && reason.message ? reason.message : String(reason), 'frontend');

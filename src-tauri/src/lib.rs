@@ -464,7 +464,7 @@ pub fn run() {
                 // rather than llama-server (may take 30s+ to load a model)
                 startup_info(&format!("Waiting for Model API readiness on port {}", mapi_port));
 
-                let outcome = startup::wait_for_server(mapi_port, std::time::Duration::from_secs(30), || {
+                let outcome = startup::wait_for_server(mapi_port, std::time::Duration::from_secs(90), || {
                     app_handle.state::<Mutex<ServerState>>().lock().map(|s| s.error || s.stopping).unwrap_or(true)
                 });
                 if outcome == startup::StartupOutcome::Interrupted { return; }
@@ -493,7 +493,7 @@ pub fn run() {
                         }
                     }
                 } else { // <--- ✅ Fixed: Only one closing brace before `else`
-                    report_backend_exit(&app_handle, &app_handle.state::<BackendDiagnostic>().inner().clone(), "Backend did not become ready within 30 seconds".into());
+                    report_backend_exit(&app_handle, &app_handle.state::<BackendDiagnostic>().inner().clone(), "Backend did not become ready within 90 seconds".into());
 
                     if let Ok(mut s) = app_handle.state::<Mutex<ServerState>>().lock() {
                         s.error = true;
