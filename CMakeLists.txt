@@ -181,6 +181,7 @@ set(DELTA_SOURCES
     engine/commands.cpp
     engine/history.cpp
     engine/server_health.cpp
+    engine/cpu_level.cpp
     engine/model_runtime.cpp
     engine/runtime_config.cpp
     engine/runtime_failure.cpp
@@ -284,6 +285,7 @@ add_executable(delta-server
     engine/api/openai_api.cpp
     engine/models.cpp
     engine/server_health.cpp
+    engine/cpu_level.cpp
     engine/model_runtime.cpp
     engine/runtime_config.cpp
     engine/runtime_failure.cpp
@@ -493,6 +495,7 @@ endif()
 add_executable(delta-ocr-tests EXCLUDE_FROM_ALL
     tests/test_ocr_reader.cpp
     engine/agent/ocr_reader.cpp
+    engine/cpu_level.cpp
     engine/api/ocr_routes.cpp
 )
 target_include_directories(delta-ocr-tests PRIVATE ${DELTA_INCLUDE_DIRS})
