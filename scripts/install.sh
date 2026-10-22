@@ -44,7 +44,10 @@ rm -rf "$DEST"
 mkdir -p "$DEST"
 tar -xzf "$TMP/$ASSET" -C "$DEST" --strip-components=1
 # The programs are unsigned; clear the quarantine flag so macOS lets them run.
-[ "$(uname -s)" = Darwin ] && xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
+# Per file, since older macOS xattr has no -r.
+if [ "$(uname -s)" = Darwin ]; then
+  find "$DEST" -exec xattr -d com.apple.quarantine {} \; >/dev/null 2>&1 || true
+fi
 
 case "${SHELL:-}" in
   */zsh) RC="$HOME/.zshrc" ;;
