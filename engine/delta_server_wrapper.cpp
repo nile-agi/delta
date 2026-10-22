@@ -8,6 +8,7 @@
 #include "model_api_server.h"
 #include "api/openai_api.h"
 #include "server_health.h"
+#include "vendor/llama.cpp/vendor/cpp-httplib/httplib.h"
 #include "owned_process.h"
 #include "agent/agent_database.h"
 #include "tools/hardware_monitor.h"
@@ -870,6 +871,31 @@ class DeltaServerWrapper {
 
 } // namespace delta
 
+// Binds and closes a socket; a plain bound httplib::Server would keep holding the port.
+static bool port_is_free(const std::string& host, int port) {
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(static_cast<uint16_t>(port));
+    if (inet_pton(AF_INET, host.c_str(), &addr.sin_addr) != 1)
+        return true; // not an IPv4 literal; let the server report it
+#ifdef _WIN32
+    SOCKET fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == INVALID_SOCKET)
+        return true;
+    const bool ok = bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+    closesocket(fd);
+#else
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0)
+        return true;
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)); // as the servers do, so TIME_WAIT is not "busy"
+    const bool ok = bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+    close(fd);
+#endif
+    return ok;
+}
+
 int main(int argc, char* argv[]) {
     delta::DeltaServerWrapper wrapper;
 
@@ -931,6 +957,16 @@ int main(int argc, char* argv[]) {
         std::cerr << "Sharing the API on the network needs a key: add --api-key <key> (or set DELTA_API_KEY)."
                   << std::endl;
         return 2;
+    }
+
+    // A busy port otherwise surfaces only as llama-server's "exiting due to HTTP server error".
+    for (const auto& [busy_port, host] :
+         {std::pair<int, std::string>{port, "127.0.0.1"}, {model_api_port, delta::model_api_host()}}) {
+        if (!port_is_free(host, busy_port)) {
+            std::cerr << "Port " << busy_port << " is already in use, perhaps by another Delta still running.\n"
+                      << "Stop it, or start on other ports: delta --server --port " << port + 10 << std::endl;
+            return 1;
+        }
     }
 
     wrapper.set_model_path(model_path);
