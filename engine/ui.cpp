@@ -48,26 +48,29 @@ void UI::init() {
     SetCurrentConsoleFontEx(hOut, FALSE, &cfi);
 #endif
 
-    // Set locale for internationalization with UTF-8 support
+    // Use the system locale for text, but keep numbers in the C format: a grouped "8,080" in a
+    // command line or URL was read back as port 8.
+    auto text_only = [](const char* name) {
+        return std::locale(std::locale(name), std::locale::classic(), std::locale::numeric);
+    };
     try {
-        // Try to set system locale first
-        std::locale::global(std::locale(""));
-
-        // Ensure UTF-8 encoding for output streams
-        std::cout.imbue(std::locale(""));
-        std::cerr.imbue(std::locale(""));
-
+        std::locale::global(text_only(""));
     } catch (const std::exception&) {
-        // Fallback to UTF-8 locale if system locale is not available
         try {
-            std::locale::global(std::locale("en_US.UTF-8"));
-            std::cout.imbue(std::locale("en_US.UTF-8"));
-            std::cerr.imbue(std::locale("en_US.UTF-8"));
+            std::locale::global(text_only("en_US.UTF-8"));
         } catch (const std::exception&) {
-            // Final fallback to C locale
-            std::locale::global(std::locale("C"));
+            std::locale::global(std::locale::classic());
         }
     }
+    std::cout.imbue(std::locale());
+    std::cerr.imbue(std::locale());
+}
+
+// The banner's version row, centred in the 63-column box, from the build's version.txt.
+static std::string version_line() {
+    const std::string text = std::string("Version ") + DELTA_VERSION;
+    const size_t pad = text.size() < 63 ? 63 - text.size() : 0;
+    return "║" + std::string(pad / 2, ' ') + text + std::string(pad - pad / 2, ' ') + "║";
 }
 
 void UI::print_banner() {
@@ -604,7 +607,8 @@ void UI::print_delta_logo_ascii() {
 ║ ╚═════╝ ╚══════╝╚══════╝╚═╝   ╚═╝  ╚═╝     ╚═════╝╚══════╝╚═╝ ║
 ║                                                               ║
 ║                Offline AI Assistant — Delta CLI               ║
-║                         Version 1.0.0                         ║
+)" << version_line()
+                  << R"(
 ╚═══════════════════════════════════════════════════════════════╝
 )" << RESET << std::endl;
     } else {
@@ -620,7 +624,8 @@ void UI::print_delta_logo_ascii() {
 ║ ╚═════╝ ╚══════╝╚══════╝╚═╝   ╚═╝  ╚═╝     ╚═════╝╚══════╝╚═╝ ║
 ║                                                               ║
 ║                Offline AI Assistant — Delta CLI               ║
-║                         Version 1.0.0                         ║
+)" << version_line()
+                  << R"(
 ╚═══════════════════════════════════════════════════════════════╝
 )" << RESET << std::endl;
     }
