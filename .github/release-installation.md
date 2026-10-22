@@ -39,7 +39,23 @@ sudo xattr -d com.apple.quarantine /Applications/Delta.app
 The CLI gives you the `delta` command in a terminal. With it you can download models, chat, and run
 the web UI and an OpenAI-compatible API. You do not need it to use the desktop app.
 
-### 1. Pick your file
+### Install
+
+**macOS or Linux:** open a terminal and paste:
+
+```sh
+curl -fsSL https://github.com/nile-agi/delta-release/releases/latest/download/install.sh | sh
+```
+
+**Windows:** open **PowerShell** and paste:
+
+```powershell
+irm https://github.com/nile-agi/delta-release/releases/latest/download/install.ps1 | iex
+```
+
+Then open a new terminal and run `delta --version`. Run the same line again any time to reinstall.
+
+### Or install by hand
 
 | Your computer | Download |
 |---|---|
@@ -51,11 +67,13 @@ the web UI and an OpenAI-compatible API. You do not need it to use the desktop a
 Not sure which Mac you have? Open the Apple menu > **About This Mac**. "Chip: Apple M…" means Apple chip;
 "Processor: Intel…" means Intel.
 
-The download is a folder of programs, not an installer, so double-clicking it does nothing useful.
-Follow the steps below for your system. They copy the folder to your home directory and let your
-terminal find `delta`. Keep the folder together: `delta` uses the other programs inside it.
+The download is a folder of programs, not an installer. Open the instructions for your system below;
+the steps add `delta` to your terminal. Keep the downloaded folder together.
 
-### 2a. macOS
+<details>
+<summary>macOS</summary>
+
+### Install
 
 Open **Terminal** (press ⌘ Space, type *Terminal*, press Enter) and paste these lines. If you have
 an Intel Mac, change `arm64` to `x86_64` in the first line.
@@ -74,7 +92,12 @@ echo 'export PATH="$HOME/.local/share/delta-cli/bin:$PATH"' >> ~/.zshrc
 delta --version
 ```
 
-### 2b. Linux
+</details>
+
+<details>
+<summary>Linux</summary>
+
+### Install
 
 Open a terminal and paste:
 
@@ -89,25 +112,38 @@ echo 'export PATH="$HOME/.local/share/delta-cli/bin:$PATH"' >> ~/.bashrc
 On Fedora, skip the first line (libcurl is already installed). **Close the terminal and open it
 again**, then run `delta --version`.
 
-### 2c. Windows
+</details>
+
+<details>
+<summary>Windows</summary>
+
+### Install
 
 Open **PowerShell** (Start menu, type *PowerShell*, press Enter) and paste:
 
 ```powershell
 $zip  = "$HOME\Downloads\delta-cli-windows-x64.zip"
-$dest = "$env:LOCALAPPDATA\Programs\delta-cli"
-Remove-Item "$env:TEMP\delta-cli" -Recurse -Force -ErrorAction SilentlyContinue
-Expand-Archive $zip -DestinationPath "$env:TEMP\delta-cli" -Force
+$programs = "$env:LOCALAPPDATA\Programs"
+$dest = "$programs\delta-cli"
+$temp = "$env:TEMP\delta-cli"
+New-Item $programs -ItemType Directory -Force | Out-Null
+Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
+Expand-Archive $zip $temp -Force
 Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
-Move-Item (Get-ChildItem "$env:TEMP\delta-cli\delta-cli-*" | Select-Object -First 1).FullName $dest
+Move-Item (Get-ChildItem "$temp\delta-cli-*" | Select-Object -First 1).FullName $dest
 Get-ChildItem $dest -Recurse | Unblock-File
-$path = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($path -notlike "*$dest\bin*") { [Environment]::SetEnvironmentVariable("Path", "$path;$dest\bin", "User") }
+$path = [Environment]::GetEnvironmentVariable('Path', 'User')
+if ($path -notlike "*$dest\bin*") { [Environment]::SetEnvironmentVariable('Path', "$path;$dest\bin", 'User') }
 ```
 
 **Close PowerShell and open it again**, then run `delta --version`.
 
-### 3. First steps
+</details>
+
+<details>
+<summary>First steps and useful commands</summary>
+
+### Try Delta
 
 ```sh
 delta pull qwen2.5:0.5b          # download a small model (about 400 MB); run once
@@ -127,16 +163,21 @@ delta --server                   # web UI plus an OpenAI-compatible API on http:
 Models are saved in `~/.delta-cli/models` (on Windows, `%USERPROFILE%\.delta-cli\models`) and are
 shared with the desktop app.
 
-### If something goes wrong
+</details>
+
+<details>
+<summary>Troubleshooting and uninstall</summary>
 
 - **`delta: command not found`** (or *not recognized* on Windows): open a new terminal window. If it
-  still fails, run the install lines again; the last one is what makes `delta` findable.
-- **macOS says "cannot be opened because the developer cannot be verified"**: run the `xattr` line
-  from step 2a again.
+  still fails, run the install command again.
+- **macOS says "cannot be opened because the developer cannot be verified"**: run the `xattr` command
+  in the macOS instructions again.
 - **Linux: `libcurl.so.4: cannot open shared object file`**: run `sudo apt install -y curl`.
-- **Windows: "Windows protected your PC"**: run the `Unblock-File` line from step 2c again.
+- **Windows: "Windows protected your PC"**: repeat the Windows install commands to unblock the files.
 - **Check the download** (optional): compare `shasum -a 256 <file>` (macOS/Linux) or
   `Get-FileHash <file>` (Windows) with the matching line in the `checksums-*.sha256` asset.
 - **Uninstall:** delete `~/.local/share/delta-cli` (Windows: `%LOCALAPPDATA%\Programs\delta-cli`)
   and remove its line from `~/.zshrc` or `~/.bashrc`. Your models stay in `~/.delta-cli`.
+
+</details>
 

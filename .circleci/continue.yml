@@ -571,6 +571,7 @@ jobs:
               cat dist-release/*/delta-cli-*.sha256
             } > "dist-release/checksums-${VERSION}.sha256"
             cat "dist-release/checksums-${VERSION}.sha256"
+            cp scripts/install.sh scripts/install.ps1 dist-release/
       - run:
           name: Upload installers and CLI archives
           command: |

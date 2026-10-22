@@ -603,6 +603,8 @@ jobs:
                 'delta-cli-macos-x86_64.tar.gz',
                 'delta-cli-linux-x86_64.tar.gz',
                 'delta-cli-windows-x64.zip',
+                'scripts/install.sh',
+                'scripts/install.ps1',
                 process.env.CHECKSUMS_FILE
               ]
             });
