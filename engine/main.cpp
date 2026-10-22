@@ -120,7 +120,7 @@ void print_help() {
               << "║                      DELTA CLI v" << DELTA_VERSION;
     // Pad to align the box
     size_t ver_len = std::string(DELTA_VERSION).size();
-    for (size_t i = ver_len; i < 24; i++)
+    for (size_t i = ver_len; i < 29; i++)
         std::cout << ' ';
     std::cout << "║\n"
               << "║              Offline AI Assistant — Delta CLI                ║\n"
@@ -129,7 +129,7 @@ void print_help() {
 
 QUICK START:
     delta pull qwen2.5:0.5b  # 1. Download a model
-    delta --server            # 2. Start server + open Web UI
+    delta --server            # 2. Start the server, then open the Web UI link
 
 USAGE:
     delta --server              Start server with Web UI (recommended; also `delta server`)
@@ -564,6 +564,16 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             // Process command
             if (Commands::process_command(command, session)) {
                 continue; // Command was handled, don't process as AI prompt
+            }
+        }
+
+        // A model picked with /use after starting without one has a server now; connect to it.
+        if (harness_url.empty() && !session.current_model.empty() && Commands::get_current_port() > 0) {
+            const std::string candidate = "http://127.0.0.1:" + std::to_string(Commands::get_current_port());
+            if (agent::LlmClient(candidate, session.current_model).probe_context_size() > 0) {
+                harness_url = candidate;
+                harness_supports_tools = model_mgr.is_in_registry(session.current_model) &&
+                                         model_mgr.get_registry_entry(session.current_model).supports_tools;
             }
         }
 
