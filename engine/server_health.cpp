@@ -94,7 +94,8 @@ WorkerProbeResult probe_model_worker(int port, const RuntimeConfig& config, bool
             body.value("model_alias", std::filesystem::path(body.value("model_path", "")).stem().string());
         if (identity != config.model_alias)
             return fail("model_identity", "Worker identity does not match the selected model.");
-        if (slots != config.parallel || context != config.context / config.parallel)
+        // With --kv-unified each slot may use the whole window; without it the window is split.
+        if (slots != config.parallel || (context != config.context && context != config.context / config.parallel))
             return fail("worker_config", "Worker context or parallel slots differ from the requested configuration.");
         result.ready = true;
         return result;
