@@ -422,6 +422,7 @@ target_link_libraries(delta-model-runtime-tests PRIVATE Threads::Threads)
 
 add_executable(delta-model-context-tests EXCLUDE_FROM_ALL
     tests/test_model_context.cpp engine/models.cpp engine/tools/file_ops.cpp engine/ui.cpp)
+target_compile_definitions(delta-model-context-tests PRIVATE DELTA_VERSION="${PROJECT_VERSION}")
 target_include_directories(delta-model-context-tests PRIVATE ${DELTA_INCLUDE_DIRS})
 if(USE_CURL AND CURL_FOUND)
     target_link_libraries(delta-model-context-tests PRIVATE CURL::libcurl)
