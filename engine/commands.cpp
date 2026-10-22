@@ -1255,7 +1255,7 @@ bool Commands::process_command(const std::string& input, InteractiveSession& ses
     // Check if command exists
     auto it = command_map_.find(command);
     if (it == command_map_.end()) {
-        UI::print_info("Type /help to see available commands");
+        UI::print_error("Unknown command: /" + command + ". Type /help to see the commands.");
         return true;
     }
 
@@ -1501,8 +1501,7 @@ bool Commands::handle_use(const std::vector<std::string>& args, InteractiveSessi
         if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
             int actual_port = Commands::get_current_port();
             std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            tools::Browser::open_url(url);
+            UI::print_info("Web UI: " + url);
         } else {
             UI::print_error("Failed to start server. Check error messages above.");
         }
