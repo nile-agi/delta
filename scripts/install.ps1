@@ -27,4 +27,6 @@ $path = [Environment]::GetEnvironmentVariable('Path', 'User')
 if ($path -notlike "*$dest\bin*") {
     [Environment]::SetEnvironmentVariable('Path', "$path;$dest\bin", 'User')
 }
-Write-Host "Installed to $dest. Open a new PowerShell window, then run: delta"
+# `irm | iex` runs in this session, so updating its PATH makes `delta` work right away.
+if ($env:Path -notlike "*$dest\bin*") { $env:Path = "$env:Path;$dest\bin" }
+Write-Host "Installed. Run: delta"
