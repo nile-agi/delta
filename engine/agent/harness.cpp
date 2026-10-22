@@ -344,7 +344,7 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
         prompt += "CURRENT TIME: " + std::string(iso_buf) + " (" + day_buf + ")\n";
         prompt += "TODAY: " + std::string(today_buf) + "\n";
         prompt += "NEXT 7 DAYS:";
-        for (int d = 2; d <= 7; d++) {
+        for (int d = 1; d <= 7; d++) {
             std::tm day{};
             day.tm_year = t_local.tm_year;
             day.tm_mon = t_local.tm_mon;
