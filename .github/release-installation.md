@@ -147,7 +147,7 @@ if ($path -notlike "*$dest\bin*") { [Environment]::SetEnvironmentVariable('Path'
 
 ```sh
 delta pull qwen2.5:0.5b          # download a small model (about 400 MB); run once
-delta                            # open the chat in your browser, with a chat prompt in the terminal too
+delta                            # chat in the terminal; it also prints a link to the web UI
 delta -m qwen2.5:0.5b "Explain photosynthesis in one sentence"   # one answer, right in the terminal
 delta --server                   # web UI plus an OpenAI-compatible API on http://127.0.0.1:8081/v1
 ```

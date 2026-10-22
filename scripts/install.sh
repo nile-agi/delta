@@ -60,5 +60,18 @@ if [ "$(uname -s)" = Linux ] && command -v ldconfig >/dev/null 2>&1 &&
   echo "Note: delta needs libcurl. On Ubuntu/Debian run: sudo apt install -y curl"
 fi
 
+# A launcher in a folder already on PATH makes `delta` work in this terminal right away.
+LINKED=""
+for dir in "$HOME/.local/bin" "$HOME/bin" /usr/local/bin; do
+  case ":$PATH:" in *":$dir:"*) ;; *) continue ;; esac
+  if [ -d "$dir" ] && [ -w "$dir" ]; then
+    printf '#!/bin/sh\nexec "%s/bin/delta" "$@"\n' "$DEST" > "$dir/delta" && chmod +x "$dir/delta" && LINKED="$dir" && break
+  fi
+done
+
 "$DEST/bin/delta" --version 2>/dev/null || true
-echo "Installed to $DEST. Open a new terminal, then run: delta"
+if [ -n "$LINKED" ]; then
+  echo "Installed. Run: delta"
+else
+  echo "Installed. Run: delta   (in this terminal, first run: export PATH=\"$DEST/bin:\$PATH\")"
+fi
