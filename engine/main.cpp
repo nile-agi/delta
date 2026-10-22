@@ -1112,12 +1112,12 @@ int main(int argc, char** argv) {
         std::string exe_parent = tools::FileOps::join_path(exe_dir, "..");
         std::string exe_grandparent = tools::FileOps::join_path(exe_parent, "..");
 
-        // Check for Delta web UI in public/ directory (built from assets/)
-        // Priority: Homebrew share directory, then relative to executable, then current directory
+        // The UI shipped with this binary comes first (release archive bin/../webui, or a package's
+        // share/), so a stale Homebrew copy elsewhere is never served instead.
         std::vector<std::string> public_candidates = {
-            // Homebrew installed location (priority)
-            "/opt/homebrew/share/delta-cli/webui", "/usr/local/share/delta-cli/webui",
-            tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"),
+            tools::FileOps::join_path(exe_dir, "../webui"),
+            tools::FileOps::join_path(exe_dir, "../share/delta-cli/webui"), "/opt/homebrew/share/delta-cli/webui",
+            "/usr/local/share/delta-cli/webui", tools::FileOps::join_path(exe_dir, "../../share/delta-cli/webui"),
             tools::FileOps::join_path(exe_dir, "../../../share/delta-cli/webui"),
             // macOS app bundle Resources directory (for DMG installs)
             // Executable is at Contents/MacOS/delta, web UI is at Contents/Resources/webui
