@@ -317,6 +317,17 @@ class DeltaServerWrapper {
         }
         if (!delta::model_api_key().empty())
             std::cout << "  API key required:      Authorization: Bearer <key>" << std::endl;
+        const std::string base = "http://127.0.0.1:" + port + "/v1";
+        std::cout << "\n  Endpoints (OpenAI-compatible; any OpenAI SDK works with base_url " << base << "):\n"
+                  << "    GET  /v1/models            list the models you can use (their ids go in \"model\")\n"
+                  << "    POST /v1/chat/completions  chat replies, streamed with \"stream\": true; supports tools\n"
+                  << "    POST /v1/completions       plain text completion of a prompt\n"
+                  << "    POST /v1/embeddings        text embeddings (start with --embedding)\n"
+                  << "  Try it:\n"
+                  << "    curl " << base << "/chat/completions -H \"Content-Type: application/json\" \\\n"
+                  << "      -d '{\"model\":\"<id from "
+                     "/v1/models>\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
+                  << std::endl;
     }
 
     std::string find_webui_path() {
