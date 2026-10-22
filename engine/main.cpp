@@ -387,8 +387,7 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
         if (opened) {
             int actual_port = Commands::get_current_port();
             std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            tools::Browser::open_url(url);
+            UI::print_info("Web UI: " + url);
         } else {
             UI::print_error("Could not start server. Ensure the web UI is installed (e.g. share/delta-cli/webui).");
         }
@@ -418,8 +417,7 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
                 int actual_port = Commands::get_current_port();
                 std::string url = "http://localhost:" + std::to_string(actual_port) + "/index.html";
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                tools::Browser::open_url(url);
+                UI::print_info("Web UI: " + url);
             } else {
                 UI::print_error("Server failed to start. Check the error messages above.");
             }
@@ -1282,13 +1280,8 @@ int main(int argc, char** argv) {
             cmd << " --path \"" << public_path << "\"";
         }
 
-        // Open browser in a background thread so the server runs in the foreground
         std::string url = "http://localhost:" + std::to_string(server_port) + "/index.html";
-        std::thread browser_thread([url]() {
-            std::this_thread::sleep_for(std::chrono::milliseconds(3000));
-            tools::Browser::open_url(url);
-        });
-        browser_thread.detach();
+        UI::print_info("Web UI: " + url);
 
         std::cout << std::endl;
 
