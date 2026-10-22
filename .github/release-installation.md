@@ -39,7 +39,23 @@ sudo xattr -d com.apple.quarantine /Applications/Delta.app
 The CLI gives you the `delta` command in a terminal. With it you can download models, chat, and run
 the web UI and an OpenAI-compatible API. You do not need it to use the desktop app.
 
-### 1. Pick your file
+### Install
+
+**macOS or Linux:** open a terminal and paste:
+
+```sh
+curl -fsSL https://github.com/nile-agi/delta-release/releases/latest/download/install.sh | sh
+```
+
+**Windows:** open **PowerShell** and paste:
+
+```powershell
+irm https://github.com/nile-agi/delta-release/releases/latest/download/install.ps1 | iex
+```
+
+Then open a new terminal and run `delta --version`. Run the same line again any time to reinstall.
+
+### Or install by hand
 
 | Your computer | Download |
 |---|---|
@@ -153,7 +169,7 @@ shared with the desktop app.
 <summary>Troubleshooting and uninstall</summary>
 
 - **`delta: command not found`** (or *not recognized* on Windows): open a new terminal window. If it
-  still fails, run the install lines again; the last one is what makes `delta` findable.
+  still fails, run the install command again.
 - **macOS says "cannot be opened because the developer cannot be verified"**: run the `xattr` command
   in the macOS instructions again.
 - **Linux: `libcurl.so.4: cannot open shared object file`**: run `sudo apt install -y curl`.
