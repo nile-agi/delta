@@ -1496,7 +1496,17 @@ bool Commands::handle_use(const std::vector<std::string>& args, InteractiveSessi
             UI::print_error("Failed to restart server with new model");
         }
     } else {
-        // Server not running, start it
+        // Server not running, start it. A UI-only server holds 8080; /use runs on the terminal thread,
+        // not inside that server's handler, so it can stop it here and free the port.
+        bool ui_only = false;
+        {
+            std::lock_guard<std::mutex> lock(server_mutex_);
+            ui_only = current_port_ == 8080;
+        }
+        if (ui_only) {
+            delta::stop_model_api_server();
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        }
         // launch_server_auto now waits for server to be ready before returning
         if (Commands::launch_server_auto(model_path, 8080, ctx_size, model_alias)) {
             int actual_port = Commands::get_current_port();
