@@ -920,9 +920,10 @@ RunResult Harness::run_loop(const nlohmann::json& messages, const EventSink& sin
         }
         context.set_tool_overhead(cached_tool_tokens);
 
-        // The reply gets what the window has left, between a floor and the caller's max_tokens.
+        // The reply gets what the window has left, between a floor (a quarter of the window, up to 1024
+        // tokens, so long chats compact history rather than cut answers short) and the caller's max_tokens.
         // Recomputed per attempt so a shrunk prompt gives the reply its room back.
-        const int floor = std::min(256, std::max(64, n_ctx / 4));
+        const int floor = std::min(1024, std::max(64, n_ctx / 4));
         const int spare = n_ctx - cached_tool_tokens - prompt_tokens - context.safety_margin();
         // The floor stops the harness shrinking the reply too far; it never raises the caller's limit.
         const int reply = std::max(std::min(floor, options_.max_tokens), std::min(options_.max_tokens, spare));
