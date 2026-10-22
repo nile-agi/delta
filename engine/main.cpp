@@ -571,6 +571,7 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
 
         // With the harness driving llama-server there is no in-process model to check.
         if (harness_url.empty() && !engine.is_loaded()) {
+            UI::print_error("No model is loaded. Use /list to see your models and /use <model> to pick one.");
             continue;
         }
 
