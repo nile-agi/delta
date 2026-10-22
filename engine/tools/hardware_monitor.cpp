@@ -1,5 +1,6 @@
 #include "hardware_monitor.h"
 #include <iostream>
+#include <cstdlib>
 #include <cstring>
 #include <chrono>
 #include <cstdio>
@@ -325,16 +326,22 @@ static float wmi_cpu_temp_c() {
 }
 #endif
 
+// Hardware probing is diagnostic detail, printed only with DELTA_DEBUG set.
+static std::ostream& dhats_log() {
+    static std::ostream discard(nullptr);
+    return std::getenv("DELTA_DEBUG") ? std::cerr : discard;
+}
+
 // ============================================================
 // Constructor / Destructor
 // ============================================================
 
 HardwareMonitor::HardwareMonitor() {
-    std::cout << "[DHATS] Initializing Hardware Monitor (Dynamic Telemetry Loading)..." << std::endl;
+    dhats_log() << "[DHATS] Initializing Hardware Monitor (Dynamic Telemetry Loading)..." << std::endl;
     probe_nvidia_nvml();
     probe_apple_metal();
     probe_amd_rocm();
-    std::cout << "[DHATS] Primary acceleration backend: " << get_primary_backend() << std::endl;
+    dhats_log() << "[DHATS] Primary acceleration backend: " << get_primary_backend() << std::endl;
 }
 
 HardwareMonitor::~HardwareMonitor() {
@@ -370,7 +377,7 @@ void HardwareMonitor::probe_nvidia_nvml() {
     }
 
     if (!nvml_lib_handle_) {
-        std::cout << "[DHATS] NVML not found — NVIDIA telemetry unavailable." << std::endl;
+        dhats_log() << "[DHATS] NVML not found — NVIDIA telemetry unavailable." << std::endl;
         return;
     }
 
@@ -396,13 +403,13 @@ void HardwareMonitor::probe_nvidia_nvml() {
     unsigned int count = 0;
     if (g_nvmlDeviceGetCount)
         g_nvmlDeviceGetCount(&count);
-    std::cout << "[DHATS] NVML active — " << count << " NVIDIA GPU(s) detected." << std::endl;
+    dhats_log() << "[DHATS] NVML active — " << count << " NVIDIA GPU(s) detected." << std::endl;
 }
 
 void HardwareMonitor::probe_apple_metal() {
 #ifdef __APPLE__
     metal_available_ = true;
-    std::cout << "[DHATS] Apple Metal backend available." << std::endl;
+    dhats_log() << "[DHATS] Apple Metal backend available." << std::endl;
 #else
     metal_available_ = false;
 #endif
@@ -418,7 +425,7 @@ void HardwareMonitor::probe_amd_rocm() {
     }
 
     if (!rocm_lib_handle_) {
-        std::cout << "[DHATS] ROCm SMI not found — AMD telemetry unavailable." << std::endl;
+        dhats_log() << "[DHATS] ROCm SMI not found — AMD telemetry unavailable." << std::endl;
         return;
     }
 
@@ -442,7 +449,7 @@ void HardwareMonitor::probe_amd_rocm() {
     uint32_t count = 0;
     if (g_rsmi_num_devices)
         g_rsmi_num_devices(&count);
-    std::cout << "[DHATS] ROCm SMI active — " << count << " AMD GPU(s) detected." << std::endl;
+    dhats_log() << "[DHATS] ROCm SMI active — " << count << " AMD GPU(s) detected." << std::endl;
 #endif
 }
 
