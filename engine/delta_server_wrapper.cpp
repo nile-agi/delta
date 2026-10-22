@@ -456,7 +456,7 @@ class DeltaServerWrapper {
         add("--ubatch-size", std::to_string(config.microbatch));
         add("--gpu-layers", std::to_string(config.gpu_layers));
         add("--flash-attn", config.context > 16384 ? "off" : "auto");
-        for (const char* flag : {"--jinja", "--metrics", "--slots", "--props", "--cache-prompt"})
+        for (const char* flag : {"--jinja", "--metrics", "--slots", "--props", "--cache-prompt", "--kv-unified"})
             args.push_back(flag);
         if (!model_alias.empty())
             add("--alias", model_alias);

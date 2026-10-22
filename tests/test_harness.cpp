@@ -1725,6 +1725,56 @@ static void test_summary_is_reused_across_iterations() {
     check(log.count(EventType::Compaction) >= 3, "every iteration still reported compaction");
 }
 
+static void test_the_summary_never_carries_thinking() {
+    test("the history summary is asked for without thinking, and stray thinking never reaches the prompt");
+
+    json history = json::array();
+    for (int i = 0; i < 100; i++) {
+        history.push_back(
+            {{"role", i % 2 == 0 ? "user" : "assistant"},
+             {"content", "Turn " + std::to_string(i) +
+                             ": a long-winded message that fills up the context window with plenty of "
+                             "words about nothing in particular so that compaction is unavoidable here."}});
+    }
+    history.push_back(user("what is biology"));
+
+    // A model that thinks inline even when asked not to.
+    ScriptedServer server(std::vector<json>{});
+    server.set_responder([](const json& request) -> json {
+        const auto& messages = request["messages"];
+        if (!messages.empty() && messages[0].value("content", "").rfind("Summarize", 0) == 0)
+            return {{"role", "assistant"},
+                    {"content", "thought\nThe user wants me to summarize the conversation into compact notes.\n\n"
+                                "They talked about nothing in particular."}};
+        return json{{"role", "assistant"}, {"content", "Biology is the study of life."}};
+    });
+    server.start();
+
+    Harness harness(server.url(), "test-model", false);
+    auto options = test_options();
+    options.n_ctx = 4096;
+    options.enable_thinking = true;
+    harness.set_options(options);
+    EventLog log;
+    harness.run(history, log.sink());
+    server.stop();
+
+    bool summary_asked = false;
+    for (const auto& request : server.requests()) {
+        const auto& messages = request["messages"];
+        const std::string system = messages.empty() ? "" : messages[0].value("content", "");
+        if (system.rfind("Summarize", 0) == 0) {
+            summary_asked = true;
+            check(!request["chat_template_kwargs"].value("enable_thinking", true), "the summary turns thinking off");
+        } else {
+            check(system.find("The user wants me to summarize") == std::string::npos,
+                  "the summary's thinking is not in the answering prompt");
+            check(system.find("nothing in particular") != std::string::npos, "the summary itself is kept");
+        }
+    }
+    check(summary_asked, "a summary was requested");
+}
+
 static void test_unknown_tool_is_reported_as_a_step() {
     test("a call to a tool that does not exist shows up as a failed step, not just a stray result");
 
@@ -3991,6 +4041,7 @@ int main() {
     test_scratchpad_survives_an_unfinished_run();
     test_abort_request_is_noticed_while_the_model_is_silent();
     test_summary_is_reused_across_iterations();
+    test_the_summary_never_carries_thinking();
     test_unknown_tool_is_reported_as_a_step();
     test_tool_events_carry_the_call_id();
     test_budget_exhaustion_asks_the_model_to_wrap_up();

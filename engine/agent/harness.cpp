@@ -344,7 +344,7 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
         prompt += "CURRENT TIME: " + std::string(iso_buf) + " (" + day_buf + ")\n";
         prompt += "TODAY: " + std::string(today_buf) + "\n";
         prompt += "NEXT 7 DAYS:";
-        for (int d = 2; d <= 7; d++) {
+        for (int d = 1; d <= 7; d++) {
             std::tm day{};
             day.tm_year = t_local.tm_year;
             day.tm_mon = t_local.tm_mon;
@@ -565,6 +565,27 @@ std::string Harness::build_system_prompt(const nlohmann::json& messages) const {
     return prompt;
 }
 
+// Some templates think inline even with thinking off; that text must never become conversation notes.
+static std::string without_thinking(std::string text) {
+    const size_t start = text.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos)
+        return "";
+    text.erase(0, start);
+    size_t end = std::string::npos;
+    if (text.rfind("<think>", 0) == 0) {
+        const size_t close = text.find("</think>");
+        end = close == std::string::npos ? text.size() : close + 8;
+    } else if (text.rfind("thought\n", 0) == 0) {
+        const size_t blank = text.find("\n\n");
+        end = blank == std::string::npos ? text.size() : blank + 2;
+    } else {
+        return text;
+    }
+    text.erase(0, end);
+    const size_t rest = text.find_first_not_of(" \t\r\n");
+    return rest == std::string::npos ? "" : text.substr(rest);
+}
+
 std::string Harness::summarize(const nlohmann::json& dropped, int n_ctx) {
     if (dropped.empty())
         return "";
@@ -636,6 +657,7 @@ std::string Harness::summarize_prose(const nlohmann::json& dropped, int n_ctx) {
     LlmConfig saved = client_.config();
     LlmConfig small = saved;
     small.max_tokens = 300;
+    small.enable_thinking = false;
     client_.set_config(small);
     nlohmann::json response = client_.chat(request, nlohmann::json::array());
     client_.set_config(saved);
@@ -646,7 +668,7 @@ std::string Harness::summarize_prose(const nlohmann::json& dropped, int n_ctx) {
     const auto& choice = response["choices"][0];
     if (!choice.contains("message"))
         return "";
-    return message_text(choice["message"]);
+    return without_thinking(message_text(choice["message"]));
 }
 
 std::string Harness::document_context(const nlohmann::json& messages, bool has_tools) const {
