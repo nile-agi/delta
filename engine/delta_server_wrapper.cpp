@@ -643,6 +643,11 @@ class DeltaServerWrapper {
                     if (note_server_timing_line(line))
                         return;
                     note_server_stderr(line);
+                    // llama.cpp's CPU-build GPU notice points at its own build docs; expected here.
+                    if (line.find("no usable GPU found") != std::string::npos ||
+                        line.find("compiled without GPU support") != std::string::npos ||
+                        line.find("docs/build.md") != std::string::npos)
+                        return;
                     // Runtime-native records are filtered/redacted again at the desktop boundary.
                     if (line.find("error") != std::string::npos || line.find("Error") != std::string::npos ||
                         line.find("fail") != std::string::npos || line.find("Fail") != std::string::npos ||

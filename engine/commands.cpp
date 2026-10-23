@@ -62,6 +62,7 @@ bool Commands::initialized_ = false;
 process_id_t Commands::llama_server_pid_ = 0;
 std::string Commands::current_model_path_ = "";
 int Commands::current_port_ = 8080;
+bool Commands::attached_ = false;
 std::mutex Commands::server_mutex_;
 
 std::string Commands::get_webui_public_path() {
@@ -1428,6 +1429,12 @@ bool Commands::handle_use(const std::vector<std::string>& args, InteractiveSessi
     std::string model_path = session.model_mgr->get_model_path(model_name);
     if (model_path.empty()) {
         UI::print_error("Could not find model path for: " + model_name);
+        return true;
+    }
+
+    if (attached_) { // the background server loads it by name on the first message
+        session.current_model = model_name;
+        UI::print_info("✓ Using " + model_name + " on the background server");
         return true;
     }
 

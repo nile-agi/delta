@@ -3023,7 +3023,10 @@ static void test_no_tools_prompt_stays_short() {
     std::time_t now = std::time(nullptr);
     std::tm today{};
     local_time(&now, &today);
+    // On a Friday the list holds next Friday; today has its own TODAY line.
     int days_to_friday = (5 - today.tm_wday + 7) % 7;
+    if (days_to_friday == 0)
+        days_to_friday = 7;
     std::tm friday = today;
     friday.tm_mday += days_to_friday;
     friday.tm_hour = 12;

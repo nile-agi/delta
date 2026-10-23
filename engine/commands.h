@@ -82,6 +82,12 @@ class Commands {
 
     // Get current server port
     static int get_current_port() { return current_port_; }
+    // Chat through a background server on this port; /use then only switches the model by name.
+    static void attach_to_server(int port) {
+        current_port_ = port;
+        attached_ = true;
+    }
+    static bool is_attached() { return attached_; }
 
     // Command handlers
     static bool handle_download(const std::vector<std::string>& args, InteractiveSession& session);
@@ -113,6 +119,7 @@ class Commands {
     static process_id_t llama_server_pid_;
     static std::string current_model_path_;
     static int current_port_;
+    static bool attached_;
     static std::mutex server_mutex_;
 
     // Helper to build llama-server command (always -m with absolute path).
