@@ -150,6 +150,7 @@ delta pull qwen2.5:0.5b          # download a small model (about 400 MB); run on
 delta                            # chat in the terminal; it also prints a link to the web UI
 delta -m qwen2.5:0.5b "Explain photosynthesis in one sentence"   # one answer, right in the terminal
 delta --server                   # web UI plus an OpenAI-compatible API on http://127.0.0.1:8081/v1
+delta server start               # the same, in the background; then: delta server status | logs | stop
 ```
 
 | Command | What it does |
