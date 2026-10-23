@@ -6,6 +6,7 @@
 #include "delta_cli.h"
 #include "update.h"
 #include "commands.h"
+#include "background_server.h"
 #include "history.h"
 #include "agent/agent_database.h"
 #include "agent/harness.h"
@@ -59,6 +60,10 @@ DELTA SERVER — web UI and an OpenAI-compatible API for your models
 
 USAGE:
     delta server [OPTIONS]          (same as: delta --server)
+    delta server start [OPTIONS]    Run it in the background (same as: delta --server --detach)
+    delta server status | logs | stop
+                                    Check it, read its log, or stop it (stop also: delta --server --stop)
+                                    While it runs, plain `delta` chats through it.
 
 WHAT IT STARTS:
     Web UI                  http://localhost:8080
@@ -141,6 +146,7 @@ USAGE:
 SERVER OPTIONS (delta --server):
     -m, --model <MODEL>         Specify model (auto-selects if omitted)
     --port <N>                  Server port (default: 8080)
+    --detach                    Run in the background; manage with delta server status|logs|stop
     --np <N>                    Max parallel requests (default: 4)
     --c <N>                     Max context size (default: model native)
     --models-dir <DIR>          Scan directory for .gguf models
@@ -378,8 +384,24 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
 
     UI::init();
 
-    // Launch web UI in "Select model" mode: never auto-load a model; always start UI-only server so user chooses.
-    if (current_model.empty()) {
+    // A background server is already serving: chat through it instead of starting a second one.
+    if (const int bg_port = background::running_port()) {
+        Commands::attach_to_server(bg_port);
+        UI::print_info("Using the Delta server running in the background: http://localhost:" + std::to_string(bg_port));
+        // Start ready to chat: the default model if installed, else the first one you have.
+        if (current_model.empty()) {
+            std::string pick = model_mgr.get_auto_selected_model();
+            const std::string friendly = model_mgr.get_name_from_filename(pick + ".gguf");
+            if (!friendly.empty() && model_mgr.is_model_installed(friendly))
+                pick = friendly;
+            if (model_mgr.is_model_installed(pick)) {
+                session.current_model = pick;
+                UI::print_info("Model: " + pick + " (switch with /use <model>, see /list)");
+            } else {
+                UI::print_info("No models yet. Download one with /download <model> (see /available).");
+            }
+        }
+    } else if (current_model.empty()) {
         std::string models_dir = tools::FileOps::join_path(tools::FileOps::get_home_dir(), ".delta-cli");
         models_dir = tools::FileOps::join_path(models_dir, "models");
         tools::FileOps::create_dir(models_dir);
@@ -441,7 +463,7 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
     // instead of the single-shot 50-token completion it used to do.
     std::string harness_url;
     bool harness_supports_tools = false;
-    if (!current_model.empty()) {
+    if (!current_model.empty() && !Commands::is_attached()) {
         const int server_port = Commands::get_current_port();
         if (server_port > 0) {
             const std::string candidate = "http://127.0.0.1:" + std::to_string(server_port);
@@ -570,7 +592,9 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
         // A model picked with /use after starting without one has a server now; connect to it.
         if (harness_url.empty() && !session.current_model.empty() && Commands::get_current_port() > 0) {
             const std::string candidate = "http://127.0.0.1:" + std::to_string(Commands::get_current_port());
-            if (agent::LlmClient(candidate, session.current_model).probe_context_size() > 0) {
+            // A background server loads the model on this first request, so there is nothing to probe yet.
+            if (Commands::is_attached() ||
+                agent::LlmClient(candidate, session.current_model).probe_context_size() > 0) {
                 harness_url = candidate;
                 harness_supports_tools = model_mgr.is_in_registry(session.current_model) &&
                                          model_mgr.get_registry_entry(session.current_model).supports_tools;
@@ -595,7 +619,12 @@ void interactive_mode(InferenceEngine& engine, InferenceConfig& config, ModelMan
             if (!harness_url.empty()) {
                 conversation.push_back({{"role", "user"}, {"content", input}});
 
-                agent::Harness harness(harness_url, session.current_model, harness_supports_tools);
+                // A background router knows models by file name, not by their Delta name.
+                std::string harness_model = session.current_model;
+                if (Commands::is_attached())
+                    harness_model =
+                        std::filesystem::path(model_mgr.get_model_path(session.current_model)).stem().string();
+                agent::Harness harness(harness_url, harness_model, harness_supports_tools);
                 agent::RunOptions options;
                 options.max_tokens = session.max_tokens;
                 options.tools_enabled = harness_supports_tools;
@@ -744,6 +773,17 @@ int main(int argc, char** argv) {
     SetConsoleOutputCP(65001);
     SetConsoleCP(65001);
 #endif
+    // delta server start|stop|status|logs manage a background server; start takes the --server options.
+    if (argc > 2 && std::string(argv[1]) == "server") {
+        const std::string sub = argv[2];
+        if (sub == "start" || sub == "stop" || sub == "status" || sub == "logs") {
+            UI::init();
+            if (sub == "start")
+                return background::start(std::vector<std::string>(argv + 3, argv + argc));
+            return sub == "stop" ? background::stop() : sub == "status" ? background::status() : background::logs();
+        }
+    }
+
     // Parse command line arguments
     InferenceConfig config;
     std::string model_name = "";
@@ -756,6 +796,7 @@ int main(int argc, char** argv) {
     bool show_models = false;
     bool show_available = false;
     bool start_server = false;
+    bool detach = false; // --server --detach: run it in the background
     bool check_updates = false;
     bool do_update = false;
     bool is_pull_command = false;
@@ -806,6 +847,11 @@ int main(int argc, char** argv) {
             interactive = true;
         } else if (arg == "--server" || (i == 1 && arg == "server")) {
             start_server = true;
+        } else if (arg == "--detach") {
+            detach = true;
+        } else if (arg == "--stop") {
+            UI::init();
+            return background::stop();
         } else if (arg == "--host" && i + 1 < argc) {
             api_host = argv[++i];
         } else if (arg == "--api-key" && i + 1 < argc) {
@@ -1000,6 +1046,16 @@ int main(int argc, char** argv) {
     }
 
     // Handle server mode: spawn llama-server (via delta-server wrapper) with -m <absolute path>
+    if (start_server && detach) {
+        std::vector<std::string> forwarded;
+        for (int i = 1; i < argc; i++) {
+            const std::string a = argv[i];
+            if (a != "--detach" && a != "--server" && !(i == 1 && a == "server"))
+                forwarded.push_back(a);
+        }
+        return background::start(forwarded);
+    }
+
     if (start_server) {
         std::string model_path;
         std::string model_alias;
@@ -1293,6 +1349,11 @@ int main(int argc, char** argv) {
         std::string url = "http://localhost:" + std::to_string(server_port) + "/index.html";
         UI::print_info("Web UI: " + url);
 
+#ifndef _WIN32
+        // Ctrl+Z would freeze the server while it keeps the port; children inherit the ignore.
+        signal(SIGTSTP, SIG_IGN);
+        UI::print_info("To keep Delta running after closing this terminal: delta server start");
+#endif
         std::cout << std::endl;
 
         // Run delta-server in the foreground (inherits stdout/stderr for logs)

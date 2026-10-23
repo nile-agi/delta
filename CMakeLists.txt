@@ -179,6 +179,7 @@ set(DELTA_SOURCES
     engine/update.cpp
     engine/update_install.cpp
     engine/commands.cpp
+    engine/background_server.cpp
     engine/history.cpp
     engine/server_health.cpp
     engine/cpu_level.cpp
