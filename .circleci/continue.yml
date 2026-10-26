@@ -509,7 +509,7 @@ jobs:
                 echo "export PATH=\"$(cygpath -u "$vs")/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin:\$PATH\"" >> "$BASH_ENV"
                 git clone --depth 1 https://github.com/microsoft/vcpkg /c/vcpkg
                 cmd //c 'C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics'
-                /c/vcpkg/vcpkg.exe install curl:x64-windows-static-md
+                /c/vcpkg/vcpkg.exe install curl:x64-windows-static
                 echo 'export VCPKG_INSTALLATION_ROOT=C:/vcpkg' >> "$BASH_ENV"
                 ;;
             esac

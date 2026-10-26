@@ -24,5 +24,16 @@ class ReleaseBinaryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify.inspect_binary(self.macho(11)[:32], 'x86_64-apple-darwin')
 
+    def pe(self, imports=b''):
+        header = b'MZ' + b'\0' * 58 + struct.pack('<I', 64) + b'PE\0\0' + struct.pack('<H', 0x8664)
+        return header + b'\0' * 64 + imports
+
+    def test_rejects_windows_backend_that_needs_the_system_cpp_runtime(self):
+        with self.assertRaisesRegex(ValueError, 'MSVCP140.dll'):
+            verify.inspect_binary(self.pe(b'KERNEL32.dll\0MSVCP140.dll\0'), 'x86_64-pc-windows-msvc')
+
+    def test_accepts_windows_backend_with_the_runtime_linked_in(self):
+        verify.inspect_binary(self.pe(b'KERNEL32.dll\0WS2_32.dll\0'), 'x86_64-pc-windows-msvc')
+
 if __name__ == '__main__':
     unittest.main()

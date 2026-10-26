@@ -164,7 +164,7 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: bash
         run: |
-          bash scripts/install-ci-vcpkg.sh install curl:x64-windows-static-md
+          bash scripts/install-ci-vcpkg.sh install curl:x64-windows-static
 
       - uses: actions/download-artifact@v4
         with:
@@ -227,7 +227,7 @@ jobs:
                 -DGGML_METAL=OFF
                 -DUSE_CURL=ON
                 "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
-                -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+                -DVCPKG_TARGET_TRIPLET=x64-windows-static
               )
               ;;
           esac
@@ -287,6 +287,7 @@ jobs:
           cp "$BUILD_DIR/release-build-info.json" "$STAGE/BUILD_INFO.json"
 
           bash scripts/check-release-runtime.sh "$STAGE/bin/llama-server${EXT}" "$CLI_TARGET"
+          bash scripts/smoke-delta-server.sh "$STAGE/bin/delta-server${EXT}"
 
           # Include web UI
           if [[ -d public ]]; then
@@ -430,7 +431,7 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: bash
         run: |
-          bash scripts/install-ci-vcpkg.sh install curl:x64-windows-static-md
+          bash scripts/install-ci-vcpkg.sh install curl:x64-windows-static
 
       - uses: actions/download-artifact@v4
         with:

@@ -88,7 +88,8 @@ case "$(uname -s)" in
         if [[ -n "${VCPKG_INSTALLATION_ROOT:-}" ]]; then
             CMAKE_ARGS+=(
                 "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
-                -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+                # Release links the C++ runtime statically (/MT), so curl must match it.
+                -DVCPKG_TARGET_TRIPLET=$([[ "$BUILD_TYPE" == Release ]] && echo x64-windows-static || echo x64-windows-static-md)
             )
         fi
         ;;
@@ -179,6 +180,7 @@ if [[ "$BUILD_TYPE" == Release ]]; then
     python3 "$PROJECT_ROOT/scripts/verify-release-binaries.py" --target "$TARGET_TRIPLE" \
         "$BINDIR/delta-server-${TARGET_TRIPLE}${EXE_SUFFIX}" "$BINDIR/llama-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
     cp "$BUILDDIR/release-build-info.json" "$BINDIR/release-build-info.json"
+    bash "$PROJECT_ROOT/scripts/smoke-delta-server.sh" "$BINDIR/delta-server-${TARGET_TRIPLE}${EXE_SUFFIX}"
 fi
 
 # x86_64 Linux and Windows releases also ship an AVX2 (x86-64-v3) llama-server; delta-server runs
