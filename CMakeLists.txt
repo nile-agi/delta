@@ -10,6 +10,10 @@ endif()
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" DELTA_VERSION_STRING)
 string(STRIP "${DELTA_VERSION_STRING}" DELTA_VERSION_STRING)
 
+# Honour CMAKE_MSVC_RUNTIME_LIBRARY, which the release policy uses to link the C++ runtime statically.
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
 include(cmake/DeltaReleasePolicy.cmake)
 project(delta-cli VERSION ${DELTA_VERSION_STRING} LANGUAGES C CXX)
 delta_configure_release_cpu()
