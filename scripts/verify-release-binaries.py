@@ -2,6 +2,7 @@
 """Validate the actual packaged executable headers, not just build settings."""
 import argparse
 import pathlib
+import re
 import struct
 import sys
 
@@ -41,6 +42,10 @@ def inspect_binary(data, target):
         machine, = struct.unpack_from('<H', data, offset + 4)
         arch = {0x8664: 'x86_64', 0xaa64: 'arm64'}.get(machine)
         kind = 'windows'
+        # The C++ runtime is linked in; an older system msvcp140.dll crashes newer builds on start.
+        runtime = re.search(rb'(?i)(msvcp|vcruntime)140(_1)?\.dll', data)
+        if runtime:
+            raise ValueError(f'Depends on the system C++ runtime ({runtime.group().decode()}); link it statically (/MT)')
     else:
         raise ValueError('Unknown or truncated executable format')
     if arch != expected or kind not in target:

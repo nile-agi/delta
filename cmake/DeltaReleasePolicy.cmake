@@ -3,6 +3,12 @@ option(DELTA_PORTABLE_RELEASE "Build redistributable binaries for the platform b
 # Intel Haswell / AMD Excavator, 2013 on) is several times faster and is picked at launch when supported.
 set(DELTA_CPU_LEVEL "baseline" CACHE STRING "x86_64 release CPU level: baseline or x86-64-v3")
 
+# Windows releases carry their own C++ runtime: an older system msvcp140.dll crashes binaries built
+# with a newer MSVC (0xC0000005 on the first mutex lock) before they print anything.
+if(DELTA_PORTABLE_RELEASE)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
+endif()
+
 # Set this before project() so compiler probes use the same deployment contract.
 if(DELTA_PORTABLE_RELEASE AND APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum supported macOS" FORCE)
